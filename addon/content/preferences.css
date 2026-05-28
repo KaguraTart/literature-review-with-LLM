@@ -1,0 +1,25 @@
+.zms-row {
+  margin-bottom: 8px;
+}
+
+.zms-label {
+  min-width: 112px;
+}
+
+.zms-field {
+  width: 34em;
+  max-width: 34em;
+}
+
+.zms-number {
+  width: 8em;
+}
+
+.zms-actions {
+  margin-top: 12px;
+  gap: 8px;
+}
+
+#zms-status {
+  margin-inline-start: 8px;
+}

@@ -1,0 +1,62 @@
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      xmlns:html="http://www.w3.org/1999/xhtml"
+      id="zotero-prefpane-markdown-summary"
+      onload="ZoteroMarkdownSummaryPrefs.init()">
+  <groupbox>
+    <label><html:h2>Markdown 摘要</html:h2></label>
+    <vbox class="zms-form">
+      <hbox align="center" class="zms-row">
+        <label class="zms-label" value="Provider"/>
+        <menulist id="zms-provider">
+          <menupopup>
+            <menuitem label="MiniMax OpenAI 兼容" value="minimax"/>
+            <menuitem label="OpenAI 原生" value="openai"/>
+            <menuitem label="Anthropic" value="anthropic"/>
+          </menupopup>
+        </menulist>
+      </hbox>
+      <hbox align="center" class="zms-row">
+        <label class="zms-label" value="Base URL"/>
+        <html:input class="zms-field" id="zms-baseURL"/>
+      </hbox>
+      <hbox align="center" class="zms-row">
+        <label class="zms-label" value="API Key"/>
+        <html:input class="zms-field" id="zms-apiKey" type="password"/>
+      </hbox>
+      <hbox align="center" class="zms-row">
+        <label class="zms-label" value="Model"/>
+        <html:input class="zms-field" id="zms-model"/>
+      </hbox>
+      <hbox align="center" class="zms-row">
+        <label class="zms-label" value="输出目录"/>
+        <html:input class="zms-field" id="zms-outputDir"/>
+      </hbox>
+      <hbox align="center" class="zms-row">
+        <label class="zms-label" value="输入模式"/>
+        <menulist id="zms-inputMode">
+          <menupopup>
+            <menuitem label="提取文本" value="text"/>
+            <menuitem label="PDF base64" value="pdf_base64"/>
+          </menupopup>
+        </menulist>
+      </hbox>
+      <hbox align="center" class="zms-row">
+        <label class="zms-label" value="最大输出 token"/>
+        <html:input class="zms-number" id="zms-maxOutputTokens" type="number" min="512" step="512"/>
+      </hbox>
+      <hbox align="center" class="zms-row">
+        <label class="zms-label" value="Temperature"/>
+        <html:input class="zms-number" id="zms-temperature" type="number" min="0.1" max="1" step="0.1"/>
+      </hbox>
+      <hbox align="center" class="zms-row">
+        <label class="zms-label" value="流式输出"/>
+        <checkbox id="zms-stream"/>
+      </hbox>
+    </vbox>
+    <hbox class="zms-actions">
+      <button label="保存设置" oncommand="ZoteroMarkdownSummaryPrefs.save()"/>
+      <button label="测试连接" oncommand="ZoteroMarkdownSummaryPrefs.testConnection()"/>
+      <label id="zms-status"/>
+    </hbox>
+  </groupbox>
+</vbox>

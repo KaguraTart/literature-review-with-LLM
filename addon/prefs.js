@@ -1,0 +1,10 @@
+pref("provider", "minimax");
+pref("baseURL", "https://api.minimaxi.com/v1");
+pref("apiKey", "");
+pref("model", "MiniMax-M2.7");
+pref("outputDir", "/Users/tart/Library/CloudStorage/OneDrive-个人/Zotero_PDFs/Zotero_MD_Summaries");
+pref("inputMode", "text");
+pref("maxOutputTokens", 8192);
+pref("temperature", 1);
+pref("stream", true);
+pref("summaryVersion", "1");

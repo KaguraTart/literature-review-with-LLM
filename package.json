@@ -1,0 +1,22 @@
+{
+  "name": "zotero-markdown-summary",
+  "version": "0.1.0",
+  "description": "Zotero Markdown summary attachment plugin",
+  "type": "module",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/diantao-deng/zotero-markdown-summary.git"
+  },
+  "scripts": {
+    "build": "zotero-plugin build --dist build",
+    "test": "vitest run",
+    "check": "npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14",
+    "zotero-plugin-scaffold": "^0.8.6"
+  }
+}
