@@ -42,6 +42,7 @@
 5. 跨论文综合：生成方法矩阵、实验矩阵、研究空白矩阵、争议点和代表论文列表。
 6. 研究想法生成：基于共同不足和用户课题约束给出可验证研究方向。
 7. 安全写回：用户确认后再写 Zotero 标签、笔记、linked attachment 或导出文件。
+8. 多语言输出：至少支持中文、英文、日文三种输出语言，后续可扩展更多语言。
 
 ## 4. 补充调研：claude-scholar 可复用机制
 
@@ -147,6 +148,41 @@ interface ProviderProfile {
 4. 不把 provider 和模型绑死。设置页保留 provider type、baseURL、apiKey、model、自定义 header；模型名只作为用户配置。
 5. 不记录 API key、完整请求体和完整 PDF base64。日志只记录 provider、model、sourceHash、错误类别和重试次数。
 
+### 4.4 多语言能力边界
+
+多语言能力需要从一开始作为一等配置，而不是只在 prompt 里临时追加一句“请用某语言输出”。第一版至少支持：
+
+- `zh-CN`：中文，默认语言，用于中文学术摘要、综述、研究问题卡。
+- `en-US`：英文，用于英文论文阅读报告、英文 related work 草稿和国际会议投稿前材料整理。
+- `ja-JP`：日文，用于日文摘要、日文研究笔记和跨语言文献整理。
+
+设计原则：
+
+1. UI 语言和输出语言分开。插件界面可以先保持中文，但报告输出语言必须可配置。
+2. 单篇报告、collection 综述、方法矩阵、gap 矩阵、研究问题卡都要接收同一个 `outputLanguage`。
+3. prompt 模板按语言维护，不在业务代码里散落硬编码句子。
+4. frontmatter 必须记录 `outputLanguage`、`sourceLanguage` 和 `templateVersion`，方便重复生成和跨机器同步。
+5. 如果论文原文语言和输出语言不同，报告中只翻译分析结果，不要改写论文标题、作者、DOI、venue 等元数据。
+6. 多语言模板要保持同一信息结构。不同语言只改变标题和表达方式，不能让英文模板多字段、日文模板少字段。
+
+建议模板目录：
+
+```text
+prompts/
+  summary/
+    zh-CN.md
+    en-US.md
+    ja-JP.md
+  collection-review/
+    zh-CN.md
+    en-US.md
+    ja-JP.md
+  idea-card/
+    zh-CN.md
+    en-US.md
+    ja-JP.md
+```
+
 ## 5. 实施路线
 
 ### 阶段 0：重构当前单篇摘要插件
@@ -160,6 +196,8 @@ interface ProviderProfile {
 - `PdfInputService`：负责 `text` 与 `pdf_base64` 输入。
 - `ProviderClient`：负责 MiniMax、OpenAI、Anthropic 的请求映射、重试、stream 解析。
 - `ProviderCapabilityRegistry`：负责 provider protocol、输入能力、stream 能力和可用性探测。
+- `PromptTemplateRegistry`：负责中文、英文、日文 prompt 模板加载和变量注入。
+- `LanguageSettings`：负责输出语言、源语言自动判断和模板版本记录。
 - `MarkdownSummaryStore`：负责输出路径、frontmatter、覆盖更新和摘要版本。
 
 验收标准：
@@ -195,11 +233,16 @@ interface ProviderProfile {
   - `sourceHash`
   - `summaryVersion`
   - `evidenceLevel`
+  - `sourceLanguage`
+  - `outputLanguage`
+  - `templateVersion`
 - 对 Zotero 已索引文本做简单章节切分，至少支持摘要、引言、方法、实验、结论的关键词级定位。
+- 每种输出语言使用同一字段结构，避免后续 collection 综合时混合不同 schema。
 
 验收标准：
 
 - 同一篇论文可输出固定结构 Markdown。
+- 中文、英文、日文三种输出语言均能生成同一结构报告。
 - 如果只有摘要或全文提取不完整，报告必须标明低证据等级。
 - 输出不写入任何第三方生成声明。
 
@@ -229,6 +272,7 @@ interface ProviderProfile {
       knowledge/
       writing/
       maps/
+      prompts/
       chunks.jsonl
       evidence.jsonl
 ```
@@ -239,6 +283,7 @@ interface ProviderProfile {
 - 可重建 `chunks.jsonl`，缓存不是唯一真源。
 - 删除缓存后可从 Zotero 条目和 Markdown 总结重建。
 - 每篇论文记录至少包含 Zotero key、标题、作者、年份、PDF key、摘要路径、文本可用状态。
+- collection 输出记录 `outputLanguage`，不同语言的综述草稿和矩阵可以并存。
 
 ### 阶段 3：跨论文综述生成
 
@@ -264,6 +309,7 @@ interface ProviderProfile {
 - 对一个 5 到 20 篇论文的 collection 生成可读 Markdown 综述。
 - 文档内至少包含方法矩阵、gap 矩阵、代表论文表。
 - 每条核心结论有来源列表。
+- 至少能分别导出中文、英文、日文版本，且三种语言的证据引用一致。
 
 ### 阶段 4：联网检索与人工确认导入
 
@@ -353,7 +399,10 @@ interface ProviderProfile {
     "summaryStatus": "not_started",
     "summaryPath": "",
     "sourceHash": "",
-    "evidenceLevel": "unknown"
+    "evidenceLevel": "unknown",
+    "sourceLanguage": "auto",
+    "outputLanguage": "zh-CN",
+    "templateVersion": "summary-v1"
   }
 }
 ```
@@ -422,6 +471,23 @@ interface ProviderProfile {
 }
 ```
 
+### OutputLanguageProfile
+
+```json
+{
+  "id": "zh-CN",
+  "label": "中文",
+  "fallbackOrder": ["zh-CN", "en-US"],
+  "templates": {
+    "summary": "prompts/summary/zh-CN.md",
+    "collectionReview": "prompts/collection-review/zh-CN.md",
+    "ideaCard": "prompts/idea-card/zh-CN.md"
+  },
+  "dateFormat": "YYYY-MM-DD",
+  "citationStyle": "keep-original"
+}
+```
+
 ### ProviderProfile
 
 ```json
@@ -474,6 +540,13 @@ interface ProviderProfile {
 5. Synthesis：方法矩阵、gap 矩阵、综述草稿。
 6. Ideas：研究问题卡、实验路线、风险。
 
+### 设置页新增语言项
+
+- 输出语言：中文、English、日本語。
+- 源语言：自动检测、中文、English、日本語、Other。
+- 模板版本：默认 `summary-v1`，后续可选择领域模板。
+- 文件命名：同一论文多语言输出时在文件名或 frontmatter 中保留语言标识，例如 `<item-key>.zh-CN.md`、`<item-key>.en-US.md`、`<item-key>.ja-JP.md`。
+
 ## 8. 写操作边界
 
 默认只读。以下操作必须用户确认：
@@ -521,6 +594,9 @@ interface ProviderProfile {
 6. 数据隐私  
    规避：设置页明确显示 provider、baseURL、输入模式；默认不自动上传全库内容。
 
+7. 多语言输出结构漂移
+   规避：三种语言共用同一 schema 和验收测试；模板只负责表达，不改变字段集合。
+
 ## 10. 当前仓库下一步任务
 
 优先级 P0：
@@ -530,6 +606,8 @@ interface ProviderProfile {
 - 修正 OpenAI-compatible stream 的兼容解析，确保 MiniMax 返回能稳定抽取正文。
 - 给 Markdown frontmatter 增加 `inputMode`、`summaryType`、`evidenceLevel`。
 - 增加 `ProviderProfile` 与 capability 判断，避免 PDF base64、stream、jsonMode 被错误启用。
+- 增加 `outputLanguage`、`sourceLanguage`、`templateVersion` 设置和 frontmatter。
+- 增加中文、英文、日文三套单篇报告 prompt 模板。
 
 优先级 P1：
 
@@ -538,6 +616,7 @@ interface ProviderProfile {
 - 建立 `collections/<collection-key>/` 缓存目录。
 - 建立 `paper-notes/`、`knowledge/`、`writing/` 三层输出。
 - 生成 collection 级方法矩阵初版。
+- 增加中文、英文、日文三套 collection 综述和研究问题卡模板。
 
 优先级 P2：
 
@@ -561,6 +640,7 @@ interface ProviderProfile {
 v1 不做联网检索，不做全自动综述，不做复杂向量库。v1 只交付：
 
 - 单篇深度阅读报告。
+- 中文、英文、日文三种单篇报告输出。
 - collection 论文清单。
 - 基于已有单篇报告的手动综述草稿。
 - linked attachment 输出。
