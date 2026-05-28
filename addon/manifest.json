@@ -1,0 +1,13 @@
+{
+  "manifest_version": 2,
+  "name": "Zotero Markdown Summary",
+  "version": "0.1.0",
+  "description": "Create Markdown summaries as linked attachments for Zotero items.",
+  "applications": {
+    "zotero": {
+      "id": "zotero-markdown-summary@diantao.local",
+      "strict_min_version": "9.0",
+      "strict_max_version": "9.*"
+    }
+  }
+}
