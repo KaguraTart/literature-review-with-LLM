@@ -370,15 +370,15 @@ const SOURCE_MARKERS = [
   },
   {
     id: "workbench.p2-composer-controls",
-    description: "Workbench composer uses compact pill controls and circular send/stop buttons inspired by modern chat inputs",
+    description: "Workbench composer uses compact controls, one settings drawer, and circular send/stop buttons inspired by modern chat inputs",
     files: ["addon/content/workbench.xhtml", "addon/content/workbench.css", "addon/content/workbench.js", "tests/workbenchWriteback.test.ts"],
     markers: [
       "zms-composer-toolbar",
       "zms-composer-profile",
-      "zms-composer-skill",
+      "zms-skill",
       "zms-send-button",
-      "openSkillSettings",
-      "zms-composer-settings"
+      "saveProfileSettings",
+      "zms-attach-image"
     ]
   },
   {

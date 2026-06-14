@@ -174,6 +174,45 @@ describe("provider adapters", () => {
     })).toBeUndefined();
   });
 
+  it("attaches image inputs for supported provider protocols", () => {
+    const imageInput = {
+      type: "text" as const,
+      text: "paper text",
+      images: [{ name: "screen.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+    };
+    const chatBody = bodyFor({ ...baseRequest, input: imageInput });
+    expect((chatBody.messages as any[]).at(-1).content).toEqual([
+      { type: "text", text: "prompt\n\npaper text" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } }
+    ]);
+
+    const responsesBody = bodyFor({
+      ...baseRequest,
+      profile: { ...profile, protocol: "openai_responses" },
+      input: imageInput
+    });
+    expect((responsesBody.input as any[])[0].content).toContainEqual({
+      type: "input_image",
+      image_url: "data:image/png;base64,aW1hZ2U="
+    });
+
+    const anthropicBody = bodyFor({
+      ...baseRequest,
+      profile: { ...profile, protocol: "anthropic_messages", baseURL: "https://api.anthropic.com" },
+      input: imageInput
+    });
+    expect((anthropicBody.messages as any[])[0].content).toContainEqual({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" }
+    });
+
+    expect(() => bodyFor({
+      ...baseRequest,
+      profile: { ...profile, capabilities: { ...defaultCapabilities, imageBase64: false } },
+      input: imageInput
+    })).toThrow("image input");
+  });
+
   it("preserves custom auth headers and omits empty default auth headers", () => {
     expect(headersFor({
       ...profile,

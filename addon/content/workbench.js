@@ -64,7 +64,8 @@ var ZoteroMarkdownSummaryWorkbench = {
     writePreview: null,
     candidates: [],
     candidatePath: "",
-    settingsOpen: false
+    settingsOpen: false,
+    pendingImages: []
   },
 
   async init() {
@@ -116,11 +117,11 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-send": () => this.send(),
       "zms-stop": () => this.stop(),
       "zms-settings-toggle": () => this.toggleSettings(),
-      "zms-composer-settings": () => this.toggleSettings(true),
       "zms-settings-close": () => this.toggleSettings(false),
-      "zms-profile-trigger": () => this.openProfileSettings(),
-      "zms-composer-profile": () => this.openProfileSettings(),
-      "zms-composer-skill": () => this.openSkillSettings()
+      "zms-close-workbench": () => this.closeWorkbench(),
+      "zms-save-profile-settings": () => this.saveProfileSettings(),
+      "zms-test-profile-settings": () => this.testProfileSettings(),
+      "zms-attach-image": () => this.chooseImages()
     };
     for (const [id, handler] of Object.entries(bindings)) {
       const element = document.getElementById(id);
@@ -140,6 +141,15 @@ var ZoteroMarkdownSummaryWorkbench = {
       });
       if (input.dataset) input.dataset.zmsShortcutBound = "1";
     }
+    if (!this.state.escapeBound && typeof document.addEventListener === "function") {
+      document.addEventListener?.("keydown", (event) => {
+        if (event.key !== "Escape" || !this.state.settingsOpen) return;
+        event.preventDefault?.();
+        this.toggleSettings(false);
+      });
+      this.state.escapeBound = true;
+    }
+    this.bindImageInput();
     const composer = document.getElementById("zms-composer");
     if (input && input.dataset?.zmsFocusBound !== "1") {
       for (const eventName of ["pointerdown", "mousedown", "click"]) {
@@ -158,6 +168,92 @@ var ZoteroMarkdownSummaryWorkbench = {
       if (composer.dataset) composer.dataset.zmsFocusBound = "1";
     }
     this.updateComposerState();
+  },
+
+  bindImageInput() {
+    const fileInput = document.getElementById("zms-image-file");
+    if (fileInput && fileInput.dataset?.zmsBound !== "1") {
+      fileInput.addEventListener("change", async () => {
+        await this.addImageFiles(Array.from(fileInput.files || []));
+        fileInput.value = "";
+      });
+      if (fileInput.dataset) fileInput.dataset.zmsBound = "1";
+    }
+    const input = document.getElementById("zms-input");
+    if (input && input.dataset?.zmsImageBound !== "1") {
+      input.addEventListener("paste", async (event) => {
+        const files = imageFilesFromDataTransfer(event.clipboardData);
+        if (!files.length) return;
+        event.preventDefault?.();
+        await this.addImageFiles(files);
+      });
+      if (input.dataset) input.dataset.zmsImageBound = "1";
+    }
+    const composer = document.getElementById("zms-composer");
+    if (composer && composer.dataset?.zmsDropBound !== "1") {
+      composer.addEventListener("dragover", (event) => {
+        if (!imageFilesFromDataTransfer(event.dataTransfer).length) return;
+        event.preventDefault?.();
+        composer.setAttribute("data-dragging-image", "true");
+      });
+      composer.addEventListener("dragleave", () => composer.removeAttribute("data-dragging-image"));
+      composer.addEventListener("drop", async (event) => {
+        const files = imageFilesFromDataTransfer(event.dataTransfer);
+        composer.removeAttribute("data-dragging-image");
+        if (!files.length) return;
+        event.preventDefault?.();
+        await this.addImageFiles(files);
+      });
+      if (composer.dataset) composer.dataset.zmsDropBound = "1";
+    }
+  },
+
+  chooseImages() {
+    document.getElementById("zms-image-file")?.click?.();
+  },
+
+  async addImageFiles(files) {
+    const imageFiles = (files || []).filter((file) => String(file?.type || "").startsWith("image/"));
+    if (!imageFiles.length) return;
+    try {
+      const attachments = [];
+      for (const file of imageFiles.slice(0, 6)) {
+        attachments.push(await imageAttachmentFromFile(file));
+      }
+      this.state.pendingImages.push(...attachments.filter(Boolean));
+      this.renderImageAttachments();
+    } catch (err) {
+      this.setStatus(`${this.t("imageReadFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  removeImage(id) {
+    this.state.pendingImages = this.state.pendingImages.filter((image) => image.id !== id);
+    this.renderImageAttachments();
+  },
+
+  renderImageAttachments() {
+    const container = document.getElementById("zms-image-attachments");
+    if (!container) return;
+    container.textContent = "";
+    container.hidden = this.state.pendingImages.length === 0;
+    for (const image of this.state.pendingImages) {
+      const chip = document.createElement("div");
+      chip.className = "zms-image-chip";
+      const preview = document.createElement("img");
+      preview.src = `data:${image.mimeType};base64,${image.base64}`;
+      preview.alt = image.name || this.t("imageInput");
+      const label = document.createElement("span");
+      label.textContent = image.name || this.t("imageInput");
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.title = this.t("removeImage");
+      remove.setAttribute?.("aria-label", this.t("removeImage"));
+      remove.onclick = () => this.removeImage(image.id);
+      chip.append(preview, label, remove);
+      container.appendChild(chip);
+    }
   },
 
   focusComposerInput() {
@@ -182,6 +278,24 @@ var ZoteroMarkdownSummaryWorkbench = {
   openSkillSettings() {
     this.toggleSettings(true);
     window.setTimeout?.(() => focusElement(document.getElementById("zms-skill")), 30);
+  },
+
+  closeWorkbench() {
+    if (this.state.launchPayload?.embedded) {
+      try {
+        const panel = window.parent?.document?.getElementById?.("zotero-markdown-summary-workbench-panel");
+        const close = panel?.querySelector?.(".zms-embedded-close");
+        if (close?.click) {
+          close.click();
+          return;
+        }
+        panel?.remove?.();
+        return;
+      } catch (_err) {
+        // Fall through to window close.
+      }
+    }
+    window.close?.();
   },
 
   queueComposerFocus() {
@@ -221,11 +335,19 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-workbench-title", this.t("title"));
     setText("zms-settings-toggle", this.t("settings"));
     setText("zms-settings-close", this.t("closeSettings"));
-    setButtonLabel("zms-composer-settings", "+", this.t("settings"));
+    setButtonLabel("zms-close-workbench", "×", this.t("closeSettings"));
+    setButtonLabel("zms-attach-image", "+", this.t("attachImageTitle"));
     setButtonLabel("zms-send", "↑", this.t("send"));
     setButtonLabel("zms-stop", "■", this.t("stop"));
     setText("zms-chat-paper-title", this.t("title"));
     setText("zms-quick-settings-heading", this.t("quickSettings"));
+    setText("zms-save-profile-settings", this.t("save"));
+    setText("zms-test-profile-settings", this.t("saveAndTest"));
+    setText("zms-profile-name-label", this.t("profileName"));
+    setText("zms-profile-base-url-label", this.t("baseURL"));
+    setText("zms-profile-api-key-label", this.t("apiKey"));
+    setText("zms-profile-model-label", this.t("model"));
+    setText("zms-profile-image-text", this.t("imageInput"));
     setText("zms-paper-heading", this.t("paper"));
     setText("zms-profile-label", this.t("provider"));
     setText("zms-skill-label", this.t("skill"));
@@ -292,12 +414,93 @@ var ZoteroMarkdownSummaryWorkbench = {
     }
     this.renderProfileStatus();
     this.renderProfileTrigger();
+    this.renderProfileEditor();
     select.onchange = () => {
       this.state.profile = this.state.profiles.find((profile) => profile.id === select.value) || null;
       this.renderProfileStatus();
       this.renderProfileTrigger();
+      this.renderProfileEditor();
       this.setStatus(this.state.profile ? profileStatusText(this.state.profile, (key) => this.t(key)) : this.t("noProfile"));
     };
+  },
+
+  renderProfileEditor() {
+    const profile = this.state.profile || {};
+    setInputValue("zms-profile-name", profile.name || profile.id || "");
+    setInputValue("zms-profile-base-url", profile.baseURL || "");
+    setInputValue("zms-profile-api-key", profile.apiKey || "");
+    setInputValue("zms-profile-model", profile.model || "");
+    const imageInput = document.getElementById("zms-profile-image-input");
+    if (imageInput) imageInput.checked = profile?.capabilities?.imageBase64 === true;
+  },
+
+  profileFromSettingsPanel() {
+    if (!this.state.profile) return null;
+    const next = hydrateProfile({
+      ...this.state.profile,
+      name: document.getElementById("zms-profile-name")?.value?.trim() || this.state.profile.name || this.state.profile.id,
+      baseURL: document.getElementById("zms-profile-base-url")?.value?.trim() || this.state.profile.baseURL,
+      apiKey: document.getElementById("zms-profile-api-key")?.value?.trim() || "",
+      model: document.getElementById("zms-profile-model")?.value?.trim() || "",
+      capabilities: {
+        ...(this.state.profile.capabilities || {}),
+        imageBase64: document.getElementById("zms-profile-image-input")?.checked === true
+      }
+    });
+    return next;
+  },
+
+  saveProfileSettings(options = {}) {
+    const profile = this.profileFromSettingsPanel();
+    if (!profile) {
+      this.setStatus(this.t("noProfile"));
+      return null;
+    }
+    this.state.profile = profile;
+    const updated = [
+      { ...profile, isDefault: true },
+      ...this.state.profiles
+        .filter((item) => item.id !== profile.id)
+        .map((item) => ({ ...item, isDefault: false }))
+    ];
+    this.state.profiles = normalizeDefaultProfileSelection(updated).map(hydrateProfile);
+    setPref("activeProfileId", profile.id || "");
+    setPref("profilesJson", JSON.stringify(this.state.profiles, null, 2));
+    setPref("provider", workbenchProviderFromProfile(profile, pref("provider")));
+    setPref("baseURL", profile.baseURL || "");
+    setPref("apiKey", profile.apiKey || "");
+    setPref("model", profile.model || "");
+    this.renderProfiles();
+    if (options.status !== false) this.setStatus(this.t("saved"));
+    return profile;
+  },
+
+  async testProfileSettings() {
+    const profile = this.saveProfileSettings({ status: false });
+    if (!profile) return;
+    if (isLocalAgentProfile(profile)) {
+      this.setStatus(this.t("testing"));
+      try {
+        await verifyLocalAgentConnection(profile);
+        this.setStatus(this.t("testOk"));
+      } catch (err) {
+        this.setStatus(`${this.t("testFailed")}: ${safeError(err)}`);
+      }
+      return;
+    }
+    try {
+      assertRemoteProfileReady(profile, (key) => this.t(key));
+      this.setStatus(this.t("testing"));
+      const response = await fetch(endpointForProfile(profile), {
+        method: "POST",
+        headers: headersForProfile(profile),
+        body: JSON.stringify(withProviderBodyDefaults(profile, connectionTestBodyForProfile(profile)))
+      });
+      const text = await response.text();
+      this.setStatus(response.ok ? this.t("testOk") : `${this.t("testFailed")}: ${providerErrorText(response.status, text)}`);
+    } catch (err) {
+      this.setStatus(`${this.t("testFailed")}: ${safeError(err)}`);
+    }
   },
 
   renderProfileStatus() {
@@ -563,7 +766,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       copy.textContent = this.t("copyAnswer");
       copy.title = this.t("copyAnswerTitle");
       copy.onclick = async () => {
-        const copied = await copyText(message.content || "");
+        const copied = await copyText(answerTextForMessage(message));
         copy.textContent = copied ? this.t("copied") : this.t("copyFailed");
         this.setStatus(copied ? this.t("copied") : this.t("copyFailed"));
         window.setTimeout?.(() => {
@@ -595,20 +798,27 @@ var ZoteroMarkdownSummaryWorkbench = {
     const input = document.getElementById("zms-input");
     const content = input.value.trim();
     const skillId = document.getElementById("zms-skill").value;
+    const images = [...this.state.pendingImages];
     if (this.state.requestInFlight) {
       this.setStatus(this.t("thinking"));
       return;
     }
-    if (!content && !skillId) return;
+    if (!content && !skillId && !images.length) return;
     if (!this.state.profile) {
       this.setStatus(this.t("noProfile"));
       return;
     }
+    if (images.length && !canUseImageInput(this.state.profile)) {
+      this.setStatus(this.t("imageUnsupported"));
+      return;
+    }
     const messageProfile = profileMessageMetadata(this.state.profile);
-    const userMessage = makeMessage("user", content || this.t(skillId), { skillId, ...messageProfile });
+    const userMessage = makeMessage("user", content || this.t(skillId), { skillId, images: images.map(imageMessageMetadata), ...messageProfile });
     this.state.messages.push(userMessage);
     this.appendMessageElement(userMessage);
     input.value = "";
+    this.state.pendingImages = [];
+    this.renderImageAttachments();
     const assistantMessage = makeMessage("assistant", "", { skillId, ...messageProfile });
     this.state.messages.push(assistantMessage);
     const assistantBody = this.appendMessageElement(assistantMessage);
@@ -620,7 +830,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       const answer = await this.callModel(content, skillId, (delta) => {
         assistantMessage.content += delta;
         renderMessageContent(assistantBody, assistantMessage);
-      });
+      }, images);
       if (!assistantMessage.content) {
         assistantMessage.content = answer;
         renderMessageContent(assistantBody, assistantMessage);
@@ -654,7 +864,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     await this.send();
   },
 
-  async callModel(userText, skillId, onDelta) {
+  async callModel(userText, skillId, onDelta, images = []) {
     const profile = this.state.profile;
     if (!profile) throw new Error(this.t("noProfile"));
     const localAgents = localAgentPlan(profile, skillId);
@@ -693,7 +903,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       }
     }
     assertRemoteProfileReady(profile, (key) => this.t(key));
-    const requestInput = await buildRequestInput(profile, this.state.inputMode, this.state.pdf);
+    const requestInput = await buildRequestInput(profile, this.state.inputMode, this.state.pdf, images);
     this.setStatus(`${this.t("thinking")} - ${requestInputStatusText(requestInput, (key) => this.t(key))}`);
     const response = await requestModelWithRetry(
       profile,
@@ -794,7 +1004,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       chatSessionId: this.state.sessionId,
       action,
       targetSection,
-      replacementText: this.state.writeMessage.content,
+      replacementText: answerTextForMessage(this.state.writeMessage),
       skillId: this.state.writeMessage.skillId,
       now: new Date().toISOString()
     });
@@ -1062,7 +1272,7 @@ function normalizeProfileId(value) {
 
 function workbenchProviderDefaults(provider) {
   const id = String(provider || "openai_compatible").trim();
-  const commonCapabilities = { text: true, pdfBase64: false, fileReference: false, streaming: true, embeddings: false, jsonMode: false, toolUse: false, modelList: true };
+  const commonCapabilities = { text: true, pdfBase64: false, imageBase64: true, fileReference: false, streaming: true, embeddings: false, jsonMode: false, toolUse: false, modelList: true };
   if (id === "openai") {
     return { id: "openai", name: "OpenAI", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://api.openai.com/v1", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, bodyExtra: {} };
   }
@@ -1133,7 +1343,7 @@ function workbenchProviderDefaults(provider) {
     return { id: "lm-studio", name: "LM Studio", protocol: "openai_chat", endpointMode: "base_url", baseURL: "http://127.0.0.1:1234/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
   }
   if (id === "local_agents" || id === "local-agents") {
-    return { id: "local-agents", name: "Local Agents", protocol: "openai_chat", endpointMode: "base_url", baseURL: "http://127.0.0.1:3333/v1", model: "", capabilities: { ...commonCapabilities, streaming: false, modelList: false }, bodyExtra: { localAgent: { endpoint: "http://127.0.0.1:3333/mcp", payloadMode: "jsonrpc", timeoutSeconds: 180, "ask-gemini": { tool: "ask_gemini" }, "ask-claude": { tool: "ask_claude" }, "ask-opencode": { tool: "ask_opencode" }, "ask-all-agents": { tool: "ask_all_agents" }, "ask-gemini-claude": { tool: "ask_all_agents", args: { agents: ["gemini", "claude"] } }, "check-local-agents": { tool: "check_local_agents", args: { timeoutSeconds: 30 } } } } };
+    return { id: "local-agents", name: "Local Agents", protocol: "openai_chat", endpointMode: "base_url", baseURL: "http://127.0.0.1:3333/v1", model: "", capabilities: { ...commonCapabilities, imageBase64: false, streaming: false, modelList: false }, bodyExtra: { localAgent: { endpoint: "http://127.0.0.1:3333/mcp", payloadMode: "jsonrpc", timeoutSeconds: 180, "ask-gemini": { tool: "ask_gemini" }, "ask-claude": { tool: "ask_claude" }, "ask-opencode": { tool: "ask_opencode" }, "ask-all-agents": { tool: "ask_all_agents" }, "ask-gemini-claude": { tool: "ask_all_agents", args: { agents: ["gemini", "claude"] } }, "check-local-agents": { tool: "check_local_agents", args: { timeoutSeconds: 30 } } } } };
   }
   return { id: "openai-compatible", name: "OpenAI Compatible Chat", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.openai.com/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
 }
@@ -1209,6 +1419,7 @@ function profileStatusText(profile, translate = (key) => key) {
     `${t("profileModelStatus")}: ${model}`,
     `${t("profileEndpointStatus")}: ${endpoint}`,
     canUsePdfBase64Input(profile) ? t("profilePdfReady") : t("profilePdfTextOnly"),
+    canUseImageInput(profile) ? t("profileImageReady") : t("profileImageOff"),
     profile?.capabilities?.streaming === true ? t("profileStreamReady") : t("profileStreamOff"),
     profileHasUsableAuth(profile) ? t("profileAuthReady") : t("profileAuthMissing")
   ];
@@ -1226,6 +1437,10 @@ function endpointForProfileSafe(profile) {
 
 function hasLocalAgentConfig(profile) {
   return !!(profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent);
+}
+
+function isLocalAgentProfile(profile) {
+  return hasLocalAgentConfig(profile);
 }
 
 function localAgentConfig(profile, skillId) {
@@ -1632,7 +1847,7 @@ function extractLocalAgentContent(rawText, _skillId, _tool) {
   }
   const content = chunks.join("\n").trim();
   if (content) return content;
-  return stripThink(String(rawText || "").trim());
+  return String(rawText || "").trim();
 }
 
 function localAgentPayloadTexts(rawText) {
@@ -1859,6 +2074,117 @@ function pref(key) {
   return Zotero.Prefs.get(`${ZMS_PREF_PREFIX}.${key}`, true);
 }
 
+function setPref(key, value) {
+  Zotero.Prefs.set(`${ZMS_PREF_PREFIX}.${key}`, value, true);
+}
+
+function connectionTestBodyForProfile(profile) {
+  if (profile.protocol === "anthropic_messages") {
+    return {
+      model: profile.model,
+      max_tokens: 32,
+      messages: [{ role: "user", content: "ping" }]
+    };
+  }
+  if (profile.protocol === "openai_responses") {
+    return {
+      model: profile.model,
+      input: "ping",
+      max_output_tokens: 32
+    };
+  }
+  return {
+    model: profile.model,
+    messages: [{ role: "user", content: "ping" }],
+    max_tokens: 32,
+    n: 1
+  };
+}
+
+async function verifyLocalAgentConnection(profile) {
+  const initializePayload = await assertLocalAgentRequestOk(localAgentConnectionTestRequestForProfile(profile));
+  if (initializePayload?.error) throw new Error(localAgentErrorText(200, JSON.stringify(initializePayload)));
+  const toolsPayload = await assertLocalAgentRequestOk(localAgentToolsListRequestForProfile(profile));
+  const names = localAgentToolNamesFromResponse(toolsPayload);
+  const missing = [...LOCAL_AGENT_TOOL_NAMES].filter((name) => !names.includes(name));
+  if (missing.length) throw new Error(`Missing Local Agents MCP tools: ${missing.join(", ")}`);
+  return true;
+}
+
+function localAgentConnectionTestRequestForProfile(profile) {
+  const localAgent = baseLocalAgentConfigForProfile(profile);
+  const endpoint = normalizeLocalAgentEndpoint(localAgent?.endpoint || "http://127.0.0.1:3333/mcp");
+  return {
+    url: endpoint,
+    headers: {
+      "content-type": "application/json",
+      ...(localAgent?.headers || {})
+    },
+    body: {
+      jsonrpc: "2.0",
+      id: `workbench-settings-${Date.now()}`,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: {
+          name: "literature-review-with-llm-workbench",
+          version: "0.1.0"
+        }
+      }
+    }
+  };
+}
+
+function localAgentToolsListRequestForProfile(profile) {
+  const localAgent = baseLocalAgentConfigForProfile(profile);
+  const endpoint = normalizeLocalAgentEndpoint(localAgent?.endpoint || "http://127.0.0.1:3333/mcp");
+  return {
+    url: endpoint,
+    headers: {
+      "content-type": "application/json",
+      ...(localAgent?.headers || {})
+    },
+    body: {
+      jsonrpc: "2.0",
+      id: `workbench-settings-tools-${Date.now()}`,
+      method: "tools/list",
+      params: {}
+    }
+  };
+}
+
+function baseLocalAgentConfigForProfile(profile) {
+  const raw = profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent;
+  if (typeof raw === "string") return { endpoint: raw };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return normalizeObjectStringMap(raw) || {};
+}
+
+async function assertLocalAgentRequestOk(request) {
+  const response = await fetch(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(request.body) });
+  const text = await response.text();
+  const data = safeParseJSON(text);
+  if (!response.ok || data?.error) throw new Error(localAgentErrorText(response.status, text));
+  return data || {};
+}
+
+function localAgentToolNamesFromResponse(data) {
+  const tools = Array.isArray(data?.result?.tools)
+    ? data.result.tools
+    : Array.isArray(data?.tools)
+      ? data.tools
+      : [];
+  return tools
+    .map((tool) => String(typeof tool === "string" ? tool : tool?.name || "").trim())
+    .filter(Boolean);
+}
+
+function localAgentErrorText(status, text) {
+  const detail = redact(providerErrorDetail(text));
+  return status && Number(status) !== 200 ? `HTTP ${status}: ${detail}` : detail;
+}
+
 function resolveUiLanguage(setting, locale) {
   if (typeof zmsResolveUiLanguage === "function") {
     return zmsResolveUiLanguage(setting, locale);
@@ -1908,6 +2234,11 @@ function setText(id, text) {
   if (element) element.textContent = text;
 }
 
+function setInputValue(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.value = value ?? "";
+}
+
 function setButtonLabel(id, visualText, accessibleText) {
   const element = document.getElementById(id);
   if (!element) return;
@@ -1917,14 +2248,75 @@ function setButtonLabel(id, visualText, accessibleText) {
 }
 
 function renderMessageContent(body, message) {
+  if (message?.role === "user") {
+    renderUserMessageContent(body, message);
+    return;
+  }
   if (message?.role !== "assistant" || !window.ZMSMarkdownRenderer?.renderMarkdown) {
     body.textContent = message?.content || "";
     return;
   }
   body.textContent = "";
-  const rendered = window.ZMSMarkdownRenderer.renderMarkdown(message.content || "");
+  const parts = splitThinkBlocks(message.content || "");
+  if (parts.reasoning.trim()) {
+    const details = document.createElement("details");
+    details.className = "zms-think";
+    const summary = document.createElement("summary");
+    summary.textContent = wbMessage("workbench", "thinkTitle");
+    const pre = document.createElement("pre");
+    pre.textContent = parts.reasoning.trim();
+    details.append(summary, pre);
+    body.appendChild(details);
+  }
+  const rendered = window.ZMSMarkdownRenderer.renderMarkdown(parts.answer || "");
   rendered.className = `${rendered.className || ""} zms-markdown`.trim();
   body.appendChild(rendered);
+}
+
+function renderUserMessageContent(body, message) {
+  body.textContent = "";
+  const text = document.createElement("div");
+  text.className = "zms-user-text";
+  text.textContent = message?.content || "";
+  body.appendChild(text);
+  const images = Array.isArray(message?.images) ? message.images : [];
+  if (!images.length) return;
+  const list = document.createElement("div");
+  list.className = "zms-user-image-list";
+  for (const image of images) {
+    const chip = document.createElement("span");
+    chip.className = "zms-user-image-chip";
+    chip.textContent = image.name || image.mimeType || "image";
+    list.appendChild(chip);
+  }
+  body.appendChild(list);
+}
+
+function answerTextForMessage(message) {
+  return splitThinkBlocks(message?.content || "").answer.trim();
+}
+
+function splitThinkBlocks(value) {
+  const text = String(value || "");
+  const reasoning = [];
+  let answer = "";
+  let cursor = 0;
+  const pattern = /<think\b[^>]*>([\s\S]*?)(?:<\/think>|$)/gi;
+  let match;
+  while ((match = pattern.exec(text))) {
+    answer += text.slice(cursor, match.index);
+    reasoning.push(match[1] || "");
+    cursor = pattern.lastIndex;
+    if (!/<\/think>/i.test(match[0])) {
+      cursor = text.length;
+      break;
+    }
+  }
+  answer += text.slice(cursor);
+  return {
+    reasoning: reasoning.join("\n\n").trim(),
+    answer: answer.trim()
+  };
 }
 
 function profileCompactLabel(profile, modelLabel = "Model") {
@@ -2289,29 +2681,34 @@ function canUsePdfBase64Input(profile) {
   return profile?.capabilities?.pdfBase64 === true && profile.protocol !== "openai_chat";
 }
 
-async function buildRequestInput(profile, inputMode, pdf) {
+function canUseImageInput(profile) {
+  return profile?.capabilities?.imageBase64 === true;
+}
+
+async function buildRequestInput(profile, inputMode, pdf, images = []) {
   if (normalizeInputMode(inputMode) !== "pdf_base64") {
-    return { type: "text", source: "text_mode" };
+    return { type: "text", source: "text_mode", images: normalizedImageAttachments(images) };
   }
   if (!canUsePdfBase64Input(profile)) {
-    return { type: "text", source: "unsupported_profile", reason: "Profile does not support pdf_base64" };
+    return { type: "text", source: "unsupported_profile", reason: "Profile does not support pdf_base64", images: normalizedImageAttachments(images) };
   }
   if (!pdf) {
-    return { type: "text", source: "no_pdf", reason: "No PDF attachment" };
+    return { type: "text", source: "no_pdf", reason: "No PDF attachment", images: normalizedImageAttachments(images) };
   }
   const pdfPath = await attachmentFilePath(pdf);
   if (!pdfPath) {
-    return { type: "text", source: "no_pdf_path", reason: "PDF path unavailable" };
+    return { type: "text", source: "no_pdf_path", reason: "PDF path unavailable", images: normalizedImageAttachments(images) };
   }
   const base64 = await attachmentToBase64(pdfPath);
   if (!base64) {
-    return { type: "text", source: "read_failed", reason: "Failed to encode PDF as base64" };
+    return { type: "text", source: "read_failed", reason: "Failed to encode PDF as base64", images: normalizedImageAttachments(images) };
   }
   return {
     type: "pdf_base64",
     source: "pdf_base64",
     base64,
-    filename: attachmentDisplayName(pdf) || "paper.pdf"
+    filename: attachmentDisplayName(pdf) || "paper.pdf",
+    images: normalizedImageAttachments(images)
   };
 }
 
@@ -2381,6 +2778,75 @@ function bytesToBase64(bytes) {
     binary += String.fromCharCode(...chunk);
   }
   return btoa(binary);
+}
+
+function imageFilesFromDataTransfer(dataTransfer) {
+  const files = [];
+  for (const file of Array.from(dataTransfer?.files || [])) {
+    if (String(file?.type || "").startsWith("image/")) files.push(file);
+  }
+  for (const item of Array.from(dataTransfer?.items || [])) {
+    if (String(item?.type || "").startsWith("image/") && typeof item.getAsFile === "function") {
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  const seen = new Set();
+  return files.filter((file) => {
+    const key = `${file.name || ""}:${file.size || 0}:${file.type || ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function imageAttachmentFromFile(file) {
+  const dataURL = await fileToDataURL(file);
+  const match = /^data:([^;,]+);base64,(.*)$/i.exec(dataURL);
+  if (!match) throw new Error("Unsupported image data");
+  return {
+    id: `image-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    name: String(file?.name || "screenshot.png"),
+    mimeType: match[1] || file?.type || "image/png",
+    base64: match[2] || "",
+    size: Number(file?.size) || 0
+  };
+}
+
+function fileToDataURL(file) {
+  if (typeof FileReader !== "undefined") {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("FileReader failed"));
+      reader.readAsDataURL(file);
+    });
+  }
+  if (typeof file?.arrayBuffer === "function") {
+    return file.arrayBuffer().then((buffer) => {
+      const mimeType = file.type || "image/png";
+      return `data:${mimeType};base64,${bytesToBase64(new Uint8Array(buffer))}`;
+    });
+  }
+  throw new Error("Image file API is unavailable");
+}
+
+function normalizedImageAttachments(images) {
+  return (images || [])
+    .filter((image) => image?.base64 && image?.mimeType)
+    .map((image) => ({
+      name: String(image.name || "image.png"),
+      mimeType: String(image.mimeType || "image/png"),
+      base64: String(image.base64 || "")
+    }));
+}
+
+function imageMessageMetadata(image) {
+  return {
+    name: image?.name || "image.png",
+    mimeType: image?.mimeType || "image/png",
+    size: Number(image?.size) || 0
+  };
 }
 
 function endpointForProfile(profile) {
@@ -2488,8 +2954,10 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
   const baseSystem = systemPrompt || "You are a careful academic paper reading assistant.";
   const system = `${baseSystem}\n${languageInstruction(outputLanguage)}`;
   const baseText = messagesToText(messages);
-  const input = requestInput?.type === "pdf_base64" && requestInput.base64;
   const stream = shouldStream(profile, streamEnabled);
+  if (requestInputImages(requestInput).length && !canUseImageInput(profile)) {
+    throw new Error("Selected provider profile does not support image input");
+  }
   if (profile.protocol === "anthropic_messages") {
     return withProviderBodyDefaults(profile, {
       model: profile.model,
@@ -2509,7 +2977,7 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
       stream
     });
   }
-  return withProviderBodyDefaults(profile, { model: profile.model, messages: [{ role: "system", content: system }, ...messages], max_tokens: Number(pref("maxOutputTokens")) || 8192, temperature: Number(pref("temperature")) || 1, stream, n: 1 });
+  return withProviderBodyDefaults(profile, { model: profile.model, messages: [{ role: "system", content: system }, ...openaiChatMessages(messages, requestInput)], max_tokens: Number(pref("maxOutputTokens")) || 8192, temperature: Number(pref("temperature")) || 1, stream, n: 1 });
 }
 
 function shouldStream(profile, streamEnabled = true) {
@@ -2567,7 +3035,34 @@ function openaiResponsesInput(messages, requestInput = {}) {
       file_data: `data:application/pdf;base64,${requestInput.base64}`
     });
   }
+  for (const image of requestInputImages(requestInput)) {
+    appendOpenAIResponsesPart(input, lastUserIndex, {
+      type: "input_image",
+      image_url: imageDataURL(image)
+    });
+  }
   return input;
+}
+
+function openaiChatMessages(messages, requestInput = {}) {
+  const mapped = messages.map((message) => ({ role: message.role, content: message.content }));
+  const images = requestInputImages(requestInput);
+  if (!images.length) return mapped;
+  const lastUserIndex = findLastIndex(mapped, (message) => message.role === "user");
+  const imageParts = images.map((image) => ({ type: "image_url", image_url: { url: imageDataURL(image) } }));
+  if (lastUserIndex >= 0) {
+    const baseText = String(mapped[lastUserIndex].content || "");
+    mapped[lastUserIndex] = {
+      role: "user",
+      content: [
+        { type: "text", text: baseText },
+        ...imageParts
+      ]
+    };
+    return mapped;
+  }
+  mapped.push({ role: "user", content: imageParts });
+  return mapped;
 }
 
 function appendOpenAIResponsesPart(input, lastUserIndex, part) {
@@ -2713,12 +3208,22 @@ function extractResponseText(protocol, data) {
       || modelTextFromValue(data?.content)
       || modelTextFromStreamContainer(data);
   if (!text) throw new Error("No text returned from model");
-  return stripThink(String(text).trim());
+  return String(text).trim();
 }
 
 function anthropicMessages(messages, requestInput, baseText) {
   const mapped = messages.map((message) => ({ role: message.role, content: message.content }));
   const content = [];
+  for (const image of requestInputImages(requestInput)) {
+    content.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: image.mimeType || "image/png",
+        data: image.base64 || ""
+      }
+    });
+  }
   if (requestInput?.type === "pdf_base64" && requestInput.base64) {
     content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: requestInput.base64 } });
   }
@@ -2733,6 +3238,14 @@ function anthropicMessages(messages, requestInput, baseText) {
   }
   mapped.push({ role: "user", content });
   return mergeConsecutiveAnthropicMessages(mapped);
+}
+
+function requestInputImages(requestInput) {
+  return Array.isArray(requestInput?.images) ? requestInput.images.filter((image) => image?.base64) : [];
+}
+
+function imageDataURL(image) {
+  return `data:${image.mimeType || "image/png"};base64,${image.base64 || ""}`;
 }
 
 function mergeConsecutiveAnthropicMessages(messages) {

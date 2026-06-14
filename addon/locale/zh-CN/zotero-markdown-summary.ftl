@@ -1,4 +1,4 @@
-workbench-title = 论文聊天工作台
+workbench-title = Literature Review with LLM
 workbench-open-title = 打开论文聊天工作台
 chat-send = 发送
 chat-stop = 停止
@@ -40,7 +40,7 @@ writeback-confirm = 确认写入
 writeback-action-replace = 替换章节
 writeback-action-append = 追加到章节
 writeback-action-notes = 追加到聊天摘录
-settings-title = Markdown 摘要
+settings-title = Literature Review with LLM
 settings-save = 保存设置
 settings-test = 测试连接
 status-ready = 就绪

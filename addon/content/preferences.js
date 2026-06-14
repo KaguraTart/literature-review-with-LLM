@@ -110,7 +110,9 @@ var ZoteroMarkdownSummaryPrefs = {
     this.refreshProfileStatus();
   },
 
-  save() {
+  save(options = {}) {
+    const updateProfile = options.updateProfile !== false;
+    if (updateProfile && !this.upsertProfileFromEditor()) return false;
     const json = document.getElementById("zms-profilesJson").value;
     try {
       JSON.parse(json);
@@ -129,41 +131,43 @@ var ZoteroMarkdownSummaryPrefs = {
     this.refreshProfileOptions();
     this.applyLanguage();
     this.refreshProfileStatus();
-    this.setStatus(this.t("saved"));
+    if (options.statusKey !== "") this.setStatus(this.t(options.statusKey || "saved"));
     return true;
   },
 
-  syncLegacyToProfile() {
+  upsertProfileFromEditor() {
     let profiles;
     try {
       profiles = JSON.parse(document.getElementById("zms-profilesJson").value || "[]");
+      if (!Array.isArray(profiles)) profiles = [];
     } catch (_err) {
       this.setStatus(this.t("jsonInvalid"));
-      return;
+      return null;
     }
-    const activeProfileId = normalizeProfileId(document.getElementById("zms-activeProfileId").value) || "custom";
-    const provider = document.getElementById("zms-provider").value;
-    const defaults = providerDefaults(provider);
-    const profile = {
-      id: activeProfileId,
-      name: activeProfileId || defaults.name,
-      protocol: defaults.protocol,
-      endpointMode: defaults.endpointMode,
-      baseURL: document.getElementById("zms-baseURL").value || defaults.baseURL,
-      fullURL: defaults.fullURL,
-      apiKey: document.getElementById("zms-apiKey").value,
-      model: document.getElementById("zms-model").value || defaults.model,
-      capabilities: { ...defaults.capabilities },
-      customHeaders: {},
-      bodyExtra: defaults.bodyExtra || {},
-      isDefault: true
-    };
-    const localAgent = this.localAgentFromEditor();
-    if (localAgent) profile.bodyExtra.localAgent = localAgent;
-    profiles = profiles.filter((item) => item.id !== activeProfileId).map((item) => ({ ...item, isDefault: false }));
-    profiles.unshift(profile);
-    document.getElementById("zms-profilesJson").value = JSON.stringify(profiles, null, 2);
-    this.save();
+    const profile = this.profileFromEditor();
+    if (!profile) return null;
+    const updated = profiles
+      .filter((item) => item?.id !== profile.id)
+      .map((item) => ({ ...item, isDefault: false }));
+    updated.unshift({ ...profile, isDefault: true });
+    this.applyProfileToBasicFields(profile);
+    document.getElementById("zms-profilesJson").value = JSON.stringify(updated, null, 2);
+    this.refreshProfileOptions();
+    this.refreshProfileStatus();
+    return profile;
+  },
+
+  applyProfileToBasicFields(profile) {
+    if (!profile) return;
+    document.getElementById("zms-activeProfileId").value = profile.id || "";
+    document.getElementById("zms-provider").value = providerFromProfile(profile);
+    document.getElementById("zms-baseURL").value = profile.baseURL || "";
+    document.getElementById("zms-apiKey").value = profile.apiKey || "";
+    document.getElementById("zms-model").value = profile.model || "";
+  },
+
+  syncLegacyToProfile() {
+    this.saveProfileFromEditor();
     this.loadProfileEditor();
   },
 
@@ -249,29 +253,9 @@ var ZoteroMarkdownSummaryPrefs = {
   },
 
   saveProfileFromEditor() {
-    let profiles;
-    try {
-      profiles = JSON.parse(document.getElementById("zms-profilesJson").value || "[]");
-      if (!Array.isArray(profiles)) profiles = [];
-    } catch (_err) {
-      this.setStatus(this.t("jsonInvalid"));
-      return;
-    }
-    const profile = this.profileFromEditor();
+    const profile = this.upsertProfileFromEditor();
     if (!profile) return;
-    const updated = profiles
-      .filter((item) => item.id !== profile.id)
-      .map((item) => ({ ...item, isDefault: false }));
-    updated.unshift({ ...profile, isDefault: true });
-    document.getElementById("zms-activeProfileId").value = profile.id;
-    document.getElementById("zms-provider").value = providerFromProfile(profile);
-    document.getElementById("zms-baseURL").value = profile.baseURL || "";
-    document.getElementById("zms-apiKey").value = profile.apiKey || "";
-    document.getElementById("zms-model").value = profile.model || "";
-    document.getElementById("zms-profilesJson").value = JSON.stringify(updated, null, 2);
-    this.refreshProfileOptions();
-    this.refreshProfileStatus();
-    if (this.save()) this.setStatus(this.t("profileSaved"));
+    if (this.save({ updateProfile: false, statusKey: "" })) this.setStatus(this.t("profileSaved"));
   },
 
   deleteProfileFromEditor() {
@@ -393,6 +377,7 @@ var ZoteroMarkdownSummaryPrefs = {
     return {
       text: !!document.getElementById("zms-cap-text").checked,
       pdfBase64: !!document.getElementById("zms-cap-pdfBase64").checked,
+      imageBase64: !!document.getElementById("zms-cap-imageBase64").checked,
       streaming: !!document.getElementById("zms-cap-streaming").checked,
       fileReference: !!document.getElementById("zms-cap-fileReference").checked,
       embeddings: !!document.getElementById("zms-cap-embeddings").checked,
@@ -407,6 +392,7 @@ var ZoteroMarkdownSummaryPrefs = {
     const merged = { ...defaults, ...(capabilities || {}) };
     document.getElementById("zms-cap-text").checked = !!merged.text;
     document.getElementById("zms-cap-pdfBase64").checked = !!merged.pdfBase64;
+    document.getElementById("zms-cap-imageBase64").checked = !!merged.imageBase64;
     document.getElementById("zms-cap-streaming").checked = !!merged.streaming;
     document.getElementById("zms-cap-fileReference").checked = !!merged.fileReference;
     document.getElementById("zms-cap-embeddings").checked = !!merged.embeddings;
@@ -416,8 +402,8 @@ var ZoteroMarkdownSummaryPrefs = {
   },
 
   async testConnection() {
-    const profile = this.profileFromEditor();
-    if (!profile || !this.save()) return;
+    const profile = this.upsertProfileFromEditor();
+    if (!profile || !this.save({ updateProfile: false, statusKey: "" })) return;
     if (isLocalAgentProfile(profile)) {
       try {
         await verifyLocalAgentConnection(profile);
@@ -436,6 +422,7 @@ var ZoteroMarkdownSummaryPrefs = {
       return;
     }
     try {
+      this.setStatus(this.t("testing"));
       const request = connectionTestRequestForProfile(profile);
       const response = await fetch(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(request.body) });
       const text = await response.text();
@@ -586,6 +573,7 @@ var ZoteroMarkdownSummaryPrefs = {
       "zms-profileLocalAgentFallback",
       "zms-cap-text",
       "zms-cap-pdfBase64",
+      "zms-cap-imageBase64",
       "zms-cap-streaming",
       "zms-cap-fileReference",
       "zms-cap-embeddings",
@@ -652,7 +640,6 @@ var ZoteroMarkdownSummaryPrefs = {
       setLabel(`zms-${key}-label`, key);
     }
     setLabel("zms-save-button", "save");
-    setLabel("zms-sync-profile-button", "syncProfile");
     setLabel("zms-test-button", "test");
     setLabel("zms-load-models-button", "loadModels");
     setLabel("zms-load-profile-button", "loadProfile");
@@ -800,6 +787,7 @@ function profileStatusText(profile, translate = (key) => key) {
     `${t("profileModelStatus")}: ${model}`,
     `${t("profileEndpointStatus")}: ${endpoint}`,
     canUsePdfBase64Input(profile) ? t("profilePdfReady") : t("profilePdfTextOnly"),
+    canUseImageInput(profile) ? t("profileImageReady") : t("profileImageOff"),
     profile?.capabilities?.streaming === true ? t("profileStreamReady") : t("profileStreamOff"),
     profileHasUsableAuth(profile) ? t("profileAuthReady") : t("profileAuthMissing")
   ];
@@ -817,6 +805,10 @@ function endpointForProfileSafe(profile) {
 
 function canUsePdfBase64Input(profile) {
   return profile?.capabilities?.pdfBase64 === true && profile.protocol !== "openai_chat";
+}
+
+function canUseImageInput(profile) {
+  return profile?.capabilities?.imageBase64 === true;
 }
 
 function profileDraftFromEditor() {
@@ -849,6 +841,7 @@ function capabilityDraftFromEditor() {
   return {
     text: !!document.getElementById("zms-cap-text")?.checked,
     pdfBase64: !!document.getElementById("zms-cap-pdfBase64")?.checked,
+    imageBase64: !!document.getElementById("zms-cap-imageBase64")?.checked,
     streaming: !!document.getElementById("zms-cap-streaming")?.checked,
     fileReference: !!document.getElementById("zms-cap-fileReference")?.checked,
     embeddings: !!document.getElementById("zms-cap-embeddings")?.checked,
@@ -1336,6 +1329,7 @@ function providerDefaults(provider) {
   const id = String(provider || "minimax");
   const commonCapabilities = {
     text: true,
+    imageBase64: true,
     fileReference: false,
     streaming: true,
     embeddings: false,
@@ -1652,7 +1646,7 @@ function providerDefaults(provider) {
       baseURL: "http://127.0.0.1:3333/v1",
       fullURL: "",
       model: "",
-      capabilities: { ...commonCapabilities, pdfBase64: false, streaming: false, modelList: false },
+      capabilities: { ...commonCapabilities, pdfBase64: false, imageBase64: false, streaming: false, modelList: false },
       bodyExtra: {
         localAgent: {
           endpoint: "http://127.0.0.1:3333/mcp",

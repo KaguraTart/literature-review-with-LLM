@@ -5,6 +5,7 @@ export type InputMode = "text" | "pdf_base64";
 export interface ProviderCapabilities {
   text: boolean;
   pdfBase64: boolean;
+  imageBase64: boolean;
   fileReference: boolean;
   streaming: boolean;
   embeddings: boolean;
@@ -37,7 +38,7 @@ export interface ModelRequest {
   profile: ProviderProfile;
   system: string;
   messages: ChatMessage[];
-  input?: { type: InputMode; text?: string; base64?: string; filename?: string };
+  input?: { type: InputMode; text?: string; base64?: string; filename?: string; images?: Array<{ name?: string; mimeType: string; base64: string }> };
   temperature: number;
   maxOutputTokens: number;
   stream: boolean;
@@ -56,6 +57,7 @@ type AnthropicMessage = {
 export const defaultCapabilities: ProviderCapabilities = {
   text: true,
   pdfBase64: false,
+  imageBase64: true,
   fileReference: false,
   streaming: true,
   embeddings: false,
@@ -100,6 +102,9 @@ export function bodyFor(request: ModelRequest): Record<string, unknown> {
   if (request.input?.type === "pdf_base64" && !request.profile.capabilities.pdfBase64) {
     throw new Error("Selected provider profile does not support PDF base64 input");
   }
+  if (inputImages(request).length && !request.profile.capabilities.imageBase64) {
+    throw new Error("Selected provider profile does not support image input");
+  }
   if (request.profile.protocol === "anthropic_messages") return anthropicBody(request);
   if (request.profile.protocol === "openai_responses") return openaiResponsesBody(request);
   if (request.input?.type === "pdf_base64") {
@@ -133,7 +138,7 @@ export function extractResponseText(protocol: ProviderProtocol, data: unknown): 
       || extractOpenAIEventContainer(value)
       || "";
   if (!text) throw new Error("No text returned from model");
-  return stripThink(String(text).trim());
+  return String(text).trim();
 }
 
 export function parseStreamChunk(protocol: ProviderProtocol, rawLine: string): string {
@@ -187,7 +192,7 @@ export function redact(value: unknown): string {
 function openaiChatBody(request: ModelRequest): Record<string, unknown> {
   const messages = [
     { role: "system", content: request.system },
-    ...withInputText(request)
+    ...openaiChatMessages(request)
   ];
   return withBodyExtra(request.profile, {
     model: request.profile.model,
@@ -197,6 +202,27 @@ function openaiChatBody(request: ModelRequest): Record<string, unknown> {
     stream: request.stream,
     n: 1
   });
+}
+
+function openaiChatMessages(request: ModelRequest): Array<Record<string, unknown>> {
+  const messages = withInputText(request).map((message) => ({ role: message.role, content: message.content as unknown }));
+  const images = inputImages(request);
+  if (!images.length) return messages;
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === "user");
+  const imageParts = images.map((image) => ({ type: "image_url", image_url: { url: imageDataURL(image) } }));
+  if (lastUserIndex >= 0) {
+    const baseText = String(messages[lastUserIndex].content || "");
+    messages[lastUserIndex] = {
+      role: "user",
+      content: [
+        { type: "text", text: baseText },
+        ...imageParts
+      ]
+    };
+    return messages;
+  }
+  messages.push({ role: "user", content: imageParts });
+  return messages;
 }
 
 function extractMessageContent(content: unknown): string {
@@ -376,6 +402,20 @@ function openaiResponsesInput(request: ModelRequest): OpenAIResponsesInputItem[]
       input.push({ role: "user", content: [filePart] });
     }
   }
+  for (const image of inputImages(request)) {
+    const imagePart = {
+      type: "input_image",
+      image_url: imageDataURL(image)
+    };
+    if (lastUserIndex >= 0) {
+      input[lastUserIndex] = {
+        ...input[lastUserIndex],
+        content: [...input[lastUserIndex].content, imagePart]
+      };
+    } else {
+      input.push({ role: "user", content: [imagePart] });
+    }
+  }
   return input;
 }
 
@@ -412,6 +452,16 @@ function anthropicMessages(request: ModelRequest): Array<Record<string, unknown>
     content: message.content
   }));
   const contentBlocks: Array<Record<string, unknown>> = [];
+  for (const image of inputImages(request)) {
+    contentBlocks.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: image.mimeType || "image/png",
+        data: image.base64 ?? ""
+      }
+    });
+  }
   if (request.input?.type === "pdf_base64") {
     contentBlocks.push({
       type: "document",
@@ -434,6 +484,16 @@ function anthropicMessages(request: ModelRequest): Array<Record<string, unknown>
   contentBlocks.push({ type: "text", text: inputText ? `CONTEXT:\n${inputText}` : "" });
   messages.push({ role: "user", content: contentBlocks });
   return mergeConsecutiveAnthropicMessages(messages);
+}
+
+function inputImages(request: ModelRequest): Array<{ name?: string; mimeType: string; base64: string }> {
+  return Array.isArray(request.input?.images)
+    ? request.input.images.filter((image) => !!image?.base64)
+    : [];
+}
+
+function imageDataURL(image: { mimeType?: string; base64?: string }): string {
+  return `data:${image.mimeType || "image/png"};base64,${image.base64 || ""}`;
 }
 
 function mergeConsecutiveAnthropicMessages(messages: AnthropicMessage[]): AnthropicMessage[] {
@@ -541,8 +601,4 @@ function hasOpenAICompatibleVersionPath(baseURL: string): boolean {
 
 function usesVersionlessOpenAICompatibleBase(baseURL: string): boolean {
   return /^https:\/\/api\.perplexity\.ai$/i.test(String(baseURL || "").replace(/\/+$/, ""));
-}
-
-function stripThink(value: string): string {
-  return value.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 }

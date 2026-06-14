@@ -1712,20 +1712,26 @@ describe("workbench writeback helpers", () => {
     expect(prevented).toBe(1);
   });
 
-  it("opens the settings drawer from the compact model controls", async () => {
+  it("opens the settings drawer from the single settings control", async () => {
     const loaded = loadWorkbenchHelpers();
     const dom = fakeDocument();
     (loaded as any).document = dom;
     const rootAttrs: Record<string, string> = {};
+    const documentListeners = new Map<string, Array<(event?: any) => void>>();
     (loaded as any).document.documentElement = {
       setAttribute(name: string, value: string) {
         rootAttrs[name] = value;
       }
     };
+    (loaded as any).document.addEventListener = (type: string, listener: (event?: any) => void) => {
+      const listeners = documentListeners.get(type) || [];
+      listeners.push(listener);
+      documentListeners.set(type, listeners);
+    };
     const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
 
     workbench.bindActions();
-    await dom.elements.get("zms-profile-trigger").eventListeners.get("click")[0]({ preventDefault() {} });
+    await dom.elements.get("zms-settings-toggle").eventListeners.get("click")[0]({ preventDefault() {} });
 
     expect(rootAttrs["data-settings-open"]).toBe("true");
     expect(dom.elements.get("zms-settings-panel")["aria-hidden"]).toBe("false");
@@ -1735,12 +1741,10 @@ describe("workbench writeback helpers", () => {
     expect(rootAttrs["data-settings-open"]).toBe("false");
     expect(dom.elements.get("zms-settings-panel")["aria-hidden"]).toBe("true");
 
-    await dom.elements.get("zms-composer-settings").eventListeners.get("click")[0]({ preventDefault() {} });
+    await dom.elements.get("zms-settings-toggle").eventListeners.get("click")[0]({ preventDefault() {} });
     expect(rootAttrs["data-settings-open"]).toBe("true");
-
-    await dom.elements.get("zms-settings-close").eventListeners.get("click")[0]({ preventDefault() {} });
-    await dom.elements.get("zms-composer-skill").eventListeners.get("click")[0]({ preventDefault() {} });
-    expect(rootAttrs["data-settings-open"]).toBe("true");
+    await documentListeners.get("keydown")?.[0]?.({ key: "Escape", preventDefault() {} });
+    expect(rootAttrs["data-settings-open"]).toBe("false");
   });
 
   it("copies assistant Markdown from the prominent answer button", async () => {
@@ -1760,11 +1764,19 @@ describe("workbench writeback helpers", () => {
       write: "Write"
     };
     workbench.t = (key: string) => labels[key] || key;
+    (loaded as any).window.ZMSMarkdownRenderer = {
+      renderMarkdown(markdown: string) {
+        const node = dom.createElementNS("http://www.w3.org/1999/xhtml", "div");
+        node.className = "rendered";
+        node.textContent = markdown;
+        return node;
+      }
+    };
 
     workbench.appendMessageElement({
       id: "assistant-copy",
       role: "assistant",
-      content: "## Result\n\nInline $x^2$"
+      content: "<think>private reasoning</think>\n\n## Result\n\nInline $x^2$"
     });
 
     const assistant = dom.elements.get("zms-messages").children[0];
@@ -1776,6 +1788,9 @@ describe("workbench writeback helpers", () => {
     expect(copiedText).toBe("## Result\n\nInline $x^2$");
     expect(copyButton.textContent).toBe("Copied");
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Copied");
+    const body = assistant.children[1];
+    expect(body.children[0].className).toBe("zms-think");
+    expect(body.children[0].children[1].textContent).toBe("private reasoning");
     expect(assistant.children[2].children.map((child: any) => child.textContent)).toEqual(["Retry", "Write"]);
   });
 
@@ -1812,7 +1827,7 @@ describe("workbench writeback helpers", () => {
 
     await workbench.send();
 
-    expect(rendered).toContain("## Result\n");
+    expect(rendered).toContain("## Result");
     expect(rendered).toContain("## Result\nInline $x^2$");
     const assistant = dom.elements.get("zms-messages").children.find((child: any) => child.className.includes("zms-message-assistant"));
     const body = assistant.children.find((child: any) => child.className === "zms-message-body");
