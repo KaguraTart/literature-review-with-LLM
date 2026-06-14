@@ -11,6 +11,52 @@
   max-width: 34em;
 }
 
+.zms-json {
+  width: 58em;
+  min-height: 14em;
+  font-family: monospace;
+}
+
+.zms-small-json {
+  width: 58em;
+  min-height: 7em;
+  font-family: monospace;
+}
+
+.zms-profile-status {
+  width: 58em;
+  min-height: 6em;
+  margin: 0;
+  padding: 8px;
+  white-space: pre-wrap;
+  border: 1px solid #d7dce2;
+  background: #f8fafc;
+  font-family: monospace;
+}
+
+.zms-prompt {
+  width: 58em;
+  min-height: 7em;
+  font-family: monospace;
+}
+
+.zms-skill-template {
+  min-height: 16em;
+}
+
+.zms-profile-editor {
+  padding: 10px 0;
+  border-top: 1px solid #d7dce2;
+  border-bottom: 1px solid #d7dce2;
+}
+
+.zms-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(9em, 1fr));
+  gap: 6px 12px;
+  max-width: 58em;
+}
+
 .zms-number {
   width: 8em;
 }

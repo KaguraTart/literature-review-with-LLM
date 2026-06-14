@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-stylesheet href="chrome://zotero-markdown-summary/content/reader.css" type="text/css"?>
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
+        id="zms-reader"
+        title="Markdown Reader"
+        width="960"
+        height="760"
+        onload="ZoteroMarkdownSummaryReader.init()">
+  <script src="chrome://zotero-markdown-summary/content/messages.js"/>
+  <script src="chrome://zotero-markdown-summary/content/markdown-render.js"/>
+  <script src="chrome://zotero-markdown-summary/content/reader.js"/>
+  <html:main class="zms-reader-shell">
+    <html:header class="zms-reader-toolbar">
+      <html:div>
+        <html:h1 id="zms-reader-title">Markdown Reader</html:h1>
+        <html:div id="zms-reader-path" class="zms-reader-path"></html:div>
+      </html:div>
+      <html:div class="zms-reader-actions">
+        <html:button id="zms-reader-back" onclick="ZoteroMarkdownSummaryReader.backToWorkbench()">Back to Chat</html:button>
+        <html:button id="zms-reader-refresh" onclick="ZoteroMarkdownSummaryReader.reload()">Refresh</html:button>
+        <html:button id="zms-reader-copy" onclick="ZoteroMarkdownSummaryReader.copyMarkdown()">Copy Markdown</html:button>
+        <html:button id="zms-reader-open-external" onclick="ZoteroMarkdownSummaryReader.openExternal()">Open File</html:button>
+      </html:div>
+    </html:header>
+    <html:article id="zms-reader-content" class="zms-reader-content"></html:article>
+  </html:main>
+</window>

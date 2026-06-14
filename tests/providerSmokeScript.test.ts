@@ -1,0 +1,590 @@
+import { execFile } from "node:child_process";
+import { createServer, type IncomingMessage } from "node:http";
+import { promisify } from "node:util";
+import { describe, expect, it } from "vitest";
+
+const execFileAsync = promisify(execFile);
+
+describe("provider smoke verifier", () => {
+  it("calls an OpenAI-compatible chat endpoint with the expected request shape", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-chat",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_chat",
+        endpoint: `${baseURL}/v1/chat/completions`,
+        text: "OK chat"
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        method: "POST",
+        path: "/v1/chat/completions",
+        authorization: "Bearer smoke-secret",
+        body: {
+          model: "mock-chat",
+          max_tokens: 64,
+          stream: false,
+          messages: [
+            { role: "system" },
+            { role: "user" }
+          ]
+        }
+      });
+    }, { responseBody: { choices: [{ message: { content: "OK chat" } }] } });
+  });
+
+  it("allows local OpenAI-compatible endpoints without API credentials", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--model", "local-chat",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_chat",
+        endpoint: `${baseURL}/v1/chat/completions`,
+        text: "OK local"
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0].authorization).toBeUndefined();
+      expect(requests[0].body).toMatchObject({ model: "local-chat" });
+    }, { responseBody: { choices: [{ message: { content: "OK local" } }] } });
+  });
+
+  it("still requires credentials for remote provider endpoints", async () => {
+    await expect(execFileAsync(process.execPath, [
+      "scripts/verify-provider-smoke.mjs",
+      "--profile", "openai-compatible",
+      "--base-url", "https://router.example/v1",
+      "--model", "remote-model",
+      "--dry-run",
+      "--json"
+    ], {
+      cwd: process.cwd(),
+      maxBuffer: 1024 * 1024
+    })).rejects.toMatchObject({
+      stderr: expect.stringContaining("API key or explicit auth header is required")
+    });
+  });
+
+  it("calls an OpenAI Responses endpoint with input items", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-responses",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_responses",
+        endpoint: `${baseURL}/v1/responses`,
+        text: "OK responses"
+      });
+      expect(requests[0]).toMatchObject({
+        method: "POST",
+        path: "/v1/responses",
+        authorization: "Bearer smoke-secret",
+        body: {
+          model: "mock-responses",
+          max_output_tokens: 64,
+          stream: false
+        }
+      });
+      expect(requests[0].body.input[0].content.map((part: any) => part.type)).toEqual(["input_text", "input_text"]);
+    }, { responseBody: { output_text: "OK responses" } });
+  });
+
+  it("calls an Anthropic Messages endpoint with Anthropic headers", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "anthropic",
+        "--base-url", baseURL,
+        "--api-key", "anthropic-secret",
+        "--model", "mock-anthropic",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "anthropic_messages",
+        endpoint: `${baseURL}/v1/messages`,
+        text: "OK anthropic"
+      });
+      expect(requests[0]).toMatchObject({
+        method: "POST",
+        path: "/v1/messages",
+        xApiKey: "anthropic-secret",
+        anthropicVersion: "2023-06-01",
+        body: {
+          model: "mock-anthropic",
+          max_tokens: 64,
+          stream: false,
+          messages: [
+            { role: "user" }
+          ]
+        }
+      });
+      expect(requests[0].body.messages[0].content.map((part: any) => part.type)).toEqual(["text"]);
+    }, { responseBody: { content: [{ type: "text", text: "OK anthropic" }] } });
+  });
+
+  it("prints a sanitized dry-run request without calling the endpoint", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "dry-run-secret",
+        "--model", "mock-chat",
+        "--dry-run",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        dryRun: true,
+        endpoint: `${baseURL}/v1/chat/completions`
+      });
+      expect(report.request.headerNames).toContain("authorization");
+      expect(JSON.stringify(report)).not.toContain("dry-run-secret");
+      expect(requests).toEqual([]);
+    });
+  });
+
+  it("runs built-in mock smoke checks across provider protocols", async () => {
+    const report = await runSmoke(["--mock", "--json"]);
+
+    expect(report.ok).toBe(true);
+    expect(report.mock).toBe(true);
+    expect(report.results.map((result: any) => [result.profile, result.protocol, result.text])).toEqual([
+      ["openai-compatible", "openai_chat", "OK chat"],
+      ["openai", "openai_responses", "OK responses"],
+      ["anthropic", "anthropic_messages", "OK anthropic"]
+    ]);
+    expect(report.requests.map((request: any) => request.path)).toEqual([
+      "/v1/chat/completions",
+      "/v1/responses",
+      "/v1/messages"
+    ]);
+    expect(JSON.stringify(report)).not.toContain("mock-secret");
+  });
+
+  it("runs built-in mock model-list checks across provider protocols", async () => {
+    const report = await runSmoke(["--mock", "--models", "--json"]);
+
+    expect(report.ok).toBe(true);
+    expect(report.mock).toBe(true);
+    expect(report.models).toBe(true);
+    expect(report.results.map((result: any) => [result.profile, result.protocol, result.modelCount, result.pages])).toEqual([
+      ["openai-compatible", "openai_chat", 3, 2],
+      ["openai", "openai_responses", 3, 2],
+      ["anthropic", "anthropic_messages", 3, 2]
+    ]);
+    expect(report.results[0].modelIds).toEqual(["mock-model-a", "mock-model-b", "mock-model-c"]);
+    expect(report.results[0].modelOptions.find((option: any) => option.id === "mock-model-c").label).toBe("Mock Model C");
+    expect(report.requests.map((request: any) => request.path)).toEqual([
+      "/v1/models",
+      "/v1/models?after_id=mock-model-b",
+      "/v1/models",
+      "/v1/models?after_id=mock-model-b",
+      "/v1/models",
+      "/v1/models?after_id=mock-model-b"
+    ]);
+    expect(JSON.stringify(report)).not.toContain("mock-secret");
+  });
+
+  it("checks default provider catalog request shapes offline without leaking placeholder auth", async () => {
+    const report = await runSmoke(["--catalog", "--json"]);
+
+    expect(report).toMatchObject({
+      ok: true,
+      catalog: true,
+      profileCount: 25,
+      checked: 24,
+      skipped: 1
+    });
+    expect(report.results.find((result: any) => result.id === "local-agents")).toMatchObject({
+      ok: true,
+      skipped: true
+    });
+    expect(report.results.find((result: any) => result.id === "openai")).toMatchObject({
+      ok: true,
+      protocol: "openai_responses",
+      endpoint: "https://api.openai.com/v1/responses",
+      modelsEndpoint: "https://api.openai.com/v1/models",
+      authHeaderNames: ["authorization"],
+      bodyKeys: expect.arrayContaining(["input", "max_output_tokens"])
+    });
+    expect(report.results.find((result: any) => result.id === "anthropic")).toMatchObject({
+      ok: true,
+      protocol: "anthropic_messages",
+      endpoint: "https://api.anthropic.com/v1/messages",
+      authHeaderNames: ["x-api-key"],
+      bodyKeys: expect.arrayContaining(["messages", "max_tokens"])
+    });
+    expect(report.results.find((result: any) => result.id === "perplexity")).toMatchObject({
+      ok: true,
+      modelList: false,
+      modelsEndpoint: ""
+    });
+    expect(report.results.find((result: any) => result.id === "ollama")).toMatchObject({
+      ok: true,
+      localEndpoint: true,
+      authHeaderNames: []
+    });
+    expect(JSON.stringify(report)).not.toContain("catalog-secret");
+  });
+
+  it("prints a sanitized model-list dry run without requiring a model", async () => {
+    const report = await runSmoke([
+      "--profile", "anthropic",
+      "--api-key", "models-secret",
+      "--models",
+      "--dry-run",
+      "--json"
+    ]);
+
+    expect(report).toMatchObject({
+      ok: true,
+      dryRun: true,
+      models: true,
+      protocol: "anthropic_messages",
+      endpoint: "https://api.anthropic.com/v1/models"
+    });
+    expect(report.request.method).toBe("GET");
+    expect(report.request.headerNames).toContain("x-api-key");
+    expect(JSON.stringify(report)).not.toContain("models-secret");
+  });
+
+  it("allows local model-list dry runs without API credentials", async () => {
+    await withMockProvider(async (baseURL) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--models",
+        "--dry-run",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        dryRun: true,
+        models: true,
+        endpoint: `${baseURL}/v1/models`
+      });
+      expect(report.request.headerNames).not.toContain("authorization");
+    });
+  });
+
+  it("skips live provider checks when required env config is missing", async () => {
+    const report = await runLive(["--json"], scrubProviderEnv());
+
+    expect(report).toMatchObject({
+      ok: true,
+      live: true,
+      counts: {
+        passed: 0,
+        skipped: 3,
+        failed: 0
+      }
+    });
+    expect(report.results.map((result: any) => [result.id, result.status])).toEqual([
+      ["openai", "skipped"],
+      ["anthropic", "skipped"],
+      ["openai-compatible", "skipped"]
+    ]);
+    expect(report.results[2].missing).toContain("OPENAI_COMPATIBLE_BASE_URL");
+  });
+
+  it("skips live provider model-list checks without requiring model names", async () => {
+    const report = await runLive(["--models", "--json"], scrubProviderEnv());
+
+    expect(report).toMatchObject({
+      ok: true,
+      live: true,
+      models: true,
+      counts: {
+        passed: 0,
+        skipped: 3,
+        failed: 0
+      }
+    });
+    expect(report.results.map((result: any) => [result.id, result.missing])).toEqual([
+      ["openai", ["OPENAI_API_KEY"]],
+      ["anthropic", ["ANTHROPIC_API_KEY"]],
+      ["openai-compatible", ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"]]
+    ]);
+  });
+
+  it("runs live provider env checks against mock endpoints without leaking secrets", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--json"], scrubProviderEnv({
+        OPENAI_API_KEY: "live-openai-secret",
+        OPENAI_MODEL: "live-responses",
+        OPENAI_BASE_URL: `${baseURL}/v1`,
+        ANTHROPIC_API_KEY: "live-anthropic-secret",
+        ANTHROPIC_MODEL: "live-anthropic",
+        ANTHROPIC_BASE_URL: baseURL,
+        OPENAI_COMPATIBLE_API_KEY: "live-compatible-secret",
+        OPENAI_COMPATIBLE_MODEL: "live-compatible",
+        OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        counts: {
+          passed: 3,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results.map((result: any) => [result.id, result.report.text])).toEqual([
+        ["openai", "OK live responses"],
+        ["anthropic", "OK live anthropic"],
+        ["openai-compatible", "OK live chat"]
+      ]);
+      expect(requests.map((request) => request.path)).toEqual([
+        "/v1/responses",
+        "/v1/messages",
+        "/v1/chat/completions"
+      ]);
+      expect(requests[0].authorization).toBe("Bearer live-openai-secret");
+      expect(requests[1].xApiKey).toBe("live-anthropic-secret");
+      expect(requests[2].authorization).toBe("Bearer live-compatible-secret");
+      expect(JSON.stringify(report)).not.toContain("live-openai-secret");
+      expect(JSON.stringify(report)).not.toContain("live-anthropic-secret");
+      expect(JSON.stringify(report)).not.toContain("live-compatible-secret");
+    });
+  });
+
+  it("runs live provider model-list env checks against mock endpoints without model env vars", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--models", "--json"], scrubProviderEnv({
+        OPENAI_API_KEY: "live-openai-models-secret",
+        OPENAI_BASE_URL: `${baseURL}/v1`,
+        ANTHROPIC_API_KEY: "live-anthropic-models-secret",
+        ANTHROPIC_BASE_URL: baseURL,
+        OPENAI_COMPATIBLE_API_KEY: "live-compatible-models-secret",
+        OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        models: true,
+        counts: {
+          passed: 3,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results.map((result: any) => [result.id, result.report.modelCount])).toEqual([
+        ["openai", 2],
+        ["anthropic", 2],
+        ["openai-compatible", 2]
+      ]);
+      expect(requests.map((request) => request.path)).toEqual([
+        "/v1/models",
+        "/v1/models",
+        "/v1/models"
+      ]);
+      expect(requests[0].authorization).toBe("Bearer live-openai-models-secret");
+      expect(requests[1].xApiKey).toBe("live-anthropic-models-secret");
+      expect(requests[2].authorization).toBe("Bearer live-compatible-models-secret");
+      expect(JSON.stringify(report)).not.toContain("live-openai-models-secret");
+      expect(JSON.stringify(report)).not.toContain("live-anthropic-models-secret");
+      expect(JSON.stringify(report)).not.toContain("live-compatible-models-secret");
+    });
+  });
+
+  it("runs live OpenAI-compatible checks against local endpoints without API credentials", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--include", "openai-compatible", "--json"], scrubProviderEnv({
+        OPENAI_COMPATIBLE_MODEL: "local-compatible",
+        OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        counts: {
+          passed: 1,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results[0]).toMatchObject({
+        id: "openai-compatible",
+        status: "passed",
+        skipped: false
+      });
+      expect(report.results[0].report).toMatchObject({
+        protocol: "openai_chat",
+        text: "OK live chat"
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0].authorization).toBeUndefined();
+      expect(requests[0].body.model).toBe("local-compatible");
+    });
+  });
+
+  it("runs live OpenAI-compatible model-list checks against local endpoints without API credentials or model names", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--models", "--include", "openai-compatible", "--json"], scrubProviderEnv({
+        OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        models: true,
+        counts: {
+          passed: 1,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results[0]).toMatchObject({
+        id: "openai-compatible",
+        status: "passed",
+        skipped: false
+      });
+      expect(report.results[0].report).toMatchObject({
+        protocol: "openai_chat",
+        modelCount: 2
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0].authorization).toBeUndefined();
+      expect(requests[0].body).toEqual({});
+    });
+  });
+});
+
+async function runSmoke(args: string[]) {
+  const { stdout } = await execFileAsync(process.execPath, ["scripts/verify-provider-smoke.mjs", ...args], {
+    cwd: process.cwd(),
+    maxBuffer: 1024 * 1024
+  });
+  return JSON.parse(stdout);
+}
+
+async function runLive(args: string[], env: NodeJS.ProcessEnv) {
+  const { stdout } = await execFileAsync(process.execPath, ["scripts/verify-provider-live.mjs", ...args], {
+    cwd: process.cwd(),
+    env,
+    maxBuffer: 1024 * 1024
+  });
+  return JSON.parse(stdout);
+}
+
+function scrubProviderEnv(overrides: NodeJS.ProcessEnv = {}) {
+  return {
+    ...process.env,
+    OPENAI_API_KEY: "",
+    OPENAI_MODEL: "",
+    OPENAI_BASE_URL: "",
+    ANTHROPIC_API_KEY: "",
+    ANTHROPIC_MODEL: "",
+    ANTHROPIC_BASE_URL: "",
+    OPENAI_COMPATIBLE_API_KEY: "",
+    OPENAI_COMPATIBLE_MODEL: "",
+    OPENAI_COMPATIBLE_BASE_URL: "",
+    ...overrides
+  };
+}
+
+async function withMockProvider(
+  run: (baseURL: string, requests: any[]) => Promise<void>,
+  options: { responseBody?: any; status?: number } = {}
+) {
+  const requests: any[] = [];
+  const server = createServer(async (request, response) => {
+    const bodyText = await readRequestBody(request);
+    requests.push({
+      method: request.method,
+      path: new URL(request.url || "/", "http://127.0.0.1").pathname,
+      authorization: request.headers.authorization,
+      xApiKey: request.headers["x-api-key"],
+      anthropicVersion: request.headers["anthropic-version"],
+      body: bodyText ? JSON.parse(bodyText) : {}
+    });
+    response.writeHead(options.status || 200, { "content-type": "application/json" });
+    response.end(JSON.stringify(options.responseBody || { choices: [{ message: { content: "OK" } }] }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Mock provider server did not bind to a TCP port");
+  try {
+    await run(`http://127.0.0.1:${address.port}`, requests);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+}
+
+async function withLiveMockProvider(
+  run: (baseURL: string, requests: any[]) => Promise<void>
+) {
+  const requests: any[] = [];
+  const server = createServer(async (request, response) => {
+    const bodyText = await readRequestBody(request);
+    const path = new URL(request.url || "/", "http://127.0.0.1").pathname;
+    requests.push({
+      method: request.method,
+      path,
+      authorization: request.headers.authorization,
+      xApiKey: request.headers["x-api-key"],
+      body: bodyText ? JSON.parse(bodyText) : {}
+    });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(liveMockResponse(path)));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Mock provider server did not bind to a TCP port");
+  try {
+    await run(`http://127.0.0.1:${address.port}`, requests);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+}
+
+function liveMockResponse(path: string) {
+  if (path.endsWith("/models")) {
+    return {
+      data: [
+        { id: "live-model-a", display_name: "Live Model A" },
+        { id: "live-model-b", display_name: "Live Model B" }
+      ],
+      has_more: false
+    };
+  }
+  if (path.endsWith("/responses")) return { output_text: "OK live responses" };
+  if (path.endsWith("/messages")) return { content: [{ type: "text", text: "OK live anthropic" }] };
+  return { choices: [{ message: { content: "OK live chat" } }] };
+}
+
+function readRequestBody(request: IncomingMessage) {
+  return new Promise<string>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("error", reject);
+  });
+}

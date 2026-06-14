@@ -1,22 +1,47 @@
 {
-  "name": "zotero-markdown-summary",
+  "name": "literature-review-with-LLM",
   "version": "0.1.0",
-  "description": "Zotero Markdown summary attachment plugin",
+  "description": "Zotero literature review and Markdown summary plugin",
   "type": "module",
-  "private": true,
+  "private": false,
   "repository": {
     "type": "git",
-    "url": "https://github.com/diantao-deng/zotero-markdown-summary.git"
+    "url": "https://github.com/KaguraTart/literature-review-with-LLM.git"
   },
   "scripts": {
     "build": "zotero-plugin build --dist build",
     "test": "vitest run",
-    "check": "npm test && npm run build"
+    "typecheck": "tsc --noEmit",
+    "verify:zip": "unzip -t build/zotero-markdown-summary.xpi",
+    "verify:package": "node scripts/verify-package.mjs",
+    "verify:installed": "node scripts/verify-installed-zotero.mjs",
+    "verify:zotero-runtime": "node scripts/verify-zotero-runtime.mjs",
+    "verify:provider": "node scripts/verify-provider-smoke.mjs",
+    "verify:provider:mock": "node scripts/verify-provider-smoke.mjs --mock",
+    "verify:provider:catalog": "node scripts/verify-provider-smoke.mjs --catalog",
+    "verify:provider:models": "node scripts/verify-provider-smoke.mjs --models",
+    "verify:provider:models:mock": "node scripts/verify-provider-smoke.mjs --models --mock",
+    "verify:provider:live": "node scripts/verify-provider-live.mjs",
+    "verify:provider:models:live": "node scripts/verify-provider-live.mjs --models",
+    "verify:writeback": "node scripts/verify-writeback-smoke.mjs",
+    "readiness:check": "node scripts/project-readiness-check.mjs --require-xpi",
+    "check": "npm test && npm run typecheck && npm run verify:provider:mock && npm run verify:provider:catalog && npm run verify:provider:models:mock && npm run verify:writeback && npm run build && npm run verify:zip && npm run verify:package && npm run readiness:check && git diff --check",
+    "local-agent:bridge": "node scripts/local-agent-http-bridge.mjs",
+    "local-agent:service": "node scripts/local-agent-bridge-service.mjs status",
+    "local-agent:service:install": "node scripts/local-agent-bridge-service.mjs install",
+    "local-agent:service:start": "node scripts/local-agent-bridge-service.mjs start",
+    "local-agent:service:stop": "node scripts/local-agent-bridge-service.mjs stop",
+    "local-agent:service:restart": "node scripts/local-agent-bridge-service.mjs restart",
+    "local-agent:service:check": "node scripts/local-agent-bridge-service.mjs check",
+    "local-agent:service:doctor": "node scripts/local-agent-bridge-service.mjs check --deep",
+    "local-agent:service:uninstall": "node scripts/local-agent-bridge-service.mjs uninstall"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.14",
     "zotero-plugin-scaffold": "^0.8.6"
-  }
+  },
+  "license": "Apache-2.0",
+  "author": "kaguratart <kaguratart@gmail.com>"
 }

@@ -1,0 +1,3960 @@
+var Zotero = window.Zotero || window.parent?.Zotero;
+var Services = window.Services || window.parent?.Services;
+var IOUtils = window.IOUtils || window.parent?.IOUtils;
+var PathUtils = window.PathUtils || window.parent?.PathUtils;
+var Cc = window.Cc || window.parent?.Cc;
+var Ci = window.Ci || window.parent?.Ci;
+
+const ZMS_SKILL_IDS = [
+  "paper-deep-summary",
+  "method-extractor",
+  "experiment-table-builder",
+  "citation-audit",
+  "custom-summary",
+  "ask-gemini",
+  "ask-claude",
+  "ask-opencode",
+  "ask-all-agents",
+  "ask-gemini-claude",
+  "check-local-agents"
+];
+const LOCAL_AGENT_SUBSKILLS = ["ask-gemini", "ask-claude", "ask-opencode"];
+const LOCAL_AGENT_SKILLS = {
+  "ask-gemini": "ask_gemini",
+  "ask-claude": "ask_claude",
+  "ask-opencode": "ask_opencode",
+  "ask-all-agents": "ask_all_agents",
+  "ask-gemini-claude": "ask_all_agents",
+  "check-local-agents": "check_local_agents"
+};
+const LOCAL_AGENT_TOOL_NAMES = new Set(Object.values(LOCAL_AGENT_SKILLS));
+const LOCAL_AGENT_AGGREGATE_SKILLS = ["ask-all-agents", "ask-gemini-claude", "check-local-agents"];
+  const ZMS_PREF_PREFIX = "extensions.zoteroMarkdownSummary";
+  const ZMS_CHROME_CONTENT_URL = "chrome://zotero-markdown-summary/content/";
+
+function wbMessage(scope, key, settingOrLocale) {
+  if (typeof zmsMessage !== "function") return key;
+  return zmsMessage(scope, key, settingOrLocale, runtimeLocale());
+}
+
+
+var ZoteroMarkdownSummaryWorkbench = {
+  state: {
+    item: null,
+    pdf: null,
+    context: null,
+    contextDiagnostics: null,
+    contextSourceHash: "",
+    messages: [],
+    sessionId: "",
+    profiles: [],
+    profile: null,
+    outputDir: "",
+    outputLanguage: "zh-CN",
+    inputMode: "text",
+    stream: true,
+    summaryVersion: "1",
+    uiLanguage: "en-US",
+    systemPrompt: "",
+    userPrompt: "",
+    initialized: false,
+    requestInFlight: false,
+    abortController: null,
+    writeMessage: null,
+    writePreview: null,
+    candidates: [],
+    candidatePath: "",
+    settingsOpen: false
+  },
+
+  async init() {
+    if (this.state.initialized) return;
+    this.state.initialized = true;
+    this.state.sessionId = `chat-${Date.now()}`;
+    this.bindActions();
+    this.loadSettings();
+    this.applyLanguage();
+    this.setStatus(this.t("loading"));
+    try {
+      this.state.launchPayload = launchPayload();
+      if (this.state.launchPayload.embedded) {
+        document.documentElement.setAttribute("data-embedded", "true");
+      }
+      this.state.item = itemFromArgs(this.state.launchPayload);
+      if (!this.state.item) throw new Error(this.t("noItem"));
+      this.state.pdf = await findPdfAttachment(this.state.item);
+      this.state.context = await buildPaperContext(this.state.item, this.state.pdf, this.state.outputDir);
+      this.state.contextDiagnostics = this.state.context.diagnostics || null;
+      this.state.contextSourceHash = buildContextSourceHash(this.state.context, this.state.item, this.state.pdf);
+      await ensureDirectory(this.sessionDir());
+      await ensureSkillTemplates(this.state.outputDir);
+      this.renderPaper();
+      this.renderProfiles();
+      await this.renderSkills();
+      this.renderSessions();
+      await this.loadCandidates({ quiet: true });
+      this.setStatus(this.t("ready"));
+      this.queueComposerFocus();
+    } catch (err) {
+      this.setStatus(safeError(err));
+    }
+  },
+
+  bindActions() {
+    const bindings = {
+      "zms-open-reader": () => this.openReader(),
+      "zms-save-session": () => this.saveSession(),
+      "zms-search-candidates": () => this.searchCandidates(),
+      "zms-load-candidates": () => this.loadCandidates(),
+      "zms-save-candidates": () => this.saveCandidates(),
+      "zms-import-candidates": () => this.importIncludedCandidates(),
+      "zms-attach-candidate-pdfs": () => this.attachCandidatePdfs(),
+      "zms-reconcile-candidate-duplicates": () => this.reconcileCandidateDuplicates(),
+      "zms-preview-write": () => this.previewWriteback(),
+      "zms-confirm-write": () => this.confirmWriteback(),
+      "zms-cancel-write": () => this.cancelWriteback(),
+      "zms-send": () => this.send(),
+      "zms-stop": () => this.stop(),
+      "zms-settings-toggle": () => this.toggleSettings(),
+      "zms-composer-settings": () => this.toggleSettings(true),
+      "zms-settings-close": () => this.toggleSettings(false),
+      "zms-profile-trigger": () => this.openProfileSettings(),
+      "zms-composer-profile": () => this.openProfileSettings(),
+      "zms-composer-skill": () => this.openSkillSettings()
+    };
+    for (const [id, handler] of Object.entries(bindings)) {
+      const element = document.getElementById(id);
+      if (!element || element.dataset?.zmsBound === "1") continue;
+      element.addEventListener("click", (event) => {
+        event.preventDefault();
+        handler();
+      });
+      if (element.dataset) element.dataset.zmsBound = "1";
+    }
+    const input = document.getElementById("zms-input");
+    if (input && input.dataset?.zmsShortcutBound !== "1") {
+      input.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) return;
+        event.preventDefault();
+        this.send();
+      });
+      if (input.dataset) input.dataset.zmsShortcutBound = "1";
+    }
+    const composer = document.getElementById("zms-composer");
+    if (input && input.dataset?.zmsFocusBound !== "1") {
+      for (const eventName of ["pointerdown", "mousedown", "click"]) {
+        input.addEventListener(eventName, () => this.focusComposerInput());
+      }
+      if (input.dataset) input.dataset.zmsFocusBound = "1";
+    }
+    if (input && composer && composer.dataset?.zmsFocusBound !== "1") {
+      composer.addEventListener("click", (event) => {
+        const target = event?.target;
+        const targetId = target?.id || "";
+        const targetTag = String(target?.tagName || "").toLowerCase();
+        if (targetTag === "button" || targetId === "zms-send" || targetId === "zms-stop") return;
+        this.focusComposerInput();
+      });
+      if (composer.dataset) composer.dataset.zmsFocusBound = "1";
+    }
+    this.updateComposerState();
+  },
+
+  focusComposerInput() {
+    focusElement(document.getElementById("zms-input"));
+  },
+
+  toggleSettings(open = !this.state.settingsOpen) {
+    this.state.settingsOpen = Boolean(open);
+    document.documentElement.setAttribute("data-settings-open", this.state.settingsOpen ? "true" : "false");
+    const panel = document.getElementById("zms-settings-panel");
+    const toggle = document.getElementById("zms-settings-toggle");
+    if (panel) panel.setAttribute("aria-hidden", this.state.settingsOpen ? "false" : "true");
+    if (toggle) toggle.setAttribute("aria-expanded", this.state.settingsOpen ? "true" : "false");
+    if (!this.state.settingsOpen) this.queueComposerFocus();
+  },
+
+  openProfileSettings() {
+    this.toggleSettings(true);
+    window.setTimeout?.(() => focusElement(document.getElementById("zms-profile")), 30);
+  },
+
+  openSkillSettings() {
+    this.toggleSettings(true);
+    window.setTimeout?.(() => focusElement(document.getElementById("zms-skill")), 30);
+  },
+
+  queueComposerFocus() {
+    this.focusComposerInput();
+    for (const delay of [50, 200, 500]) {
+      window.setTimeout?.(() => this.focusComposerInput(), delay);
+    }
+  },
+
+  updateComposerState() {
+    const busy = Boolean(this.state.requestInFlight);
+    const sendButton = document.getElementById("zms-send");
+    const stopButton = document.getElementById("zms-stop");
+    if (sendButton) sendButton.disabled = busy;
+    if (stopButton) stopButton.disabled = !busy;
+  },
+
+  loadSettings() {
+    this.state.outputDir = pref("outputDir");
+    this.state.outputLanguage = normalizeOutputLanguage(pref("outputLanguage"));
+    this.state.inputMode = normalizeInputMode(pref("inputMode"));
+    this.state.stream = normalizeBoolean(pref("stream"), true);
+    this.state.summaryVersion = String(pref("summaryVersion") || "1");
+    this.state.uiLanguage = resolveUiLanguage(pref("uiLanguage"), runtimeLocale());
+    this.state.systemPrompt = pref("systemPrompt") || "";
+    this.state.userPrompt = pref("userPrompt") || "";
+    this.state.profiles = getProfiles();
+    const activeProfileId = pref("activeProfileId");
+    this.state.profile = this.state.profiles.find((profile) => profile.id === activeProfileId)
+      || this.state.profiles.find((profile) => profile.isDefault)
+      || this.state.profiles[0]
+      || null;
+  },
+
+  applyLanguage() {
+    document.title = this.t("title");
+    setText("zms-workbench-title", this.t("title"));
+    setText("zms-settings-toggle", this.t("settings"));
+    setText("zms-settings-close", this.t("closeSettings"));
+    setButtonLabel("zms-composer-settings", "+", this.t("settings"));
+    setButtonLabel("zms-send", "↑", this.t("send"));
+    setButtonLabel("zms-stop", "■", this.t("stop"));
+    setText("zms-chat-paper-title", this.t("title"));
+    setText("zms-quick-settings-heading", this.t("quickSettings"));
+    setText("zms-paper-heading", this.t("paper"));
+    setText("zms-profile-label", this.t("provider"));
+    setText("zms-skill-label", this.t("skill"));
+    setText("zms-sessions-heading", this.t("sessions"));
+    setText("zms-candidates-heading", this.t("candidates"));
+    setText("zms-candidate-query-label", this.t("candidateSearchQuery"));
+    setText("zms-candidate-limit-label", this.t("candidateLimit"));
+    setText("zms-candidate-email-label", this.t("candidateEmail"));
+    setText("zms-candidate-semantic-key-label", this.t("candidateSemanticKey"));
+    setText("zms-search-candidates", this.t("candidateSearch"));
+    setText("zms-load-candidates", this.t("loadCandidates"));
+    setText("zms-save-candidates", this.t("saveCandidateDecisions"));
+    setText("zms-import-candidates", this.t("importCandidates"));
+    setText("zms-attach-candidate-pdfs", this.t("attachCandidatePdfs"));
+    setText("zms-reconcile-candidate-duplicates", this.t("reconcileCandidateDuplicates"));
+    setText("zms-save-session", this.t("saveSession"));
+    setText("zms-open-reader", this.t("openReader"));
+    setText("zms-writeback-title", this.t("writePreview"));
+    setText("zms-write-action-label", this.t("action"));
+    setText("zms-write-section-label", this.t("section"));
+    setText("zms-preview-write", this.t("preview"));
+    setText("zms-confirm-write", this.t("confirmWrite"));
+    setText("zms-cancel-write", this.t("cancel"));
+    document.getElementById("zms-input").setAttribute("placeholder", this.t("placeholder"));
+    document.getElementById("zms-candidate-query").setAttribute("placeholder", this.t("candidateSearchPlaceholder"));
+    const action = document.getElementById("zms-write-action");
+    action.options[0].textContent = this.t("appendNotes");
+    action.options[1].textContent = this.t("appendSection");
+    action.options[2].textContent = this.t("replaceSection");
+  },
+
+  t(key) {
+    return wbMessage("workbench", key, this.state.uiLanguage);
+  },
+
+  renderPaper() {
+    const item = this.state.item;
+    const creators = item.getCreators?.().map((creator) => [creator.firstName, creator.lastName].filter(Boolean).join(" ")).filter(Boolean).slice(0, 4).join(", ") || "";
+    const title = item.getField("title") || item.key;
+    const year = item.getField("date") || "";
+    const doi = item.getField("DOI") || "";
+    const diagnostics = contextDiagnosticsText(this.state.contextDiagnostics, (key) => this.t(key));
+    document.getElementById("zms-paper-meta").textContent = [title, creators, year, doi, diagnostics].filter(Boolean).join("\n");
+    setText("zms-chat-paper-title", title);
+    this.renderCandidateSearchDefaults();
+  },
+
+  renderCandidateSearchDefaults() {
+    const input = document.getElementById("zms-candidate-query");
+    if (!input || input.value.trim()) return;
+    const title = this.state.context?.metadata?.title || this.state.item?.getField?.("title") || "";
+    input.value = title;
+  },
+
+  renderProfiles() {
+    const select = document.getElementById("zms-profile");
+    select.textContent = "";
+    for (const profile of this.state.profiles) {
+      const option = document.createElement("option");
+      option.value = profile.id;
+      option.textContent = `${profile.name || profile.id} (${profile.protocol})`;
+      option.selected = this.state.profile?.id === profile.id;
+      select.appendChild(option);
+    }
+    this.renderProfileStatus();
+    this.renderProfileTrigger();
+    select.onchange = () => {
+      this.state.profile = this.state.profiles.find((profile) => profile.id === select.value) || null;
+      this.renderProfileStatus();
+      this.renderProfileTrigger();
+      this.setStatus(this.state.profile ? profileStatusText(this.state.profile, (key) => this.t(key)) : this.t("noProfile"));
+    };
+  },
+
+  renderProfileStatus() {
+    const element = document.getElementById("zms-profile-status");
+    if (!element) return;
+    element.textContent = profileStatusText(this.state.profile, (key) => this.t(key));
+  },
+
+  renderProfileTrigger() {
+    const button = document.getElementById("zms-profile-trigger");
+    const composerButton = document.getElementById("zms-composer-profile");
+    const label = profileCompactLabel(this.state.profile, this.t("model"));
+    const title = this.state.profile ? profileStatusText(this.state.profile, (key) => this.t(key)) : this.t("noProfile");
+    for (const element of [button, composerButton]) {
+      if (!element) continue;
+      element.textContent = label;
+      element.title = title;
+      element.setAttribute?.("aria-label", title);
+    }
+  },
+
+  async renderSkills() {
+    const select = document.getElementById("zms-skill");
+    select.textContent = "";
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = this.t("noneSkill");
+    select.appendChild(none);
+    for (const id of await availableSkillIds(this.state.outputDir)) {
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = this.t(id) === id ? id : this.t(id);
+      select.appendChild(option);
+    }
+    select.onchange = () => {
+      const id = select.value;
+      document.getElementById("zms-skill-description").textContent = id ? this.t(`${id}-desc`) : "";
+      this.renderSkillTrigger();
+    };
+    this.renderSkillTrigger();
+  },
+
+  renderSkillTrigger() {
+    const button = document.getElementById("zms-composer-skill");
+    const select = document.getElementById("zms-skill");
+    if (!button || !select) return;
+    const id = select.value || "";
+    const label = id ? (this.t(id) === id ? id : this.t(id)) : this.t("noneSkill");
+    const description = id ? this.t(`${id}-desc`) : this.t("skill");
+    button.textContent = label;
+    button.title = description;
+    button.setAttribute?.("aria-label", description);
+  },
+
+  async renderSessions() {
+    const list = document.getElementById("zms-session-list");
+    list.textContent = "";
+    try {
+      if (!await IOUtils.exists(this.sessionDir())) return;
+      const children = await IOUtils.getChildren(this.sessionDir());
+      for (const path of recentSessionFiles(children)) {
+        const button = document.createElement("button");
+        button.textContent = leafName(path);
+        button.onclick = () => this.loadSession(path);
+        list.appendChild(button);
+      }
+    } catch (_err) {
+      // Session history is optional.
+    }
+  },
+
+  async loadCandidates(options = {}) {
+    try {
+      this.state.candidatePath = candidateJsonlPath(this.state.outputDir, this.state.item);
+      this.state.candidates = await loadCandidateRecords(this.state.candidatePath);
+      this.renderCandidates();
+      if (!options.quiet) this.setStatus(`${this.t("candidateLoaded")}: ${this.state.candidates.length}`);
+    } catch (err) {
+      this.state.candidates = [];
+      this.renderCandidates(safeError(err));
+      if (!options.quiet) this.setStatus(`${this.t("candidateNoFile")}: ${safeError(err)}`);
+    }
+  },
+
+  renderCandidates(errorText = "") {
+    if (typeof document === "undefined") return;
+    const status = document.getElementById("zms-candidate-status");
+    const list = document.getElementById("zms-candidate-list");
+    if (!status || !list) return;
+    const candidates = Array.isArray(this.state.candidates) ? this.state.candidates : [];
+    status.textContent = errorText || candidateStatusText(candidates, this.state.candidatePath, (key) => this.t(key));
+    list.textContent = "";
+    for (const record of candidates.slice(0, 25)) {
+      list.appendChild(candidateElement(record, (key) => this.t(key)));
+    }
+  },
+
+  async saveCandidates() {
+    try {
+      const decisions = candidateDecisionMapFromDom();
+      const previousDecisions = candidatePreviousDecisionMap(this.state.candidates);
+      const now = new Date().toISOString();
+      this.state.candidates = applyCandidateDecisions(this.state.candidates, decisions, now);
+      await saveCandidateRecords(this.state.candidatePath || candidateJsonlPath(this.state.outputDir, this.state.item), this.state.candidates);
+      await appendImportLedgerEntries(importLedgerJsonlPath(this.state.outputDir, this.state.item), decisionLedgerEntries(this.state.candidates, previousDecisions, decisions, now));
+      this.renderCandidates();
+      this.setStatus(`${this.t("candidateSaved")}: ${this.state.candidates.length}`);
+    } catch (err) {
+      this.setStatus(`${this.t("writeFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async searchCandidates() {
+    try {
+      if (!window.ZMSCandidateSources?.searchCandidateSources) {
+        this.setStatus(this.t("candidateSearchUnavailable"));
+        return;
+      }
+      const options = candidateSearchOptionsFromDom(this.state.item);
+      if (!options.query) {
+        this.setStatus(this.t("candidateSearchNoQuery"));
+        return;
+      }
+      this.state.candidatePath = candidateJsonlPath(this.state.outputDir, this.state.item);
+      this.setStatus(this.t("candidateSearching"));
+      const existing = this.state.candidates.length
+        ? this.state.candidates
+        : await loadCandidateRecords(this.state.candidatePath).catch(() => []);
+      const existingCandidateIds = new Set(existing.map((record) => record.candidateId));
+      const result = await window.ZMSCandidateSources.searchCandidateSources(fetch.bind(window), {
+        ...options,
+        collectionKey: workbenchCollectionKey(this.state.item),
+        now: new Date().toISOString()
+      }, existing);
+      this.state.candidates = window.ZMSCandidateSources.mergeCandidateRecords(existing, result.records);
+      await saveCandidateRecords(this.state.candidatePath, this.state.candidates);
+      await appendImportLedgerEntries(importLedgerJsonlPath(this.state.outputDir, this.state.item), discoveredLedgerEntries(result.records, existingCandidateIds));
+      this.renderCandidates(candidateSearchErrorSummary(result.errors, (key) => this.t(key)));
+      const errorSuffix = result.errors?.length ? `; ${this.t("candidateSourceErrors")}: ${result.errors.map((item) => item.source).join(", ")}` : "";
+      this.setStatus(`${this.t("candidateSearchDone")}: ${result.records.length}${errorSuffix}`);
+    } catch (err) {
+      this.setStatus(`${this.t("candidateSearchFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async importIncludedCandidates() {
+    try {
+      const now = new Date().toISOString();
+      const candidates = this.state.candidates.length
+        ? this.state.candidates
+        : await loadCandidateRecords(this.state.candidatePath || candidateJsonlPath(this.state.outputDir, this.state.item)).catch(() => []);
+      const importable = importableCandidateRecords(candidates);
+      if (!importable.length) {
+        this.setStatus(this.t("candidateImportNone"));
+        return;
+      }
+      this.setStatus(this.t("candidateImporting"));
+      const results = [];
+      for (const record of importable) {
+        results.push(await importCandidateIntoZotero(record, this.state.item, now));
+      }
+      const resultById = new Map(results.map((result) => [result.candidateId, result]));
+      this.state.candidates = applyCandidateImportResults(candidates, resultById, now);
+      const candidatePath = this.state.candidatePath || candidateJsonlPath(this.state.outputDir, this.state.item);
+      await saveCandidateRecords(candidatePath, this.state.candidates);
+      await appendImportLedgerEntries(importLedgerJsonlPath(this.state.outputDir, this.state.item), importResultLedgerEntries(this.state.candidates, resultById, now));
+      this.renderCandidates();
+      const imported = results.filter((result) => result.action === "imported").length;
+      const skipped = results.filter((result) => result.action === "skipped_duplicate").length;
+      const failed = results.filter((result) => result.action === "failed").length;
+      this.setStatus(`${this.t("candidateImportDone")}: imported ${imported}; skipped ${skipped}; failed ${failed}`);
+    } catch (err) {
+      this.setStatus(`${this.t("candidateImportFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async attachCandidatePdfs() {
+    try {
+      const now = new Date().toISOString();
+      const candidatePath = this.state.candidatePath || candidateJsonlPath(this.state.outputDir, this.state.item);
+      const candidates = this.state.candidates.length
+        ? this.state.candidates
+        : await loadCandidateRecords(candidatePath).catch(() => []);
+      const records = pdfAttachableCandidateRecords(candidates);
+      if (!records.length) {
+        this.setStatus(this.t("candidatePdfNone"));
+        return;
+      }
+      this.setStatus(this.t("candidatePdfAttaching"));
+      const results = [];
+      for (const record of records) {
+        results.push(await attachCandidatePdfToZotero(record, this.state.item, now));
+      }
+      const resultById = new Map(results.map((result) => [result.candidateId, result]));
+      this.state.candidates = applyCandidatePdfAttachmentResults(candidates, resultById, now);
+      await saveCandidateRecords(candidatePath, this.state.candidates);
+      await appendImportLedgerEntries(importLedgerJsonlPath(this.state.outputDir, this.state.item), pdfAttachmentLedgerEntries(this.state.candidates, resultById, now));
+      this.renderCandidates();
+      const attached = results.filter((result) => result.action === "attached_pdf").length;
+      const missing = results.filter((result) => result.action === "missing_pdf").length;
+      const failed = results.filter((result) => result.action === "failed").length;
+      this.setStatus(`${this.t("candidatePdfDone")}: attached ${attached}; missing ${missing}; failed ${failed}`);
+    } catch (err) {
+      this.setStatus(`${this.t("candidatePdfFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async reconcileCandidateDuplicates() {
+    try {
+      this.setStatus(this.t("candidateDedupeRunning"));
+      const now = new Date().toISOString();
+      const candidatePath = this.state.candidatePath || candidateJsonlPath(this.state.outputDir, this.state.item);
+      const candidates = this.state.candidates.length
+        ? this.state.candidates
+        : await loadCandidateRecords(candidatePath).catch(() => []);
+      const result = reconcileCandidateDuplicateRecords(candidates, now);
+      this.state.candidates = result.records;
+      await saveCandidateRecords(candidatePath, this.state.candidates);
+      await appendImportLedgerEntries(importLedgerJsonlPath(this.state.outputDir, this.state.item), result.ledgerEntries);
+      this.renderCandidates();
+      this.setStatus(`${this.t("candidateDedupeDone")}: ${result.duplicateCount}`);
+    } catch (err) {
+      this.setStatus(`${this.t("candidateDedupeFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async loadSession(path) {
+    try {
+      const text = await readText(path);
+      this.state.messages = text.split(/\r?\n/).filter(Boolean)
+        .map((line) => safeParseJSON(line))
+        .filter(Boolean);
+      this.state.sessionId = sessionIdFromPath(path) || this.state.sessionId;
+      this.renderMessages();
+      this.setStatus(this.t("ready"));
+    } catch (err) {
+      this.setStatus(safeError(err));
+    }
+  },
+
+  renderMessages() {
+    const container = document.getElementById("zms-messages");
+    container.textContent = "";
+    for (const message of this.state.messages) {
+      this.appendMessageElement(message);
+    }
+  },
+
+  appendMessageElement(message) {
+    const container = document.getElementById("zms-messages");
+    const block = document.createElement("article");
+    block.className = `zms-message zms-message-${message.role}`;
+    block.dataset.messageId = message.id;
+    const body = document.createElement("div");
+    body.className = "zms-message-body";
+    renderMessageContent(body, message);
+    if (message.role === "assistant") {
+      const toolbar = document.createElement("div");
+      toolbar.className = "zms-message-toolbar";
+      const copy = document.createElement("button");
+      copy.className = "zms-message-copy";
+      copy.type = "button";
+      copy.textContent = this.t("copyAnswer");
+      copy.title = this.t("copyAnswerTitle");
+      copy.onclick = async () => {
+        const copied = await copyText(message.content || "");
+        copy.textContent = copied ? this.t("copied") : this.t("copyFailed");
+        this.setStatus(copied ? this.t("copied") : this.t("copyFailed"));
+        window.setTimeout?.(() => {
+          copy.textContent = this.t("copyAnswer");
+        }, 1200);
+      };
+      toolbar.appendChild(copy);
+      block.appendChild(toolbar);
+    }
+    block.appendChild(body);
+    if (message.role === "assistant") {
+      const actions = document.createElement("div");
+      actions.className = "zms-message-actions";
+      const retry = document.createElement("button");
+      retry.textContent = this.t("retry");
+      retry.onclick = () => this.retryMessage(message);
+      const write = document.createElement("button");
+      write.textContent = this.t("write");
+      write.onclick = () => this.openWriteback(message);
+      actions.append(retry, write);
+      block.appendChild(actions);
+    }
+    container.appendChild(block);
+    container.scrollTop = container.scrollHeight;
+    return body;
+  },
+
+  async send() {
+    const input = document.getElementById("zms-input");
+    const content = input.value.trim();
+    const skillId = document.getElementById("zms-skill").value;
+    if (this.state.requestInFlight) {
+      this.setStatus(this.t("thinking"));
+      return;
+    }
+    if (!content && !skillId) return;
+    if (!this.state.profile) {
+      this.setStatus(this.t("noProfile"));
+      return;
+    }
+    const messageProfile = profileMessageMetadata(this.state.profile);
+    const userMessage = makeMessage("user", content || this.t(skillId), { skillId, ...messageProfile });
+    this.state.messages.push(userMessage);
+    this.appendMessageElement(userMessage);
+    input.value = "";
+    const assistantMessage = makeMessage("assistant", "", { skillId, ...messageProfile });
+    this.state.messages.push(assistantMessage);
+    const assistantBody = this.appendMessageElement(assistantMessage);
+    this.setStatus(this.t("thinking"));
+    this.state.requestInFlight = true;
+    this.updateComposerState();
+    try {
+      this.state.abortController = new AbortController();
+      const answer = await this.callModel(content, skillId, (delta) => {
+        assistantMessage.content += delta;
+        renderMessageContent(assistantBody, assistantMessage);
+      });
+      if (!assistantMessage.content) {
+        assistantMessage.content = answer;
+        renderMessageContent(assistantBody, assistantMessage);
+      }
+      await this.saveSession();
+      this.setStatus(this.t("ready"));
+    } catch (err) {
+      assistantMessage.content = safeError(err);
+      renderMessageContent(assistantBody, assistantMessage);
+      this.setStatus(safeError(err));
+    } finally {
+      this.state.abortController = null;
+      this.state.requestInFlight = false;
+      this.updateComposerState();
+    }
+  },
+
+  stop() {
+    this.state.abortController?.abort();
+  },
+
+  async retryMessage(message) {
+    const index = this.state.messages.findIndex((item) => item.id === message.id);
+    const previousUser = this.state.messages.slice(0, index).reverse().find((item) => item.role === "user");
+    if (!previousUser) return;
+    const skill = document.getElementById("zms-skill");
+    if (previousUser.skillId && Array.from(skill.options).some((option) => option.value === previousUser.skillId)) {
+      skill.value = previousUser.skillId;
+    }
+    document.getElementById("zms-input").value = previousUser.content || "";
+    await this.send();
+  },
+
+  async callModel(userText, skillId, onDelta) {
+    const profile = this.state.profile;
+    if (!profile) throw new Error(this.t("noProfile"));
+    const localAgents = localAgentPlan(profile, skillId);
+    const skillTemplate = skillId ? await loadSkillTemplate(this.state.outputDir, skillId, this.state.outputLanguage) : "";
+    const savedSummaryPrompt = skillId === "custom-summary" ? this.state.userPrompt : "";
+    const prompt = [skillTemplate, savedSummaryPrompt, userText].filter(Boolean).join("\n\n");
+    const contextText = contextForPrompt(this.state.context, prompt || userText);
+    const requestPrompt = `${prompt || userText}\n\n${contextText}`;
+    const requestMessages = requestMessagesWithHistory(this.state.messages, userText || this.t(skillId), requestPrompt);
+    if (localAgents.length) {
+      const fallbackToRemote = localAgents.some((agent) => agent.fallbackToRemote);
+      const localAgentPrompt = requestPrompt.trim();
+      try {
+        const answer = await callLocalAgents(localAgents, {
+          skillId,
+          prompt: localAgentPrompt,
+          userText,
+          contextText,
+          requestMessages,
+          model: profile?.model,
+          outputLanguage: this.state.outputLanguage,
+          cwd: localAgentRequestCwd(localAgents),
+          signal: this.state.abortController?.signal,
+          labelFor: (entry) => this.t(entry.skillId),
+          formatFailure: (entrySkillId, error) => this.state.uiLanguage === "zh-CN"
+            ? `调用 ${this.t(entrySkillId)} 失败：${safeError(error)}`
+            : `${this.t(entrySkillId)} failed: ${safeError(error)}`,
+          noResponseMessage: this.state.uiLanguage === "zh-CN" ? "本机代理未返回有效内容" : "No local agent output returned",
+          mergeAsMulti: LOCAL_AGENT_AGGREGATE_SKILLS.includes(skillId)
+        });
+        if (!answer?.trim()) throw new Error("Local agent returned empty response");
+        return answer;
+      } catch (err) {
+        if (!fallbackToRemote) throw err;
+        Zotero.debug(`[Markdown Summary] Local agent failed, fallback to remote provider: ${safeError(err)}`);
+      }
+    }
+    assertRemoteProfileReady(profile, (key) => this.t(key));
+    const requestInput = await buildRequestInput(profile, this.state.inputMode, this.state.pdf);
+    this.setStatus(`${this.t("thinking")} - ${requestInputStatusText(requestInput, (key) => this.t(key))}`);
+    const response = await requestModelWithRetry(
+      profile,
+      requestMessages,
+      this.state.outputLanguage,
+      this.state.systemPrompt,
+      requestInput,
+      this.state.stream,
+      this.state.abortController?.signal
+    );
+    if (!response.ok) {
+      throw new Error(providerErrorText(response.status, await response.text()));
+    }
+    if (shouldStream(profile, this.state.stream) && response.body) {
+      return readStream(response, profile.protocol, onDelta);
+    }
+    const data = await response.json();
+    return extractResponseText(profile.protocol, data);
+  },
+
+  sessionDir() {
+    return PathUtils.join(this.state.outputDir, "sessions", this.state.item?.key || "unknown");
+  },
+
+  sessionPath() {
+    return PathUtils.join(this.sessionDir(), sessionFilenameFor(this.state.sessionId));
+  },
+
+  async saveSession() {
+    await ensureDirectory(this.sessionDir());
+    const lines = this.state.messages.map((message) => JSON.stringify({
+      ...message,
+      itemKey: this.state.item?.key,
+      profileId: message.profileId || this.state.profile?.id,
+      profileName: message.profileName || this.state.profile?.name,
+      protocol: message.protocol || this.state.profile?.protocol,
+      model: message.model || this.state.profile?.model,
+      uiLanguage: this.state.uiLanguage,
+      outputLanguage: this.state.outputLanguage
+    })).join("\n");
+    await writeText(this.sessionPath(), `${lines}\n`);
+    await this.renderSessions();
+    this.setStatus(this.t("saved"));
+  },
+
+  async openReader() {
+    try {
+      const summary = await ensureSummaryFile(this.state.item, this.state.pdf, this.state.outputDir, this.summaryFileMetadata());
+      const payload = {
+        path: summary.path,
+        title: this.state.item?.getField?.("title") || this.state.item?.key || "Markdown",
+        itemID: this.state.item?.id || 0,
+        itemKey: this.state.item?.key || "",
+        embedded: !!this.state.launchPayload?.embedded
+      };
+      if (payload.embedded) {
+        window.location.href = readerURL(payload);
+        return;
+      }
+      window.openDialog(`${ZMS_CHROME_CONTENT_URL}reader.xhtml`, "zotero-markdown-summary-reader", "chrome,centerscreen,resizable", JSON.stringify(payload));
+    } catch (err) {
+      this.setStatus(safeError(err));
+    }
+  },
+
+  async openWriteback(message) {
+    this.state.writeMessage = message;
+    try {
+      const summary = await ensureSummaryFile(this.state.item, this.state.pdf, this.state.outputDir, this.summaryFileMetadata());
+      if (summary.created) this.setStatus(this.t("noSummary"));
+      this.state.summaryPath = summary.path;
+      const original = await readText(summary.path);
+      const sections = extractHeadings(original);
+      const select = document.getElementById("zms-write-section");
+      select.textContent = "";
+      for (const section of sections.length ? sections : ["Research Notes"]) {
+        const option = document.createElement("option");
+        option.value = section;
+        option.textContent = section;
+        select.appendChild(option);
+      }
+      document.getElementById("zms-writeback").hidden = false;
+      await this.previewWriteback();
+    } catch (err) {
+      this.setStatus(safeError(err));
+    }
+  },
+
+  async previewWriteback() {
+    if (!this.state.writeMessage) return;
+    const action = document.getElementById("zms-write-action").value;
+    const targetSection = action === "append_research_notes"
+      ? (this.state.uiLanguage === "zh-CN" ? "聊天摘录" : "Research Notes")
+      : document.getElementById("zms-write-section").value;
+    const original = await readText(this.state.summaryPath);
+    this.state.writePreview = applyMarkdownEdit(original, {
+      summaryPath: this.state.summaryPath,
+      chatSessionId: this.state.sessionId,
+      action,
+      targetSection,
+      replacementText: this.state.writeMessage.content,
+      skillId: this.state.writeMessage.skillId,
+      now: new Date().toISOString()
+    });
+    document.getElementById("zms-write-summary").textContent = writePreviewSummary(this.state.writePreview, {
+      action,
+      targetSection,
+      summaryPath: this.state.summaryPath,
+      translate: (key) => this.t(key)
+    });
+    document.getElementById("zms-write-diff").value = this.state.writePreview.diff;
+  },
+
+  async confirmWriteback() {
+    try {
+      if (!this.state.writePreview) await this.previewWriteback();
+      const preview = this.state.writePreview;
+      const current = await readText(this.state.summaryPath);
+      assertWritePreviewCurrent(preview, current, this.t("writeStale"));
+      await commitWritePreview(this.state.summaryPath, preview);
+      document.getElementById("zms-writeback").hidden = true;
+      this.setStatus(this.t("writeDone"));
+    } catch (err) {
+      this.setStatus(`${this.t("writeFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  cancelWriteback() {
+    this.state.writePreview = null;
+    this.state.writeMessage = null;
+    document.getElementById("zms-writeback").hidden = true;
+  },
+
+  setStatus(message) {
+    setText("zms-status", message);
+    setText("zms-chat-status", message);
+  },
+
+  summaryFileMetadata() {
+    return {
+      outputLanguage: this.state.outputLanguage,
+      sourceHash: this.state.contextSourceHash || buildContextSourceHash(this.state.context, this.state.item, this.state.pdf),
+      summaryVersion: this.state.summaryVersion,
+      inputMode: this.state.inputMode,
+      provider: this.state.profile?.id || this.state.profile?.name || pref("provider") || "default",
+      model: this.state.profile?.model || pref("model") || "",
+      sourceLanguage: "auto",
+      templateVersion: "workbench-v1",
+      summaryType: "paper-chat"
+    };
+  }
+};
+
+function itemFromArgs(args) {
+  if (args.itemID) return Zotero.Items.get(Number(args.itemID));
+  if (!args.itemKey) return null;
+  const pane = Zotero.getActiveZoteroPane?.();
+  return pane?.getSelectedItems?.().find((item) => item.key === args.itemKey) || null;
+}
+
+function launchPayload() {
+  const argPayload = parseWindowPayload(window.arguments?.[0]);
+  if (Object.keys(argPayload).length) return argPayload;
+  return payloadFromLocation();
+}
+
+function parseWindowPayload(value) {
+  if (!value) return {};
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch (_err) {
+      return {};
+    }
+  }
+  return value;
+}
+
+function payloadFromLocation() {
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    return {
+      itemID: Number(params.get("itemID")) || 0,
+      itemKey: params.get("itemKey") || "",
+      embedded: params.get("embedded") === "1"
+    };
+  } catch (_err) {
+    return {};
+  }
+}
+
+function readerURL(payload) {
+  const params = new URLSearchParams({
+    path: payload.path || "",
+    title: payload.title || "",
+    itemID: String(payload.itemID || ""),
+    itemKey: payload.itemKey || "",
+    embedded: payload.embedded ? "1" : "0",
+    refresh: String(Date.now())
+  });
+  return `${ZMS_CHROME_CONTENT_URL}reader.xhtml?${params.toString()}`;
+}
+
+function getProfiles() {
+  try {
+    const profiles = JSON.parse(pref("profilesJson") || "[]");
+    if (Array.isArray(profiles) && profiles.length) return mergeDefaultProviderProfiles(profiles).map(hydrateProfile);
+  } catch (_err) {
+    // Fall back to legacy settings.
+  }
+  const provider = pref("provider");
+  const defaults = workbenchProviderDefaults(provider);
+  return [{
+    id: defaults.id,
+    name: defaults.name,
+    protocol: defaults.protocol,
+    endpointMode: defaults.endpointMode,
+    baseURL: pref("baseURL") || defaults.baseURL || "",
+    fullURL: defaults.fullURL || "",
+    apiKey: pref("apiKey"),
+    model: pref("model") || defaults.model || "",
+    capabilities: defaults.capabilities,
+    customHeaders: defaults.customHeaders || {},
+    bodyExtra: defaults.bodyExtra,
+    isDefault: true
+  }];
+}
+
+function hydrateProfile(profile) {
+  const provider = workbenchProviderFromProfile(profile, pref("provider"));
+  const defaults = workbenchProviderDefaults(provider);
+  return normalizeProviderProfile({
+    ...profile,
+    protocol: profile.protocol || defaults.protocol,
+    endpointMode: profile.endpointMode || defaults.endpointMode,
+    baseURL: profile.baseURL || defaults.baseURL,
+    fullURL: profile.fullURL || "",
+    apiKey: profile.apiKey || "",
+    model: profile.model || defaults.model,
+    capabilities: {
+      ...defaults.capabilities,
+      ...(profile.capabilities || {})
+    },
+    customHeaders: profile.customHeaders || {},
+    bodyExtra: profile.bodyExtra || defaults.bodyExtra
+  }, defaults);
+}
+
+function defaultProviderProfiles() {
+  return ["minimax", "openai", "openai_compatible", "anthropic", "gemini", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+    const defaults = workbenchProviderDefaults(provider);
+    return {
+      id: defaults.id,
+      name: defaults.name,
+      protocol: defaults.protocol,
+      endpointMode: defaults.endpointMode,
+      baseURL: defaults.baseURL || "",
+      fullURL: defaults.fullURL || "",
+      apiKey: "",
+      model: defaults.model || "",
+      capabilities: { ...(defaults.capabilities || {}) },
+      customHeaders: { ...(defaults.customHeaders || {}) },
+      bodyExtra: { ...(defaults.bodyExtra || {}) },
+      isDefault: index === 0
+    };
+  });
+}
+
+function mergeDefaultProviderProfiles(profiles) {
+  const existing = Array.isArray(profiles)
+    ? profiles
+      .filter((profile) => profile && typeof profile === "object" && !Array.isArray(profile))
+      .map((profile) => normalizeProviderProfile(profile))
+    : [];
+  const defaults = defaultProviderProfiles();
+  if (!existing.length) return defaults;
+  const seen = new Set(existing.map((profile) => providerProfileCatalogKey(profile)).filter(Boolean));
+  for (const defaultProfile of defaults) {
+    const key = providerProfileCatalogKey(defaultProfile);
+    if (!key || seen.has(key)) continue;
+    existing.push({ ...defaultProfile, isDefault: false });
+    seen.add(key);
+  }
+  return normalizeDefaultProfileSelection(existing);
+}
+
+function normalizeDefaultProfileSelection(profiles) {
+  if (!profiles.length) return [];
+  const defaultIndex = Math.max(0, profiles.findIndex((profile) => profile.isDefault));
+  return profiles.map((profile, index) => ({ ...profile, isDefault: index === defaultIndex }));
+}
+
+function providerProfileCatalogKey(profile) {
+  const id = String(profile?.id || "").trim();
+  if (id === "openai_compatible") return "openai-compatible";
+  if (id === "azure_openai") return "azure-openai";
+  if (id === "moonshot") return "kimi";
+  if (id === "deepseek_anthropic") return "deepseek-anthropic";
+  if (id === "zai_anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") return "zai-anthropic";
+  if (id === "glm" || id === "bigmodel") return "zhipu";
+  if (id === "ark" || id === "doubao") return "volcengine";
+  if (id === "baidu") return "qianfan";
+  if (id === "tencent") return "hunyuan";
+  if (id === "lm_studio") return "lm-studio";
+  if (id === "local_agents") return "local-agents";
+  return id;
+}
+
+function normalizeProviderProfile(profile, defaultsOverride) {
+  const source = profile && typeof profile === "object" && !Array.isArray(profile) ? profile : {};
+  const provider = workbenchProviderFromProfile(source, pref("provider"));
+  const defaults = defaultsOverride || workbenchProviderDefaults(provider);
+  const id = normalizeProfileId(source.id || defaults.id) || defaults.id || "custom";
+  const name = String(source.name || defaults.name || id).trim() || id;
+  return {
+    ...source,
+    id,
+    name,
+    protocol: normalizeProviderProtocol(source.protocol, defaults.protocol || "openai_chat"),
+    endpointMode: normalizeEndpointMode(source.endpointMode, defaults.endpointMode || "base_url"),
+    baseURL: String(source.baseURL || defaults.baseURL || "").trim(),
+    fullURL: String(source.fullURL || defaults.fullURL || "").trim(),
+    apiKey: String(source.apiKey || "").trim(),
+    model: String(source.model || defaults.model || "").trim(),
+    capabilities: normalizeProviderCapabilities(source.capabilities, defaults.capabilities || {}),
+    customHeaders: normalizeObjectStringMap(source.customHeaders) || normalizeObjectStringMap(defaults.customHeaders) || {},
+    bodyExtra: normalizeObjectStringMap(source.bodyExtra) || normalizeObjectStringMap(defaults.bodyExtra) || {},
+    isDefault: source.isDefault === true
+  };
+}
+
+function normalizeProviderProtocol(value, fallback) {
+  const protocol = String(value || "").trim();
+  return ["openai_chat", "openai_responses", "anthropic_messages"].includes(protocol)
+    ? protocol
+    : fallback;
+}
+
+function normalizeEndpointMode(value, fallback) {
+  const mode = String(value || "").trim();
+  if (mode === "full_url" || mode === "base_url") return mode;
+  return fallback === "full_url" ? "full_url" : "base_url";
+}
+
+function normalizeProviderCapabilities(value, defaults) {
+  const raw = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const keys = new Set([...Object.keys(defaults || {}), ...Object.keys(raw)]);
+  const result = {};
+  for (const key of keys) {
+    result[key] = normalizeBoolean(raw[key], !!defaults?.[key]);
+  }
+  return result;
+}
+
+function normalizeProfileId(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[\\/:*?"<>|\r\n]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^\.+/, "")
+    .replace(/\.+$/, "")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
+function workbenchProviderDefaults(provider) {
+  const id = String(provider || "openai_compatible").trim();
+  const commonCapabilities = { text: true, pdfBase64: false, fileReference: false, streaming: true, embeddings: false, jsonMode: false, toolUse: false, modelList: true };
+  if (id === "openai") {
+    return { id: "openai", name: "OpenAI", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://api.openai.com/v1", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, bodyExtra: {} };
+  }
+  if (id === "anthropic") {
+    return { id: "anthropic", name: "Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.anthropic.com", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, bodyExtra: {} };
+  }
+  if (id === "minimax") {
+    return { id: "minimax", name: "MiniMax", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.minimaxi.com/v1", model: "MiniMax-M2.7", capabilities: commonCapabilities, bodyExtra: { extra_body: { reasoning_split: true } } };
+  }
+  if (id === "gemini") {
+    return { id: "gemini", name: "Gemini OpenAI Compatible", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "azure_openai" || id === "azure-openai") {
+    return { id: "azure-openai", name: "Azure OpenAI", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, customHeaders: {}, bodyExtra: {} };
+  }
+  if (id === "xai") {
+    return { id: "xai", name: "xAI", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.x.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "groq") {
+    return { id: "groq", name: "Groq", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.groq.com/openai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "mistral") {
+    return { id: "mistral", name: "Mistral AI", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.mistral.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "together") {
+    return { id: "together", name: "Together AI", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.together.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "kimi" || id === "moonshot") {
+    return { id: "kimi", name: "Kimi / Moonshot", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.moonshot.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "perplexity") {
+    return { id: "perplexity", name: "Perplexity Sonar", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.perplexity.ai", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+  }
+  if (id === "deepseek") {
+    return { id: "deepseek", name: "DeepSeek", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.deepseek.com", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "deepseek_anthropic" || id === "deepseek-anthropic") {
+    return { id: "deepseek-anthropic", name: "DeepSeek Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.deepseek.com/anthropic", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "zai_anthropic" || id === "zai-anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") {
+    return { id: "zai-anthropic", name: "Z.AI Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.z.ai/api/anthropic", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+  }
+  if (id === "openrouter") {
+    return { id: "openrouter", name: "OpenRouter", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://openrouter.ai/api/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "dashscope" || id === "qwen") {
+    return { id: "dashscope", name: "Qwen / DashScope", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "siliconflow") {
+    return { id: "siliconflow", name: "SiliconFlow", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.siliconflow.com/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "zhipu" || id === "glm" || id === "bigmodel") {
+    return { id: "zhipu", name: "Zhipu / GLM", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://open.bigmodel.cn/api/paas/v4", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+  }
+  if (id === "volcengine" || id === "ark" || id === "doubao") {
+    return { id: "volcengine", name: "Volcengine Ark / Doubao", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://ark.cn-beijing.volces.com/api/v3", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+  }
+  if (id === "qianfan" || id === "baidu") {
+    return { id: "qianfan", name: "Baidu Qianfan", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://qianfan.baidubce.com/v2", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+  }
+  if (id === "hunyuan" || id === "tencent") {
+    return { id: "hunyuan", name: "Tencent Hunyuan", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.hunyuan.cloud.tencent.com/v1", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+  }
+  if (id === "ollama") {
+    return { id: "ollama", name: "Ollama", protocol: "openai_chat", endpointMode: "base_url", baseURL: "http://localhost:11434/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "lm_studio" || id === "lm-studio") {
+    return { id: "lm-studio", name: "LM Studio", protocol: "openai_chat", endpointMode: "base_url", baseURL: "http://127.0.0.1:1234/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "local_agents" || id === "local-agents") {
+    return { id: "local-agents", name: "Local Agents", protocol: "openai_chat", endpointMode: "base_url", baseURL: "http://127.0.0.1:3333/v1", model: "", capabilities: { ...commonCapabilities, streaming: false, modelList: false }, bodyExtra: { localAgent: { endpoint: "http://127.0.0.1:3333/mcp", payloadMode: "jsonrpc", timeoutSeconds: 180, "ask-gemini": { tool: "ask_gemini" }, "ask-claude": { tool: "ask_claude" }, "ask-opencode": { tool: "ask_opencode" }, "ask-all-agents": { tool: "ask_all_agents" }, "ask-gemini-claude": { tool: "ask_all_agents", args: { agents: ["gemini", "claude"] } }, "check-local-agents": { tool: "check_local_agents", args: { timeoutSeconds: 30 } } } } };
+  }
+  return { id: "openai-compatible", name: "OpenAI Compatible Chat", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.openai.com/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+}
+
+function workbenchProviderFromProfile(profile, fallbackProvider) {
+  if (profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent) return "local_agents";
+  const id = String(profile?.id || fallbackProvider || "").trim();
+  if (id === "moonshot") return "kimi";
+  if (id === "zai-anthropic" || id === "zai_anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") return "zai_anthropic";
+  if (["xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "gemini"].includes(id)) return id;
+  if (id === "glm" || id === "bigmodel") return "zhipu";
+  if (id === "ark" || id === "doubao") return "volcengine";
+  if (id === "baidu") return "qianfan";
+  if (id === "tencent") return "hunyuan";
+  if (id === "lm-studio" || id === "lm_studio") return "lm_studio";
+  if (id === "azure-openai" || id === "azure_openai") return "azure_openai";
+  if (id === "minimax" || id === "openai" || id === "anthropic" || id === "openai-compatible" || id === "openai_compatible") return id;
+  const baseURL = String(profile?.baseURL || "").replace(/\/+$/, "");
+  if (baseURL === "https://api.minimaxi.com/v1") return "minimax";
+  if (baseURL === "https://generativelanguage.googleapis.com/v1beta/openai") return "gemini";
+  if (/^https:\/\/[^/]+\.openai\.azure\.com\/openai\/v1$/i.test(baseURL) || /^https:\/\/[^/]+\.services\.ai\.azure\.com\/openai\/v1$/i.test(baseURL)) return "azure_openai";
+  if (baseURL === "https://api.x.ai/v1") return "xai";
+  if (baseURL === "https://api.groq.com/openai/v1") return "groq";
+  if (baseURL === "https://api.mistral.ai/v1") return "mistral";
+  if (baseURL === "https://api.together.ai/v1") return "together";
+  if (baseURL === "https://api.moonshot.ai/v1") return "kimi";
+  if (baseURL === "https://api.perplexity.ai") return "perplexity";
+  if (baseURL === "https://api.deepseek.com") return "deepseek";
+  if (baseURL === "https://api.deepseek.com/anthropic") return "deepseek_anthropic";
+  if (baseURL === "https://api.z.ai/api/anthropic" || baseURL === "https://api.z.ai/api/anthropic/v1" || baseURL === "https://api.z.ai/api/anthropic/v1/messages") return "zai_anthropic";
+  if (baseURL === "https://openrouter.ai/api/v1") return "openrouter";
+  if (baseURL === "https://dashscope.aliyuncs.com/compatible-mode/v1") return "dashscope";
+  if (baseURL === "https://api.siliconflow.com/v1" || baseURL === "https://api.siliconflow.cn/v1") return "siliconflow";
+  if (baseURL === "https://open.bigmodel.cn/api/paas/v4" || baseURL === "https://api.z.ai/api/paas/v4") return "zhipu";
+  if (baseURL === "https://ark.cn-beijing.volces.com/api/v3") return "volcengine";
+  if (baseURL === "https://qianfan.baidubce.com/v2" || baseURL === "https://qianfan.bj.baidubce.com/v2") return "qianfan";
+  if (baseURL === "https://api.hunyuan.cloud.tencent.com/v1") return "hunyuan";
+  if (baseURL === "http://localhost:11434/v1" || baseURL === "http://127.0.0.1:11434/v1") return "ollama";
+  if (baseURL === "http://localhost:1234/v1" || baseURL === "http://127.0.0.1:1234/v1") return "lm_studio";
+  if (profile?.protocol === "anthropic_messages") return "anthropic";
+  if (profile?.protocol === "openai_responses") return "openai";
+  return "openai_compatible";
+}
+
+function assertRemoteProfileReady(profile, translate) {
+  const t = typeof translate === "function" ? translate : (key) => key;
+  if (!profileHasUsableAuth(profile)) {
+    throw new Error(t("apiKeyMissing"));
+  }
+  if (!String(profile?.model || "").trim()) {
+    throw new Error(t("modelMissing"));
+  }
+}
+
+function profileMessageMetadata(profile) {
+  if (!profile) return {};
+  return {
+    profileId: profile.id || "",
+    profileName: profile.name || "",
+    protocol: profile.protocol || "",
+    model: profile.model || ""
+  };
+}
+
+function profileStatusText(profile, translate = (key) => key) {
+  const t = typeof translate === "function" ? translate : (key) => key;
+  if (!profile) return t("noProfile");
+  const isLocalAgent = hasLocalAgentConfig(profile);
+  const endpoint = endpointForProfileSafe(profile) || t("profileEndpointMissing");
+  const model = String(profile.model || "").trim() || (isLocalAgent ? t("profileModelOptional") : t("profileModelMissing"));
+  const parts = [
+    `${t("profileProtocolStatus")}: ${profile.protocol || ""}`,
+    `${t("profileModelStatus")}: ${model}`,
+    `${t("profileEndpointStatus")}: ${endpoint}`,
+    canUsePdfBase64Input(profile) ? t("profilePdfReady") : t("profilePdfTextOnly"),
+    profile?.capabilities?.streaming === true ? t("profileStreamReady") : t("profileStreamOff"),
+    profileHasUsableAuth(profile) ? t("profileAuthReady") : t("profileAuthMissing")
+  ];
+  if (isLocalAgent) parts.push(t("profileLocalAgentReady"));
+  return parts.filter(Boolean).join("\n");
+}
+
+function endpointForProfileSafe(profile) {
+  try {
+    return endpointForProfile(profile);
+  } catch (_err) {
+    return "";
+  }
+}
+
+function hasLocalAgentConfig(profile) {
+  return !!(profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent);
+}
+
+function localAgentConfig(profile, skillId) {
+  if (!isLocalAgentSkill(profile, skillId)) return null;
+  const localAgentRaw = profile.bodyExtra?.localAgent || profile.bodyExtra?.agent || profile.bodyExtra?.subagent;
+  if (localAgentRaw && typeof localAgentRaw === "object" && !Array.isArray(localAgentRaw) && localAgentRaw.enabled === false) return null;
+  const localAgent = normalizeLocalAgentConfig(localAgentRaw, skillId);
+  if (!localAgent) return null;
+  const endpoint = normalizeLocalAgentEndpoint(localAgent.endpoint || localAgent.url || localAgent.mcpUrl || localAgent.baseUrl);
+  if (!endpoint) return null;
+  const explicitTool = inferLocalAgentTool(localAgentRaw, skillId);
+  const tool = normalizeLocalAgentToolName(explicitTool || localAgent.tool || localAgent.toolName || localAgent.tool_id, skillId);
+  const timeout = resolveLocalAgentTimeoutMs(localAgent, 180000);
+  const fallbackToRemote = localAgent.fallbackToRemote === true;
+  const callArgs = localAgentCallArgs(localAgent);
+  return {
+    endpoint,
+    tool,
+    timeoutMs: timeout,
+    timeoutSeconds: Math.max(1, Math.ceil(timeout / 1000)),
+    model: localAgent.model || profile?.model,
+    headers: localAgent.headers,
+    payloadMode: normalizeLocalAgentPayloadMode(localAgent.payloadMode || localAgent.protocol),
+    ...(localAgent.method ? { method: localAgent.method } : {}),
+    ...(localAgent.cwd ? { cwd: localAgent.cwd } : {}),
+    ...(localAgent.workdir ? { workdir: localAgent.workdir } : {}),
+    ...(localAgent.workingDirectory ? { workingDirectory: localAgent.workingDirectory } : {}),
+    ...(localAgent.working_directory ? { working_directory: localAgent.working_directory } : {}),
+    fallbackToRemote,
+    ...(callArgs && Object.keys(callArgs).length ? { args: callArgs } : {})
+  };
+}
+
+function resolveLocalAgentTimeoutMs(localAgent, fallbackMs = 180000) {
+  const timeoutMs = toFinitePositiveInt(
+    localAgent.timeoutMs,
+    localAgent.timeout_ms
+  );
+  if (timeoutMs) return timeoutMs;
+  const timeoutSeconds = toFinitePositiveInt(
+    localAgent.timeoutSeconds,
+    localAgent.timeoutSec,
+    localAgent.timeout_seconds
+  );
+  if (timeoutSeconds) return timeoutSeconds * 1000;
+  const timeout = toFinitePositiveInt(localAgent.timeout);
+  if (!timeout) return fallbackMs;
+  return timeout <= 1200 ? timeout * 1000 : timeout;
+}
+
+function localAgentPlan(profile, skillId) {
+  const raw = profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent;
+  if (!raw) return [];
+  const shouldMergeSubagents = LOCAL_AGENT_AGGREGATE_SKILLS.includes(skillId);
+  if (!shouldMergeSubagents) {
+    const localAgent = localAgentConfig(profile, skillId);
+    return localAgent ? [{ ...localAgent, skillId }] : [];
+  }
+  const hasAnySubagentConfig = LOCAL_AGENT_SUBSKILLS.some((subSkillId) => hasLocalAgentSkillConfig(raw, subSkillId));
+  const hasAggregatorConfig = hasLocalAgentSkillConfig(raw, skillId);
+  const defaultAgent = localAgentConfig(profile, skillId);
+  if (!hasAnySubagentConfig && !hasAggregatorConfig) {
+    const fallbackAgents = [];
+    const seen = new Set();
+    for (const subSkillId of LOCAL_AGENT_SUBSKILLS) {
+      const localAgent = localAgentConfig(profile, subSkillId);
+      if (!localAgent) continue;
+      const key = `${localAgent.endpoint}::${localAgent.tool || ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      fallbackAgents.push({
+        ...localAgent,
+        skillId: subSkillId,
+        fallbackToRemote: localAgent.fallbackToRemote === true
+      });
+    }
+    if (fallbackAgents.length) return fallbackAgents;
+  }
+  if (hasAggregatorConfig && defaultAgent) {
+    return [{ ...defaultAgent, skillId }];
+  }
+  const agents = [];
+  const seen = new Set();
+  for (const subSkillId of LOCAL_AGENT_SUBSKILLS) {
+    const localAgent = localAgentConfig(profile, subSkillId);
+    if (!localAgent) continue;
+    const key = `${localAgent.endpoint}::${localAgent.tool || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    agents.push({
+      ...localAgent,
+      skillId: subSkillId,
+      fallbackToRemote: localAgent.fallbackToRemote === true
+    });
+  }
+  if (!agents.length && defaultAgent) {
+    return [{ ...defaultAgent, skillId }];
+  }
+  return agents;
+}
+
+async function callLocalAgents(agents, request) {
+  const results = await Promise.allSettled(agents.map((agent) => callLocalAgent(agent, request)));
+  const labelFor = request.labelFor || ((entry) => entry.skillId);
+  const mergeAsMulti = request.mergeAsMulti || false;
+  let lastError = null;
+  const parts = [];
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    const current = agents[index];
+    if (result.status === "fulfilled") {
+      const text = String(result.value || "").trim();
+      if (!text) continue;
+      parts.push({
+        kind: "text",
+        title: labelFor(current),
+        text
+      });
+      continue;
+    }
+    lastError = lastError || result.reason;
+    const failureText = request.formatFailure ? request.formatFailure(current.skillId, result.reason) : `Local agent call failed: ${safeError(result.reason)}`;
+    parts.push({
+      kind: "error",
+      title: labelFor(current),
+      text: failureText
+    });
+  }
+  const successParts = parts.filter((part) => part.kind === "text" && part.text);
+  const textParts = parts.filter((part) => part.text);
+  if (!successParts.length) {
+    throw lastError || new Error(request.noResponseMessage || "No local agent output returned");
+  }
+  if (!mergeAsMulti || successParts.length === 1) {
+    return successParts[0].text;
+  }
+  return textParts.map((part) => `## ${part.title}\n\n${part.text}`).join("\n\n");
+}
+
+function isLocalAgentSkill(profile, skillId) {
+  const localAgentRaw = profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent;
+  if (!localAgentRaw) return false;
+  if (typeof localAgentRaw === "string") {
+    return isKnownLocalSkillId(skillId);
+  }
+  if (typeof localAgentRaw === "object" && !Array.isArray(localAgentRaw) && localAgentRaw.enabled === false) return false;
+  return isKnownLocalSkillId(skillId) || hasLocalAgentSkillConfig(localAgentRaw, skillId);
+}
+
+function isKnownLocalSkillId(skillId) {
+  const normalized = String(skillId || "");
+  return LOCAL_AGENT_SUBSKILLS.includes(normalized) || LOCAL_AGENT_AGGREGATE_SKILLS.includes(normalized);
+}
+
+function inferLocalAgentTool(rawConfig, skillId) {
+  if (!rawConfig || typeof rawConfig !== "object" || Array.isArray(rawConfig)) return "";
+  if (rawConfig.enabled === false) return "";
+  const candidate = pickSkillLocalAgentConfig(rawConfig, String(skillId));
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return "";
+  if (typeof candidate.tool === "string" && candidate.tool.trim()) return candidate.tool.trim();
+  if (typeof candidate.toolName === "string" && candidate.toolName.trim()) return candidate.toolName.trim();
+  if (typeof candidate.tool_id === "string" && candidate.tool_id.trim()) return candidate.tool_id.trim();
+  return "";
+}
+
+function hasLocalAgentSkillConfig(raw, skillId) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  const snakeSkillId = toSnakeCase(skillId);
+  const toolName = LOCAL_AGENT_SKILLS[skillId];
+  const keys = [skillId, snakeSkillId];
+  if (toolName) {
+    keys.push(toolIdToDash(toolName), `${toolName}`, `${toolName}_config`);
+  }
+  keys.push(`${snakeSkillId}-config`, `${skillId}-config`);
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(raw, key));
+}
+
+function normalizeLocalAgentToolName(value, fallbackSkillId = "") {
+  const normalized = String(value || "").trim();
+  if (!normalized) return LOCAL_AGENT_SKILLS[fallbackSkillId] || fallbackSkillId || "";
+  const camelSeparated = normalized
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (LOCAL_AGENT_TOOL_NAMES.has(camelSeparated)) return camelSeparated;
+  const compact = camelSeparated.replace(/_/g, "");
+  for (const toolName of LOCAL_AGENT_TOOL_NAMES) {
+    if (toolName.replace(/_/g, "") === compact) {
+      return toolName;
+    }
+  }
+  return camelSeparated;
+}
+
+function toolIdToDash(toolId) {
+  return String(toolId || "").replace(/_/g, "-");
+}
+
+function normalizeLocalAgentEndpoint(endpoint) {
+  const value = String(endpoint || "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  if (/^(?:localhost|127\.0\.0\.1):\d+(?:\/|$)/.test(value)) return `http://${value}`;
+  if (value.startsWith("/")) return value;
+  return "";
+}
+
+async function callLocalAgent(localAgent, request) {
+  const timeoutSeconds = toFinitePositiveInt(request.timeoutSeconds, localAgent.timeoutSeconds);
+  const normalizedLocalAgent = {
+    ...localAgent,
+    tool: normalizeLocalAgentToolName(localAgent.tool || "", request.skillId),
+    model: localAgent.model || request.model,
+    timeoutSeconds
+  };
+  const payload = buildLocalAgentRequestPayload(normalizedLocalAgent, request);
+  const payloadModes = localAgentPayloadModes(localAgent.payloadMode);
+  const [signal, clearTimeout] = createAbortController(request.signal, localAgent.timeoutMs);
+  let lastError = null;
+  try {
+    for (const payloadMode of payloadModes) {
+      const requestBody = localAgentRequestBody(localAgent, payload, payloadMode);
+      try {
+        const response = await fetch(localAgent.endpoint, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...normalizeObjectStringMap(localAgent.headers)
+          },
+          body: JSON.stringify(requestBody),
+          signal
+        });
+        const rawText = await response.text();
+        if (!response.ok) {
+          throw new Error(`Local agent HTTP ${response.status}: ${redact(rawText)}`);
+        }
+        const content = extractLocalAgentContent(rawText, request.skillId, localAgent.tool);
+        if (content) return content;
+        throw new Error("Local agent returned no content");
+      } catch (err) {
+        lastError = err;
+        if (err?.name === "AbortError") throw err;
+        if (payloadModes.length > 1) continue;
+        throw err;
+      }
+    }
+    if (lastError) throw lastError;
+    return "";
+  } finally {
+    clearTimeout();
+  }
+}
+
+function buildLocalAgentRequestPayload(localAgent, request) {
+  const timeoutSeconds = toFinitePositiveInt(localAgent.timeoutSeconds, request.timeoutSeconds);
+  const tool = normalizeLocalAgentToolName(localAgent.tool, request.skillId);
+  const requestArgs = normalizeObjectStringMap(request.args);
+  const configArgs = normalizeObjectStringMap(localAgent.args);
+  const cwd = request.cwd || localAgent.cwd || localAgent.workingDirectory || localAgent.workdir || localAgent.working_directory || "";
+  const basePayload = {
+    ...(timeoutSeconds ? { timeoutSeconds } : {}),
+    ...configArgs,
+    ...requestArgs,
+    ...localAgent.model ? { model: localAgent.model } : {},
+    ...(tool && tool === "check_local_agents" ? { tool } : {})
+  };
+  if (tool === "check_local_agents") {
+    const { prompt: _prompt, cwd: _cwd, model: _model, ...checkPayload } = basePayload;
+    return {
+      ...(tool ? { tool } : {}),
+      ...checkPayload
+    };
+  }
+  return {
+    ...basePayload,
+    ...(tool ? { tool: tool } : {}),
+    prompt: request.prompt,
+    cwd
+  };
+}
+
+function localAgentPayloadModes(payloadMode) {
+  const normalizedPayloadMode = normalizeLocalAgentPayloadMode(payloadMode);
+  const fallbackMode = normalizedPayloadMode === "simple" ? "jsonrpc" : "simple";
+  const modes = [normalizedPayloadMode];
+  if (fallbackMode !== normalizedPayloadMode) {
+    modes.push(fallbackMode);
+  }
+  return modes;
+}
+
+function localAgentRequestBody(localAgent, payload, payloadMode) {
+  if (payloadMode === "simple") {
+    return payload;
+  }
+  const method = localAgent.method || "tools/call";
+  const callPayload = payload && typeof payload === "object" ? { ...payload } : {};
+  if (method === "tools/call") {
+    const name = localAgent.tool || callPayload.tool;
+    if (callPayload.tool) {
+      delete callPayload.tool;
+    }
+    return {
+      jsonrpc: "2.0",
+      id: `local-agent-${Date.now()}`,
+      method,
+      params: {
+        name,
+        arguments: {
+          ...callPayload
+        }
+      }
+    };
+  }
+  return {
+    jsonrpc: "2.0",
+    id: `local-agent-${Date.now()}`,
+    method,
+    params: callPayload
+  };
+}
+
+function localAgentCallArgs(localAgent) {
+  if (!localAgent || typeof localAgent !== "object" || Array.isArray(localAgent)) return {};
+  const presetArgs = normalizeObjectStringMap(localAgent) || {};
+  const reserved = [
+    "endpoint",
+    "url",
+    "mcpUrl",
+    "baseUrl",
+    "tool",
+    "toolName",
+    "tool_id",
+    "headers",
+    "timeoutMs",
+    "timeout_ms",
+    "timeout",
+    "timeoutSec",
+    "timeout_seconds",
+    "payloadMode",
+    "protocol",
+    "fallbackToRemote",
+    "enabled",
+    "toolMode",
+    "method",
+    "model",
+    "cwd",
+    "workdir",
+    "workingDirectory",
+    "working_directory"
+  ];
+  for (const key of reserved) {
+    delete presetArgs[key];
+  }
+  const body = normalizeObjectStringMap(localAgent.body);
+  const params = normalizeObjectStringMap(localAgent.params);
+  const payload = normalizeObjectStringMap(localAgent.payload);
+  delete presetArgs.args;
+  delete presetArgs.body;
+  delete presetArgs.params;
+  delete presetArgs.payload;
+  return {
+    ...presetArgs,
+    ...(body || {}),
+    ...(params || {}),
+    ...(payload || {}),
+    ...(normalizeObjectStringMap(localAgent.args) || {})
+  };
+}
+
+function createAbortController(parentSignal, timeoutMs) {
+  const child = new AbortController();
+  const clearTimers = [];
+  if (parentSignal) {
+    if (parentSignal.aborted) {
+      child.abort(parentSignal.reason);
+      return [child.signal, () => clearTimers.forEach((clear) => clear())];
+    }
+    const onAbort = () => child.abort(parentSignal.reason);
+    parentSignal.addEventListener("abort", onAbort, { once: true });
+    clearTimers.push(() => parentSignal.removeEventListener("abort", onAbort));
+  }
+  if (typeof timeoutMs === "number" && timeoutMs > 0) {
+    const timer = setTimeout(() => child.abort("Local agent request timeout"), timeoutMs);
+    clearTimers.push(() => clearTimeout(timer));
+  }
+  return [child.signal, () => clearTimers.forEach((clear) => clear())];
+}
+
+function extractLocalAgentContent(rawText, _skillId, _tool) {
+  const chunks = [];
+  const payloads = localAgentPayloadTexts(rawText);
+  for (const payloadText of payloads) {
+    const payload = safeParseJSON(payloadText);
+    if (!payload) continue;
+    if (payload?.error) {
+      const message = payload.error?.message || JSON.stringify(payload.error);
+      throw new Error(`Local agent error: ${message}`);
+    }
+    const candidate = localAgentTextFromPayload(payload);
+    if (candidate) chunks.push(candidate);
+  }
+  const content = chunks.join("\n").trim();
+  if (content) return content;
+  return stripThink(String(rawText || "").trim());
+}
+
+function localAgentPayloadTexts(rawText) {
+  const text = String(rawText || "");
+  const seen = new Set();
+  const payloads = [];
+  const pushPayload = (payloadText) => {
+    const trimmed = String(payloadText || "").trim();
+    if (!trimmed || trimmed === "[DONE]") return;
+    if (!seen.has(trimmed)) {
+      seen.add(trimmed);
+      payloads.push(trimmed);
+    }
+  };
+
+  for (const payloadText of extractContentLengthPayloads(text)) {
+    pushPayload(payloadText);
+  }
+
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const payloadText = trimmed.startsWith("data:") ? trimmed.slice(5).trim() : trimmed;
+    if (payloadText) pushPayload(payloadText);
+  }
+
+  if (!payloads.length) {
+    pushPayload(text);
+  }
+  return payloads;
+}
+
+function extractContentLengthPayloads(rawText) {
+  const text = String(rawText || "");
+  const frames = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    const candidateHeaderStarts = [text.indexOf("Content-Length:", cursor), text.indexOf("content-length:", cursor)].filter((index) => index >= 0);
+    if (!candidateHeaderStarts.length) break;
+    const headerStart = Math.min(...candidateHeaderStarts);
+    if (headerStart === -1) break;
+    const headerEnd = text.indexOf("\r\n\r\n", headerStart);
+    if (headerEnd === -1) break;
+    const header = text.slice(headerStart, headerEnd);
+    const match = /content-length:\s*(\d+)/i.exec(header);
+    if (!match) {
+      cursor = headerStart + 1;
+      continue;
+    }
+    const length = Number(match[1]);
+    if (!Number.isFinite(length) || length <= 0) {
+      cursor = headerEnd + 4;
+      continue;
+    }
+    const payloadStart = headerEnd + 4;
+    const payloadEnd = payloadStart + length;
+    if (payloadEnd > text.length) break;
+    frames.push(text.slice(payloadStart, payloadEnd));
+    cursor = payloadEnd;
+  }
+  return frames;
+}
+
+function localAgentTextFromPayload(parsed) {
+  const candidates = [
+    parsed?.content,
+    parsed?.result?.content,
+    parsed?.result?.text,
+    parsed?.result?.output,
+    parsed?.result?.output_text,
+    parsed?.output,
+    parsed?.output_text,
+    parsed?.answer,
+    parsed?.response,
+    parsed?.message?.content,
+    parsed?.result?.message?.content,
+    parsed?.result?.message?.text,
+    parsed?.choices?.[0]?.message?.content,
+    parsed?.result?.choices?.[0]?.message?.content,
+    parsed?.result?.content?.[0]?.text
+  ];
+  for (const candidate of candidates) {
+    const text = localAgentTextFromValue(candidate);
+    if (text) return text;
+  }
+  return "";
+}
+
+function localAgentTextFromValue(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) {
+    return value.map((item) => localAgentTextFromValue(item)).filter(Boolean).join("\n").trim();
+  }
+  if (typeof value === "object") {
+    if (typeof value.text === "string") return value.text.trim();
+    if (typeof value.content === "string") return value.content.trim();
+    if (typeof value.output_text === "string") return value.output_text.trim();
+    if (typeof value.outputText === "string") return value.outputText.trim();
+    if (typeof value.answer === "string") return value.answer.trim();
+    if (typeof value.response === "string") return value.response.trim();
+    if (typeof value.result === "string") return value.result.trim();
+    if (typeof value.message === "string") return value.message.trim();
+    if (Array.isArray(value.content)) {
+      const contentText = value.content
+        .map((item) => localAgentTextFromValue(item))
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+      if (contentText) return contentText;
+    }
+    if (Array.isArray(value.output)) {
+      const outputText = value.output
+        .map((item) => localAgentTextFromValue(item))
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+      if (outputText) return outputText;
+    }
+  }
+  return "";
+}
+
+function safeParseJSON(text) {
+  try {
+    return JSON.parse(text);
+  } catch (_err) {
+    return null;
+  }
+}
+
+function normalizeObjectStringMap(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return Object.fromEntries(Object.entries(value).filter(([, candidate]) => candidate !== undefined).map(([key, candidate]) => [String(key), candidate]));
+}
+
+function toFinitePositiveInt(...values) {
+  for (const value of values) {
+    const normalized = Number(value);
+    if (Number.isFinite(normalized) && normalized > 0) return Math.round(normalized);
+  }
+  return null;
+}
+
+function normalizeLocalAgentPayloadMode(payloadMode) {
+  const normalized = String(payloadMode || "").trim().toLowerCase();
+  if (normalized === "simple") return "simple";
+  return "jsonrpc";
+}
+
+function normalizeLocalAgentConfig(raw, skillId) {
+  if (typeof raw === "string") return { endpoint: raw };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const normalizedRaw = normalizeObjectStringMap(raw);
+  if (!normalizedRaw) return null;
+  const baseConfig = {
+    ...(normalizedRaw.endpoint ? { endpoint: normalizedRaw.endpoint } : {}),
+    ...(normalizedRaw.url ? { url: normalizedRaw.url } : {}),
+    ...(normalizedRaw.mcpUrl ? { mcpUrl: normalizedRaw.mcpUrl } : {}),
+    ...(normalizedRaw.baseUrl ? { baseUrl: normalizedRaw.baseUrl } : {}),
+    ...(normalizedRaw.tool ? { tool: normalizedRaw.tool } : {}),
+    ...(normalizedRaw.toolName ? { toolName: normalizedRaw.toolName } : {}),
+    ...(normalizedRaw.tool_id ? { tool_id: normalizedRaw.tool_id } : {}),
+    ...(normalizedRaw.headers ? { headers: normalizedRaw.headers } : {}),
+    ...(normalizedRaw.timeoutMs ? { timeoutMs: normalizedRaw.timeoutMs } : {}),
+    ...(normalizedRaw.timeout ? { timeout: normalizedRaw.timeout } : {}),
+    ...(normalizedRaw.timeoutSeconds ? { timeoutSeconds: normalizedRaw.timeoutSeconds } : {}),
+    ...(normalizedRaw.timeoutSec ? { timeoutSec: normalizedRaw.timeoutSec } : {}),
+    ...(normalizedRaw.timeout_seconds ? { timeout_seconds: normalizedRaw.timeout_seconds } : {}),
+    ...(normalizedRaw.timeout_ms ? { timeout_ms: normalizedRaw.timeout_ms } : {}),
+    ...(normalizedRaw.payloadMode ? { payloadMode: normalizedRaw.payloadMode } : {}),
+    ...(normalizedRaw.protocol ? { protocol: normalizedRaw.protocol } : {}),
+    ...(normalizedRaw.method ? { method: normalizedRaw.method } : {}),
+    ...(normalizedRaw.model ? { model: normalizedRaw.model } : {}),
+    ...(normalizedRaw.cwd ? { cwd: normalizedRaw.cwd } : {}),
+    ...(normalizedRaw.workdir ? { workdir: normalizedRaw.workdir } : {}),
+    ...(normalizedRaw.workingDirectory ? { workingDirectory: normalizedRaw.workingDirectory } : {}),
+    ...(normalizedRaw.working_directory ? { working_directory: normalizedRaw.working_directory } : {}),
+    ...(normalizedRaw.args ? { args: normalizedRaw.args } : {}),
+    ...(normalizedRaw.body ? { body: normalizedRaw.body } : {}),
+    ...(normalizedRaw.params ? { params: normalizedRaw.params } : {}),
+    ...(normalizedRaw.payload ? { payload: normalizedRaw.payload } : {}),
+    ...(normalizedRaw.fallbackToRemote ? { fallbackToRemote: true } : {})
+  };
+  const candidate = pickSkillLocalAgentConfig(raw, String(skillId));
+  if (!candidate) {
+    return baseConfig.endpoint || baseConfig.url || baseConfig.mcpUrl || baseConfig.baseUrl ? baseConfig : null;
+  }
+  if (typeof candidate === "string") return { ...baseConfig, endpoint: candidate };
+  if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+    return {
+      ...baseConfig,
+      ...normalizeObjectStringMap(candidate)
+    };
+  }
+  return null;
+}
+
+function localAgentRequestCwd(localAgents) {
+  for (const agent of localAgents || []) {
+    const cwd = agent?.cwd || agent?.workingDirectory || agent?.workdir || agent?.working_directory;
+    if (typeof cwd === "string" && cwd.trim()) return cwd.trim();
+  }
+  return "";
+}
+
+function pickSkillLocalAgentConfig(candidateMap, skillId) {
+  const fallback = candidateMap.default;
+  const bySkill = candidateMap[skillId];
+  const bySnake = candidateMap[toSnakeCase(skillId)];
+  const byToolName = candidateMap[LOCAL_AGENT_SKILLS[skillId]];
+  const bySkillConfig = candidateMap[`${toSnakeCase(skillId)}-config`];
+  const byDashSkillConfig = candidateMap[`${toolIdToDash(skillId)}-config`];
+  const byToolConfig = candidateMap[`${LOCAL_AGENT_SKILLS[skillId]}-config`];
+  const byToolDashConfig = candidateMap[`${toolIdToDash(LOCAL_AGENT_SKILLS[skillId])}-config`];
+  return bySkill || bySnake || byToolName || bySkillConfig || byDashSkillConfig || byToolConfig || byToolDashConfig || fallback || null;
+}
+
+function toSnakeCase(skillId) {
+  return String(skillId).replace(/-/g, "_");
+}
+
+function pref(key) {
+  return Zotero.Prefs.get(`${ZMS_PREF_PREFIX}.${key}`, true);
+}
+
+function resolveUiLanguage(setting, locale) {
+  if (typeof zmsResolveUiLanguage === "function") {
+    return zmsResolveUiLanguage(setting, locale);
+  }
+  if (setting === "zh-CN" || setting === "en-US") return setting;
+  return String(locale || "").toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
+}
+
+function runtimeLocale() {
+  try {
+    return Services.locale.appLocaleAsBCP47 || Services.locale.requestedLocale || "";
+  } catch (_err) {
+    return "";
+  }
+}
+
+function normalizeOutputLanguage(value) {
+  if (value === "en-US" || value === "ja-JP") return value;
+  return "zh-CN";
+}
+
+function normalizeInputMode(value) {
+  return value === "pdf_base64" ? "pdf_base64" : "text";
+}
+
+function normalizeBoolean(value, fallback = false) {
+  if (value === true || value === false) return value;
+  if (value === 1 || value === "1") return true;
+  if (value === 0 || value === "0") return false;
+  if (typeof value === "string") {
+    const lowered = value.trim().toLowerCase();
+    if (["true", "yes", "on"].includes(lowered)) return true;
+    if (["false", "no", "off"].includes(lowered)) return false;
+  }
+  return fallback;
+}
+
+function buildContextSourceHash(context, item, pdf) {
+  const itemKey = item?.key || "";
+  const pdfKey = pdf?.key || "";
+  const chunkParts = (context?.chunks || []).map((chunk) => `${chunk.chunkId}:${chunk.sourceHash}`).join("|");
+  return hashString(`${itemKey}|${pdfKey}|${chunkParts}`);
+}
+
+function setText(id, text) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = text;
+}
+
+function setButtonLabel(id, visualText, accessibleText) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.textContent = visualText;
+  element.title = accessibleText;
+  element.setAttribute?.("aria-label", accessibleText);
+}
+
+function renderMessageContent(body, message) {
+  if (message?.role !== "assistant" || !window.ZMSMarkdownRenderer?.renderMarkdown) {
+    body.textContent = message?.content || "";
+    return;
+  }
+  body.textContent = "";
+  const rendered = window.ZMSMarkdownRenderer.renderMarkdown(message.content || "");
+  rendered.className = `${rendered.className || ""} zms-markdown`.trim();
+  body.appendChild(rendered);
+}
+
+function profileCompactLabel(profile, modelLabel = "Model") {
+  if (!profile) return modelLabel;
+  const name = profile.name || profile.id || modelLabel;
+  const model = profile.model || "";
+  return model ? `${name} · ${model}` : name;
+}
+
+function focusElement(element) {
+  if (!element?.focus) return;
+  try {
+    element.focus({ preventScroll: true });
+  } catch (_err) {
+    element.focus();
+  }
+}
+
+async function findPdfAttachment(item) {
+  if (isPdfAttachmentItem(item)) return item;
+  if (typeof item.getBestAttachment === "function") {
+    const best = await item.getBestAttachment();
+    if (isPdfAttachmentItem(best)) return best;
+  }
+  const attachmentIDs = typeof item?.getAttachments === "function" ? item.getAttachments() : [];
+  for (const id of attachmentIDs) {
+    const attachment = Zotero.Items.get(id);
+    if (isPdfAttachmentItem(attachment)) return attachment;
+  }
+  return null;
+}
+
+function isPdfAttachmentItem(item) {
+  return String(item?.attachmentContentType || "").toLowerCase() === "application/pdf";
+}
+
+async function buildPaperContext(item, pdf, outputDir) {
+  const metadata = {
+    title: item.getField("title") || item.key,
+    authors: item.getCreators?.().map((creator) => [creator.firstName, creator.lastName].filter(Boolean).join(" ")).filter(Boolean) || [],
+    year: item.getField("date") || "",
+    doi: item.getField("DOI") || "",
+    abstract: item.getField("abstractNote") || ""
+  };
+  const text = pdf ? String((await pdf.attachmentText) || "").trim() : "";
+  const pdfPath = await safePdfPath(pdf);
+  const annotationsText = await readPdfAnnotations(pdf);
+  const annotationCount = countAnnotationEntries(pdf);
+  const notesResult = await readChildNotesWithCount(item);
+  const notesText = notesResult.text;
+  const summaryText = await readExistingSummaryText(item, outputDir);
+  const chunks = [
+    ...chunkText(Object.entries(metadata).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(", ") : value}`).join("\n"), "metadata", 1200),
+    ...chunkText(metadata.abstract, "abstract", 1200),
+    ...chunkText(text, "fulltext", 1800),
+    ...chunkText(annotationsText, "annotation", 1200),
+    ...chunkText(notesText, "note", 1200),
+    ...chunkText(summaryText, "summary", 1400)
+  ];
+  return {
+    metadata,
+    chunks,
+    diagnostics: {
+      hasPdf: !!pdf,
+      pdfPathAvailable: !pdf || !!pdfPath,
+      fulltextChars: text.length,
+      annotationCount,
+      noteCount: notesResult.count,
+      summaryChars: summaryText.trim().length,
+      chunkCount: chunks.length
+    }
+  };
+}
+
+async function safePdfPath(pdf) {
+  try {
+    return pdf && typeof pdf.getFilePathAsync === "function" ? await pdf.getFilePathAsync() : "";
+  } catch (_err) {
+    return "";
+  }
+}
+
+function countAnnotationEntries(pdf) {
+  try {
+    const annotations = typeof pdf?.getAnnotations === "function" ? pdf.getAnnotations() : [];
+    return Array.isArray(annotations) ? annotations.length : 0;
+  } catch (_err) {
+    return 0;
+  }
+}
+
+async function readPdfAnnotations(pdf) {
+  if (!pdf || typeof pdf.getAnnotations !== "function") return "";
+  const annotations = pdf.getAnnotations() || [];
+  return annotations.map((annotation) => {
+    const parts = [
+      annotation.annotationType ? `type: ${annotation.annotationType}` : "",
+      annotation.annotationPageLabel ? `page: ${annotation.annotationPageLabel}` : "",
+      annotation.annotationText ? `text: ${annotation.annotationText}` : "",
+      annotation.annotationComment ? `comment: ${annotation.annotationComment}` : "",
+      annotation.annotationColor ? `color: ${annotation.annotationColor}` : ""
+    ].filter(Boolean);
+    return parts.join("\n");
+  }).filter(Boolean).join("\n\n");
+}
+
+async function readChildNotes(item) {
+  return (await readChildNotesWithCount(item)).text;
+}
+
+async function readChildNotesWithCount(item) {
+  const noteIds = typeof item.getNotes === "function" ? item.getNotes() : [];
+  const notes = [];
+  for (const id of noteIds) {
+    const note = Zotero.Items.get(id);
+    const html = note?.getNote?.() || note?.getField?.("note") || "";
+    const text = htmlToText(html);
+    if (text) notes.push(text);
+  }
+  return { text: notes.join("\n\n"), count: notes.length };
+}
+
+async function readExistingSummaryText(item, outputDir) {
+  try {
+    const attachment = await findExistingSummaryAttachment(item, outputDir);
+    const path = await attachment?.getFilePathAsync?.();
+    if (!path || !await IOUtils.exists(path)) return "";
+    return await readText(path);
+  } catch (_err) {
+    return "";
+  }
+}
+
+function htmlToText(html) {
+  const raw = String(html || "").trim();
+  if (!raw) return "";
+  try {
+    return new DOMParser().parseFromString(raw, "text/html").body.textContent?.replace(/\s+/g, " ").trim() || "";
+  } catch (_err) {
+    return raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  }
+}
+
+function contextForPrompt(context, query) {
+  const chunks = selectRelevantChunks(context.chunks, query, 8);
+  const metadata = context.metadata;
+  return [
+    "Paper metadata:",
+    `Title: ${metadata.title}`,
+    `Authors: ${metadata.authors.join(", ")}`,
+    `Year: ${metadata.year}`,
+    `DOI: ${metadata.doi}`,
+    "",
+    "Context excerpts:",
+    ...chunks.map((chunk) => `${chunkEvidenceLabel(chunk)} ${chunk.text}`)
+  ].join("\n");
+}
+
+function chunkEvidenceLabel(chunk) {
+  const source = chunk.sourceType || "unknown";
+  const locator = chunk.locator || "";
+  const hash = chunk.sourceHash || "";
+  const details = [
+    `source=${source}`,
+    locator ? `locator=${locator}` : "",
+    hash ? `hash=${hash}` : ""
+  ].filter(Boolean).join(" ");
+  return `[chunk:${chunk.chunkId || "unknown"} ${details}]`;
+}
+
+function contextDiagnosticsText(diagnostics, translate = (key) => key) {
+  if (!diagnostics) return "";
+  const lines = [
+    `${translate("contextQuality")}: ${translate("contextChunks")} ${Number(diagnostics.chunkCount) || 0}; ${translate("contextFulltextChars")} ${Number(diagnostics.fulltextChars) || 0}; ${translate("contextAnnotations")} ${Number(diagnostics.annotationCount) || 0}; ${translate("contextNotes")} ${Number(diagnostics.noteCount) || 0}; ${translate("contextSummary")} ${Number(diagnostics.summaryChars) || 0}`
+  ];
+  const warnings = [];
+  if (!diagnostics.hasPdf) warnings.push(translate("contextPdfMissing"));
+  else {
+    if (!diagnostics.pdfPathAvailable) warnings.push(translate("contextPdfPathMissing"));
+    if (!diagnostics.fulltextChars) warnings.push(translate("contextFulltextMissing"));
+  }
+  if (warnings.length) lines.push(warnings.join("\n"));
+  return lines.join("\n");
+}
+
+function requestMessagesWithHistory(messages, latestUserText, requestPrompt, limit = 8) {
+  const history = messages
+    .filter((message) => (message.role === "user" || message.role === "assistant") && String(message.content || "").trim())
+    .slice(-limit);
+  if (history.at(-1)?.role === "user" && history.at(-1)?.content === latestUserText) {
+    history.pop();
+  }
+  return [
+    ...history.map((message) => ({ role: message.role, content: message.content })),
+    { role: "user", content: requestPrompt }
+  ];
+}
+
+function chunkText(text, sourceType, maxChars) {
+  const normalized = String(text || "").replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (!normalized) return [];
+  const paragraphs = normalized.split(/\n\s*\n/);
+  const chunks = [];
+  let current = "";
+  for (const paragraph of paragraphs) {
+    const candidate = current ? `${current}\n\n${paragraph}` : paragraph;
+    if (candidate.length <= maxChars) {
+      current = candidate;
+    } else {
+      if (current) chunks.push(current);
+      if (paragraph.length <= maxChars) current = paragraph;
+      else {
+        for (let index = 0; index < paragraph.length; index += maxChars) chunks.push(paragraph.slice(index, index + maxChars));
+        current = "";
+      }
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks.map((chunk, index) => ({ chunkId: stableChunkId(sourceType, chunk, index), sourceType, locator: `${sourceType}:${index + 1}`, text: chunk, sourceHash: hashString(chunk) }));
+}
+
+function stableChunkId(sourceType, chunk, index) {
+  return `${sourceType}-${hashString(chunk).slice(0, 8)}-${String(index + 1).padStart(4, "0")}`;
+}
+
+function selectRelevantChunks(chunks, query, limit) {
+  const terms = String(query || "").toLowerCase().split(/[^a-z0-9\u4e00-\u9fff]+/).filter((term) => term.length >= 2);
+  return [...chunks].map((chunk, index) => ({ chunk, index, score: scoreChunk(chunk, terms) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, limit)
+    .map((entry) => entry.chunk);
+}
+
+function scoreChunk(chunk, terms) {
+  const lower = String(chunk.text || "").toLowerCase();
+  const termScore = terms.reduce((score, term) => score + termFrequency(lower, term), 0);
+  return termScore * 10 + sourceWeight(chunk.sourceType);
+}
+
+function termFrequency(text, term) {
+  if (!term) return 0;
+  let count = 0;
+  let index = text.indexOf(term);
+  while (index !== -1) {
+    count += 1;
+    index = text.indexOf(term, index + term.length);
+  }
+  return count;
+}
+
+function sourceWeight(sourceType) {
+  return {
+    summary: 6,
+    annotation: 5,
+    note: 4,
+    abstract: 3,
+    metadata: 2,
+    fulltext: 1
+  }[sourceType] || 0;
+}
+
+async function ensureSkillTemplates(outputDir) {
+  const skillsDir = PathUtils.join(outputDir, "skills");
+  await ensureDirectory(skillsDir);
+  for (const id of ZMS_SKILL_IDS) {
+    const path = PathUtils.join(skillsDir, `${id}.md`);
+    if (!await IOUtils.exists(path)) await writeText(path, builtInSkillTemplate(id, "zh-CN"));
+  }
+}
+
+async function loadSkillTemplate(outputDir, skillId, outputLanguage) {
+  const safeSkillId = normalizeSkillId(skillId) || "paper-deep-summary";
+  const path = PathUtils.join(outputDir, "skills", `${safeSkillId}.md`);
+  if (await IOUtils.exists(path)) {
+    const text = await readText(path);
+    if (text.trim()) return `${text.trim()}\n\n${languageInstruction(outputLanguage)}`;
+  }
+  return builtInSkillTemplate(safeSkillId, outputLanguage);
+}
+
+async function availableSkillIds(outputDir) {
+  const ids = new Set(ZMS_SKILL_IDS);
+  try {
+    const skillsDir = PathUtils.join(outputDir, "skills");
+    if (!await IOUtils.exists(skillsDir)) return [...ids];
+    const children = await IOUtils.getChildren(skillsDir);
+    for (const path of children) {
+      const name = leafName(path);
+      if (name.endsWith(".md")) {
+        const skillId = normalizeSkillId(name.slice(0, -3));
+        if (skillId) ids.add(skillId);
+      }
+    }
+  } catch (_err) {
+    // Built-in skills remain available if the local folder is not readable.
+  }
+  return [...ids];
+}
+
+function builtInSkillTemplate(skillId, outputLanguage) {
+  const common = [
+    languageInstruction(outputLanguage),
+    "Use only the provided paper metadata and context excerpts.",
+    "Mark each important claim with an evidence note such as [metadata], [abstract], or [chunk:<id>].",
+    "If evidence is missing, mark the point as low-confidence."
+  ].join("\n");
+  if (skillId === "method-extractor") return `${common}\n\nExtract method, model, algorithm flow, inputs, outputs, constraints, and reusable details.`;
+  if (skillId === "experiment-table-builder") return `${common}\n\nBuild a Markdown table for datasets, baselines, metrics, ablations, results, and limitations.`;
+  if (skillId === "citation-audit") return `${common}\n\nAudit claims and identify unsupported or weakly supported statements.`;
+  if (skillId === "custom-summary") return `${common}\n\nFollow the user's custom research goal and produce a structured Markdown note.`;
+  if (skillId === "ask-gemini") {
+    return `${common}\n\nAnalyze this paper with a Gemini-style lens. Summarize key contributions, identify weak assumptions, surface likely edge cases, and propose follow-up questions.`;
+  }
+  if (skillId === "ask-claude") {
+    return `${common}\n\nGive a reviewer-style critique focused on novelty, validity, and potential failure modes; propose practical revision actions.`;
+  }
+  if (skillId === "ask-opencode") {
+    return `${common}\n\nProvide practical implementation guidance: reproducible experiment design, code-level checkpoints, tooling assumptions, and validation order.`;
+  }
+  if (skillId === "ask-all-agents") {
+    return `${common}\n\nQuery all local agents and report agreement points, disagreement points, and consolidated recommendations with uncertainty.`;
+  }
+  if (skillId === "ask-gemini-claude") {
+    return `${common}\n\nQuery Gemini and Claude and report agreement points, disagreement points, and consolidated recommendations with uncertainty.`;
+  }
+  if (skillId === "check-local-agents") {
+    return `${common}\n\nRun a quick local-agent health check and report each subagent status, likely failure causes, and command-level remediation suggestions.`;
+  }
+  return paperDeepSummaryTemplate(common, outputLanguage);
+}
+
+function languageInstruction(outputLanguage) {
+  if (outputLanguage === "en-US") return "Write the output in English.";
+  if (outputLanguage === "ja-JP") return "日本語で出力してください。";
+  return "请使用中文输出。";
+}
+
+function paperDeepSummaryTemplate(common, outputLanguage) {
+  if (outputLanguage === "zh-CN") {
+    return `${common}\n\n请生成单篇深度阅读报告，使用以下 Markdown 章节：基本信息、研究背景、研究问题、方法框架、实验与验证、主要发现、贡献、局限、后续想法。每节只写有证据支持的内容，缺证据处标注低置信度。`;
+  }
+  if (outputLanguage === "ja-JP") {
+    return `${common}\n\n単一論文の詳細読解レポートを作成してください。Markdown の章立ては、基本情報、研究背景、研究課題、手法、実験と検証、主な知見、貢献、限界、次の検討事項にしてください。根拠のある内容だけを書き、根拠が弱い箇所は低信頼として明記してください。`;
+  }
+  return `${common}\n\nCreate a deep paper reading report with Markdown sections for basic information, background, research question, method, experiments and validation, findings, contributions, limitations, and follow-up ideas. Keep every section evidence-grounded and mark unsupported points as low-confidence.`;
+}
+
+function normalizeSkillId(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\.md$/i, "")
+    .replace(/[\\/:*?"<>|\r\n]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^\.+/, "")
+    .replace(/\.+$/, "")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
+function canUsePdfBase64Input(profile) {
+  return profile?.capabilities?.pdfBase64 === true && profile.protocol !== "openai_chat";
+}
+
+async function buildRequestInput(profile, inputMode, pdf) {
+  if (normalizeInputMode(inputMode) !== "pdf_base64") {
+    return { type: "text", source: "text_mode" };
+  }
+  if (!canUsePdfBase64Input(profile)) {
+    return { type: "text", source: "unsupported_profile", reason: "Profile does not support pdf_base64" };
+  }
+  if (!pdf) {
+    return { type: "text", source: "no_pdf", reason: "No PDF attachment" };
+  }
+  const pdfPath = await attachmentFilePath(pdf);
+  if (!pdfPath) {
+    return { type: "text", source: "no_pdf_path", reason: "PDF path unavailable" };
+  }
+  const base64 = await attachmentToBase64(pdfPath);
+  if (!base64) {
+    return { type: "text", source: "read_failed", reason: "Failed to encode PDF as base64" };
+  }
+  return {
+    type: "pdf_base64",
+    source: "pdf_base64",
+    base64,
+    filename: attachmentDisplayName(pdf) || "paper.pdf"
+  };
+}
+
+function requestInputStatusText(requestInput, translate = (key) => key) {
+  const t = typeof translate === "function" ? translate : (key) => key;
+  const source = requestInput?.source || requestInput?.type;
+  if (requestInput?.type === "pdf_base64") return t("inputPdfBase64");
+  if (source === "unsupported_profile") return t("inputFallbackUnsupported");
+  if (source === "no_pdf") return t("inputFallbackNoPdf");
+  if (source === "no_pdf_path") return t("inputFallbackNoPath");
+  if (source === "read_failed") return t("inputFallbackReadFailed");
+  return t("inputTextMode");
+}
+
+async function attachmentFilePath(attachment) {
+  if (!attachment) return "";
+  try {
+    if (typeof attachment.getFilePathAsync === "function") return await attachment.getFilePathAsync();
+  } catch (_err) {
+    // fall through
+  }
+  if (typeof attachment.getFilePath === "function") {
+    try {
+      return attachment.getFilePath();
+    } catch (_err) {
+      // keep fallback
+    }
+  }
+  return attachment.path || attachment.filePath || "";
+}
+
+function attachmentDisplayName(attachment) {
+  return attachment?.getField?.("title") || attachment?.attachmentFilename || attachment?.filename || "";
+}
+
+async function attachmentToBase64(path) {
+  try {
+    const bytes = await readBinary(path);
+    if (!bytes?.length) return "";
+    return bytesToBase64(bytes);
+  } catch (_err) {
+    return "";
+  }
+}
+
+async function readBinary(path) {
+  if (!IOUtils.read) return null;
+  const raw = await IOUtils.read(path);
+  if (raw?.byteLength !== undefined) {
+    if (raw instanceof Uint8Array) return raw;
+    if (raw instanceof ArrayBuffer) return new Uint8Array(raw);
+    return new Uint8Array(raw);
+  }
+  if (typeof raw === "string") return new TextEncoder().encode(raw);
+  if (Array.isArray(raw)) return Uint8Array.from(raw);
+  return null;
+}
+
+function bytesToBase64(bytes) {
+  if (!(bytes instanceof Uint8Array)) {
+    bytes = new Uint8Array(bytes);
+  }
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.slice(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function endpointForProfile(profile) {
+  if (profile.endpointMode === "full_url") return profile.fullURL || profile.baseURL;
+  return endpointForProtocol(profile.protocol, profile.baseURL);
+}
+
+function headersForProfile(profile) {
+  const headers = { "content-type": "application/json", ...(profile.customHeaders || {}) };
+  if (profile.protocol === "anthropic_messages") {
+    if (!hasExplicitAuthHeader(headers)) {
+      const authHeader = anthropicAuthHeaderName(profile);
+      setHeaderIfMissing(headers, authHeader, authHeader === "authorization" && profile.apiKey ? `Bearer ${profile.apiKey}` : profile.apiKey);
+    }
+    setHeaderIfMissing(headers, "anthropic-version", "2023-06-01");
+    if (shouldAddAnthropicDirectBrowserAccess(profile)) {
+      setHeaderIfMissing(headers, "anthropic-dangerous-direct-browser-access", "true");
+    }
+  } else if (usesAzureOpenAIAuth(profile)) {
+    if (!hasExplicitAuthHeader(headers)) setHeaderIfMissing(headers, "api-key", profile.apiKey);
+  } else {
+    if (!hasExplicitAuthHeader(headers)) setHeaderIfMissing(headers, "authorization", profile.apiKey ? `Bearer ${profile.apiKey}` : "");
+  }
+  return headers;
+}
+
+function profileHasUsableAuth(profile) {
+  if (String(profile?.apiKey || "").trim()) return true;
+  const headers = profile?.customHeaders || {};
+  if (hasExplicitAuthHeader(headers)) return true;
+  try {
+    return isLocalEndpoint(endpointForProfile(profile || {}));
+  } catch (_err) {
+    return false;
+  }
+}
+
+function hasHeader(headers, name) {
+  return !!headerKey(headers, name);
+}
+
+function headerKey(headers, name) {
+  const normalized = String(name || "").toLowerCase();
+  return Object.keys(headers || {}).find((key) => key.toLowerCase() === normalized) || "";
+}
+
+function hasExplicitAuthHeader(headers) {
+  return hasHeaderValue(headers, "authorization") || hasHeaderValue(headers, "api-key") || hasHeaderValue(headers, "x-api-key");
+}
+
+function hasHeaderValue(headers, name) {
+  const normalized = String(name || "").toLowerCase();
+  return Object.entries(headers || {}).some(([key, value]) => key.toLowerCase() === normalized && String(value || "").trim());
+}
+
+function setHeaderIfMissing(headers, name, value) {
+  if (!String(value || "").trim()) return;
+  const existingKey = headerKey(headers, name);
+  if (existingKey && String(headers[existingKey] || "").trim()) return;
+  headers[existingKey || name] = value;
+}
+
+function usesAzureOpenAIAuth(profile) {
+  const id = String(profile?.id || "").toLowerCase();
+  const baseURL = String(profile?.baseURL || "");
+  return id === "azure-openai" || id === "azure_openai" || /\.openai\.azure\.com\/openai\/v1\/?$/i.test(baseURL) || /\.services\.ai\.azure\.com\/openai\/v1\/?$/i.test(baseURL);
+}
+
+function anthropicAuthHeaderName(profile) {
+  const explicit = normalizeAuthHeaderName(profile?.authHeader || profile?.bodyExtra?.authHeader || profile?.bodyExtra?.anthropicAuthHeader);
+  if (explicit) return explicit;
+  const id = String(profile?.id || "").toLowerCase();
+  const baseURL = String(profile?.baseURL || "").replace(/\/+$/, "");
+  if (id === "deepseek-anthropic" || id === "deepseek_anthropic" || id === "zai-anthropic" || id === "zai_anthropic") return "authorization";
+  if (baseURL === "https://api.deepseek.com/anthropic" || baseURL.startsWith("https://api.deepseek.com/anthropic/")) return "authorization";
+  if (baseURL === "https://api.z.ai/api/anthropic" || baseURL.startsWith("https://api.z.ai/api/anthropic/")) return "authorization";
+  return "x-api-key";
+}
+
+function shouldAddAnthropicDirectBrowserAccess(profile) {
+  const explicit = profile?.bodyExtra?.directBrowserAccess
+    ?? profile?.bodyExtra?.anthropicDirectBrowserAccess
+    ?? profile?.directBrowserAccess
+    ?? profile?.anthropicDirectBrowserAccess;
+  if (explicit === false || String(explicit).toLowerCase() === "false") return false;
+  if (explicit === true || String(explicit).toLowerCase() === "true") return true;
+  const baseURL = String(profile?.baseURL || "").replace(/\/+$/, "");
+  return baseURL === "https://api.anthropic.com" || baseURL.startsWith("https://api.anthropic.com/");
+}
+
+function normalizeAuthHeaderName(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized === "authorization" || normalized === "bearer" || normalized === "auth-token" || normalized === "anthropic-auth-token") return "authorization";
+  if (normalized === "x-api-key" || normalized === "anthropic-api-key") return "x-api-key";
+  if (normalized === "api-key") return "api-key";
+  return "";
+}
+
+function isLocalEndpoint(url) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|::1)(?::|\/|$)/.test(String(url || "").trim().toLowerCase());
+}
+
+function bodyForProfile(profile, messages, outputLanguage, systemPrompt, requestInput = {}, streamEnabled = true) {
+  const baseSystem = systemPrompt || "You are a careful academic paper reading assistant.";
+  const system = `${baseSystem}\n${languageInstruction(outputLanguage)}`;
+  const baseText = messagesToText(messages);
+  const input = requestInput?.type === "pdf_base64" && requestInput.base64;
+  const stream = shouldStream(profile, streamEnabled);
+  if (profile.protocol === "anthropic_messages") {
+    return withProviderBodyDefaults(profile, {
+      model: profile.model,
+      system,
+      messages: anthropicMessages(messages, requestInput, baseText),
+      max_tokens: Number(pref("maxOutputTokens")) || 8192,
+      stream
+    });
+  }
+  if (profile.protocol === "openai_responses") {
+    return withProviderBodyDefaults(profile, {
+      model: profile.model,
+      instructions: system,
+      input: openaiResponsesInput(messages, requestInput),
+      max_output_tokens: Number(pref("maxOutputTokens")) || 8192,
+      temperature: Number(pref("temperature")) || 1,
+      stream
+    });
+  }
+  return withProviderBodyDefaults(profile, { model: profile.model, messages: [{ role: "system", content: system }, ...messages], max_tokens: Number(pref("maxOutputTokens")) || 8192, temperature: Number(pref("temperature")) || 1, stream, n: 1 });
+}
+
+function shouldStream(profile, streamEnabled = true) {
+  return !!streamEnabled && profile?.capabilities?.streaming === true;
+}
+
+function providerBodyExtra(bodyExtra) {
+  if (!bodyExtra || typeof bodyExtra !== "object" || Array.isArray(bodyExtra)) return {};
+  const {
+    localAgent: _localAgent,
+    agent: _agent,
+    subagent: _subagent,
+    authHeader: _authHeader,
+    anthropicAuthHeader: _anthropicAuthHeader,
+    directBrowserAccess: _directBrowserAccess,
+    anthropicDirectBrowserAccess: _anthropicDirectBrowserAccess,
+    ...rest
+  } = bodyExtra;
+  return rest;
+}
+
+function withProviderBodyDefaults(profile, body) {
+  return { ...body, ...jsonModeBodyDefaults(profile), ...providerBodyExtra(profile.bodyExtra) };
+}
+
+function jsonModeBodyDefaults(profile) {
+  if (!profile?.capabilities?.jsonMode || profile.protocol === "anthropic_messages") return {};
+  const extra = providerBodyExtra(profile.bodyExtra);
+  if (profile.protocol === "openai_responses") {
+    if (extra.text !== undefined || extra.response_format !== undefined) return {};
+    return { text: { format: { type: "json_object" } } };
+  }
+  if (extra.response_format !== undefined) return {};
+  return { response_format: { type: "json_object" } };
+}
+
+function messagesToText(messages) {
+  return messages.map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
+}
+
+function openaiResponsesInput(messages, requestInput = {}) {
+  const input = messages.map((message) => ({
+    role: message.role,
+    content: [{ type: message.role === "assistant" ? "output_text" : "input_text", text: String(message.content || "") }]
+  }));
+  const lastUserIndex = findLastIndex(input, (message) => message.role === "user");
+  const contextText = requestInput?.type === "text" ? requestInput.text : "";
+  if (contextText) {
+    appendOpenAIResponsesPart(input, lastUserIndex, { type: "input_text", text: `CONTEXT:\n${contextText}` });
+  }
+  if (requestInput?.type === "pdf_base64" && requestInput.base64) {
+    appendOpenAIResponsesPart(input, lastUserIndex, {
+      type: "input_file",
+      filename: requestInput.filename || "paper.pdf",
+      file_data: `data:application/pdf;base64,${requestInput.base64}`
+    });
+  }
+  return input;
+}
+
+function appendOpenAIResponsesPart(input, lastUserIndex, part) {
+  if (lastUserIndex >= 0) {
+    input[lastUserIndex] = {
+      ...input[lastUserIndex],
+      content: [...input[lastUserIndex].content, part]
+    };
+    return;
+  }
+  input.push({ role: "user", content: [part] });
+}
+
+async function requestModelWithRetry(profile, messages, outputLanguage, systemPrompt, requestInput, streamEnabled, signal) {
+  let lastError;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const response = await fetch(endpointForProfile(profile), {
+        method: "POST",
+        headers: headersForProfile(profile),
+        body: JSON.stringify(bodyForProfile(profile, messages, outputLanguage, systemPrompt, requestInput, streamEnabled)),
+        signal
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        const error = providerHTTPError(response.status, text);
+        if (error.retryableProviderError && attempt < 3) {
+          await delay(500 * 2 ** attempt);
+          continue;
+        }
+        throw error;
+      }
+      return response;
+    } catch (err) {
+      if (err?.name === "AbortError") throw err;
+      if (err?.retryableProviderError === false) throw err;
+      lastError = err;
+      if (attempt < 3) {
+        await delay(500 * 2 ** attempt);
+        continue;
+      }
+    }
+  }
+  throw lastError;
+}
+
+function providerHTTPError(status, text) {
+  const error = new Error(providerErrorText(status, text));
+  error.retryableProviderError = status === 429 || status >= 500;
+  return error;
+}
+
+function delay(ms) {
+  return Zotero.Promise?.delay ? Zotero.Promise.delay(ms) : new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readStream(response, protocol, onDelta) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      const parsed = parseStreamDelta(protocol, line);
+      if (parsed.text && (!parsed.snapshot || !text)) {
+        text += parsed.text;
+        onDelta(parsed.text);
+      }
+    }
+  }
+  const tail = parseStreamDelta(protocol, buffer);
+  if (tail.text && (!tail.snapshot || !text)) {
+    text += tail.text;
+    onDelta(tail.text);
+  }
+  return text;
+}
+
+function streamTextFromData(protocol, data) {
+  if (!data) return "";
+  if (protocol === "anthropic_messages") {
+    if (data?.type === "content_block_delta") {
+      return data?.delta?.text || data?.delta?.partial_json || "";
+    }
+    return data?.delta?.text || data?.content_block?.text || "";
+  }
+  if (typeof data?.choices?.[0]?.delta === "string") return data.choices[0].delta;
+  const deltaContent = modelTextFromValue(data?.choices?.[0]?.delta?.content);
+  if (deltaContent) return deltaContent;
+  const messageContent = modelTextFromValue(data?.choices?.[0]?.message?.content);
+  if (messageContent) return messageContent;
+  if ((data?.type === "response.output_text.delta" || data?.type === "response.text.delta") && typeof data?.delta === "string") return data.delta;
+  if (data?.delta?.content) {
+    const nestedDelta = modelTextFromValue(data.delta.content);
+    if (nestedDelta) return nestedDelta;
+  }
+  const directContent = modelTextFromValue(data?.content);
+  if (directContent) return directContent;
+  const eventText = modelTextFromStreamContainer(data);
+  if (eventText) return eventText;
+  return data?.choices?.[0]?.text || data?.choices?.[0]?.delta?.text || modelTextFromValue(data?.output) || (typeof data?.delta === "string" ? data.delta : "");
+}
+
+function parseStreamDelta(protocol, rawLine) {
+  const line = rawLine.trim();
+  if (!line.startsWith("data:")) return { text: "", snapshot: false };
+  const payload = line.slice(5).trim();
+  if (!payload || payload === "[DONE]") return { text: "", snapshot: false };
+  const data = safeParseJSON(payload);
+  const errorText = streamErrorText(data);
+  if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
+  return {
+    text: streamTextFromData(protocol, data),
+    snapshot: isStreamSnapshot(protocol, data)
+  };
+}
+
+function streamErrorText(data) {
+  const error = data?.error || (data?.type === "error" ? data : null);
+  if (!error) return "";
+  if (typeof error === "string") return error;
+  const code = error.code || error.type || data?.code || data?.type || "";
+  const message = error.message || data?.message || "";
+  return [code, message || JSON.stringify(error)].filter(Boolean).join(" - ");
+}
+
+function extractResponseText(protocol, data) {
+  const errorText = streamErrorText(data);
+  if (errorText) throw new Error(`Provider error: ${redact(errorText)}`);
+  const text = protocol === "anthropic_messages"
+    ? anthropicTextFromResponse(data)
+    : data?.output_text
+      || modelTextFromValue(data?.choices?.[0]?.message?.content)
+      || modelTextFromValue(data?.choices?.[0]?.delta?.content)
+      || data?.choices?.[0]?.text
+      || data?.choices?.[0]?.delta?.text
+      || modelTextFromValue(data?.output)
+      || modelTextFromValue(data?.content)
+      || modelTextFromStreamContainer(data);
+  if (!text) throw new Error("No text returned from model");
+  return stripThink(String(text).trim());
+}
+
+function anthropicMessages(messages, requestInput, baseText) {
+  const mapped = messages.map((message) => ({ role: message.role, content: message.content }));
+  const content = [];
+  if (requestInput?.type === "pdf_base64" && requestInput.base64) {
+    content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: requestInput.base64 } });
+  }
+  if (!content.length) {
+    return mergeConsecutiveAnthropicMessages(mapped);
+  }
+  content.push({ type: "text", text: baseText });
+  const lastUserIndex = findLastIndex(mapped, (message) => message.role === "user");
+  if (lastUserIndex >= 0) {
+    mapped[lastUserIndex] = { role: "user", content };
+    return mergeConsecutiveAnthropicMessages(mapped);
+  }
+  mapped.push({ role: "user", content });
+  return mergeConsecutiveAnthropicMessages(mapped);
+}
+
+function mergeConsecutiveAnthropicMessages(messages) {
+  const merged = [];
+  for (const message of messages) {
+    if (!hasAnthropicContent(message.content)) continue;
+    const last = merged[merged.length - 1];
+    if (last?.role === message.role) {
+      last.content = mergeAnthropicContent(last.content, message.content);
+    } else {
+      merged.push({ role: message.role, content: message.content });
+    }
+  }
+  return merged;
+}
+
+function hasAnthropicContent(content) {
+  if (typeof content === "string") return !!content.trim();
+  return Array.isArray(content) && content.length > 0;
+}
+
+function mergeAnthropicContent(left, right) {
+  return compactAnthropicTextBlocks([...anthropicContentBlocks(left), ...anthropicContentBlocks(right)]);
+}
+
+function anthropicContentBlocks(content) {
+  if (typeof content === "string") return [{ type: "text", text: content }];
+  return Array.isArray(content) ? content : [];
+}
+
+function compactAnthropicTextBlocks(blocks) {
+  const compacted = [];
+  for (const block of blocks) {
+    const last = compacted[compacted.length - 1];
+    if (block?.type === "text" && typeof block.text === "string" && last?.type === "text" && typeof last.text === "string") {
+      last.text = `${last.text}\n\n${block.text}`;
+    } else {
+      compacted.push(block);
+    }
+  }
+  return compacted;
+}
+
+function findLastIndex(items, predicate) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index])) return index;
+  }
+  return -1;
+}
+
+function endpointForProtocol(protocol, baseURL) {
+  const base = stripKnownProviderEndpointPath(baseURL);
+  if (!base) throw new Error("Base URL endpoint is required");
+  if (protocol === "anthropic_messages") {
+    return /\/v\d+$/i.test(base) ? `${base}/messages` : `${base}/v1/messages`;
+  }
+  if (protocol === "openai_responses") return `${openAICompatibleBaseWithVersion(base)}/responses`;
+  return `${openAICompatibleBaseWithVersion(base)}/chat/completions`;
+}
+
+function stripKnownProviderEndpointPath(baseURL) {
+  return String(baseURL || "")
+    .replace(/\/+$/, "")
+    .replace(/\/(?:chat\/completions|responses|messages)$/i, "");
+}
+
+function openAICompatibleBaseWithVersion(baseURL) {
+  const base = String(baseURL || "").replace(/\/+$/, "");
+  return hasOpenAICompatibleVersionPath(base) || usesVersionlessOpenAICompatibleBase(base) ? base : `${base}/v1`;
+}
+
+function hasOpenAICompatibleVersionPath(baseURL) {
+  return /\/v\d+(?:[a-z]+)?$/i.test(baseURL) || /\/v\d+(?:[a-z]+)?\/openai$/i.test(baseURL);
+}
+
+function usesVersionlessOpenAICompatibleBase(baseURL) {
+  return /^https:\/\/api\.perplexity\.ai$/i.test(String(baseURL || "").replace(/\/+$/, ""));
+}
+
+function modelTextFromValue(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => modelTextFromValue(item)).filter(Boolean).join("\n");
+  }
+  if (typeof value === "object") {
+    if (isReasoningModelPart(value)) return "";
+    if (typeof value.text === "string") return value.text;
+    if (typeof value.output_text === "string") return value.output_text;
+    if (typeof value.content === "string") return value.content;
+    if (Array.isArray(value.content)) return modelTextFromValue(value.content);
+    if (Array.isArray(value.output)) return modelTextFromValue(value.output);
+  }
+  return "";
+}
+
+function modelTextFromStreamContainer(value) {
+  return modelTextFromValue(value?.part)
+    || modelTextFromValue(value?.item)
+    || modelTextFromValue(value?.message)
+    || modelTextFromValue(value?.response)
+    || "";
+}
+
+function anthropicTextFromResponse(data) {
+  const content = data?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part?.type === "text" && typeof part?.text === "string") return part.text;
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  return typeof data?.text === "string" ? data.text : "";
+}
+
+function isStreamSnapshot(protocol, value) {
+  if (protocol === "anthropic_messages") return false;
+  const type = String(value?.type || "");
+  return type === "response.output_text.done"
+    || type === "response.content_part.done"
+    || type === "response.output_item.done"
+    || type === "response.completed"
+    || !!value?.part
+    || !!value?.item
+    || !!value?.response;
+}
+
+function isReasoningModelPart(value) {
+  const type = String(value?.type || "");
+  return type.includes("reasoning") || type === "thinking";
+}
+
+async function ensureSummaryFile(item, pdf, outputDir, options = {}) {
+  const outputLanguage = normalizeOutputLanguage(options.outputLanguage);
+  const inputMode = normalizeInputMode(options.inputMode);
+  const sourceHash = options.sourceHash || "";
+  const summaryVersion = options.summaryVersion || "1";
+  const provider = options.provider || pref("provider") || "default";
+  const model = options.model || "";
+  const sourceLanguage = options.sourceLanguage || "auto";
+  const templateVersion = options.templateVersion || "workbench-v1";
+  const summaryType = options.summaryType || "paper-chat";
+  const evidenceLevel = inputMode === "text" ? "fulltext_or_indexed_text" : "pdf_base64";
+  const existing = await findExistingSummaryAttachment(item, outputDir);
+  if (existing) {
+    const existingPath = await existing.getFilePathAsync().catch(() => "");
+    if (existingPath && (!IOUtils.exists || await IOUtils.exists(existingPath))) {
+      return { path: existingPath, created: false };
+    }
+  }
+  await ensureDirectory(outputDir);
+  const title = item.getField("title") || item.key;
+  const path = PathUtils.join(outputDir, `${sanitizeFilename(item.key)}.${outputLanguage}.summary.md`);
+  const markdown = [
+    "---",
+    `zoteroItemKey: ${item.key}`,
+    `pdfAttachmentKey: ${pdf?.key || ""}`,
+    `sourceHash: ${sourceHash}`,
+    `summaryVersion: ${summaryVersion}`,
+    `inputMode: ${inputMode}`,
+    `summaryType: ${summaryType}`,
+    `evidenceLevel: ${evidenceLevel}`,
+    `outputLanguage: ${outputLanguage}`,
+    `sourceLanguage: ${sourceLanguage}`,
+    `templateVersion: ${templateVersion}`,
+    `provider: ${provider}`,
+    `model: ${model}`,
+    `generatedAt: ${new Date().toISOString()}`,
+    "---",
+    "",
+    `# ${title}`,
+    ""
+  ].join("\n");
+  await writeText(path, markdown);
+  await linkOrUpdateSummaryAttachment(item, path, existing);
+  return { path, created: true };
+}
+
+async function findExistingSummaryAttachment(item, outputDir) {
+  const prefix = summaryTitlePrefix(item);
+  const attachmentIDs = typeof item?.getAttachments === "function" ? item.getAttachments() : [];
+  for (const id of attachmentIDs) {
+    const attachment = Zotero.Items.get(id);
+    if (!attachment) continue;
+    const title = attachment.getField("title") || "";
+    if (!title.startsWith(prefix)) continue;
+    const path = await attachment.getFilePathAsync().catch(() => "");
+    if (!path || path.startsWith(outputDir)) return attachment;
+  }
+  return null;
+}
+
+async function linkOrUpdateSummaryAttachment(item, path, existing) {
+  const title = summaryTitlePrefix(item) + ".md";
+  if (existing) {
+    const previous = summaryAttachmentSnapshot(existing);
+    try {
+      if (typeof existing.setField === "function") existing.setField("title", title);
+      else existing.title = title;
+      existing.attachmentPath = path;
+      existing.attachmentContentType = existing.attachmentContentType || "text/markdown";
+      if (typeof existing.saveTx === "function") {
+        await existing.saveTx();
+        return existing;
+      }
+    } catch (_err) {
+      restoreSummaryAttachmentSnapshot(existing, previous);
+      // Fall back to a fresh linked file if the existing attachment cannot be repaired.
+    }
+  }
+  const payload = { file: path, contentType: "text/markdown", title };
+  if (item?.isRegularItem?.()) payload.parentItemID = item.id;
+  else if (item?.libraryID) payload.libraryID = item.libraryID;
+  return Zotero.Attachments.linkFromFile(payload);
+}
+
+function summaryAttachmentSnapshot(attachment) {
+  return {
+    title: typeof attachment.getField === "function" ? attachment.getField("title") : attachment.title,
+    attachmentPath: attachment.attachmentPath,
+    attachmentContentType: attachment.attachmentContentType
+  };
+}
+
+function restoreSummaryAttachmentSnapshot(attachment, snapshot) {
+  try {
+    if (typeof attachment.setField === "function") attachment.setField("title", snapshot.title || "");
+    else attachment.title = snapshot.title;
+    attachment.attachmentPath = snapshot.attachmentPath;
+    attachment.attachmentContentType = snapshot.attachmentContentType;
+  } catch (_err) {
+    // Best-effort cleanup before creating a fresh linked attachment.
+  }
+}
+
+function summaryTitlePrefix(item) {
+  return `Markdown 摘要 - ${item.key}`;
+}
+
+function extractHeadings(markdown) {
+  return Array.from(markdown.matchAll(/^(#{2,6})\s+(.+?)\s*$/gm)).map((match) => match[2]);
+}
+
+function applyMarkdownEdit(original, request) {
+  const patch = { lastEditedAt: request.now, lastEditSource: "chat", chatSessionId: request.chatSessionId, skillId: request.skillId || "", editCount: nextEditCount(original) };
+  const edited = applyBodyEdit(original, request);
+  const after = upsertFrontmatter(edited, patch);
+  return { before: original, after, diff: simpleDiff(original, after), backupPath: backupPathFor(request.summaryPath, request.now), tempPath: tempPathFor(request.summaryPath, request.now), frontmatterPatch: patch, action: request.action, targetSection: request.targetSection || "" };
+}
+
+function applyBodyEdit(original, request) {
+  if (request.action === "append_research_notes") return appendToNamedSection(original, request.targetSection || "Research Notes", request.replacementText);
+  const range = findHeadingRange(original, request.targetSection);
+  if (!range) {
+    if (request.action === "append_section") return appendToNamedSection(original, request.targetSection, request.replacementText);
+    throw new Error(`Section not found: ${request.targetSection}`);
+  }
+  if (request.action === "replace_section") return `${original.slice(0, range.contentStart)}\n${request.replacementText.trim()}\n${original.slice(range.end)}`;
+  return `${original.slice(0, range.end).replace(/\s*$/, "")}\n\n${request.replacementText.trim()}\n${original.slice(range.end)}`;
+}
+
+function appendToNamedSection(original, title, text) {
+  const range = findHeadingRange(original, title);
+  if (range) return `${original.slice(0, range.end).replace(/\s*$/, "")}\n\n${text.trim()}\n${original.slice(range.end)}`;
+  return `${original}${original.endsWith("\n") ? "" : "\n"}\n## ${title}\n\n${text.trim()}\n`;
+}
+
+function findHeadingRange(markdown, title) {
+  const headingPattern = /^(#{1,6})\s+(.+?)\s*$/gm;
+  const normalizedTitle = normalizeHeading(title || "");
+  let match;
+  while ((match = headingPattern.exec(markdown))) {
+    const level = match[1].length;
+    if (normalizeHeading(match[2]) !== normalizedTitle) continue;
+    const contentStart = headingPattern.lastIndex;
+    const nextPattern = new RegExp(`^#{1,${level}}\\s+.+?\\s*$`, "gm");
+    nextPattern.lastIndex = contentStart;
+    const next = nextPattern.exec(markdown);
+    return { contentStart, end: next?.index ?? markdown.length };
+  }
+  return null;
+}
+
+function upsertFrontmatter(markdown, patch) {
+  if (!markdown.startsWith("---\n")) return `---\n${formatPatch(patch)}\n---\n\n${markdown}`;
+  const end = markdown.indexOf("\n---", 4);
+  if (end === -1) return `---\n${formatPatch(patch)}\n---\n\n${markdown}`;
+  const lines = markdown.slice(4, end).split("\n");
+  const seen = new Set();
+  const updated = lines.map((line) => {
+    const key = line.split(":")[0]?.trim();
+    if (key && Object.prototype.hasOwnProperty.call(patch, key)) {
+      seen.add(key);
+      return `${key}: ${patch[key]}`;
+    }
+    return line;
+  });
+  for (const [key, value] of Object.entries(patch)) {
+    if (!seen.has(key) && value !== "") updated.push(`${key}: ${value}`);
+  }
+  return `---\n${updated.join("\n")}\n---${markdown.slice(end + 4)}`;
+}
+
+function formatPatch(patch) {
+  return Object.entries(patch).filter(([, value]) => value !== "").map(([key, value]) => `${key}: ${value}`).join("\n");
+}
+
+function backupPathFor(summaryPath, timestamp) {
+  const slashIndex = Math.max(summaryPath.lastIndexOf("/"), summaryPath.lastIndexOf("\\"));
+  const dir = slashIndex === -1 ? "." : summaryPath.slice(0, slashIndex);
+  const file = slashIndex === -1 ? summaryPath : summaryPath.slice(slashIndex + 1);
+  return `${dir}/.bak/${file}.${timestamp.replace(/[:.]/g, "-")}.md`;
+}
+
+function tempPathFor(summaryPath, timestamp) {
+  const slashIndex = Math.max(summaryPath.lastIndexOf("/"), summaryPath.lastIndexOf("\\"));
+  const dir = slashIndex === -1 ? "." : summaryPath.slice(0, slashIndex);
+  const file = slashIndex === -1 ? summaryPath : summaryPath.slice(slashIndex + 1);
+  return `${dir}/.${file}.${timestamp.replace(/[:.]/g, "-")}.tmp`;
+}
+
+function assertWritePreviewCurrent(preview, currentText, staleMessage) {
+  if (!preview || currentText !== preview.before) {
+    throw new Error(staleMessage || "Summary file changed after preview. Reload preview before writing.");
+  }
+}
+
+async function commitWritePreview(summaryPath, preview) {
+  await ensureDirectory(parentDir(preview.backupPath));
+  await writeText(preview.backupPath, preview.before);
+  try {
+    await writeTextAtomic(summaryPath, preview.after, preview.tempPath);
+  } catch (err) {
+    await restorePreviewBeforeOnFailure(summaryPath, preview);
+    throw err;
+  }
+}
+
+async function restorePreviewBeforeOnFailure(summaryPath, preview) {
+  try {
+    const current = await readText(summaryPath);
+    if (current === preview.before) return;
+  } catch (_err) {
+    // If the target cannot be read after a failed write, still try restoring below.
+  }
+  const rollbackTempPath = `${preview.tempPath || tempPathFor(summaryPath, new Date().toISOString())}.rollback`;
+  try {
+    await writeTextAtomic(summaryPath, preview.before, rollbackTempPath);
+  } catch (_err) {
+    try {
+      await writeText(summaryPath, preview.before);
+    } catch (_innerErr) {
+      // Preserve the original write error for the caller; the backup file remains available.
+    }
+  }
+}
+
+function nextEditCount(markdown) {
+  const match = markdown.match(/^editCount:\s*(\d+)\s*$/m);
+  return match ? Number(match[1]) + 1 : 1;
+}
+
+function simpleDiff(before, after) {
+  const beforeLines = before.split("\n");
+  const afterLines = after.split("\n");
+  let prefix = 0;
+  while (prefix < beforeLines.length && prefix < afterLines.length && beforeLines[prefix] === afterLines[prefix]) prefix++;
+  let beforeSuffix = beforeLines.length - 1;
+  let afterSuffix = afterLines.length - 1;
+  while (beforeSuffix >= prefix && afterSuffix >= prefix && beforeLines[beforeSuffix] === afterLines[afterSuffix]) {
+    beforeSuffix--;
+    afterSuffix--;
+  }
+  return [
+    ...beforeLines.slice(prefix, beforeSuffix + 1).map((line) => `- ${line}`),
+    ...afterLines.slice(prefix, afterSuffix + 1).map((line) => `+ ${line}`)
+  ].join("\n");
+}
+
+function writePreviewSummary(preview, options = {}) {
+  if (!preview) return "";
+  const translate = options.translate || ((key) => key);
+  const action = options.action || preview.action || "";
+  const targetSection = options.targetSection || preview.targetSection || "";
+  const summaryPath = options.summaryPath || "";
+  const lines = [
+    `${translate("writeTarget")}: ${summaryPath}`,
+    `${translate("writeBackup")}: ${preview.backupPath || ""}`,
+    `${translate("writeAction")}: ${translate(writeActionMessageKey(action))}`,
+    `${translate("writeSection")}: ${targetSection || translate("writeSectionNone")}`,
+    `${translate("writeSize")}: ${String(preview.before || "").length} -> ${String(preview.after || "").length}`
+  ];
+  const patchKeys = Object.keys(preview.frontmatterPatch || {}).filter((key) => preview.frontmatterPatch[key] !== "");
+  if (patchKeys.length) lines.push(`${translate("writeFrontmatter")}: ${patchKeys.join(", ")}`);
+  return lines.join("\n");
+}
+
+function writeActionMessageKey(action) {
+  if (action === "replace_section") return "replaceSection";
+  if (action === "append_section") return "appendSection";
+  return "appendNotes";
+}
+
+async function readText(path) {
+  if (IOUtils.readUTF8) return IOUtils.readUTF8(path);
+  return new TextDecoder().decode(await IOUtils.read(path));
+}
+
+async function writeText(path, text) {
+  await ensureDirectory(parentDir(path));
+  if (Zotero.File?.putContentsAsync) return Zotero.File.putContentsAsync(path, text);
+  if (IOUtils.writeUTF8) return IOUtils.writeUTF8(path, text);
+  return IOUtils.write(path, new TextEncoder().encode(text));
+}
+
+async function writeTextAtomic(path, text, tempPath) {
+  await ensureDirectory(parentDir(path));
+  if (!IOUtils.move || !PathUtils?.join) {
+    await writeText(path, text);
+    return;
+  }
+  tempPath ||= PathUtils.join(parentDir(path), `.${leafName(path)}.${Date.now()}.tmp`);
+  try {
+    await writeText(tempPath, text);
+    await IOUtils.move(tempPath, path, { noOverwrite: false });
+  } catch (err) {
+    await removePathQuietly(tempPath);
+    throw err;
+  }
+}
+
+async function removePathQuietly(path) {
+  try {
+    if (path && await IOUtils.exists(path)) {
+      if (IOUtils.remove) await IOUtils.remove(path);
+      else if (IOUtils.removeFile) await IOUtils.removeFile(path);
+    }
+  } catch (_err) {
+    // Best-effort cleanup only; the original summary remains untouched.
+  }
+}
+
+async function ensureDirectory(path) {
+  if (!await IOUtils.exists(path)) await IOUtils.makeDirectory(path, { createAncestors: true, ignoreExisting: true });
+}
+
+function parentDir(path) {
+  const slashIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return slashIndex === -1 ? "." : path.slice(0, slashIndex);
+}
+
+function leafName(path) {
+  const slashIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return slashIndex === -1 ? path : path.slice(slashIndex + 1);
+}
+
+function sessionFilenameFor(sessionId) {
+  const normalized = normalizeSessionId(sessionId);
+  return `${normalized || `chat-${Date.now()}`}.jsonl`;
+}
+
+function sessionIdFromPath(path) {
+  const name = leafName(String(path || ""));
+  if (!name.toLowerCase().endsWith(".jsonl")) return "";
+  return normalizeSessionId(name.slice(0, -6));
+}
+
+function recentSessionFiles(paths) {
+  return (paths || [])
+    .filter((path) => String(path || "").toLowerCase().endsWith(".jsonl"))
+    .sort((left, right) => String(left).localeCompare(String(right)))
+    .slice(-8);
+}
+
+function candidateJsonlPath(outputDir, item) {
+  const collectionKey = workbenchCollectionKey(item);
+  return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "sources", "candidates.jsonl");
+}
+
+function importLedgerJsonlPath(outputDir, item) {
+  const collectionKey = workbenchCollectionKey(item);
+  return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "sources", "import-ledger.jsonl");
+}
+
+function candidateSearchOptionsFromDom(item) {
+  const query = document.getElementById("zms-candidate-query")?.value?.trim() || item?.getField?.("title") || item?.key || "";
+  const limit = clampNumber(document.getElementById("zms-candidate-limit")?.value, 1, 50, 10);
+  return {
+    query,
+    limit,
+    email: document.getElementById("zms-candidate-email")?.value?.trim() || "",
+    semanticScholarApiKey: document.getElementById("zms-candidate-semantic-key")?.value?.trim() || "",
+    openAccessOnly: true
+  };
+}
+
+function candidateSearchErrorSummary(errors, translate = (key) => key) {
+  if (!errors?.length) return "";
+  return `${translate("candidateSourceErrors")}: ${errors.map((item) => `${item.source}: ${item.error}`).join("; ")}`;
+}
+
+function workbenchCollectionKey(item) {
+  const collectionIDs = typeof item?.getCollections === "function" ? item.getCollections() : [];
+  for (const id of collectionIDs || []) {
+    const collection = Zotero.Collections?.get?.(id);
+    if (collection?.key) return collection.key;
+  }
+  return item?.key || "unfiled";
+}
+
+async function loadCandidateRecords(path) {
+  if (!path || !await IOUtils.exists(path)) throw new Error(path || "candidates.jsonl");
+  return parseCandidateJsonl(await readText(path));
+}
+
+async function saveCandidateRecords(path, records) {
+  if (!path) throw new Error("candidates.jsonl path is missing");
+  const tempPath = `${path}.${Date.now()}.tmp`;
+  await writeTextAtomic(path, renderCandidateJsonl(records), tempPath);
+}
+
+async function appendImportLedgerEntries(path, entries) {
+  if (!path || !entries?.length) return;
+  const existing = await readTextIfExists(path);
+  const next = `${existing ? `${existing.replace(/\s*$/, "")}\n` : ""}${renderImportLedgerJsonl(entries)}`;
+  await writeTextAtomic(path, next, `${path}.${Date.now()}.tmp`);
+}
+
+async function readTextIfExists(path) {
+  try {
+    if (!path || !await IOUtils.exists(path)) return "";
+    return await readText(path);
+  } catch (_err) {
+    return "";
+  }
+}
+
+function parseCandidateJsonl(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      try {
+        return JSON.parse(line);
+      } catch (err) {
+        throw new Error(`Invalid candidates.jsonl line ${index + 1}: ${err?.message || err}`);
+      }
+    })
+    .filter(isCandidateRecord);
+}
+
+function renderCandidateJsonl(records) {
+  if (!Array.isArray(records) || !records.length) return "";
+  return `${records.map((record) => JSON.stringify(record)).join("\n")}\n`;
+}
+
+function renderImportLedgerJsonl(entries) {
+  if (!Array.isArray(entries) || !entries.length) return "";
+  return `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`;
+}
+
+function isCandidateRecord(value) {
+  return !!value
+    && typeof value.candidateId === "string"
+    && typeof value.title === "string"
+    && typeof value.decision === "string";
+}
+
+function candidateStatusText(records, path, translate = (key) => key) {
+  const t = typeof translate === "function" ? translate : (key) => key;
+  if (!records.length) return [t("candidateEmpty"), path].filter(Boolean).join("\n");
+  const counts = candidateDecisionCounts(records);
+  const summary = [
+    `${records.length}`,
+    `${t("candidateInclude")}: ${counts.include}`,
+    `${t("candidateExclude")}: ${counts.exclude}`,
+    `${t("candidateToRead")}: ${counts.to_read}`,
+    `${t("candidatePending")}: ${counts.user_pending}`
+  ].join(" | ");
+  return [summary, path].filter(Boolean).join("\n");
+}
+
+function candidateDecisionCounts(records) {
+  return (records || []).reduce((counts, record) => {
+    const decision = normalizeCandidateDecision(record.decision);
+    counts[decision] = (counts[decision] || 0) + 1;
+    return counts;
+  }, { include: 0, exclude: 0, to_read: 0, user_pending: 0 });
+}
+
+function candidateElement(record, translate = (key) => key) {
+  const wrapper = document.createElement("article");
+  wrapper.className = "zms-candidate";
+  const title = document.createElement("div");
+  title.className = "zms-candidate-title";
+  title.textContent = record.title || record.candidateId;
+  const meta = document.createElement("div");
+  meta.className = "zms-candidate-meta";
+  meta.textContent = candidateMetaText(record);
+  const select = document.createElement("select");
+  select.dataset.candidateDecision = record.candidateId;
+  for (const decision of ["user_pending", "include", "to_read", "exclude"]) {
+    const option = document.createElement("option");
+    option.value = decision;
+    option.textContent = candidateDecisionLabel(decision, translate);
+    option.selected = normalizeCandidateDecision(record.decision) === decision;
+    select.appendChild(option);
+  }
+  wrapper.append(title, meta, select);
+  return wrapper;
+}
+
+function candidateMetaText(record) {
+  const quality = record.quality || {};
+  return [
+    [record.authors || []].flat().filter(Boolean).slice(0, 3).join(", "),
+    record.year || "",
+    record.sourceType || "",
+    quality.dedupeStatus || "",
+    record.importStatus || "",
+    record.pdfAttachmentStatus || "",
+    quality.isAbstractOnly ? "abstract_only" : "",
+    quality.reason || "",
+    record.sourceUrl || record.pdfUrl || ""
+  ].filter(Boolean).join(" | ");
+}
+
+function candidateDecisionLabel(decision, translate = (key) => key) {
+  const key = {
+    include: "candidateInclude",
+    exclude: "candidateExclude",
+    to_read: "candidateToRead",
+    user_pending: "candidatePending"
+  }[normalizeCandidateDecision(decision)];
+  return translate(key);
+}
+
+function candidateDecisionMapFromDom() {
+  if (typeof document === "undefined") return {};
+  const decisions = {};
+  for (const element of document.querySelectorAll("[data-candidate-decision]")) {
+    const candidateId = element.dataset?.candidateDecision || "";
+    if (candidateId) decisions[candidateId] = normalizeCandidateDecision(element.value);
+  }
+  return decisions;
+}
+
+function applyCandidateDecisions(records, decisions, now) {
+  return (records || []).map((record) => {
+    const decision = decisions[record.candidateId];
+    if (!decision) return record;
+    return {
+      ...record,
+      decision: normalizeCandidateDecision(decision),
+      updatedAt: now || new Date().toISOString()
+    };
+  });
+}
+
+function importableCandidateRecords(records) {
+  return (records || []).filter((record) => {
+    if (normalizeCandidateDecision(record.decision) !== "include") return false;
+    if (record.quality?.dedupeStatus === "duplicate") return false;
+    if (record.quality?.isAbstractOnly) return false;
+    if (record.importStatus === "imported" || record.importStatus === "skipped_duplicate") return false;
+    return true;
+  });
+}
+
+async function importCandidateIntoZotero(record, contextItem, now = new Date().toISOString()) {
+  try {
+    const existing = await findExistingZoteroCandidateItem(record, contextItem);
+    if (existing) {
+      await addItemToCurrentCollection(existing, contextItem);
+      return {
+        candidateId: record.candidateId,
+        action: "skipped_duplicate",
+        zoteroItemID: existing.id,
+        zoteroItemKey: existing.key,
+        at: now,
+        message: "Existing Zotero item matched before import"
+      };
+    }
+    const item = new Zotero.Item("journalArticle");
+    item.libraryID = contextItem?.libraryID || Zotero.Libraries?.userLibraryID;
+    setCandidateItemFields(item, record);
+    setCandidateItemCreators(item, record.authors || []);
+    const itemID = await item.saveTx();
+    await addItemToCurrentCollection(item, contextItem);
+    return {
+      candidateId: record.candidateId,
+      action: "imported",
+      zoteroItemID: itemID || item.id,
+      zoteroItemKey: item.key,
+      at: now,
+      message: "Imported metadata-only Zotero item"
+    };
+  } catch (err) {
+    return {
+      candidateId: record.candidateId,
+      action: "failed",
+      at: now,
+      error: safeError(err)
+    };
+  }
+}
+
+async function findExistingZoteroCandidateItem(record, contextItem) {
+  if (!Zotero.Search) return null;
+  const libraryID = contextItem?.libraryID || Zotero.Libraries?.userLibraryID;
+  const doi = record.ids?.doi;
+  if (doi) {
+    const doiMatch = await findZoteroItemBySearch(libraryID, [["DOI", "is", doi]]);
+    if (doiMatch) return doiMatch;
+  }
+  const title = normalizedCandidateTitle(record.title);
+  if (!title) return null;
+  return findZoteroItemBySearch(libraryID, [["title", "contains", record.title]], (item) => {
+    return normalizedCandidateTitle(zoteroItemTitle(item)) === title;
+  });
+}
+
+async function findZoteroItemBySearch(libraryID, conditions, predicate = () => true) {
+  try {
+    const search = new Zotero.Search();
+    search.libraryID = libraryID;
+    for (const [field, operator, value] of conditions) {
+      search.addCondition(field, operator, value);
+    }
+    const ids = await search.search();
+    for (const id of Array.isArray(ids) ? ids : []) {
+      const item = await zoteroItemById(id);
+      if (item && predicate(item)) return item;
+    }
+  } catch (_err) {
+    // Search conditions vary across Zotero versions; a failed fallback should not block import.
+  }
+  return null;
+}
+
+async function zoteroItemById(id) {
+  if (!id) return null;
+  if (typeof Zotero.Items?.getAsync === "function") return Zotero.Items.getAsync(id);
+  if (typeof Zotero.Items?.get === "function") return Zotero.Items.get(id);
+  return null;
+}
+
+function zoteroItemTitle(item) {
+  return item?.getField?.("title") || item?.fields?.title || item?.title || item?.getDisplayTitle?.() || "";
+}
+
+function normalizedCandidateTitle(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[\s:;,._()[\]{}'"!?-]+/g, " ")
+    .trim();
+}
+
+function setCandidateItemFields(item, record) {
+  setItemFieldSafe(item, "title", record.title);
+  setItemFieldSafe(item, "date", record.year ? String(record.year) : "");
+  setItemFieldSafe(item, "DOI", record.ids?.doi);
+  setItemFieldSafe(item, "url", record.sourceUrl);
+  setItemFieldSafe(item, "abstractNote", record.abstract);
+  setItemFieldSafe(item, "publicationTitle", record.venue);
+  setItemFieldSafe(item, "extra", candidateExtraField(record));
+}
+
+function setItemFieldSafe(item, field, value) {
+  const text = String(value || "").trim();
+  if (!text) return;
+  try {
+    item.setField(field, text);
+  } catch (_err) {
+    if (field === "DOI") {
+      const existing = item.getField?.("extra") || "";
+      item.setField("extra", [existing, `DOI: ${text}`].filter(Boolean).join("\n"));
+    }
+  }
+}
+
+function candidateExtraField(record) {
+  return [
+    record.ids?.arxivId ? `arXiv: ${record.ids.arxivId}` : "",
+    record.ids?.semanticScholarId ? `Semantic Scholar: ${record.ids.semanticScholarId}` : "",
+    record.pdfUrl ? `Open PDF: ${record.pdfUrl}` : "",
+    record.candidateId ? `Candidate ID: ${record.candidateId}` : "",
+    record.sources?.length ? `Candidate Sources: ${record.sources.join(", ")}` : ""
+  ].filter(Boolean).join("\n");
+}
+
+function setCandidateItemCreators(item, authors) {
+  const creators = (authors || []).map((name) => candidateCreatorFromName(name)).filter(Boolean);
+  if (!creators.length) return;
+  if (typeof item.setCreators === "function") {
+    item.setCreators(creators);
+  } else {
+    item.creators = creators;
+  }
+}
+
+function candidateCreatorFromName(name) {
+  const text = String(name || "").trim();
+  if (!text) return null;
+  if (text.includes(",")) {
+    const [family, given] = text.split(",", 2).map((part) => part.trim());
+    return { creatorType: "author", firstName: given || "", lastName: family || text, fieldMode: 0 };
+  }
+  const parts = text.split(/\s+/);
+  if (parts.length === 1) return { creatorType: "author", name: text, fieldMode: 1 };
+  return { creatorType: "author", firstName: parts.slice(0, -1).join(" "), lastName: parts.at(-1), fieldMode: 0 };
+}
+
+async function addItemToCurrentCollection(item, contextItem) {
+  const collectionID = currentCollectionID(contextItem);
+  if (!collectionID || typeof item.addToCollection !== "function") return;
+  item.addToCollection(collectionID);
+  if (typeof item.saveTx === "function") await item.saveTx();
+}
+
+function currentCollectionID(contextItem) {
+  const collectionIDs = typeof contextItem?.getCollections === "function" ? contextItem.getCollections() : [];
+  return Array.isArray(collectionIDs) && collectionIDs.length ? collectionIDs[0] : null;
+}
+
+function applyCandidateImportResults(records, resultById, now = new Date().toISOString()) {
+  return (records || []).map((record) => {
+    const result = resultById.get(record.candidateId);
+    if (!result) return record;
+    return {
+      ...record,
+      importStatus: result.action,
+      zoteroItemID: result.zoteroItemID,
+      zoteroItemKey: result.zoteroItemKey,
+      importError: result.error || "",
+      importedAt: result.action === "imported" ? result.at || now : record.importedAt,
+      updatedAt: now
+    };
+  });
+}
+
+function importResultLedgerEntries(records, resultById, now = new Date().toISOString()) {
+  return (records || [])
+    .map((record) => {
+      const result = resultById.get(record.candidateId);
+      if (!result) return null;
+      return importLedgerEntryForCandidate(record, result.action, result.at || now, {
+        zoteroItemID: result.zoteroItemID,
+        zoteroItemKey: result.zoteroItemKey,
+        message: result.message,
+        error: result.error
+      });
+    })
+    .filter(Boolean);
+}
+
+function pdfAttachableCandidateRecords(records) {
+  return (records || []).filter((record) => {
+    if (normalizeCandidateDecision(record.decision) !== "include") return false;
+    if (record.pdfAttachmentStatus === "attached_pdf" || record.pdfAttachmentStatus === "missing_pdf") return false;
+    return record.importStatus === "imported" || record.importStatus === "skipped_duplicate";
+  });
+}
+
+async function attachCandidatePdfToZotero(record, contextItem, now = new Date().toISOString()) {
+  try {
+    if (!record.pdfUrl) {
+      return {
+        candidateId: record.candidateId,
+        action: "missing_pdf",
+        zoteroItemID: record.zoteroItemID,
+        zoteroItemKey: record.zoteroItemKey,
+        at: now,
+        message: "No PDF URL available"
+      };
+    }
+    const item = await candidateImportedZoteroItem(record, contextItem);
+    if (!item) {
+      return {
+        candidateId: record.candidateId,
+        action: "failed",
+        zoteroItemID: record.zoteroItemID,
+        zoteroItemKey: record.zoteroItemKey,
+        at: now,
+        error: "Imported Zotero item not found"
+      };
+    }
+    const existing = await findExistingCandidatePdfAttachment(item, record.pdfUrl);
+    if (existing) {
+      return {
+        candidateId: record.candidateId,
+        action: "attached_pdf",
+        zoteroItemID: item.id,
+        zoteroItemKey: item.key || record.zoteroItemKey,
+        attachmentKey: existing.key,
+        at: now,
+        message: "Existing PDF attachment found"
+      };
+    }
+    const attachment = await createCandidatePdfAttachment(item, record);
+    return {
+      candidateId: record.candidateId,
+      action: "attached_pdf",
+      zoteroItemID: item.id,
+      zoteroItemKey: item.key || record.zoteroItemKey,
+      attachmentKey: attachment?.key,
+      at: now,
+      message: "Attached PDF from candidate URL"
+    };
+  } catch (err) {
+    return {
+      candidateId: record.candidateId,
+      action: "failed",
+      zoteroItemID: record.zoteroItemID,
+      zoteroItemKey: record.zoteroItemKey,
+      at: now,
+      error: safeError(err)
+    };
+  }
+}
+
+async function candidateImportedZoteroItem(record, contextItem) {
+  if (record.zoteroItemID) {
+    const byId = await zoteroItemById(record.zoteroItemID);
+    if (byId) return byId;
+  }
+  if (record.zoteroItemKey && Zotero.Items?.getByLibraryAndKey) {
+    const libraryID = contextItem?.libraryID || Zotero.Libraries?.userLibraryID;
+    return Zotero.Items.getByLibraryAndKey(libraryID, record.zoteroItemKey);
+  }
+  return null;
+}
+
+async function findExistingCandidatePdfAttachment(item, pdfUrl = "") {
+  const attachmentIDs = typeof item?.getAttachments === "function" ? item.getAttachments() : [];
+  for (const id of attachmentIDs || []) {
+    const attachment = await zoteroItemById(id);
+    if (!attachment) continue;
+    const contentType = String(attachment.attachmentContentType || "").toLowerCase();
+    const url = attachment.getField?.("url") || attachment.url || "";
+    if (contentType === "application/pdf" && (!pdfUrl || url === pdfUrl)) return attachment;
+  }
+  return null;
+}
+
+async function createCandidatePdfAttachment(item, record) {
+  const payload = {
+    url: record.pdfUrl,
+    parentItemID: item.id,
+    libraryID: item.libraryID,
+    contentType: "application/pdf",
+    title: candidatePdfAttachmentTitle(record),
+    renameIfAllowedType: true
+  };
+  if (typeof Zotero.Attachments?.importFromURL === "function") {
+    return Zotero.Attachments.importFromURL(payload);
+  }
+  if (typeof Zotero.Attachments?.linkFromURL === "function") {
+    return Zotero.Attachments.linkFromURL(payload);
+  }
+  throw new Error("Zotero PDF URL attachment API is unavailable");
+}
+
+function candidatePdfAttachmentTitle(record) {
+  const title = String(record.title || "Candidate PDF").trim();
+  return title.toLowerCase().endsWith(".pdf") ? title : `${title}.pdf`;
+}
+
+function applyCandidatePdfAttachmentResults(records, resultById, now = new Date().toISOString()) {
+  return (records || []).map((record) => {
+    const result = resultById.get(record.candidateId);
+    if (!result) return record;
+    return {
+      ...record,
+      zoteroItemID: result.zoteroItemID ?? record.zoteroItemID,
+      zoteroItemKey: result.zoteroItemKey || record.zoteroItemKey,
+      pdfAttachmentStatus: result.action,
+      pdfAttachmentKey: result.attachmentKey,
+      pdfAttachmentError: result.error || "",
+      pdfAttachedAt: result.action === "attached_pdf" ? result.at || now : record.pdfAttachedAt,
+      updatedAt: now
+    };
+  });
+}
+
+function pdfAttachmentLedgerEntries(records, resultById, now = new Date().toISOString()) {
+  return (records || [])
+    .map((record) => {
+      const result = resultById.get(record.candidateId);
+      if (!result) return null;
+      return importLedgerEntryForCandidate(record, result.action, result.at || now, {
+        zoteroItemID: result.zoteroItemID,
+        zoteroItemKey: result.zoteroItemKey,
+        attachmentKey: result.attachmentKey,
+        message: result.message,
+        error: result.error
+      });
+    })
+    .filter(Boolean);
+}
+
+function reconcileCandidateDuplicateRecords(records, now = new Date().toISOString()) {
+  const seen = new Map();
+  const ledgerEntries = [];
+  let duplicateCount = 0;
+  const updatedRecords = (records || []).map((record) => {
+    if (record.quality?.dedupeStatus === "duplicate" && (record.quality?.matchedCandidateId || record.quality?.matchedItemKey)) {
+      return record;
+    }
+    const keys = candidateDuplicateIdentityKeys(record);
+    const match = keys.map((key) => seen.get(key)).find(Boolean);
+    if (match) {
+      duplicateCount += 1;
+      const updated = {
+        ...record,
+        quality: {
+          ...(record.quality || {}),
+          dedupeStatus: "duplicate",
+          matchedCandidateId: match.candidateId,
+          matchedItemKey: match.zoteroItemKey || record.quality?.matchedItemKey,
+          reason: `matched candidate ${match.candidateId} in collection cache`
+        },
+        updatedAt: now
+      };
+      ledgerEntries.push(importLedgerEntryForCandidate(updated, "skipped_duplicate", now, {
+        zoteroItemID: match.zoteroItemID || record.zoteroItemID,
+        zoteroItemKey: match.zoteroItemKey || record.zoteroItemKey,
+        message: `matched candidate ${match.candidateId} in collection cache`
+      }));
+      return updated;
+    }
+    for (const key of keys) {
+      if (!seen.has(key)) seen.set(key, record);
+    }
+    return record;
+  });
+  return { records: updatedRecords, ledgerEntries, duplicateCount };
+}
+
+function candidateDuplicateIdentityKeys(record) {
+  const keys = [];
+  const doi = normalizeCandidateDoi(record.ids?.doi);
+  if (doi) keys.push(`doi:${doi}`);
+  const arxivId = normalizeCandidateArxivId(record.ids?.arxivId);
+  if (arxivId) keys.push(`arxiv:${arxivId}`);
+  if (record.zoteroItemKey) keys.push(`zotero:${record.zoteroItemKey}`);
+  const title = normalizedCandidateTitle(record.title);
+  const year = String(record.year || "").trim();
+  if (title && (year || title.length >= 48)) keys.push(`title:${title}:${year}`);
+  return keys;
+}
+
+function normalizeCandidateDoi(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//, "")
+    .replace(/^doi:\s*/, "");
+}
+
+function normalizeCandidateArxivId(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\/arxiv\.org\/(?:abs|pdf)\//, "")
+    .replace(/\.pdf$/i, "")
+    .replace(/^arxiv:/, "")
+    .replace(/v\d+$/i, "");
+}
+
+function candidatePreviousDecisionMap(records) {
+  return new Map((records || []).map((record) => [record.candidateId, normalizeCandidateDecision(record.decision)]));
+}
+
+function discoveredLedgerEntries(records, existingCandidateIds, now = new Date().toISOString()) {
+  return (records || [])
+    .filter((record) => !existingCandidateIds?.has?.(record.candidateId))
+    .map((record) => importLedgerEntryForCandidate(record, "discovered", record.discoveredAt || now));
+}
+
+function decisionLedgerEntries(records, previousDecisions, changedDecisions, now = new Date().toISOString()) {
+  return (records || [])
+    .filter((record) => Object.prototype.hasOwnProperty.call(changedDecisions || {}, record.candidateId))
+    .filter((record) => previousDecisions?.get(record.candidateId) !== normalizeCandidateDecision(record.decision))
+    .map((record) => importLedgerEntryForCandidate(record, decisionLedgerAction(record.decision), now))
+    .filter((entry) => !!entry.action);
+}
+
+function decisionLedgerAction(decision) {
+  if (decision === "include") return "confirmed";
+  if (decision === "exclude") return "excluded";
+  if (decision === "to_read") return "to_read";
+  return "";
+}
+
+function importLedgerEntryForCandidate(record, action, at, extra = {}) {
+  return {
+    id: `${record.candidateId}:${action}:${at}`,
+    candidateId: record.candidateId,
+    action,
+    at,
+    title: record.title,
+    collectionKey: record.collectionKey,
+    zoteroItemID: extra.zoteroItemID,
+    doi: record.ids?.doi,
+    arxivId: record.ids?.arxivId,
+    sourceUrl: record.sourceUrl,
+    decision: normalizeCandidateDecision(record.decision),
+    dedupeStatus: record.quality?.dedupeStatus,
+    zoteroItemKey: extra.zoteroItemKey,
+    attachmentKey: extra.attachmentKey,
+    message: extra.message,
+    error: extra.error
+  };
+}
+
+function normalizeCandidateDecision(value) {
+  if (value === "include" || value === "exclude" || value === "to_read") return value;
+  return "user_pending";
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(number)));
+}
+
+function normalizeSessionId(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\.jsonl$/i, "")
+    .replace(/[\\/]/g, "-")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "")
+    .slice(0, 96);
+}
+
+function makeMessage(role, content, extra = {}) {
+  return { id: `${role}-${Date.now()}-${Math.random().toString(16).slice(2)}`, role, content, time: new Date().toISOString(), ...extra };
+}
+
+async function copyText(text) {
+  const value = String(text || "");
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch (_err) {
+    // Fall through to the Zotero/XUL clipboard helper.
+  }
+  try {
+    const helper = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
+    helper.copyString(value);
+    return true;
+  } catch (_err) {
+    return false;
+  }
+}
+
+function safeError(err) {
+  return redact(err?.message || err || "Unknown error");
+}
+
+if (typeof window !== "undefined" && window.addEventListener) {
+  window.addEventListener("load", () => {
+    ZoteroMarkdownSummaryWorkbench.init();
+  }, { once: true });
+}
+
+function providerErrorText(status, text) {
+  return `HTTP ${status}: ${redact(providerErrorDetail(text))}`;
+}
+
+function providerErrorDetail(text) {
+  const parsed = safeParseJSON(text);
+  if (parsed) {
+    const error = parsed.error;
+    if (typeof error === "string") return error;
+    const message = error?.message || parsed.message || parsed.detail || parsed.error_description;
+    const code = error?.code || parsed.code;
+    const type = error?.type || parsed.type;
+    const detail = [code, type, message].filter(Boolean).join(" - ");
+    if (detail) return detail;
+    return truncateErrorText(JSON.stringify(parsed));
+  }
+  return truncateErrorText(String(text || "").replace(/\s+/g, " ").trim() || "Request failed");
+}
+
+function truncateErrorText(text, limit = 1200) {
+  return text.length > limit ? `${text.slice(0, limit)}...` : text;
+}
+
+function redact(value) {
+  return String(value).replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]").replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g, "Bearer [redacted]").slice(0, 800);
+}
+
+function stripThink(value) {
+  return value.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+}
+
+function sanitizeFilename(value) {
+  return String(value).replace(/[\\/:*?"<>|\r\n]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) || "untitled";
+}
+
+function normalizeHeading(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function hashString(value) {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+window.ZoteroMarkdownSummaryWorkbench = ZoteroMarkdownSummaryWorkbench;

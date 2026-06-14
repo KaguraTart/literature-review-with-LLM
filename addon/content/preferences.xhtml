@@ -2,37 +2,91 @@
       xmlns:html="http://www.w3.org/1999/xhtml"
       id="zotero-prefpane-markdown-summary"
       onload="ZoteroMarkdownSummaryPrefs.init()">
+  <script src="chrome://zotero-markdown-summary/content/messages.js"/>
   <groupbox>
-    <label><html:h2>Markdown 摘要</html:h2></label>
+    <label><html:h2 id="zms-title">Markdown 摘要</html:h2></label>
     <vbox class="zms-form">
       <hbox align="center" class="zms-row">
-        <label class="zms-label" value="Provider"/>
-        <menulist id="zms-provider">
+        <label class="zms-label" id="zms-uiLanguage-label" value="UI 语言"/>
+        <menulist id="zms-uiLanguage">
           <menupopup>
-            <menuitem label="MiniMax OpenAI 兼容" value="minimax"/>
-            <menuitem label="OpenAI 原生" value="openai"/>
-            <menuitem label="Anthropic" value="anthropic"/>
+            <menuitem label="自动" value="auto"/>
+            <menuitem label="中文" value="zh-CN"/>
+            <menuitem label="English" value="en-US"/>
           </menupopup>
         </menulist>
       </hbox>
       <hbox align="center" class="zms-row">
-        <label class="zms-label" value="Base URL"/>
+        <label class="zms-label" id="zms-outputLanguage-label" value="输出语言"/>
+        <menulist id="zms-outputLanguage">
+          <menupopup>
+            <menuitem label="中文" value="zh-CN"/>
+            <menuitem label="English" value="en-US"/>
+            <menuitem label="日本語" value="ja-JP"/>
+          </menupopup>
+        </menulist>
+      </hbox>
+      <hbox align="center" class="zms-row">
+        <label class="zms-label" id="zms-activeProfileId-label" value="默认接口档案"/>
+        <html:input class="zms-field" id="zms-activeProfileId" list="zms-profile-options"/>
+        <html:datalist id="zms-profile-options"/>
+      </hbox>
+      <hbox align="center" class="zms-row">
+        <label class="zms-label" id="zms-provider-label" value="Provider"/>
+        <menulist id="zms-provider" oncommand="ZoteroMarkdownSummaryPrefs.applyProviderPreset()">
+          <menupopup>
+            <menuitem label="MiniMax OpenAI 兼容" value="minimax"/>
+            <menuitem label="OpenAI 原生" value="openai"/>
+            <menuitem label="OpenAI 兼容接口" value="openai_compatible"/>
+            <menuitem label="Anthropic" value="anthropic"/>
+            <menuitem label="Gemini OpenAI 兼容" value="gemini"/>
+            <menuitem label="Azure OpenAI" value="azure_openai"/>
+            <menuitem label="xAI OpenAI 兼容" value="xai"/>
+            <menuitem label="Groq OpenAI 兼容" value="groq"/>
+            <menuitem label="Mistral OpenAI 兼容" value="mistral"/>
+            <menuitem label="Together AI OpenAI 兼容" value="together"/>
+            <menuitem label="Kimi / Moonshot OpenAI 兼容" value="kimi"/>
+            <menuitem label="Perplexity Sonar" value="perplexity"/>
+            <menuitem label="DeepSeek OpenAI 兼容" value="deepseek"/>
+            <menuitem label="DeepSeek Anthropic 兼容" value="deepseek_anthropic"/>
+            <menuitem label="Z.AI Anthropic 兼容" value="zai_anthropic"/>
+            <menuitem label="OpenRouter" value="openrouter"/>
+            <menuitem label="Qwen / DashScope" value="dashscope"/>
+            <menuitem label="SiliconFlow" value="siliconflow"/>
+            <menuitem label="Zhipu / GLM OpenAI 兼容" value="zhipu"/>
+            <menuitem label="Volcengine Ark / Doubao" value="volcengine"/>
+            <menuitem label="Baidu Qianfan" value="qianfan"/>
+            <menuitem label="Tencent Hunyuan" value="hunyuan"/>
+            <menuitem label="Ollama OpenAI 兼容" value="ollama"/>
+            <menuitem label="LM Studio OpenAI 兼容" value="lm_studio"/>
+            <menuitem label="Local Agents" value="local_agents"/>
+          </menupopup>
+        </menulist>
+      </hbox>
+      <hbox align="center" class="zms-row">
+        <label class="zms-label" id="zms-baseURL-label" value="Base URL"/>
         <html:input class="zms-field" id="zms-baseURL"/>
       </hbox>
       <hbox align="center" class="zms-row">
-        <label class="zms-label" value="API Key"/>
+        <label class="zms-label" id="zms-apiKey-label" value="API Key"/>
         <html:input class="zms-field" id="zms-apiKey" type="password"/>
       </hbox>
       <hbox align="center" class="zms-row">
-        <label class="zms-label" value="Model"/>
-        <html:input class="zms-field" id="zms-model"/>
+        <label class="zms-label" id="zms-model-label" value="Model"/>
+        <html:input class="zms-field" id="zms-model" list="zms-model-options"/>
+        <html:datalist id="zms-model-options"/>
+        <button id="zms-load-models-button" label="加载模型" oncommand="ZoteroMarkdownSummaryPrefs.loadModels()"/>
       </hbox>
+      <vbox class="zms-row">
+        <label id="zms-profileStatus-label" value="档案状态"/>
+        <html:pre class="zms-profile-status" id="zms-profileStatus"></html:pre>
+      </vbox>
       <hbox align="center" class="zms-row">
-        <label class="zms-label" value="输出目录"/>
+        <label class="zms-label" id="zms-outputDir-label" value="输出目录"/>
         <html:input class="zms-field" id="zms-outputDir"/>
       </hbox>
       <hbox align="center" class="zms-row">
-        <label class="zms-label" value="输入模式"/>
+        <label class="zms-label" id="zms-inputMode-label" value="输入模式"/>
         <menulist id="zms-inputMode">
           <menupopup>
             <menuitem label="提取文本" value="text"/>
@@ -41,21 +95,163 @@
         </menulist>
       </hbox>
       <hbox align="center" class="zms-row">
-        <label class="zms-label" value="最大输出 token"/>
+        <label class="zms-label" id="zms-maxOutputTokens-label" value="最大输出 token"/>
         <html:input class="zms-number" id="zms-maxOutputTokens" type="number" min="512" step="512"/>
       </hbox>
       <hbox align="center" class="zms-row">
-        <label class="zms-label" value="Temperature"/>
+        <label class="zms-label" id="zms-temperature-label" value="Temperature"/>
         <html:input class="zms-number" id="zms-temperature" type="number" min="0.1" max="1" step="0.1"/>
       </hbox>
       <hbox align="center" class="zms-row">
-        <label class="zms-label" value="流式输出"/>
+        <label class="zms-label" id="zms-stream-label" value="流式输出"/>
         <checkbox id="zms-stream"/>
       </hbox>
+      <vbox class="zms-row zms-profile-editor">
+        <label><html:h2 id="zms-profileEditor-label">接口档案编辑器</html:h2></label>
+        <hbox align="center" class="zms-row">
+          <label class="zms-label" id="zms-profileName-label" value="档案名称"/>
+          <html:input class="zms-field" id="zms-profileName"/>
+        </hbox>
+        <hbox align="center" class="zms-row">
+          <label class="zms-label" id="zms-profileProtocol-label" value="协议"/>
+          <menulist id="zms-profileProtocol">
+            <menupopup>
+              <menuitem label="OpenAI Chat" value="openai_chat"/>
+              <menuitem label="OpenAI Responses" value="openai_responses"/>
+              <menuitem label="Anthropic Messages" value="anthropic_messages"/>
+            </menupopup>
+          </menulist>
+        </hbox>
+        <hbox align="center" class="zms-row">
+          <label class="zms-label" id="zms-profileEndpointMode-label" value="Endpoint 模式"/>
+          <menulist id="zms-profileEndpointMode">
+            <menupopup>
+              <menuitem label="Base URL" value="base_url"/>
+              <menuitem label="Full URL" value="full_url"/>
+            </menupopup>
+          </menulist>
+        </hbox>
+        <hbox align="center" class="zms-row">
+          <label class="zms-label" id="zms-profileFullURL-label" value="Full URL"/>
+          <html:input class="zms-field" id="zms-profileFullURL"/>
+        </hbox>
+        <vbox class="zms-row">
+          <label id="zms-profileCapabilities-label" value="能力声明"/>
+          <html:div class="zms-capability-grid">
+            <html:label><html:input id="zms-cap-text" type="checkbox"/> Text</html:label>
+            <html:label><html:input id="zms-cap-pdfBase64" type="checkbox"/> PDF base64</html:label>
+            <html:label><html:input id="zms-cap-streaming" type="checkbox"/> Streaming</html:label>
+            <html:label><html:input id="zms-cap-fileReference" type="checkbox"/> File reference</html:label>
+            <html:label><html:input id="zms-cap-embeddings" type="checkbox"/> Embeddings</html:label>
+            <html:label><html:input id="zms-cap-jsonMode" type="checkbox"/> JSON mode</html:label>
+            <html:label><html:input id="zms-cap-toolUse" type="checkbox"/> Tool use</html:label>
+            <html:label><html:input id="zms-cap-modelList" type="checkbox"/> Model list</html:label>
+          </html:div>
+        </vbox>
+        <vbox class="zms-row">
+          <label id="zms-profileCustomHeaders-label" value="自定义 Headers JSON"/>
+          <html:textarea class="zms-small-json" id="zms-profileCustomHeaders"/>
+        </vbox>
+        <vbox class="zms-row">
+          <label id="zms-profileBodyExtra-label" value="额外 Body JSON"/>
+          <html:textarea class="zms-small-json" id="zms-profileBodyExtra"/>
+        </vbox>
+        <vbox class="zms-row">
+          <label id="zms-profileLocalAgent-label" value="本地代理"/>
+          <hbox align="center" class="zms-row">
+            <label class="zms-label" id="zms-profileLocalAgentEnabled-label" value="启用本地代理"/>
+            <checkbox id="zms-profileLocalAgentEnabled"/>
+          </hbox>
+          <hbox align="center" class="zms-row">
+            <label class="zms-label" id="zms-profileLocalAgentEndpoint-label" value="Endpoint"/>
+            <html:input class="zms-field" id="zms-profileLocalAgentEndpoint"/>
+          </hbox>
+          <hbox align="center" class="zms-row">
+            <label class="zms-label" id="zms-profileLocalAgentTool-label" value="默认工具名"/>
+            <html:input class="zms-field" id="zms-profileLocalAgentTool"/>
+          </hbox>
+          <hbox align="center" class="zms-row">
+            <label class="zms-label" id="zms-profileLocalAgentPayloadMode-label" value="Payload 模式"/>
+            <menulist id="zms-profileLocalAgentPayloadMode">
+              <menupopup>
+                <menuitem label="JSONRPC" value="jsonrpc"/>
+                <menuitem label="Simple" value="simple"/>
+              </menupopup>
+            </menulist>
+          </hbox>
+          <hbox align="center" class="zms-row">
+            <label class="zms-label" id="zms-profileLocalAgentTimeout-label" value="超时（秒）"/>
+            <html:input class="zms-number" id="zms-profileLocalAgentTimeout" type="number" min="1" step="1"/>
+          </hbox>
+          <hbox align="center" class="zms-row">
+            <label class="zms-label" id="zms-profileLocalAgentFallback-label" value="失败后回退远端"/>
+            <checkbox id="zms-profileLocalAgentFallback"/>
+          </hbox>
+          <vbox class="zms-row">
+            <label id="zms-profileLocalAgentHeaders-label" value="代理 Headers JSON"/>
+            <html:textarea class="zms-small-json" id="zms-profileLocalAgentHeaders"/>
+          </vbox>
+          <vbox class="zms-row">
+            <label id="zms-profileLocalAgentSkills-label" value="技能级配置 JSON（可选）"/>
+            <html:textarea class="zms-small-json" id="zms-profileLocalAgentSkills"/>
+            <html:label class="zms-small-note" value="按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"/>
+            <html:label class="zms-small-note" value="三位子技能可共用同一 endpoint，若某 skill 未单独配置 tool，会按 skill id 自动映射到对应工具名（ask_gemini/ask_claude/ask_opencode）。"/>
+            <html:label class="zms-small-note" value="支持在技能配置中透传 args/body/params/payload，例如：{ &quot;ask_gemini&quot;: { &quot;tool&quot;: &quot;ask_gemini&quot;, &quot;method&quot;: &quot;tools/call&quot;, &quot;args&quot;: { &quot;timeoutSeconds&quot;: 120 } }。"/>
+            <html:label class="zms-small-note" value="若接口使用非 tools/call 方法，可在技能配置里设置 method，例如：{ &quot;ask_gemini&quot;: { &quot;method&quot;: &quot;mcp_call&quot; } }。"/>
+            <html:label class="zms-small-note" value="本地代理需是可 HTTP 调用的 JSON-RPC 端点（payloadMode 建议 jsonrpc）；原生 stdio MCP 可执行文件请先用 HTTP 桥接层转发后再配置。"/>
+          </vbox>
+        </vbox>
+        <hbox class="zms-actions">
+          <button id="zms-load-profile-button" label="加载档案" oncommand="ZoteroMarkdownSummaryPrefs.loadProfileEditor()"/>
+          <button id="zms-save-profile-button" label="保存档案" oncommand="ZoteroMarkdownSummaryPrefs.saveProfileFromEditor()"/>
+          <button id="zms-delete-profile-button" label="删除档案" oncommand="ZoteroMarkdownSummaryPrefs.deleteProfileFromEditor()"/>
+          <button id="zms-reset-profiles-button" label="重置默认档案" oncommand="ZoteroMarkdownSummaryPrefs.resetProfilesToDefaults()"/>
+        </hbox>
+      </vbox>
+      <vbox class="zms-row">
+        <label id="zms-systemPrompt-label" value="系统提示词"/>
+        <html:textarea class="zms-prompt" id="zms-systemPrompt"/>
+      </vbox>
+      <vbox class="zms-row">
+        <label id="zms-userPrompt-label" value="总结提示词"/>
+        <html:textarea class="zms-prompt" id="zms-userPrompt"/>
+      </vbox>
+      <vbox class="zms-row zms-skill-editor">
+        <label id="zms-skillTemplate-label" value="聊天技能提示词"/>
+        <hbox align="center" class="zms-row">
+          <label class="zms-label" id="zms-skillId-label" value="技能"/>
+          <menulist id="zms-skillId" editable="true" oncommand="ZoteroMarkdownSummaryPrefs.loadSkillTemplateEditor()">
+            <menupopup>
+              <menuitem label="单篇深度总结" value="paper-deep-summary"/>
+              <menuitem label="方法抽取" value="method-extractor"/>
+              <menuitem label="实验表格" value="experiment-table-builder"/>
+              <menuitem label="证据检查" value="citation-audit"/>
+              <menuitem label="自定义总结" value="custom-summary"/>
+              <menuitem label="Gemini 咨询" value="ask-gemini"/>
+              <menuitem label="Claude 咨询" value="ask-claude"/>
+              <menuitem label="Opencode 咨询" value="ask-opencode"/>
+              <menuitem label="三位顾问联席" value="ask-all-agents"/>
+              <menuitem label="Gemini + Claude 双顾问" value="ask-gemini-claude"/>
+              <menuitem label="本地代理连通性检查" value="check-local-agents"/>
+            </menupopup>
+          </menulist>
+        </hbox>
+        <html:textarea class="zms-prompt zms-skill-template" id="zms-skillTemplate"/>
+        <hbox class="zms-actions">
+          <button id="zms-load-skill-button" label="加载技能模板" oncommand="ZoteroMarkdownSummaryPrefs.loadSkillTemplateEditor()"/>
+          <button id="zms-save-skill-button" label="保存技能模板" oncommand="ZoteroMarkdownSummaryPrefs.saveSkillTemplateEditor()"/>
+          <button id="zms-reset-skill-button" label="重置为内置模板" oncommand="ZoteroMarkdownSummaryPrefs.resetSkillTemplateEditor()"/>
+        </hbox>
+      </vbox>
+      <vbox class="zms-row">
+        <label id="zms-profilesJson-label" value="接口档案 JSON"/>
+        <html:textarea class="zms-json" id="zms-profilesJson"/>
+      </vbox>
     </vbox>
     <hbox class="zms-actions">
-      <button label="保存设置" oncommand="ZoteroMarkdownSummaryPrefs.save()"/>
-      <button label="测试连接" oncommand="ZoteroMarkdownSummaryPrefs.testConnection()"/>
+      <button id="zms-save-button" label="保存设置" oncommand="ZoteroMarkdownSummaryPrefs.save()"/>
+      <button id="zms-sync-profile-button" label="用上方配置更新档案" oncommand="ZoteroMarkdownSummaryPrefs.syncLegacyToProfile()"/>
+      <button id="zms-test-button" label="测试连接" oncommand="ZoteroMarkdownSummaryPrefs.testConnection()"/>
       <label id="zms-status"/>
     </hbox>
   </groupbox>
