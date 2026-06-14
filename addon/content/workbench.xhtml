@@ -1,0 +1,111 @@
+<?xml version="1.0"?>
+<?xml-stylesheet href="chrome://zotero-markdown-summary/content/workbench.css" type="text/css"?>
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
+        id="zms-workbench"
+        title="Paper Chat Workbench"
+        width="1040"
+        height="760">
+  <script src="chrome://zotero-markdown-summary/content/messages.js"/>
+  <script src="chrome://zotero-markdown-summary/content/markdown-render.js"/>
+  <script src="chrome://zotero-markdown-summary/content/candidate-sources.js"/>
+  <script src="chrome://zotero-markdown-summary/content/workbench.js"/>
+  <html:main class="zms-workbench-shell">
+    <html:aside id="zms-settings-panel" class="zms-sidebar" aria-hidden="true">
+      <html:div class="zms-settings-header">
+        <html:h1 id="zms-workbench-title">Paper Chat Workbench</html:h1>
+        <html:button id="zms-settings-close" class="zms-settings-close" type="button">Close</html:button>
+      </html:div>
+      <html:section class="zms-panel zms-panel-primary" data-zms-panel="profile">
+        <html:h2 id="zms-quick-settings-heading">Quick Settings</html:h2>
+        <html:label id="zms-profile-label" for="zms-profile">Provider</html:label>
+        <html:select id="zms-profile"></html:select>
+        <html:p id="zms-profile-status" class="zms-muted"></html:p>
+        <html:label id="zms-skill-label" for="zms-skill">Skill</html:label>
+        <html:select id="zms-skill"></html:select>
+        <html:p id="zms-skill-description" class="zms-muted"></html:p>
+      </html:section>
+      <html:details class="zms-panel zms-settings-details" data-zms-panel="paper">
+        <html:summary id="zms-paper-heading">Paper</html:summary>
+        <html:div id="zms-paper-meta" class="zms-muted">Loading</html:div>
+      </html:details>
+      <html:details class="zms-panel zms-settings-details" data-zms-panel="sessions">
+        <html:summary id="zms-sessions-heading">Sessions</html:summary>
+        <html:button id="zms-open-reader">Read Markdown</html:button>
+        <html:button id="zms-save-session">Save Session</html:button>
+        <html:div id="zms-session-list" class="zms-list"></html:div>
+      </html:details>
+      <html:details class="zms-panel zms-settings-details" data-zms-panel="candidates">
+        <html:summary id="zms-candidates-heading">Candidates</html:summary>
+        <html:label id="zms-candidate-query-label" for="zms-candidate-query">Search Query</html:label>
+        <html:textarea id="zms-candidate-query"></html:textarea>
+        <html:div class="zms-candidate-search-grid">
+          <html:label id="zms-candidate-limit-label" for="zms-candidate-limit">Limit</html:label>
+          <html:input id="zms-candidate-limit" type="number" min="1" max="50" value="10"/>
+          <html:label id="zms-candidate-email-label" for="zms-candidate-email">Email</html:label>
+          <html:input id="zms-candidate-email" type="email"/>
+        </html:div>
+        <html:label id="zms-candidate-semantic-key-label" for="zms-candidate-semantic-key">Semantic Scholar API Key</html:label>
+        <html:input id="zms-candidate-semantic-key" type="password"/>
+        <html:div class="zms-actions zms-candidate-actions">
+          <html:button id="zms-search-candidates">Search</html:button>
+          <html:button id="zms-load-candidates">Load</html:button>
+          <html:button id="zms-save-candidates">Save Decisions</html:button>
+          <html:button id="zms-import-candidates">Import Included</html:button>
+          <html:button id="zms-attach-candidate-pdfs">Attach PDFs</html:button>
+          <html:button id="zms-reconcile-candidate-duplicates">Mark Duplicates</html:button>
+        </html:div>
+        <html:p id="zms-candidate-status" class="zms-muted"></html:p>
+        <html:div id="zms-candidate-list" class="zms-list zms-candidate-list"></html:div>
+      </html:details>
+      <html:div id="zms-status" class="zms-status">Ready</html:div>
+    </html:aside>
+    <html:section class="zms-chat">
+      <html:header class="zms-chat-bar">
+        <html:div class="zms-chat-context">
+          <html:div id="zms-chat-paper-title" class="zms-chat-paper-title">Paper Chat</html:div>
+          <html:div id="zms-chat-status" class="zms-chat-status">Ready</html:div>
+        </html:div>
+        <html:div class="zms-chat-actions">
+          <html:button id="zms-profile-trigger" class="zms-profile-trigger" type="button">Model</html:button>
+          <html:button id="zms-settings-toggle" class="zms-settings-toggle" type="button">Settings</html:button>
+        </html:div>
+      </html:header>
+      <html:div id="zms-messages" class="zms-messages"></html:div>
+      <html:section id="zms-writeback" class="zms-writeback" hidden="hidden">
+        <html:h2 id="zms-writeback-title">Write Preview</html:h2>
+        <html:div class="zms-writeback-grid">
+          <html:label for="zms-write-action" id="zms-write-action-label">Action</html:label>
+          <html:select id="zms-write-action">
+            <html:option value="append_research_notes">Append to Research Notes</html:option>
+            <html:option value="append_section">Append to Section</html:option>
+            <html:option value="replace_section">Replace Section</html:option>
+          </html:select>
+          <html:label for="zms-write-section" id="zms-write-section-label">Section</html:label>
+          <html:select id="zms-write-section"></html:select>
+        </html:div>
+        <html:pre id="zms-write-summary" class="zms-write-summary"></html:pre>
+        <html:textarea id="zms-write-diff" readonly="readonly"></html:textarea>
+        <html:div class="zms-actions">
+          <html:button id="zms-preview-write">Preview</html:button>
+          <html:button id="zms-confirm-write">Confirm Write</html:button>
+          <html:button id="zms-cancel-write">Cancel</html:button>
+        </html:div>
+      </html:section>
+      <html:footer id="zms-composer" class="zms-composer">
+        <html:textarea id="zms-input" placeholder="Ask about the current paper" autofocus="autofocus" tabindex="0"></html:textarea>
+        <html:div class="zms-composer-toolbar">
+          <html:div class="zms-composer-left">
+            <html:button id="zms-composer-settings" class="zms-icon-button zms-composer-plus" type="button">+</html:button>
+            <html:button id="zms-composer-profile" class="zms-composer-pill" type="button">Model</html:button>
+            <html:button id="zms-composer-skill" class="zms-composer-pill" type="button">Skill</html:button>
+          </html:div>
+          <html:div class="zms-composer-actions">
+            <html:button id="zms-stop" class="zms-icon-button zms-stop-button" type="button">Stop</html:button>
+            <html:button id="zms-send" class="zms-send-button" type="button">Send</html:button>
+          </html:div>
+        </html:div>
+      </html:footer>
+    </html:section>
+  </html:main>
+</window>

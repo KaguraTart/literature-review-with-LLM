@@ -1,0 +1,296 @@
+#!/usr/bin/env node
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { runProviderModels, runProviderSmoke } from "./verify-provider-smoke.mjs";
+
+const DEFAULT_CASES = [
+  {
+    id: "openai",
+    label: "OpenAI Responses",
+    profile: "openai",
+    protocol: "openai_responses",
+    apiKeyEnv: "OPENAI_API_KEY",
+    modelEnv: "OPENAI_MODEL",
+    baseURLEnv: "OPENAI_BASE_URL",
+    requireBaseURL: false
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic Messages",
+    profile: "anthropic",
+    protocol: "anthropic_messages",
+    apiKeyEnv: "ANTHROPIC_API_KEY",
+    modelEnv: "ANTHROPIC_MODEL",
+    baseURLEnv: "ANTHROPIC_BASE_URL",
+    requireBaseURL: false
+  },
+  {
+    id: "openai-compatible",
+    label: "OpenAI-compatible Chat",
+    profile: "openai-compatible",
+    protocol: "openai_chat",
+    apiKeyEnv: "OPENAI_COMPATIBLE_API_KEY",
+    modelEnv: "OPENAI_COMPATIBLE_MODEL",
+    baseURLEnv: "OPENAI_COMPATIBLE_BASE_URL",
+    requireBaseURL: true,
+    allowLocalNoAuth: true
+  }
+];
+
+const DEFAULT_PROMPT = "Reply with OK only.";
+const DEFAULT_CONTEXT = "Live provider verification context.";
+
+if (isMainModule()) {
+  try {
+    const options = parseArgs(process.argv.slice(2));
+    if (options.help) {
+      process.stdout.write(usage());
+      process.exit(0);
+    }
+    const report = await runProviderLive(options, process.env);
+    process.stdout.write(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report));
+    if (!report.ok) process.exit(1);
+  } catch (error) {
+    process.stderr.write(`${error?.message || String(error)}\n`);
+    process.exit(1);
+  }
+}
+
+export async function runProviderLive(options = {}, env = process.env) {
+  const cases = selectedCases(options.include || "");
+  const results = [];
+  for (const entry of cases) {
+    const missing = missingRequirements(entry, env, { models: Boolean(options.models) });
+    if (missing.length) {
+      results.push({
+        id: entry.id,
+        label: entry.label,
+        status: "skipped",
+        ok: true,
+        skipped: true,
+        missing
+      });
+      continue;
+    }
+
+    const smokeOptions = {
+      profile: entry.profile,
+      protocol: entry.protocol,
+      apiKey: env[entry.apiKeyEnv],
+      baseURL: env[entry.baseURLEnv] || "",
+      model: env[entry.modelEnv],
+      prompt: options.prompt || DEFAULT_PROMPT,
+      context: options.context || DEFAULT_CONTEXT,
+      timeoutMs: numberOption(options.timeoutMs, 30000),
+      maxOutputTokens: numberOption(options.maxOutputTokens, 64),
+      temperature: numberOption(options.temperature, 0),
+      dryRun: Boolean(options.dryRun)
+    };
+
+    try {
+      const report = options.models
+        ? await runProviderModels(smokeOptions)
+        : await runProviderSmoke(smokeOptions);
+      results.push({
+        id: entry.id,
+        label: entry.label,
+        status: report.ok ? "passed" : "failed",
+        ok: report.ok,
+        skipped: false,
+        report: sanitizeSmokeReport(report, env)
+      });
+    } catch (error) {
+      results.push({
+        id: entry.id,
+        label: entry.label,
+        status: "failed",
+        ok: false,
+        skipped: false,
+        error: redactKnownSecrets(error?.message || String(error), env)
+      });
+    }
+  }
+
+  const counts = countResults(results);
+  const ok = counts.failed === 0 && (!options.failOnSkip || counts.skipped === 0);
+  return {
+    ok,
+    live: true,
+    models: Boolean(options.models),
+    dryRun: Boolean(options.dryRun),
+    failOnSkip: Boolean(options.failOnSkip),
+    counts,
+    results
+  };
+}
+
+function parseArgs(args) {
+  const options = {
+    include: "",
+    prompt: "",
+    context: "",
+    timeoutMs: 30000,
+    maxOutputTokens: 64,
+    temperature: 0,
+    models: false,
+    dryRun: false,
+    failOnSkip: false,
+    json: false,
+    help: false
+  };
+  for (let index = 0; index < args.length; index += 1) {
+    const key = args[index];
+    const value = args[index + 1];
+    if (key === "--help" || key === "-h") {
+      options.help = true;
+    } else if (key === "--include" && value) {
+      options.include = value;
+      index += 1;
+    } else if (key === "--prompt" && value) {
+      options.prompt = value;
+      index += 1;
+    } else if (key === "--context" && value) {
+      options.context = value;
+      index += 1;
+    } else if (key === "--timeout-ms" && value) {
+      options.timeoutMs = Number(value) || options.timeoutMs;
+      index += 1;
+    } else if (key === "--max-output-tokens" && value) {
+      options.maxOutputTokens = Number(value) || options.maxOutputTokens;
+      index += 1;
+    } else if (key === "--temperature" && value) {
+      options.temperature = Number(value);
+      index += 1;
+    } else if (key === "--models") {
+      options.models = true;
+    } else if (key === "--dry-run") {
+      options.dryRun = true;
+    } else if (key === "--fail-on-skip") {
+      options.failOnSkip = true;
+    } else if (key === "--json") {
+      options.json = true;
+    } else {
+      throw new Error(`Unknown or incomplete argument: ${key}`);
+    }
+  }
+  return options;
+}
+
+function selectedCases(include) {
+  const requested = String(include || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  if (!requested.length) return DEFAULT_CASES;
+  const byId = new Map(DEFAULT_CASES.map((entry) => [entry.id, entry]));
+  return requested.map((id) => {
+    const entry = byId.get(id);
+    if (!entry) throw new Error(`Unknown live provider case: ${id}`);
+    return entry;
+  });
+}
+
+function missingRequirements(entry, env, options = {}) {
+  const missing = [];
+  const baseURL = String(env[entry.baseURLEnv] || "").trim();
+  const localNoAuth = entry.allowLocalNoAuth && isLocalEndpoint(baseURL);
+  if (!localNoAuth && !String(env[entry.apiKeyEnv] || "").trim()) missing.push(entry.apiKeyEnv);
+  if (!options.models && !String(env[entry.modelEnv] || "").trim()) missing.push(entry.modelEnv);
+  if (entry.requireBaseURL && !baseURL) missing.push(entry.baseURLEnv);
+  return missing;
+}
+
+function isLocalEndpoint(url) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|::1)(?::|\/|$)/.test(String(url || "").trim().toLowerCase());
+}
+
+function sanitizeSmokeReport(report, env) {
+  return JSON.parse(redactKnownSecrets(JSON.stringify(report || {}), env));
+}
+
+function redactKnownSecrets(text, env) {
+  let output = String(text || "");
+  for (const key of [
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_COMPATIBLE_API_KEY"
+  ]) {
+    const value = String(env[key] || "");
+    if (value.length >= 4) {
+      output = output.split(value).join("[redacted]");
+    }
+  }
+  return output;
+}
+
+function countResults(results) {
+  const counts = { passed: 0, skipped: 0, failed: 0 };
+  for (const result of results) {
+    if (result.status === "passed") counts.passed += 1;
+    if (result.status === "skipped") counts.skipped += 1;
+    if (result.status === "failed") counts.failed += 1;
+  }
+  return counts;
+}
+
+function numberOption(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function formatReport(report) {
+  const lines = [
+    report.ok ? "Provider live verification completed" : "Provider live verification failed",
+    `passed: ${report.counts.passed}`,
+    `skipped: ${report.counts.skipped}`,
+    `failed: ${report.counts.failed}`
+  ];
+  for (const result of report.results || []) {
+    if (result.status === "skipped") {
+      lines.push(`${result.id}: skipped (${result.missing.join(", ")})`);
+    } else if (result.status === "failed") {
+      lines.push(`${result.id}: failed (${result.error || result.report?.error || ""})`);
+    } else {
+      const suffix = report.models
+        ? `${result.report?.protocol || ""}, ${result.report?.modelCount ?? 0} model(s)`
+        : result.report?.protocol || "";
+      lines.push(`${result.id}: passed (${suffix})`);
+    }
+  }
+  if (report.failOnSkip && report.counts.skipped > 0) {
+    lines.push("Skipped cases are treated as failures because --fail-on-skip was passed.");
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function usage() {
+  return [
+    "Usage:",
+    "  npm run verify:provider:live -- --json",
+    "  npm run verify:provider:models:live -- --json",
+    "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai",
+    "  OPENAI_API_KEY=... npm run verify:provider:models:live -- --include openai",
+    "  ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=... npm run verify:provider:live -- --include anthropic",
+    "  ANTHROPIC_API_KEY=... npm run verify:provider:models:live -- --include anthropic",
+    "  OPENAI_COMPATIBLE_API_KEY=... OPENAI_COMPATIBLE_MODEL=... OPENAI_COMPATIBLE_BASE_URL=... npm run verify:provider:live -- --include openai-compatible",
+    "  OPENAI_COMPATIBLE_API_KEY=... OPENAI_COMPATIBLE_BASE_URL=... npm run verify:provider:models:live -- --include openai-compatible",
+    "  OPENAI_COMPATIBLE_MODEL=... OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:live -- --include openai-compatible",
+    "  OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:models:live -- --include openai-compatible",
+    "",
+    "Options:",
+    "  --include LIST           Comma-separated cases: openai, anthropic, openai-compatible",
+    "  --prompt TEXT            Override the smoke prompt",
+    "  --context TEXT           Override the smoke context",
+    "  --timeout-ms NUMBER      Per-provider timeout",
+    "  --max-output-tokens N    Maximum output tokens",
+    "  --temperature NUMBER     Sampling temperature",
+    "  --models                 Verify model-list endpoints instead of text generation",
+    "  --dry-run                Print sanitized request shapes without calling providers",
+    "  --fail-on-skip           Exit non-zero when any selected case is missing env config",
+    "  --json                   Print machine-readable JSON"
+  ].join("\n") + "\n";
+}
+
+function isMainModule() {
+  const entry = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
+  return import.meta.url === entry || fileURLToPath(import.meta.url) === process.argv[1];
+}

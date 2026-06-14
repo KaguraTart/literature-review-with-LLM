@@ -601,29 +601,30 @@ prompts/
 
 优先级 P0：
 
-- 把 `addon/bootstrap.js` 拆成 `settings`、`zoteroItem`、`provider`、`summaryStore`、`ui` 模块。
-- 为 provider 请求映射补更多测试。
-- 修正 OpenAI-compatible stream 的兼容解析，确保 MiniMax 返回能稳定抽取正文。
-- 给 Markdown frontmatter 增加 `inputMode`、`summaryType`、`evidenceLevel`。
-- 增加 `ProviderProfile` 与 capability 判断，避免 PDF base64、stream、jsonMode 被错误启用。
-- 增加 `outputLanguage`、`sourceLanguage`、`templateVersion` 设置和 frontmatter。
-- 增加中文、英文、日文三套单篇报告 prompt 模板。
+- 把 `addon/bootstrap.js` 拆成 `settings`、`zoteroItem`、`provider`、`summaryStore`、`ui` 模块。已拆出 `provider`、`settings`、`summaryStore`、`zoteroItem`、`ui`。
+- 为 provider 请求映射补更多测试。已覆盖 `src` 适配器、bootstrap provider 和 workbench 的 OpenAI-compatible、Responses、Anthropic、JSON mode、自定义鉴权、bodyExtra 过滤和错误脱敏路径。
+- 修正 OpenAI-compatible stream 的兼容解析，确保 MiniMax 返回能稳定抽取正文。已覆盖 reasoning 过滤、数组 content、message content、Responses delta、无结尾换行 SSE，以及非流式 `choices[].text` / `delta.content` 变体。
+- 给 Markdown frontmatter 增加 `inputMode`、`summaryType`、`evidenceLevel`。已覆盖 bootstrap 生成、workbench 新建总结和 Markdown helper。
+- 增加 `ProviderProfile` 与 capability 判断，避免 PDF base64、stream、jsonMode 被错误启用。已覆盖设置页、workbench、bootstrap provider 和 `src/providerAdapters.ts`；默认档案已扩展到 OpenAI、OpenAI-compatible、Anthropic、Gemini、Azure OpenAI、xAI、Groq、Mistral、Together AI、Kimi/Moonshot、Perplexity Sonar、DeepSeek、DeepSeek Anthropic、Z.AI Anthropic、OpenRouter、Qwen/DashScope、SiliconFlow、Zhipu/GLM、Volcengine Ark/Doubao、Baidu Qianfan、Tencent Hunyuan、Ollama、LM Studio、MiniMax 和 Local Agents；Local Agents 增加 `ask-gemini-claude` 双顾问技能，可在 Opencode 不可用时继续调用 Gemini 与 Claude 交叉复核；OpenAI-compatible/Responses 的 baseURL 若未带 `/v1` 会自动规范化，同时保留 Perplexity 这类无版本兼容 baseURL。
+- Anthropic 兼容档案的默认鉴权已区分官方 `x-api-key` 和 Claude Code 兼容 `Authorization: Bearer`；DeepSeek Anthropic 与 Z.AI Anthropic 默认走 Bearer，也可用高级配置覆盖。
+- 增加 `outputLanguage`、`sourceLanguage`、`templateVersion` 设置和 frontmatter。已覆盖设置页、workbench、bootstrap frontmatter 和测试。
+- 增加中文、英文、日文三套单篇报告 prompt 模板。已覆盖 skill 模板、设置页模板预览、workbench 调用和 bootstrap 直接生成路径。
 
 优先级 P1：
 
-- 新增单篇深度报告模板。
-- 支持 collection 读取和 `papers.json` 输出。
-- 建立 `collections/<collection-key>/` 缓存目录。
-- 建立 `paper-notes/`、`knowledge/`、`writing/` 三层输出。
-- 生成 collection 级方法矩阵初版。
-- 增加中文、英文、日文三套 collection 综述和研究问题卡模板。
+- 新增单篇深度报告模板。已覆盖内置 skill、设置页模板预览、workbench 调用和 bootstrap 直接生成路径。
+- 支持 collection 读取和 `papers.json` 输出。已覆盖当前列表读取、collection context、批量结果统计和 `papers.json`。
+- 建立 `collections/<collection-key>/` 缓存目录。已按 collection key 生成独立输出目录。
+- 建立 `paper-notes/`、`knowledge/`、`writing/` 三层输出。已生成语言后缀 Markdown 产物，避免不同输出语言互相覆盖。
+- 生成 collection 级方法矩阵初版。已生成 `method-matrix.<language>.md`。
+- 增加中文、英文、日文三套 collection 综述和研究问题卡模板。已覆盖 `manual-review-draft.<language>.md` 与 `research-question-cards.<language>.md`。
 
 优先级 P2：
 
-- 接入 arXiv、Semantic Scholar、Crossref、Unpaywall。
-- 做候选论文确认 UI。
-- 做 `candidates.jsonl`、`import-ledger.jsonl`、导入前去重和摘要页过滤。
-- 做研究空白矩阵和 idea 列表。
+- 接入 arXiv、Semantic Scholar、Crossref、Unpaywall。已新增候选源请求构造、运行时检索脚本、响应解析与 DOI/arXiv/title 去重，workbench 可发起联网检索并写入 `sources/candidates.jsonl`；已为已导入候选接入显式触发的 PDF URL 补全。
+- 做候选论文确认 UI。已在工作台加入候选区，可输入检索式、设置数量、填写邮箱和 Semantic Scholar API Key，读取或写入 collection 缓存中的 `sources/candidates.jsonl`，展示候选并保存 include/exclude/to_read/user_pending 决策，也可将 include 且非重复、非 abstract-only 的候选以 metadata-only 条目导入 Zotero。
+- 做 `candidates.jsonl`、`import-ledger.jsonl`、导入前去重和摘要页过滤。已新增候选记录、导入台账、JSONL 编解码、重复判定和弱来源过滤基础层；workbench 检索会写 discovered 台账，保存人工决策会追加 confirmed/excluded/to_read 台账，候选导入会先按 DOI、再按归一化标题查重，并追加 imported/skipped_duplicate/failed 台账；候选 PDF 补全会追加 attached_pdf/missing_pdf/failed 台账；导入后 collection 级重复标记会按 DOI、arXiv、相同 Zotero item key 和标题年份追加 skipped_duplicate 台账；Zotero 条目合并仍保留人工处理。
+- 做研究空白矩阵和 idea 列表。已在 collection 工作区生成 `research-gaps.<language>.md` 和 `idea-list.<language>.md`，支持中英日并排输出；现在会读取已有单篇总结 Markdown，从方法、实验、指标、局限、缺失证据、下一步和推翻条件等章节抽取线索，自动填入方法矩阵、研究空白矩阵和想法列表；抽取不到时保留待补占位。
 
 ## 11. Claude 复审清单
 
@@ -660,7 +661,7 @@ v3 再交付：
 - 联网检索。
 - 多源去重。
 - 开放全文判断。
-- 导入候选人工确认和导入台账。
+- 导入候选人工确认、导入台账、显式 PDF 补全和非破坏性 collection 级重复标记已接入基础闭环；Zotero 条目自动合并留到后续人工确认流程。
 - 研究想法挖掘。
 - 写作草稿导出。
 
