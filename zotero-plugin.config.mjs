@@ -3,7 +3,7 @@ export default {
   dist: "build",
   id: "zotero-markdown-summary@diantao.local",
   namespace: "zotero-markdown-summary",
-  xpiName: "zotero-markdown-summary",
+  xpiName: "literature-review-with-llm",
   build: {
     assets: "addon/**/*.*",
     fluent: {

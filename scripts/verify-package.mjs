@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
-const xpiPath = "build/zotero-markdown-summary.xpi";
+const xpiPath = "build/literature-review-with-llm.xpi";
 
 if (!existsSync(xpiPath)) {
   fail(`Missing package: ${xpiPath}`);

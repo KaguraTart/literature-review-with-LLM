@@ -12,7 +12,7 @@
     "build": "zotero-plugin build --dist build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "verify:zip": "unzip -t build/zotero-markdown-summary.xpi",
+    "verify:zip": "unzip -t build/literature-review-with-llm.xpi",
     "verify:package": "node scripts/verify-package.mjs",
     "verify:installed": "node scripts/verify-installed-zotero.mjs",
     "verify:zotero-runtime": "node scripts/verify-zotero-runtime.mjs",

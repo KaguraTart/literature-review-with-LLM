@@ -23,14 +23,14 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 Download the latest XPI from the GitHub release page:
 
 - [v0.1.0 release](https://github.com/KaguraTart/literature-review-with-LLM/releases/tag/v0.1.0)
-- [zotero-markdown-summary.xpi](https://github.com/KaguraTart/literature-review-with-LLM/releases/download/v0.1.0/zotero-markdown-summary.xpi)
+- [literature-review-with-llm.xpi](https://github.com/KaguraTart/literature-review-with-LLM/releases/download/v0.1.0/literature-review-with-llm.xpi)
 
 Then install it in Zotero:
 
 1. Open Zotero.
 2. Go to `Tools -> Plugins`.
 3. Choose `Install Plugin From File...`.
-4. Select `zotero-markdown-summary.xpi`.
+4. Select `literature-review-with-llm.xpi`.
 5. Restart Zotero if prompted.
 
 This plugin targets Zotero 9.x.
@@ -153,7 +153,7 @@ The full check runs tests, type checking, provider mock/catalog checks, writebac
 The packaged plugin is generated at:
 
 ```text
-build/zotero-markdown-summary.xpi
+build/literature-review-with-llm.xpi
 ```
 
 The release asset is uploaded under GitHub Releases rather than committed to the repository.

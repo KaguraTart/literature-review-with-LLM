@@ -7,7 +7,7 @@ import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ADDON_ID = "zotero-markdown-summary@diantao.local";
-const DEFAULT_BUILD_XPI = "build/zotero-markdown-summary.xpi";
+const DEFAULT_BUILD_XPI = "build/literature-review-with-llm.xpi";
 const DEFAULT_PROFILE_ROOT = join(homedir(), "Library/Application Support/Zotero/Profiles");
 
 const REQUIRED_ENTRIES = [

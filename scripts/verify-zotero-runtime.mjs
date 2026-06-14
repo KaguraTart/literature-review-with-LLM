@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { readExtensionStatus, resolveProfileDir, sha256 } from "./verify-installed-zotero.mjs";
 
 const ADDON_ID = "zotero-markdown-summary@diantao.local";
-const DEFAULT_BUILD_XPI = "build/zotero-markdown-summary.xpi";
+const DEFAULT_BUILD_XPI = "build/literature-review-with-llm.xpi";
 const DEFAULT_BASE_URL = "http://127.0.0.1:23119";
 const DEFAULT_PROFILE_ROOT = join(homedir(), "Library/Application Support/Zotero/Profiles");
 

@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const DEFAULT_XPI_PATH = "build/zotero-markdown-summary.xpi";
+const DEFAULT_XPI_PATH = "build/literature-review-with-llm.xpi";
 
 const REQUIRED_FILES = [
   "PROJECT_COMPLETION_PLAN.md",
