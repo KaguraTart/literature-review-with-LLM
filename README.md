@@ -2,9 +2,20 @@
 
 Zotero literature review and Markdown summary plugin. It helps turn a selected Zotero paper into a Markdown-first reading workflow: generate or update paper summaries, ask questions in a paper chat workbench, save sessions, and optionally consult local Gemini / Claude / opencode command-line agents through a local bridge.
 
+[中文说明](README.zh-CN.md)
+
 > Current status: usable but still early. The core single-paper workflow is in place; several larger research-assistant workflows are still planned.
 
 ![Zotero paper chat workbench](docs/assets/workbench-chat.png)
+
+## Highlights
+
+- **Paper-first chat inside Zotero**: open a compact workbench from the selected item and keep the conversation anchored to the current paper.
+- **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, and write selected answers back with a preview step.
+- **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible providers, Anthropic, Gemini OpenAI-compatible endpoints, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page.
+- **Bring-your-own-key**: the plugin is free and open source; remote model providers require your own API keys.
+- **Local agent consultation**: optionally ask local Gemini, Claude, and opencode command-line tools for independent reading suggestions through the local bridge.
+- **Research workflow utilities**: includes skill prompts for deep summary, method extraction, experiment tables, citation checks, and candidate-paper discovery.
 
 ## Features
 
@@ -47,6 +58,8 @@ The generated Markdown files are saved under the configured output directory. By
 ## API Configuration
 
 Open `Tools -> Markdown 摘要设置`.
+
+![Provider profile and API key settings](docs/assets/provider-settings.png)
 
 Important fields:
 
