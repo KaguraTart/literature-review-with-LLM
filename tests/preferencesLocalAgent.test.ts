@@ -65,6 +65,8 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
     profileAuthMissing: "Missing authentication",
     profilePdfReady: "Raw PDF input supported",
     profilePdfTextOnly: "Text input only",
+    profileImageReady: "Image input supported",
+    profileImageOff: "Image input disabled",
     profileStreamReady: "Streaming supported",
     profileStreamOff: "Streaming disabled",
     profileLocalAgentReady: "Local agent configured"
@@ -139,6 +141,7 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
   setChecked("zms-profileLocalAgentEnabled", false);
   setChecked("zms-cap-text", true);
   setChecked("zms-cap-pdfBase64", true);
+  setChecked("zms-cap-imageBase64", true);
   setChecked("zms-cap-streaming", false);
   setChecked("zms-cap-fileReference", false);
   setChecked("zms-cap-embeddings", false);
@@ -1191,6 +1194,39 @@ describe("preferences local-agent config helpers", () => {
     expect(summary).toContain("Authentication configured");
     expect(summary).not.toContain("sk-test-secret");
     expect(summary).not.toContain("routed-secret");
+  });
+
+  it("saves edited API key and model into the active provider profile", () => {
+    const { controller, elements } = loadPreferencesController({ initialModel: "old-model" });
+    elements.get("zms-profilesJson").value = JSON.stringify([
+      {
+        id: "openai",
+        name: "OpenAI",
+        protocol: "openai_responses",
+        endpointMode: "base_url",
+        baseURL: "https://api.openai.com/v1",
+        apiKey: "old-secret",
+        model: "old-model",
+        capabilities: { pdfBase64: true, imageBase64: true, streaming: true, modelList: true },
+        customHeaders: {},
+        bodyExtra: {},
+        isDefault: true
+      }
+    ]);
+    elements.get("zms-apiKey").value = "new-secret";
+    elements.get("zms-model").value = "new-model";
+    elements.get("zms-baseURL").value = "https://new.example/v1";
+
+    expect(controller.save()).toBe(true);
+
+    const profiles = JSON.parse(elements.get("zms-profilesJson").value);
+    expect(profiles[0]).toMatchObject({
+      id: "openai",
+      apiKey: "new-secret",
+      model: "new-model",
+      baseURL: "https://new.example/v1",
+      isDefault: true
+    });
   });
 
   it("marks local-agent settings profiles as model-optional", () => {

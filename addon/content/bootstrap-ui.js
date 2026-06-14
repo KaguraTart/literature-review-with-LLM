@@ -14,6 +14,7 @@ function registerSidenavButtons() {
 
 function registerToolbarButton(win) {
   if (!win?.document || win.document.getElementById(TOOLBAR_BUTTON_ID)) return;
+  installWorkbenchSelectionWatcher(win);
   const doc = win.document;
   const toolbar = findToolbar(doc);
   if (!toolbar) {
@@ -46,6 +47,7 @@ function registerToolbarButton(win) {
 
 function unregisterToolbarButtons(documentOrWindow) {
   if (documentOrWindow?.document) {
+    removeWorkbenchSelectionWatcher(documentOrWindow);
     const doc = documentOrWindow.document;
     doc?.getElementById(TOOLBAR_BUTTON_ID)?.remove();
     doc?.getElementById(SIDENAV_BUTTON_ID)?.remove();
@@ -54,7 +56,9 @@ function unregisterToolbarButtons(documentOrWindow) {
   }
   const enumerator = Services.wm.getEnumerator("navigator:browser");
   while (enumerator.hasMoreElements()) {
-    const doc = enumerator.getNext().document;
+    const win = enumerator.getNext();
+    removeWorkbenchSelectionWatcher(win);
+    const doc = win.document;
     doc?.getElementById(TOOLBAR_BUTTON_ID)?.remove();
     doc?.getElementById(SIDENAV_BUTTON_ID)?.remove();
     closeEmbeddedWorkbench(doc);
@@ -64,6 +68,7 @@ function unregisterToolbarButtons(documentOrWindow) {
 function registerSidenavButton(win) {
   const doc = win?.document;
   if (!doc || doc.getElementById(SIDENAV_BUTTON_ID)) return;
+  installWorkbenchSelectionWatcher(win);
   const sidenav = findContextSidenav(doc);
   if (!sidenav) {
     win.setTimeout?.(() => registerSidenavButton(win), 1000);
@@ -305,6 +310,7 @@ function openEmbeddedWorkbench(item) {
   const frame = doc.getElementById(WORKBENCH_FRAME_ID);
   frame.setAttribute("src", workbenchURL(item));
   panel.setAttribute("data-item-key", item.key || "");
+  panel.setAttribute("data-view", "workbench");
   panel.hidden = false;
   panel.removeAttribute("hidden");
   panel.setAttribute("data-mode", hostInfo.mode);
@@ -382,7 +388,7 @@ function ensureEmbeddedWorkbenchPanel(doc, hostInfo) {
     const close = htmlHost ? doc.createElementNS(HTML_NS, "button") : createXULElement(doc, "toolbarbutton");
     close.setAttribute("class", "zms-embedded-close");
     close.setAttribute("tooltiptext", t("closeWorkbench"));
-    close.setAttribute("style", "min-width:52px;min-height:26px;margin-inline-start:8px;");
+    close.setAttribute("style", "min-width:64px;min-height:28px;margin-inline-start:8px;border:1px solid #c5ced8;border-radius:999px;background:#f8fafc;color:#223040;font:600 12px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;");
     if (htmlHost) {
       close.type = "button";
       close.textContent = t("closeWorkbench");
@@ -473,6 +479,37 @@ function closeEmbeddedWorkbench(doc) {
   removeEmbeddedWorkbenchStyle(doc);
 }
 
+function installWorkbenchSelectionWatcher(win) {
+  if (!win || win.__zmsWorkbenchSelectionWatcher) return;
+  const watcher = win.setInterval?.(() => refreshEmbeddedWorkbenchForSelection(win), 800);
+  if (watcher) win.__zmsWorkbenchSelectionWatcher = watcher;
+}
+
+function removeWorkbenchSelectionWatcher(windowOrDocument) {
+  const win = windowOrDocument?.document ? windowOrDocument : windowOrDocument?.defaultView || windowOrDocument?.ownerGlobal;
+  if (!win?.__zmsWorkbenchSelectionWatcher) return;
+  win.clearInterval?.(win.__zmsWorkbenchSelectionWatcher);
+  delete win.__zmsWorkbenchSelectionWatcher;
+}
+
+function refreshEmbeddedWorkbenchForSelection(win) {
+  try {
+    const doc = win?.document;
+    const panel = doc?.getElementById?.(WORKBENCH_PANEL_ID);
+    if (!panel || panel.hidden || panel.getAttribute("data-view") === "reader") return;
+    const frame = doc.getElementById(WORKBENCH_FRAME_ID);
+    if (!frame) return;
+    const item = workbenchItemsForContext()[0];
+    if (!item?.key || panel.getAttribute("data-item-key") === item.key) return;
+    frame.setAttribute("src", workbenchURL(item));
+    panel.setAttribute("data-item-key", item.key || "");
+    const title = panel.querySelector?.(".zms-embedded-title");
+    if (title) title.textContent = t("openWorkbench");
+  } catch (_err) {
+    // Selection APIs vary across Zotero panes; polling must stay best-effort.
+  }
+}
+
 function removeEmbeddedWorkbenchStyle(doc) {
   doc?.getElementById?.(WORKBENCH_STYLE_ID)?.remove();
 }
@@ -532,9 +569,14 @@ function ensureEmbeddedWorkbenchStyle(doc) {
       background: #ffffff;
     }
     #${WORKBENCH_PANEL_ID} .zms-embedded-close {
-      min-width: 52px;
-      min-height: 26px;
+      min-width: 64px;
+      min-height: 28px;
       margin-inline-start: 8px;
+      border: 1px solid #c5ced8;
+      border-radius: 999px;
+      background: #f8fafc;
+      color: #223040;
+      font: 600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
   `;
   doc.documentElement.appendChild(style);

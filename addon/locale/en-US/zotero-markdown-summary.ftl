@@ -1,4 +1,4 @@
-workbench-title = Paper Chat Workbench
+workbench-title = Literature Review with LLM
 workbench-open-title = Open Paper Chat Workbench
 chat-send = Send
 chat-stop = Stop
@@ -40,7 +40,7 @@ writeback-confirm = Confirm Write
 writeback-action-replace = Replace Section
 writeback-action-append = Append to Section
 writeback-action-notes = Append to Research Notes
-settings-title = Markdown Summary
+settings-title = Literature Review with LLM
 settings-save = Save Settings
 settings-test = Test Connection
 status-ready = Ready

@@ -125,7 +125,7 @@ function registerPreferencePane() {
     pluginID,
     id: "zotero-prefpane-markdown-summary",
     src: rootURI + "content/preferences.xhtml",
-    label: "Markdown 摘要",
+    label: "Literature Review with LLM",
     defaultXUL: true,
     scripts: [rootURI + "content/preferences.js"],
     stylesheets: [rootURI + "content/preferences.css"]

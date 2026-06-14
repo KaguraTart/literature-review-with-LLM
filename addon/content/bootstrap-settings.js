@@ -31,7 +31,7 @@ function getSettings() {
 
 function settingsProviderDefaults(provider) {
   const id = String(provider || "openai_compatible").trim();
-  const commonCapabilities = { text: true, pdfBase64: false, fileReference: false, streaming: true, embeddings: false, jsonMode: false, toolUse: false, modelList: true };
+  const commonCapabilities = { text: true, pdfBase64: false, imageBase64: true, fileReference: false, streaming: true, embeddings: false, jsonMode: false, toolUse: false, modelList: true };
   const common = { endpointMode: "base_url", fullURL: "", model: "", customHeaders: {}, bodyExtra: {} };
   if (id === "openai") {
     return { ...common, protocol: "openai_responses", baseURL: "https://api.openai.com/v1", capabilities: { ...commonCapabilities, pdfBase64: true } };
@@ -107,7 +107,7 @@ function settingsProviderDefaults(provider) {
       ...common,
       protocol: "openai_chat",
       baseURL: "http://127.0.0.1:3333/v1",
-      capabilities: { ...commonCapabilities, streaming: false, modelList: false },
+      capabilities: { ...commonCapabilities, imageBase64: false, streaming: false, modelList: false },
       bodyExtra: {
         localAgent: {
           endpoint: "http://127.0.0.1:3333/mcp",

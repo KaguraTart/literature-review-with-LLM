@@ -49,7 +49,7 @@ This plugin targets Zotero 9.x.
 ## Quick Start
 
 1. Select a regular Zotero item that has a PDF attachment.
-2. Open `Tools -> Markdown 摘要设置` and configure a provider profile.
+2. Open `Tools -> Literature Review with LLM Settings` and configure a provider profile.
 3. Run `Tools -> 生成 Markdown 总结` or `Tools -> 打开论文聊天工作台`.
 4. Ask questions in the workbench, copy Markdown answers, or write an answer back into the summary file.
 
@@ -57,7 +57,7 @@ The generated Markdown files are saved under the configured output directory. By
 
 ## API Configuration
 
-Open `Tools -> Markdown 摘要设置`.
+Open `Tools -> Literature Review with LLM Settings`.
 
 ![Provider profile and API key settings](docs/assets/provider-settings.png)
 

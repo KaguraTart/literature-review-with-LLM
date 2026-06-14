@@ -4,7 +4,7 @@
       onload="ZoteroMarkdownSummaryPrefs.init()">
   <script src="chrome://zotero-markdown-summary/content/messages.js"/>
   <groupbox>
-    <label><html:h2 id="zms-title">Markdown 摘要</html:h2></label>
+    <label><html:h2 id="zms-title">Literature Review with LLM</html:h2></label>
     <vbox class="zms-form">
       <hbox align="center" class="zms-row">
         <label class="zms-label" id="zms-uiLanguage-label" value="UI 语言"/>
@@ -140,6 +140,7 @@
           <html:div class="zms-capability-grid">
             <html:label><html:input id="zms-cap-text" type="checkbox"/> Text</html:label>
             <html:label><html:input id="zms-cap-pdfBase64" type="checkbox"/> PDF base64</html:label>
+            <html:label><html:input id="zms-cap-imageBase64" type="checkbox"/> Image input</html:label>
             <html:label><html:input id="zms-cap-streaming" type="checkbox"/> Streaming</html:label>
             <html:label><html:input id="zms-cap-fileReference" type="checkbox"/> File reference</html:label>
             <html:label><html:input id="zms-cap-embeddings" type="checkbox"/> Embeddings</html:label>
@@ -250,7 +251,6 @@
     </vbox>
     <hbox class="zms-actions">
       <button id="zms-save-button" label="保存设置" oncommand="ZoteroMarkdownSummaryPrefs.save()"/>
-      <button id="zms-sync-profile-button" label="用上方配置更新档案" oncommand="ZoteroMarkdownSummaryPrefs.syncLegacyToProfile()"/>
       <button id="zms-test-button" label="测试连接" oncommand="ZoteroMarkdownSummaryPrefs.testConnection()"/>
       <label id="zms-status"/>
     </hbox>
