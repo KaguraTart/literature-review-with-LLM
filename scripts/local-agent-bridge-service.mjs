@@ -196,7 +196,7 @@ async function checkService(options) {
       capabilities: {},
       clientInfo: {
         name: "local-agent-service-check",
-        version: "0.1.0"
+        version: "0.1.1"
       }
     }
   }, options);

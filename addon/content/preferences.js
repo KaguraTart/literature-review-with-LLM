@@ -920,7 +920,7 @@ function localAgentConnectionTestRequestForProfile(profile) {
         capabilities: {},
         clientInfo: {
           name: "zotero-markdown-summary-settings",
-          version: "0.1.0"
+          version: "0.1.1"
         }
       }
     }
