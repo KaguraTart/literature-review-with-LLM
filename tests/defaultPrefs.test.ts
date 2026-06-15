@@ -96,7 +96,7 @@ describe("default provider profiles", () => {
     expect(profiles.find((profile: any) => profile.id === "perplexity")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://api.perplexity.ai",
-      capabilities: { pdfBase64: false, streaming: true, modelList: false }
+      capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "deepseek")).toMatchObject({
       protocol: "openai_chat",
@@ -111,7 +111,7 @@ describe("default provider profiles", () => {
     expect(profiles.find((profile: any) => profile.id === "zai-anthropic")).toMatchObject({
       protocol: "anthropic_messages",
       baseURL: "https://api.z.ai/api/anthropic",
-      capabilities: { pdfBase64: false, streaming: true, modelList: false }
+      capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "openrouter")).toMatchObject({
       protocol: "openai_chat",
@@ -128,22 +128,22 @@ describe("default provider profiles", () => {
     expect(profiles.find((profile: any) => profile.id === "zhipu")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://open.bigmodel.cn/api/paas/v4",
-      capabilities: { pdfBase64: false, streaming: true, modelList: false }
+      capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "volcengine")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://ark.cn-beijing.volces.com/api/v3",
-      capabilities: { pdfBase64: false, streaming: true, modelList: false }
+      capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "qianfan")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://qianfan.baidubce.com/v2",
-      capabilities: { pdfBase64: false, streaming: true, modelList: false }
+      capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "hunyuan")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://api.hunyuan.cloud.tencent.com/v1",
-      capabilities: { pdfBase64: false, streaming: true, modelList: false }
+      capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "ollama")).toMatchObject({
       protocol: "openai_chat",

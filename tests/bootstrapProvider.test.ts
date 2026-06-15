@@ -243,12 +243,12 @@ describe("bootstrap provider helpers", () => {
     });
     expect(helpers.settingsProviderDefaults("perplexity")).toMatchObject({
       protocol: "openai_chat",
-      capabilities: { pdfBase64: false, streaming: true, modelList: false }
+      capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(helpers.settingsProviderDefaults("zai_anthropic")).toMatchObject({
       protocol: "anthropic_messages",
       baseURL: "https://api.z.ai/api/anthropic",
-      capabilities: { pdfBase64: false, streaming: true, modelList: false }
+      capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(helpers.settingsProviderDefaults("local_agents")).toMatchObject({
       protocol: "openai_chat",

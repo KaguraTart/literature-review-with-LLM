@@ -445,7 +445,16 @@ var ZoteroMarkdownSummaryPrefs = {
       return;
     }
     try {
-      const modelOptions = await fetchModelOptions(request);
+      let modelOptions = [];
+      try {
+        modelOptions = await fetchModelOptions(request);
+      } catch (err) {
+        if (isOllamaProfileId(profile.id, profile.baseURL)) {
+          modelOptions = await fetchOllamaTags(profile);
+        } else {
+          throw err;
+        }
+      }
       renderModelOptions(modelOptions);
       if (modelOptions.length && !document.getElementById("zms-model").value.trim()) {
         document.getElementById("zms-model").value = modelOptions[0].id;
@@ -1088,6 +1097,33 @@ function urlWithQueryParam(currentUrl, param, value) {
   }
 }
 
+function isOllamaProfileId(id, baseURL) {
+  if (id === "ollama") return true;
+  return /^https?:\/\/(localhost|127\.0\.0\.1):11434/i.test(String(baseURL || ""));
+}
+
+async function fetchOllamaTags(profile) {
+  const base = String(profile.baseURL || "").replace(/\/v1\/?$/, "").replace(/\/$/, "");
+  const url = `${base}/api/tags`;
+  const response = await fetch(url, { method: "GET" });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(providerErrorText(response.status, text));
+  }
+  const data = safeParseJSON(text);
+  const models = Array.isArray(data?.models) ? data.models : [];
+  return models
+    .map((model) => {
+      const id = String(model?.name || model?.model || "").trim();
+      if (!id) return null;
+      const details = model?.details || {};
+      const parts = [details.family, details.parameter_size, details.quantization_level].filter(Boolean);
+      const label = parts.length ? `${id} (${parts.join(" · ")})` : id;
+      return { id, label };
+    })
+    .filter(Boolean);
+}
+
 function modelListItemsFromResponse(data) {
   const source = Array.isArray(data)
     ? data
@@ -1464,7 +1500,7 @@ function providerDefaults(provider) {
       baseURL: "https://api.perplexity.ai",
       fullURL: "",
       model: "",
-      capabilities: { ...commonCapabilities, pdfBase64: false, modelList: false },
+      capabilities: { ...commonCapabilities, pdfBase64: false },
       bodyExtra: {}
     };
   }
@@ -1503,7 +1539,7 @@ function providerDefaults(provider) {
       baseURL: "https://api.z.ai/api/anthropic",
       fullURL: "",
       model: "",
-      capabilities: { ...commonCapabilities, pdfBase64: false, modelList: false },
+      capabilities: { ...commonCapabilities, pdfBase64: false },
       bodyExtra: {}
     };
   }
@@ -1555,7 +1591,7 @@ function providerDefaults(provider) {
       baseURL: "https://open.bigmodel.cn/api/paas/v4",
       fullURL: "",
       model: "",
-      capabilities: { ...commonCapabilities, pdfBase64: false, modelList: false },
+      capabilities: { ...commonCapabilities, pdfBase64: false },
       bodyExtra: {}
     };
   }
@@ -1568,7 +1604,7 @@ function providerDefaults(provider) {
       baseURL: "https://ark.cn-beijing.volces.com/api/v3",
       fullURL: "",
       model: "",
-      capabilities: { ...commonCapabilities, pdfBase64: false, modelList: false },
+      capabilities: { ...commonCapabilities, pdfBase64: false },
       bodyExtra: {}
     };
   }
@@ -1581,7 +1617,7 @@ function providerDefaults(provider) {
       baseURL: "https://qianfan.baidubce.com/v2",
       fullURL: "",
       model: "",
-      capabilities: { ...commonCapabilities, pdfBase64: false, modelList: false },
+      capabilities: { ...commonCapabilities, pdfBase64: false },
       bodyExtra: {}
     };
   }
@@ -1594,7 +1630,7 @@ function providerDefaults(provider) {
       baseURL: "https://api.hunyuan.cloud.tencent.com/v1",
       fullURL: "",
       model: "",
-      capabilities: { ...commonCapabilities, pdfBase64: false, modelList: false },
+      capabilities: { ...commonCapabilities, pdfBase64: false },
       bodyExtra: {}
     };
   }

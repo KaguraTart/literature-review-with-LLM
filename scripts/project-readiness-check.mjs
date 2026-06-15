@@ -6,7 +6,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const DEFAULT_XPI_PATH = "build/literature-review-with-llm.xpi";
 
 const REQUIRED_FILES = [
-  "PROJECT_COMPLETION_PLAN.md",
   "addon/bootstrap.js",
   "addon/prefs.js",
   "addon/content/bootstrap-provider.js",

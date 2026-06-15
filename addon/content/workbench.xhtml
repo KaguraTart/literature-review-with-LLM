@@ -27,7 +27,11 @@
         <html:label id="zms-profile-api-key-label" for="zms-profile-api-key">API Key</html:label>
         <html:input id="zms-profile-api-key" type="password"/>
         <html:label id="zms-profile-model-label" for="zms-profile-model">Model</html:label>
-        <html:input id="zms-profile-model" type="text"/>
+        <html:div class="zms-profile-model-row">
+          <html:input id="zms-profile-model" type="text" list="zms-workbench-model-options"/>
+          <html:datalist id="zms-workbench-model-options"/>
+          <html:button id="zms-load-models-workbench" class="zms-load-models-button" type="button" title="Fetch the model list from the current provider">Load models</html:button>
+        </html:div>
         <html:label class="zms-checkbox-row" id="zms-profile-image-label">
           <html:input id="zms-profile-image-input" type="checkbox"/>
           <html:span id="zms-profile-image-text">Images</html:span>
@@ -118,6 +122,7 @@
             <html:span id="zms-composer-profile" class="zms-composer-pill zms-composer-label">Model</html:span>
           </html:div>
           <html:div class="zms-composer-actions">
+            <html:button id="zms-copy-input" class="zms-icon-button zms-copy-input-button" type="button" title="Copy selected text from the composer (⌘/Ctrl+C also works when the textarea has focus)">Copy</html:button>
             <html:button id="zms-stop" class="zms-icon-button zms-stop-button" type="button">Stop</html:button>
             <html:button id="zms-send" class="zms-send-button" type="button">Send</html:button>
           </html:div>

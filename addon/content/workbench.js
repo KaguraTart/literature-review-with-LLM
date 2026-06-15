@@ -121,7 +121,9 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-close-workbench": () => this.closeWorkbench(),
       "zms-save-profile-settings": () => this.saveProfileSettings(),
       "zms-test-profile-settings": () => this.testProfileSettings(),
-      "zms-attach-image": () => this.chooseImages()
+      "zms-attach-image": () => this.chooseImages(),
+      "zms-copy-input": () => this.copyInputSelection(),
+      "zms-load-models-workbench": () => this.loadModelsForWorkbench()
     };
     for (const [id, handler] of Object.entries(bindings)) {
       const element = document.getElementById(id);
@@ -140,6 +142,21 @@ var ZoteroMarkdownSummaryWorkbench = {
         this.send();
       });
       if (input.dataset) input.dataset.zmsShortcutBound = "1";
+    }
+    if (input && input.dataset?.zmsSelectionDebugBound !== "1") {
+      const debugSelection = (label) => {
+        try {
+          Zotero.debug(`[Markdown Summary] composer selection ${label}: start=${input.selectionStart} end=${input.selectionEnd} valueLen=${input.value.length} docHasFocus=${document.hasFocus?.()} activeId=${document.activeElement?.id || ""}`);
+        } catch (_err) { /* selection not supported */ }
+      };
+      input.addEventListener("select", () => debugSelection("select"));
+      input.addEventListener("keyup", (event) => {
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "Home" || event.key === "End") {
+          debugSelection(`keyup:${event.key}`);
+        }
+      });
+      input.addEventListener("mouseup", () => debugSelection("mouseup"));
+      if (input.dataset) input.dataset.zmsSelectionDebugBound = "1";
     }
     if (!this.state.escapeBound && typeof document.addEventListener === "function") {
       document.addEventListener?.("keydown", (event) => {
@@ -260,6 +277,40 @@ var ZoteroMarkdownSummaryWorkbench = {
     focusElement(document.getElementById("zms-input"));
   },
 
+  async copyInputSelection() {
+    const input = document.getElementById("zms-input");
+    if (!input) return;
+    const start = input.selectionStart ?? 0;
+    const end = input.selectionEnd ?? 0;
+    const selected = end > start ? input.value.slice(start, end) : input.value;
+    if (!selected) {
+      this.setStatus(this.t("copyEmpty"));
+      return;
+    }
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(selected);
+      } else {
+        // Fallback: temporary textarea + execCommand("copy") for chrome/XUL contexts
+        const temp = document.createElement("textarea");
+        temp.value = selected;
+        temp.setAttribute("readonly", "readonly");
+        temp.style.position = "fixed";
+        temp.style.opacity = "0";
+        temp.style.pointerEvents = "none";
+        document.body.appendChild(temp);
+        temp.select();
+        const ok = document.execCommand?.("copy");
+        temp.remove();
+        if (!ok) throw new Error("execCommand copy failed");
+      }
+      this.setStatus(this.t("copiedSelection"));
+      Zotero.debug(`[Markdown Summary] composer copy: chars=${selected.length} via=${navigator.clipboard?.writeText ? "clipboard" : "execCommand"}`);
+    } catch (err) {
+      this.setStatus(`${this.t("copyFailed")}: ${safeError(err)}`);
+    }
+  },
+
   toggleSettings(open = !this.state.settingsOpen) {
     this.state.settingsOpen = Boolean(open);
     document.documentElement.setAttribute("data-settings-open", this.state.settingsOpen ? "true" : "false");
@@ -371,7 +422,15 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-preview-write", this.t("preview"));
     setText("zms-confirm-write", this.t("confirmWrite"));
     setText("zms-cancel-write", this.t("cancel"));
-    document.getElementById("zms-input").setAttribute("placeholder", this.t("placeholder"));
+    setText("zms-copy-input", this.t("copyInput"));
+    setText("zms-load-models-workbench", this.t("loadModels"));
+    const copyButton = document.getElementById("zms-copy-input");
+    if (copyButton) copyButton.setAttribute("title", this.t("copyInputTitle"));
+    const loadButton = document.getElementById("zms-load-models-workbench");
+    if (loadButton) loadButton.setAttribute("title", this.t("loadModels"));
+    document
+      .getElementById("zms-input")
+      .setAttribute("placeholder", `${this.t("placeholder")} · ${this.t("placeholderHint")}`);
     document.getElementById("zms-candidate-query").setAttribute("placeholder", this.t("candidateSearchPlaceholder"));
     const action = document.getElementById("zms-write-action");
     action.options[0].textContent = this.t("appendNotes");
@@ -500,6 +559,63 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.setStatus(response.ok ? this.t("testOk") : `${this.t("testFailed")}: ${providerErrorText(response.status, text)}`);
     } catch (err) {
       this.setStatus(`${this.t("testFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async loadModelsForWorkbench() {
+    const profile = this.profileFromSettingsPanel();
+    if (!profile) {
+      this.setStatus(this.t("noProfile"));
+      return;
+    }
+    const modelInput = document.getElementById("zms-profile-model");
+    if (!profileHasUsableAuth(profile) && !isLocalEndpoint(endpointForProfile(profile))) {
+      this.setStatus(this.t("apiKeyMissing"));
+      return;
+    }
+    const request = workbenchModelListRequestForProfile(profile);
+    if (!request) {
+      this.setStatus(this.t("modelListUnavailable"));
+      return;
+    }
+    this.setStatus(this.t("modelListLoading"));
+    try {
+      let options = [];
+      try {
+        options = await workbenchFetchModelOptions(request);
+      } catch (err) {
+        if (isOllamaProfile(profile)) {
+          // Fallback to Ollama's native /api/tags endpoint when /v1/models is not available
+          options = await workbenchFetchOllamaTags(profile);
+        } else {
+          throw err;
+        }
+      }
+      this.renderWorkbenchModelOptions(options);
+      if (options.length) {
+        if (!modelInput?.value?.trim()) {
+          if (modelInput) modelInput.value = options[0].id;
+        }
+        this.setStatus(`${this.t("modelListLoaded")}: ${options.length}`);
+      } else {
+        this.setStatus(this.t("modelListEmpty"));
+      }
+    } catch (err) {
+      this.setStatus(`${this.t("testFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  renderWorkbenchModelOptions(modelOptions) {
+    const list = document.getElementById("zms-workbench-model-options");
+    if (!list) return;
+    list.textContent = "";
+    for (const entry of normalizeModelOptions(modelOptions)) {
+      const option = document.createElement("option");
+      option.value = entry.id;
+      if (entry.label && entry.label !== entry.id) {
+        option.setAttribute?.("label", entry.label);
+      }
+      list.appendChild(option);
     }
   },
 
@@ -1304,7 +1420,7 @@ function workbenchProviderDefaults(provider) {
     return { id: "kimi", name: "Kimi / Moonshot", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.moonshot.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
   }
   if (id === "perplexity") {
-    return { id: "perplexity", name: "Perplexity Sonar", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.perplexity.ai", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+    return { id: "perplexity", name: "Perplexity Sonar", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.perplexity.ai", model: "", capabilities: { ...commonCapabilities }, bodyExtra: {} };
   }
   if (id === "deepseek") {
     return { id: "deepseek", name: "DeepSeek", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.deepseek.com", model: "", capabilities: commonCapabilities, bodyExtra: {} };
@@ -1313,7 +1429,7 @@ function workbenchProviderDefaults(provider) {
     return { id: "deepseek-anthropic", name: "DeepSeek Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.deepseek.com/anthropic", model: "", capabilities: commonCapabilities, bodyExtra: {} };
   }
   if (id === "zai_anthropic" || id === "zai-anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") {
-    return { id: "zai-anthropic", name: "Z.AI Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.z.ai/api/anthropic", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+    return { id: "zai-anthropic", name: "Z.AI Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.z.ai/api/anthropic", model: "", capabilities: { ...commonCapabilities }, bodyExtra: {} };
   }
   if (id === "openrouter") {
     return { id: "openrouter", name: "OpenRouter", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://openrouter.ai/api/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
@@ -1325,16 +1441,16 @@ function workbenchProviderDefaults(provider) {
     return { id: "siliconflow", name: "SiliconFlow", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.siliconflow.com/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
   }
   if (id === "zhipu" || id === "glm" || id === "bigmodel") {
-    return { id: "zhipu", name: "Zhipu / GLM", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://open.bigmodel.cn/api/paas/v4", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+    return { id: "zhipu", name: "Zhipu / GLM", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://open.bigmodel.cn/api/paas/v4", model: "", capabilities: { ...commonCapabilities }, bodyExtra: {} };
   }
   if (id === "volcengine" || id === "ark" || id === "doubao") {
-    return { id: "volcengine", name: "Volcengine Ark / Doubao", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://ark.cn-beijing.volces.com/api/v3", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+    return { id: "volcengine", name: "Volcengine Ark / Doubao", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://ark.cn-beijing.volces.com/api/v3", model: "", capabilities: { ...commonCapabilities }, bodyExtra: {} };
   }
   if (id === "qianfan" || id === "baidu") {
-    return { id: "qianfan", name: "Baidu Qianfan", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://qianfan.baidubce.com/v2", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+    return { id: "qianfan", name: "Baidu Qianfan", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://qianfan.baidubce.com/v2", model: "", capabilities: { ...commonCapabilities }, bodyExtra: {} };
   }
   if (id === "hunyuan" || id === "tencent") {
-    return { id: "hunyuan", name: "Tencent Hunyuan", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.hunyuan.cloud.tencent.com/v1", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+    return { id: "hunyuan", name: "Tencent Hunyuan", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.hunyuan.cloud.tencent.com/v1", model: "", capabilities: { ...commonCapabilities }, bodyExtra: {} };
   }
   if (id === "ollama") {
     return { id: "ollama", name: "Ollama", protocol: "openai_chat", endpointMode: "base_url", baseURL: "http://localhost:11434/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
@@ -4463,11 +4579,140 @@ function normalizeHeading(value) {
 
 function hashString(value) {
   let hash = 2166136261;
-  for (let i = 0; i < value.length; i++) {
+  for (let i = 0; i < value.length; i += 1) {
     hash ^= value.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+const WORKBENCH_MODEL_LIST_MAX_PAGES = 5;
+
+function workbenchStringField(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function workbenchModelListRequestForProfile(profile) {
+  if (!profile?.capabilities?.modelList || profile.endpointMode === "full_url") return null;
+  const url = workbenchModelsEndpointForProfile(profile);
+  if (!url) return null;
+  return { url, headers: headersForProfile(profile) };
+}
+
+function workbenchModelsEndpointForProfile(profile) {
+  if (!profile?.capabilities?.modelList || profile.endpointMode === "full_url") return "";
+  const base = stripKnownProviderEndpointPath(profile.baseURL);
+  if (!base) return "";
+  if (profile.protocol === "anthropic_messages") {
+    return /\/v\d+$/i.test(base) ? `${base}/models` : `${base}/v1/models`;
+  }
+  return `${openAICompatibleBaseWithVersion(base)}/models`;
+}
+
+async function workbenchFetchModelOptions(request) {
+  const items = [];
+  const seen = new Set();
+  let nextUrl = request.url;
+  for (let page = 0; nextUrl && page < WORKBENCH_MODEL_LIST_MAX_PAGES; page += 1) {
+    if (seen.has(nextUrl)) break;
+    seen.add(nextUrl);
+    const response = await fetch(nextUrl, { method: "GET", headers: request.headers });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(providerErrorText(response.status, text));
+    }
+    const data = safeParseJSON(text);
+    items.push(...workbenchModelListItemsFromResponse(data));
+    nextUrl = workbenchNextModelListURL(nextUrl, data);
+  }
+  return workbenchModelOptionsFromItems(items);
+}
+
+function workbenchModelListItemsFromResponse(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.models)) return data.models;
+  if (Array.isArray(data?.model)) return data.model;
+  return [];
+}
+
+function workbenchNextModelListURL(currentUrl, data) {
+  if (!data || typeof data !== "object") return "";
+  const direct = workbenchStringField(data.next_page, data.nextPage, data.next);
+  if (direct) return workbenchModelListURLFromNextValue(currentUrl, direct);
+  if (data.has_more !== true && data.hasMore !== true) return "";
+  const pairs = [
+    ["after_id", workbenchStringField(data.last_id, data.lastId, data.after_id, data.afterId)],
+    ["page_token", workbenchStringField(data.next_page_token, data.nextPageToken, data.next_token, data.nextToken)],
+    ["after", workbenchStringField(data.next_cursor, data.nextCursor, data.cursor, data.after)]
+  ];
+  for (const [param, token] of pairs) {
+    if (token) return workbenchUrlWithQueryParam(currentUrl, param, token);
+  }
+  return "";
+}
+
+function workbenchModelListURLFromNextValue(currentUrl, nextValue) {
+  if (/^https?:\/\//i.test(nextValue) || nextValue.startsWith("/") || nextValue.startsWith("?")) {
+    try { return new URL(nextValue, currentUrl).toString(); } catch (_err) { return ""; }
+  }
+  return workbenchUrlWithQueryParam(currentUrl, "page", nextValue);
+}
+
+function workbenchUrlWithQueryParam(currentUrl, param, value) {
+  try {
+    const url = new URL(currentUrl);
+    url.searchParams.set(param, value);
+    return url.toString();
+  } catch (_err) { return ""; }
+}
+
+function workbenchModelOptionsFromItems(source) {
+  const map = new Map();
+  for (const item of source) {
+    const option = workbenchModelOptionFromItem(item);
+    if (option.id && !map.has(option.id)) map.set(option.id, option);
+  }
+  return [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function workbenchModelOptionFromItem(item) {
+  if (typeof item === "string") return { id: item.trim(), label: "" };
+  const id = String(item?.id || item?.name || item?.model || "").trim();
+  const label = String(item?.display_name || item?.displayName || item?.label || "").trim();
+  return { id, label };
+}
+
+function isOllamaProfile(profile) {
+  if (!profile) return false;
+  if (profile.id === "ollama") return true;
+  const base = String(profile.baseURL || "");
+  return /^https?:\/\/(localhost|127\.0\.0\.1):11434/i.test(base);
+}
+
+async function workbenchFetchOllamaTags(profile) {
+  const base = String(profile.baseURL || "").replace(/\/v1\/?$/, "").replace(/\/$/, "");
+  const url = `${base}/api/tags`;
+  const response = await fetch(url, { method: "GET" });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(providerErrorText(response.status, text));
+  }
+  const data = safeParseJSON(text);
+  const models = Array.isArray(data?.models) ? data.models : [];
+  return models
+    .map((model) => {
+      const id = String(model?.name || model?.model || "").trim();
+      if (!id) return null;
+      const details = model?.details || {};
+      const parts = [details.family, details.parameter_size, details.quantization_level].filter(Boolean);
+      const label = parts.length ? `${id} (${parts.join(" · ")})` : id;
+      return { id, label };
+    })
+    .filter(Boolean);
 }
 
 window.ZoteroMarkdownSummaryWorkbench = ZoteroMarkdownSummaryWorkbench;

@@ -43,19 +43,19 @@ function settingsProviderDefaults(provider) {
     return { ...common, protocol: "openai_responses", baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1", capabilities: { ...commonCapabilities, pdfBase64: true } };
   }
   if (id === "perplexity") {
-    return { ...common, protocol: "openai_chat", baseURL: "https://api.perplexity.ai", capabilities: { ...commonCapabilities, modelList: false } };
+    return { ...common, protocol: "openai_chat", baseURL: "https://api.perplexity.ai", capabilities: commonCapabilities };
   }
   if (id === "zhipu" || id === "glm" || id === "bigmodel") {
-    return { ...common, protocol: "openai_chat", baseURL: "https://open.bigmodel.cn/api/paas/v4", capabilities: { ...commonCapabilities, modelList: false } };
+    return { ...common, protocol: "openai_chat", baseURL: "https://open.bigmodel.cn/api/paas/v4", capabilities: commonCapabilities };
   }
   if (id === "volcengine" || id === "ark" || id === "doubao") {
-    return { ...common, protocol: "openai_chat", baseURL: "https://ark.cn-beijing.volces.com/api/v3", capabilities: { ...commonCapabilities, modelList: false } };
+    return { ...common, protocol: "openai_chat", baseURL: "https://ark.cn-beijing.volces.com/api/v3", capabilities: commonCapabilities };
   }
   if (id === "qianfan" || id === "baidu") {
-    return { ...common, protocol: "openai_chat", baseURL: "https://qianfan.baidubce.com/v2", capabilities: { ...commonCapabilities, modelList: false } };
+    return { ...common, protocol: "openai_chat", baseURL: "https://qianfan.baidubce.com/v2", capabilities: commonCapabilities };
   }
   if (id === "hunyuan" || id === "tencent") {
-    return { ...common, protocol: "openai_chat", baseURL: "https://api.hunyuan.cloud.tencent.com/v1", capabilities: { ...commonCapabilities, modelList: false } };
+    return { ...common, protocol: "openai_chat", baseURL: "https://api.hunyuan.cloud.tencent.com/v1", capabilities: commonCapabilities };
   }
   if (id === "gemini") {
     return { ...common, protocol: "openai_chat", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", capabilities: commonCapabilities };
@@ -97,7 +97,7 @@ function settingsProviderDefaults(provider) {
     return { ...common, protocol: "anthropic_messages", baseURL: "https://api.deepseek.com/anthropic", capabilities: commonCapabilities };
   }
   if (id === "zai_anthropic" || id === "zai-anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") {
-    return { ...common, protocol: "anthropic_messages", baseURL: "https://api.z.ai/api/anthropic", capabilities: { ...commonCapabilities, modelList: false } };
+    return { ...common, protocol: "anthropic_messages", baseURL: "https://api.z.ai/api/anthropic", capabilities: commonCapabilities };
   }
   if (id === "minimax") {
     return { ...common, protocol: "openai_chat", baseURL: "https://api.minimaxi.com/v1", model: "MiniMax-M2.7", capabilities: commonCapabilities, bodyExtra: { extra_body: { reasoning_split: true } } };

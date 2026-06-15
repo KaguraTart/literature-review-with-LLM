@@ -13,6 +13,7 @@ reader-copy = 复制原文
 reader-open-file = 打开文件
 chat-save-session = 保存会话
 chat-placeholder = 向当前论文提问
+chat-placeholder-hint = Enter 换行，⌘/Ctrl + Enter 发送
 skill-paper-deep-summary-title = 单篇深度总结
 skill-paper-deep-summary-description = 生成带证据提示的单篇阅读报告
 skill-method-extractor-title = 方法抽取

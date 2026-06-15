@@ -13,6 +13,7 @@ reader-copy = Copy Markdown
 reader-open-file = Open File
 chat-save-session = Save Session
 chat-placeholder = Ask about the current paper
+chat-placeholder-hint = Enter for newline, ⌘/Ctrl + Enter to send
 skill-paper-deep-summary-title = Deep Paper Summary
 skill-paper-deep-summary-description = Create an evidence-aware reading report
 skill-method-extractor-title = Method Extractor

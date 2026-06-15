@@ -236,8 +236,8 @@ describe("provider smoke verifier", () => {
     });
     expect(report.results.find((result: any) => result.id === "perplexity")).toMatchObject({
       ok: true,
-      modelList: false,
-      modelsEndpoint: ""
+      modelList: true,
+      modelsEndpoint: "https://api.perplexity.ai/models"
     });
     expect(report.results.find((result: any) => result.id === "ollama")).toMatchObject({
       ok: true,

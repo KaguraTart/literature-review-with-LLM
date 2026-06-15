@@ -392,7 +392,8 @@ describe("preferences local-agent config helpers", () => {
     };
     expect(helpers.connectionTestRequestForProfile(perplexityProfile).url)
       .toBe("https://api.perplexity.ai/chat/completions");
-    expect(helpers.modelListRequestForProfile(perplexityProfile)).toBeNull();
+    expect(helpers.modelListRequestForProfile(perplexityProfile)?.url)
+      .toBe("https://api.perplexity.ai/models");
   });
 
   it("keeps settings custom auth headers and allows auth-header-only profiles", () => {
@@ -698,7 +699,7 @@ describe("preferences local-agent config helpers", () => {
       id: "perplexity",
       protocol: "openai_chat",
       baseURL: "https://api.perplexity.ai",
-      capabilities: { streaming: true, pdfBase64: false, modelList: false }
+      capabilities: { streaming: true, pdfBase64: false, modelList: true }
     });
     expect(helpers.providerDefaults("deepseek")).toMatchObject({
       id: "deepseek",
@@ -716,7 +717,7 @@ describe("preferences local-agent config helpers", () => {
       id: "zai-anthropic",
       protocol: "anthropic_messages",
       baseURL: "https://api.z.ai/api/anthropic",
-      capabilities: { streaming: true, pdfBase64: false, modelList: false }
+      capabilities: { streaming: true, pdfBase64: false, modelList: true }
     });
     expect(helpers.providerDefaults("openrouter")).toMatchObject({
       id: "openrouter",
@@ -737,25 +738,25 @@ describe("preferences local-agent config helpers", () => {
       id: "zhipu",
       protocol: "openai_chat",
       baseURL: "https://open.bigmodel.cn/api/paas/v4",
-      capabilities: { modelList: false }
+      capabilities: { modelList: true }
     });
     expect(helpers.providerDefaults("volcengine")).toMatchObject({
       id: "volcengine",
       protocol: "openai_chat",
       baseURL: "https://ark.cn-beijing.volces.com/api/v3",
-      capabilities: { modelList: false }
+      capabilities: { modelList: true }
     });
     expect(helpers.providerDefaults("qianfan")).toMatchObject({
       id: "qianfan",
       protocol: "openai_chat",
       baseURL: "https://qianfan.baidubce.com/v2",
-      capabilities: { modelList: false }
+      capabilities: { modelList: true }
     });
     expect(helpers.providerDefaults("hunyuan")).toMatchObject({
       id: "hunyuan",
       protocol: "openai_chat",
       baseURL: "https://api.hunyuan.cloud.tencent.com/v1",
-      capabilities: { modelList: false }
+      capabilities: { modelList: true }
     });
     expect(helpers.providerDefaults("ollama")).toMatchObject({
       id: "ollama",
@@ -880,7 +881,7 @@ describe("preferences local-agent config helpers", () => {
       protocol: "openai_chat",
       endpointMode: "base_url",
       baseURL: "https://api.perplexity.ai",
-      capabilities: { modelList: false }
+      capabilities: { modelList: true }
     });
     expect(profiles.find((profile) => profile.id === "deepseek")).toMatchObject({
       protocol: "openai_chat",
@@ -896,7 +897,7 @@ describe("preferences local-agent config helpers", () => {
       protocol: "anthropic_messages",
       endpointMode: "base_url",
       baseURL: "https://api.z.ai/api/anthropic",
-      capabilities: { modelList: false }
+      capabilities: { modelList: true }
     });
     expect(profiles.find((profile) => profile.id === "openrouter")).toMatchObject({
       protocol: "openai_chat",
@@ -913,22 +914,22 @@ describe("preferences local-agent config helpers", () => {
     expect(profiles.find((profile) => profile.id === "zhipu")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://open.bigmodel.cn/api/paas/v4",
-      capabilities: { modelList: false }
+      capabilities: { modelList: true }
     });
     expect(profiles.find((profile) => profile.id === "volcengine")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://ark.cn-beijing.volces.com/api/v3",
-      capabilities: { modelList: false }
+      capabilities: { modelList: true }
     });
     expect(profiles.find((profile) => profile.id === "qianfan")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://qianfan.baidubce.com/v2",
-      capabilities: { modelList: false }
+      capabilities: { modelList: true }
     });
     expect(profiles.find((profile) => profile.id === "hunyuan")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://api.hunyuan.cloud.tencent.com/v1",
-      capabilities: { modelList: false }
+      capabilities: { modelList: true }
     });
     expect(profiles.find((profile) => profile.id === "ollama")).toMatchObject({
       protocol: "openai_chat",
@@ -1161,7 +1162,7 @@ describe("preferences local-agent config helpers", () => {
         baseURL: "https://api.perplexity.ai",
         apiKey: "perplexity-secret",
         model: "sonar-pro",
-        capabilities: { pdfBase64: false, streaming: true, modelList: false },
+        capabilities: { pdfBase64: false, streaming: true, modelList: true },
         customHeaders: { "x-route": "sonar" },
         bodyExtra: {},
         isDefault: false
@@ -1177,7 +1178,7 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model").value).toBe("sonar-pro");
     expect(elements.get("zms-profileName").value).toBe("Perplexity Sonar");
     expect(elements.get("zms-profileProtocol").value).toBe("openai_chat");
-    expect(elements.get("zms-cap-modelList").checked).toBe(false);
+    expect(elements.get("zms-cap-modelList").checked).toBe(true);
     expect(elements.get("zms-profileCustomHeaders").value).toContain("x-route");
   });
 
