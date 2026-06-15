@@ -1,6 +1,13 @@
 #zms-workbench {
   margin: 0;
   padding: 0;
+  /* When the workbench is rendered inside the Zotero XUL HTML pane the
+     selection behaviour is determined by ancestor chrome. Force-enable
+     selection on the workbench root so the generated Markdown and the
+     composer textarea can both be selected and copied normally. */
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
 }
 
 .zms-workbench-shell {
@@ -259,6 +266,13 @@
   min-height: 0;
   padding: 18px;
   overflow: auto;
+  /* Allow native text selection inside the chat scroll container.
+     In the Zotero XUL HTML pane the scroll container sometimes inherits
+     -moz-user-select: none from ancestors, which makes the assistant's
+     generated Markdown appear unselectable. Force-enable here. */
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
 }
 
 .zms-message {
@@ -474,8 +488,16 @@
   cursor: pointer;
   font-size: 12px;
   font-weight: 650;
+  /* Keep summary itself unselectable so a click reliably toggles the
+     <details> element, but text inside the body remains selectable. */
   user-select: none;
   -moz-user-select: none;
+  -webkit-user-select: none;
+}
+.zms-think[open] summary {
+  user-select: text;
+  -moz-user-select: text;
+  -webkit-user-select: text;
 }
 
 .zms-think pre {
@@ -517,6 +539,9 @@
   background: #f5f2e8;
   color: #27323f;
   white-space: nowrap;
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
 }
 
 .zms-math-display {
@@ -532,6 +557,9 @@
   color: #27323f;
   text-align: center;
   white-space: pre;
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
 }
 
 .zms-tex-frac {

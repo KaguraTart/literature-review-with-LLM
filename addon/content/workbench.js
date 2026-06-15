@@ -122,7 +122,6 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-save-profile-settings": () => this.saveProfileSettings(),
       "zms-test-profile-settings": () => this.testProfileSettings(),
       "zms-attach-image": () => this.chooseImages(),
-      "zms-copy-input": () => this.copyInputSelection(),
       "zms-load-models-workbench": () => this.loadModelsForWorkbench()
     };
     for (const [id, handler] of Object.entries(bindings)) {
@@ -142,21 +141,6 @@ var ZoteroMarkdownSummaryWorkbench = {
         this.send();
       });
       if (input.dataset) input.dataset.zmsShortcutBound = "1";
-    }
-    if (input && input.dataset?.zmsSelectionDebugBound !== "1") {
-      const debugSelection = (label) => {
-        try {
-          Zotero.debug(`[Markdown Summary] composer selection ${label}: start=${input.selectionStart} end=${input.selectionEnd} valueLen=${input.value.length} docHasFocus=${document.hasFocus?.()} activeId=${document.activeElement?.id || ""}`);
-        } catch (_err) { /* selection not supported */ }
-      };
-      input.addEventListener("select", () => debugSelection("select"));
-      input.addEventListener("keyup", (event) => {
-        if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "Home" || event.key === "End") {
-          debugSelection(`keyup:${event.key}`);
-        }
-      });
-      input.addEventListener("mouseup", () => debugSelection("mouseup"));
-      if (input.dataset) input.dataset.zmsSelectionDebugBound = "1";
     }
     if (!this.state.escapeBound && typeof document.addEventListener === "function") {
       document.addEventListener?.("keydown", (event) => {
@@ -277,40 +261,6 @@ var ZoteroMarkdownSummaryWorkbench = {
     focusElement(document.getElementById("zms-input"));
   },
 
-  async copyInputSelection() {
-    const input = document.getElementById("zms-input");
-    if (!input) return;
-    const start = input.selectionStart ?? 0;
-    const end = input.selectionEnd ?? 0;
-    const selected = end > start ? input.value.slice(start, end) : input.value;
-    if (!selected) {
-      this.setStatus(this.t("copyEmpty"));
-      return;
-    }
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(selected);
-      } else {
-        // Fallback: temporary textarea + execCommand("copy") for chrome/XUL contexts
-        const temp = document.createElement("textarea");
-        temp.value = selected;
-        temp.setAttribute("readonly", "readonly");
-        temp.style.position = "fixed";
-        temp.style.opacity = "0";
-        temp.style.pointerEvents = "none";
-        document.body.appendChild(temp);
-        temp.select();
-        const ok = document.execCommand?.("copy");
-        temp.remove();
-        if (!ok) throw new Error("execCommand copy failed");
-      }
-      this.setStatus(this.t("copiedSelection"));
-      Zotero.debug(`[Markdown Summary] composer copy: chars=${selected.length} via=${navigator.clipboard?.writeText ? "clipboard" : "execCommand"}`);
-    } catch (err) {
-      this.setStatus(`${this.t("copyFailed")}: ${safeError(err)}`);
-    }
-  },
-
   toggleSettings(open = !this.state.settingsOpen) {
     this.state.settingsOpen = Boolean(open);
     document.documentElement.setAttribute("data-settings-open", this.state.settingsOpen ? "true" : "false");
@@ -422,10 +372,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-preview-write", this.t("preview"));
     setText("zms-confirm-write", this.t("confirmWrite"));
     setText("zms-cancel-write", this.t("cancel"));
-    setText("zms-copy-input", this.t("copyInput"));
     setText("zms-load-models-workbench", this.t("loadModels"));
-    const copyButton = document.getElementById("zms-copy-input");
-    if (copyButton) copyButton.setAttribute("title", this.t("copyInputTitle"));
     const loadButton = document.getElementById("zms-load-models-workbench");
     if (loadButton) loadButton.setAttribute("title", this.t("loadModels"));
     document
