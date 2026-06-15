@@ -143,6 +143,7 @@ function registerMenus() {
     menuID: "zotero-markdown-summary-item-actions",
     menus: [
       menuItem(t("openWorkbench"), (event, context) => openWorkbenchForContext(context), { requireWorkbenchItems: true }),
+      menuItem(t("openConversation"), (event, context) => openWorkbenchForContext(context), { requireWorkbenchItems: true }),
       menuItem(t("selfCheck"), (event, context) => runSelfCheckForContext(context), { requireRegularItems: true }),
       menuItem(t("generateSummary"), (event, context) => runForContext(context, false), { requireRegularItems: true }),
       menuItem(t("updateSummary"), (event, context) => runForContext(context, true), { requireRegularItems: true }),

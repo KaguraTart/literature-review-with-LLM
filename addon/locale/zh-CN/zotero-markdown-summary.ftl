@@ -1,5 +1,6 @@
 workbench-title = Literature Review with LLM
 workbench-open-title = 打开论文聊天工作台
+workbench-conversation = 继续对话
 chat-send = 发送
 chat-stop = 停止
 chat-retry = 重试

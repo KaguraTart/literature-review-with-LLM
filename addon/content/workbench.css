@@ -868,6 +868,27 @@ button:disabled {
   gap: 6px;
 }
 
+.zms-session-actions {
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.zms-session-actions button {
+  flex: 1 1 calc(50% - 4px);
+  min-width: 110px;
+}
+.zms-session-list button[aria-current="true"] {
+  border-color: #30756a;
+  background: #ecf6f0;
+  color: #1d3b34;
+  font-weight: 600;
+}
+.zms-session-empty {
+  padding: 6px 9px;
+  color: #687687;
+  font-size: 12px;
+  font-style: italic;
+}
+
 .zms-candidate-actions {
   align-items: stretch;
   margin-bottom: 6px;

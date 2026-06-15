@@ -2264,7 +2264,7 @@ describe("workbench writeback helpers", () => {
       { role: "user", content: "old question 2" },
       { role: "assistant", content: "old answer 2" },
       { role: "user", content: "latest question" }
-    ], "latest question", "latest question\n\nPaper metadata...", 4);
+    ], "latest question", "latest question\n\nPaper metadata...", { limit: 4 });
 
     expect(requestMessages).toEqual([
       { role: "assistant", content: "old answer 1" },

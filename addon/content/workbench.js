@@ -47,6 +47,10 @@ var ZoteroMarkdownSummaryWorkbench = {
     contextSourceHash: "",
     messages: [],
     sessionId: "",
+    sessionIdBeforeResume: "",
+    sessionStartedAt: 0,
+    compaction: null,
+    compactionScheduled: 0,
     profiles: [],
     profile: null,
     outputDir: "",
@@ -71,7 +75,6 @@ var ZoteroMarkdownSummaryWorkbench = {
   async init() {
     if (this.state.initialized) return;
     this.state.initialized = true;
-    this.state.sessionId = `chat-${Date.now()}`;
     this.bindActions();
     this.loadSettings();
     this.applyLanguage();
@@ -92,9 +95,19 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.renderPaper();
       this.renderProfiles();
       await this.renderSkills();
+      // Try to resume the most recent conversation for this item so the
+      // user does not have to start over when they reopen the workbench.
+      const latest = await latestSessionForItem(this.state.item, this.state.outputDir);
+      if (latest) {
+        await this.loadSession(latest.path, { resume: true });
+        this.setStatus(this.t("sessionResumed"));
+      } else {
+        this.state.sessionId = newSessionId();
+        this.state.sessionStartedAt = Date.now();
+        this.setStatus(this.t("ready"));
+      }
       this.renderSessions();
       await this.loadCandidates({ quiet: true });
-      this.setStatus(this.t("ready"));
       this.queueComposerFocus();
     } catch (err) {
       this.setStatus(safeError(err));
@@ -104,7 +117,7 @@ var ZoteroMarkdownSummaryWorkbench = {
   bindActions() {
     const bindings = {
       "zms-open-reader": () => this.openReader(),
-      "zms-save-session": () => this.saveSession(),
+      "zms-save-session": () => this.saveSession({ quiet: false }),
       "zms-search-candidates": () => this.searchCandidates(),
       "zms-load-candidates": () => this.loadCandidates(),
       "zms-save-candidates": () => this.saveCandidates(),
@@ -122,7 +135,10 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-save-profile-settings": () => this.saveProfileSettings(),
       "zms-test-profile-settings": () => this.testProfileSettings(),
       "zms-attach-image": () => this.chooseImages(),
-      "zms-load-models-workbench": () => this.loadModelsForWorkbench()
+      "zms-load-models-workbench": () => this.loadModelsForWorkbench(),
+      "zms-new-conversation": () => this.newConversation(),
+      "zms-compact-context": () => this.compactContext({ auto: false }),
+      "zms-copy-session": () => this.copySession()
     };
     for (const [id, handler] of Object.entries(bindings)) {
       const element = document.getElementById(id);
@@ -620,18 +636,33 @@ var ZoteroMarkdownSummaryWorkbench = {
 
   async renderSessions() {
     const list = document.getElementById("zms-session-list");
+    if (!list) return;
     list.textContent = "";
     try {
-      if (!await IOUtils.exists(this.sessionDir())) return;
+      if (!await IOUtils.exists(this.sessionDir())) {
+        renderEmptySessionList(list, this.t("noSessions"));
+        return;
+      }
       const children = await IOUtils.getChildren(this.sessionDir());
-      for (const path of recentSessionFiles(children)) {
+      const recent = recentSessionFiles(children);
+      if (!recent.length) {
+        renderEmptySessionList(list, this.t("noSessions"));
+        return;
+      }
+      for (const path of recent) {
         const button = document.createElement("button");
-        button.textContent = leafName(path);
-        button.onclick = () => this.loadSession(path);
+        const sessionId = sessionIdFromPath(path);
+        button.textContent = sessionLabelFromPath(path);
+        button.title = path;
+        button.dataset.sessionId = sessionId;
+        if (sessionId === this.state.sessionId) {
+          button.setAttribute("aria-current", "true");
+        }
+        button.onclick = () => this.switchToSession(path);
         list.appendChild(button);
       }
     } catch (_err) {
-      // Session history is optional.
+      renderEmptySessionList(list, this.t("sessionListUnavailable"));
     }
   },
 
@@ -790,18 +821,137 @@ var ZoteroMarkdownSummaryWorkbench = {
     }
   },
 
-  async loadSession(path) {
+  async loadSession(path, options = {}) {
     try {
+      if (this.state.messages.length && !options.resume) {
+        await this.saveSession({ quiet: true });
+      }
       const text = await readText(path);
       this.state.messages = text.split(/\r?\n/).filter(Boolean)
         .map((line) => safeParseJSON(line))
         .filter(Boolean);
+      // Compaction markers live as the last entry when present. Drop them
+      // from the live view; the marker is still kept on disk inside the
+      // jsonl so the conversation can be re-derived if the user undoes.
+      this.state.compaction = this.state.messages.find((m) => m?.role === "compaction") || null;
+      this.state.messages = this.state.messages.filter((m) => m?.role !== "compaction");
+      const previousId = this.state.sessionId;
       this.state.sessionId = sessionIdFromPath(path) || this.state.sessionId;
+      this.state.sessionStartedAt = sessionStartedAtFromId(this.state.sessionId);
+      this.state.sessionIdBeforeResume = options.resume ? previousId : "";
       this.renderMessages();
-      this.setStatus(this.t("ready"));
+      await this.renderSessions();
+      this.setStatus(options.resume ? this.t("sessionResumed") : this.t("ready"));
     } catch (err) {
       this.setStatus(safeError(err));
     }
+  },
+
+  async switchToSession(path) {
+    if (path && sessionIdFromPath(path) === this.state.sessionId) {
+      this.setStatus(this.t("sessionAlreadyActive"));
+      return;
+    }
+    await this.loadSession(path, { resume: false });
+  },
+
+  async newConversation() {
+    if (this.state.messages.length) {
+      await this.saveSession({ quiet: true });
+    }
+    this.state.sessionId = newSessionId();
+    this.state.sessionStartedAt = Date.now();
+    this.state.compaction = null;
+    this.state.compactionScheduled = 0;
+    this.state.messages = [];
+    this.renderMessages();
+    await this.renderSessions();
+    this.setStatus(this.t("newConversation"));
+  },
+
+  async copySession() {
+    if (!this.state.messages.length) {
+      this.setStatus(this.t("copyEmpty"));
+      return;
+    }
+    const text = renderSessionAsMarkdown(this.state.messages, this.t);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const temp = document.createElement("textarea");
+        temp.value = text;
+        temp.setAttribute("readonly", "readonly");
+        temp.style.position = "fixed";
+        temp.style.opacity = "0";
+        temp.style.pointerEvents = "none";
+        document.body.appendChild(temp);
+        temp.select();
+        const ok = document.execCommand?.("copy");
+        temp.remove();
+        if (!ok) throw new Error("execCommand copy failed");
+      }
+      this.setStatus(`${this.t("copiedSelection")}: ${text.length} chars`);
+    } catch (err) {
+      this.setStatus(`${this.t("copyFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async compactContext(options = {}) {
+    if (this.state.compacting) return;
+    if (this.state.messages.length < 2) {
+      this.setStatus(this.t("nothingToCompact"));
+      return;
+    }
+    const profile = this.state.profile;
+    if (!profile) {
+      this.setStatus(this.t("noProfile"));
+      return;
+    }
+    this.state.compacting = true;
+    this.setStatus(this.t("compacting"));
+    try {
+      if (this.state.messages.length) {
+        await this.saveSession({ quiet: true });
+      }
+      const summary = await summarizeMessagesWithLlm(this.state.messages, profile, (key) => this.t(key), (text) => this.setStatus(text));
+      if (!summary) {
+        this.setStatus(this.t("compactFailed"));
+        return;
+      }
+      this.state.compaction = {
+        id: `compaction-${Date.now()}`,
+        role: "compaction",
+        summary,
+        at: Date.now(),
+        origin: options.auto ? "auto" : "manual",
+        keptCount: this.state.messages.length
+      };
+      this.setStatus(this.t(options.auto ? "contextAutoCompacted" : "contextCompacted"));
+      await this.saveSession({ quiet: true });
+    } catch (err) {
+      this.setStatus(`${this.t("compactFailed")}: ${safeError(err)}`);
+    } finally {
+      this.state.compacting = false;
+      this.state.compactionScheduled = 0;
+    }
+  },
+
+  maybeScheduleAutoCompact() {
+    if (this.state.compacting) return;
+    if (this.state.compaction) return;
+    if (this.state.compactionScheduled) return;
+    if (this.state.messages.length < COMPACT_TRIGGER_MESSAGES) return;
+    const profile = this.state.profile;
+    if (!profile) return;
+    this.state.compactionScheduled = Date.now();
+    this.setStatus(this.t("autoCompactScheduled"));
+    window.setTimeout?.(() => {
+      this.state.compactionScheduled = 0;
+      if (this.state.messages.length >= COMPACT_TRIGGER_MESSAGES && !this.state.compaction && !this.state.compacting) {
+        this.compactContext({ auto: true });
+      }
+    }, COMPACT_AUTO_DELAY_MS);
   },
 
   renderMessages() {
@@ -936,7 +1086,8 @@ var ZoteroMarkdownSummaryWorkbench = {
     const prompt = [skillTemplate, savedSummaryPrompt, userText].filter(Boolean).join("\n\n");
     const contextText = contextForPrompt(this.state.context, prompt || userText);
     const requestPrompt = `${prompt || userText}\n\n${contextText}`;
-    const requestMessages = requestMessagesWithHistory(this.state.messages, userText || this.t(skillId), requestPrompt);
+    const requestMessages = requestMessagesWithHistory(this.state.messages, userText || this.t(skillId), requestPrompt, { compaction: this.state.compaction });
+    this.maybeScheduleAutoCompact();
     if (localAgents.length) {
       const fallbackToRemote = localAgents.some((agent) => agent.fallbackToRemote);
       const localAgentPrompt = requestPrompt.trim();
@@ -995,21 +1146,42 @@ var ZoteroMarkdownSummaryWorkbench = {
     return PathUtils.join(this.sessionDir(), sessionFilenameFor(this.state.sessionId));
   },
 
-  async saveSession() {
-    await ensureDirectory(this.sessionDir());
-    const lines = this.state.messages.map((message) => JSON.stringify({
-      ...message,
-      itemKey: this.state.item?.key,
-      profileId: message.profileId || this.state.profile?.id,
-      profileName: message.profileName || this.state.profile?.name,
-      protocol: message.protocol || this.state.profile?.protocol,
-      model: message.model || this.state.profile?.model,
-      uiLanguage: this.state.uiLanguage,
-      outputLanguage: this.state.outputLanguage
-    })).join("\n");
-    await writeText(this.sessionPath(), `${lines}\n`);
-    await this.renderSessions();
-    this.setStatus(this.t("saved"));
+  async saveSession(options = {}) {
+    try {
+      await ensureDirectory(this.sessionDir());
+      const compactionEntry = this.state.compaction || null;
+      const allLines = [
+        ...this.state.messages.map((message) => JSON.stringify({
+          ...message,
+          itemKey: this.state.item?.key,
+          profileId: message.profileId || this.state.profile?.id,
+          profileName: message.profileName || this.state.profile?.name,
+          protocol: message.protocol || this.state.profile?.protocol,
+          model: message.model || this.state.profile?.model,
+          uiLanguage: this.state.uiLanguage,
+          outputLanguage: this.state.outputLanguage
+        })),
+        ...(compactionEntry ? [JSON.stringify({
+          ...compactionEntry,
+          itemKey: this.state.item?.key,
+          profileId: this.state.profile?.id,
+          profileName: this.state.profile?.name
+        })] : [])
+      ].join("\n");
+      const path = this.sessionPath();
+      await writeText(path, `${allLines}\n`);
+      // Mirror the conversation as a Markdown copy so the user can open
+      // it from the Zotero item as a linked attachment.
+      const mdPath = sessionMarkdownPath(this.state.outputDir, this.state.item, this.state.sessionId);
+      await writeText(mdPath, renderSessionAsMarkdown(this.state.messages, this.t, compactionEntry?.summary));
+      if (this.state.item) {
+        await linkOrCreateChatAttachment(this.state.item, this.state.item.key, mdPath, this.state.sessionId);
+      }
+      await this.renderSessions();
+      if (!options.quiet) this.setStatus(this.t("saved"));
+    } catch (err) {
+      this.setStatus(`${this.t("saveFailed")}: ${safeError(err)}`);
+    }
   },
 
   async openReader() {
@@ -2565,17 +2737,27 @@ function contextDiagnosticsText(diagnostics, translate = (key) => key) {
   return lines.join("\n");
 }
 
-function requestMessagesWithHistory(messages, latestUserText, requestPrompt, limit = 8) {
-  const history = messages
+function requestMessagesWithHistory(messages, latestUserText, requestPrompt, options = {}) {
+  const limit = options.limit ?? 8;
+  const compaction = options.compaction || null;
+  const recent = messages
     .filter((message) => (message.role === "user" || message.role === "assistant") && String(message.content || "").trim())
     .slice(-limit);
-  if (history.at(-1)?.role === "user" && history.at(-1)?.content === latestUserText) {
-    history.pop();
+  if (recent.at(-1)?.role === "user" && recent.at(-1)?.content === latestUserText) {
+    recent.pop();
   }
-  return [
-    ...history.map((message) => ({ role: message.role, content: message.content })),
-    { role: "user", content: requestPrompt }
-  ];
+  const out = [];
+  if (compaction && compaction.summary) {
+    out.push({
+      role: "system",
+      content: `[Earlier conversation summary from ${new Date(compaction.at || Date.now()).toLocaleString()}]\n${compaction.summary}`
+    });
+  }
+  for (const message of recent) {
+    out.push({ role: message.role, content: message.content });
+  }
+  out.push({ role: "user", content: requestPrompt });
+  return out;
 }
 
 function chunkText(text, sourceType, maxChars) {
@@ -3781,11 +3963,147 @@ function sessionIdFromPath(path) {
   return normalizeSessionId(name.slice(0, -6));
 }
 
-function recentSessionFiles(paths) {
+function sessionStartedAtFromId(sessionId) {
+  const match = String(sessionId || "").match(/^chat-(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function sessionLabelFromPath(path) {
+  const id = sessionIdFromPath(path) || leafName(path);
+  const startedAt = sessionStartedAtFromId(id);
+  if (startedAt) {
+    const date = new Date(startedAt);
+    if (!Number.isNaN(date.getTime())) {
+      return `Chat · ${date.toLocaleString()}`;
+    }
+  }
+  return id;
+}
+
+function newSessionId() {
+  return `chat-${Date.now()}`;
+}
+
+function sessionMarkdownPath(outputDir, item, sessionId) {
+  const safeKey = sanitizeFilename(item?.key || "unknown");
+  const safeId = sanitizeFilename(sessionId || newSessionId());
+  return PathUtils.join(outputDir || "", "sessions", safeKey, `${safeId}.md`);
+}
+
+function renderSessionAsMarkdown(messages, t, compactionSummary) {
+  const lines = [];
+  lines.push("---");
+  lines.push("source: zotero-markdown-summary workbench");
+  lines.push(`renderedAt: ${new Date().toISOString()}`);
+  if (compactionSummary) {
+    lines.push("compactionSummary: true");
+  }
+  lines.push("---", "", "# Chat session", "");
+  if (compactionSummary) {
+    lines.push("## Earlier conversation summary", "", compactionSummary, "");
+  }
+  for (const message of messages || []) {
+    const role = message?.role;
+    if (role !== "user" && role !== "assistant") continue;
+    const header = role === "user" ? "**You**" : "**Assistant**";
+    const text = String(message?.content || "").trim();
+    if (!text) continue;
+    lines.push(`### ${header}`, "", text, "");
+  }
+  return lines.join("\n");
+}
+
+async function latestSessionForItem(item, outputDir) {
+  if (!item?.key || !outputDir) return null;
+  const dir = PathUtils.join(outputDir, "sessions", sanitizeFilename(item.key));
+  if (!await pathExists(dir)) return null;
+  const children = await IOUtils.getChildren(dir);
+  const files = recentSessionFiles(children);
+  if (!files.length) return null;
+  return { path: files[files.length - 1], sessionId: sessionIdFromPath(files[files.length - 1]) };
+}
+
+function renderEmptySessionList(element, message) {
+  const note = document.createElement("div");
+  note.className = "zms-session-empty";
+  note.textContent = message;
+  element.appendChild(note);
+}
+
+async function summarizeMessagesWithLlm(messages, profile, t, setStatus) {
+  const history = (messages || [])
+    .filter((message) => (message.role === "user" || message.role === "assistant") && String(message.content || "").trim())
+    .slice(-COMPACT_HISTORY_LIMIT);
+  if (!history.length) return "";
+  const transcript = history.map((message) => `${message.role === "user" ? "USER" : "ASSISTANT"}: ${String(message.content).slice(0, 2000)}`).join("\n\n");
+  const instruction = t("compactPrompt") || "Summarize the conversation above in 6-10 concise bullet points, keeping any concrete facts, decisions, open questions, and conclusions. Reply in the same language as the conversation.";
+  if (setStatus) setStatus(t("compacting"));
+  try {
+    assertRemoteProfileReady(profile, (key) => t(key));
+    const requestMessages = [
+      { role: "system", content: instruction },
+      { role: "user", content: transcript }
+    ];
+    const response = await requestModelWithRetry(
+      profile,
+      requestMessages,
+      t("outputLanguage") === "zh-CN" ? "zh-CN" : "en-US",
+      instruction,
+      null,
+      false,
+      null
+    );
+    if (!response.ok) {
+      throw new Error(providerErrorText(response.status, await response.text()));
+    }
+    const data = await response.json();
+    return String(extractResponseText(profile.protocol, data) || "").trim();
+  } catch (_err) {
+    // Last-resort fallback so the user can still manually trigger later.
+    return history.map((m) => m.content).join("\n").slice(0, 1500);
+  }
+}
+
+const COMPACT_TRIGGER_MESSAGES = 16;
+const COMPACT_HISTORY_LIMIT = 12;
+const COMPACT_AUTO_DELAY_MS = 30000;
+
+async function linkOrCreateChatAttachment(item, itemKey, mdPath, sessionId) {
+  if (!item || !itemKey || !mdPath) return null;
+  const prefix = chatAttachmentTitlePrefix(itemKey);
+  const title = `${prefix} ${sanitizeFilename(String(sessionId || "chat"))}.md`;
+  const attachmentIDs = typeof item.getAttachments === "function" ? item.getAttachments() : [];
+  let existing = null;
+  for (const id of attachmentIDs) {
+    const attachment = Zotero.Items.get(id);
+    if (!attachment) continue;
+    const atitle = attachment.getField("title") || "";
+    if (atitle.startsWith(prefix) && atitle === title) {
+      existing = attachment;
+      break;
+    }
+  }
+  if (existing) {
+    existing.attachmentPath = mdPath;
+    existing.attachmentContentType = existing.attachmentContentType || "text/markdown";
+    if (typeof existing.saveTx === "function") await existing.saveTx();
+    return existing;
+  }
+  const payload = { file: mdPath, contentType: "text/markdown", title };
+  if (item.isRegularItem?.()) payload.parentItemID = item.id;
+  else if (item.libraryID) payload.libraryID = item.libraryID;
+  return Zotero.Attachments.linkFromFile(payload);
+}
+
+function chatAttachmentTitlePrefix(itemKey) {
+  return `Markdown Chat - ${sanitizeFilename(itemKey)}`;
+}
+
+function recentSessionFiles(paths, limit = 50) {
   return (paths || [])
     .filter((path) => String(path || "").toLowerCase().endsWith(".jsonl"))
     .sort((left, right) => String(left).localeCompare(String(right)))
-    .slice(-8);
+    .slice(-Math.max(1, limit));
 }
 
 function candidateJsonlPath(outputDir, item) {
