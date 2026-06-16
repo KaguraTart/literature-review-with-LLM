@@ -51,7 +51,7 @@ describe("workbench session helpers", () => {
   const helpers = loadWorkbenchHelpers();
 
   it("renders messages as Markdown with role headers", () => {
-    const t = (k) => k;
+    const t = (k: string) => k;
     const md = helpers.renderSessionAsMarkdown(
       [
         { role: "user", content: "What is the method?" },
@@ -66,7 +66,7 @@ describe("workbench session helpers", () => {
   });
 
   it("skips compaction marker and empty messages when rendering", () => {
-    const t = (k) => k;
+    const t = (k: string) => k;
     const md = helpers.renderSessionAsMarkdown(
       [
         { role: "user", content: "real question" },
@@ -81,7 +81,7 @@ describe("workbench session helpers", () => {
   });
 
   it("prepends a system summary when a compaction entry is provided", () => {
-    const t = (k) => k;
+    const t = (k: string) => k;
     const out = helpers.requestMessagesWithHistory(
       [
         { role: "user", content: "old q" },
