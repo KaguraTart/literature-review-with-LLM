@@ -40,6 +40,8 @@ const REQUIRED_MARKERS = [
   ["bootstrap.js", "renderResearchGapMatrix", "collection research gap matrix"],
   ["bootstrap.js", "renderTopicClusters", "collection topic clusters"],
   ["bootstrap.js", "renderIdeaList", "collection idea list"],
+  ["bootstrap.js", "renderFormalReviewReport", "collection formal review report"],
+  ["bootstrap.js", "formal-review-report", "collection formal review report path"],
   ["bootstrap.js", "topicClusterEntries", "collection topic clustering helper"],
   ["bootstrap.js", "loadBatchSummaryInsights", "collection summary insight loader"],
   ["bootstrap.js", "extractSummaryInsights", "collection summary insight extractor"],

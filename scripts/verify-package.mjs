@@ -200,6 +200,8 @@ const requiredMarkers = [
   [bootstrap, "renderResearchGapMatrix", "collection research gap matrix writer"],
   [bootstrap, "renderTopicClusters", "collection topic clusters writer"],
   [bootstrap, "renderIdeaList", "collection idea list writer"],
+  [bootstrap, "renderFormalReviewReport", "collection formal review report writer"],
+  [bootstrap, "formal-review-report", "collection formal review report path"],
   [bootstrap, "topicClusterEntries", "collection topic clustering helper"],
   [bootstrap, "loadBatchSummaryInsights", "collection summary insight loader"],
   [bootstrap, "extractSummaryInsights", "collection summary insight extractor"],

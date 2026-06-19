@@ -256,6 +256,7 @@ describe("batch papers index", () => {
       topicClustersPath: "/out/collections/COL/knowledge/topic-clusters.zh-CN.md",
       researchQuestionCardsPath: "/out/collections/COL/knowledge/research-question-cards.zh-CN.md",
       reviewDraftPath: "/out/collections/COL/writing/manual-review-draft.zh-CN.md",
+      reviewReportPath: "/out/collections/COL/writing/formal-review-report.zh-CN.md",
       ideaListPath: "/out/collections/COL/writing/idea-list.zh-CN.md"
     });
     expect(directories).toEqual(expect.arrayContaining([
@@ -275,6 +276,9 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.researchQuestionCardsPath)).toContain("最小下一步动作");
     expect(writes.get(artifacts.reviewDraftPath)).toContain("手动综述草稿");
     expect(writes.get(artifacts.reviewDraftPath)).toContain("已生成 1 篇");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("正式综述报告草稿");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("论文清单与证据地图");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("风险核查清单");
     expect(writes.get(artifacts.ideaListPath)).toContain("研究想法列表");
     expect(writes.get(artifacts.ideaListPath)).toContain("推翻条件");
   });
@@ -345,6 +349,10 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.ideaListPath)).toContain("候选想法: Stress-test under mixed priority flights.");
     expect(writes.get(artifacts.ideaListPath)).toContain("现有证据: /out/a.md; The safety filter reduced conflicts in simulation.");
     expect(writes.get(artifacts.ideaListPath)).toContain("推翻条件: If mixed priority traffic erases the safety gain.");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("PPO-based CTDE scheduler");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("Conflict rate and delay minutes");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("No field data or ablation");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("Stress-test under mixed priority flights");
   });
 
   it("builds heuristic collection topic clusters from summary insights", async () => {
@@ -412,6 +420,8 @@ describe("batch papers index", () => {
     expect(writes.get(english.researchQuestionCardsPath)).toContain("Minimum next action");
     expect(writes.get(english.gapMatrixPath)).toContain("Research Gap Matrix");
     expect(writes.get(english.topicClustersPath)).toContain("Topic Clusters");
+    expect(writes.get(english.reviewReportPath)).toContain("Formal Review Report");
+    expect(writes.get(english.reviewReportPath)).toContain("Risk Checklist");
     expect(writes.get(english.ideaListPath)).toContain("Reject condition");
 
     const japanese = await helpers.writeCollectionWorkspace(
@@ -424,6 +434,8 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.researchQuestionCardsPath)).toContain("最小の次アクション");
     expect(writes.get(japanese.gapMatrixPath)).toContain("研究ギャップマトリクス");
     expect(writes.get(japanese.topicClustersPath)).toContain("トピッククラスタ");
+    expect(writes.get(japanese.reviewReportPath)).toContain("正式レビュー報告書");
+    expect(writes.get(japanese.reviewReportPath)).toContain("リスク確認リスト");
     expect(writes.get(japanese.ideaListPath)).toContain("棄却条件");
   });
 
@@ -456,9 +468,13 @@ describe("batch papers index", () => {
     expect(english.topicClustersPath).toBe("/out/collections/COL/knowledge/topic-clusters.en-US.md");
     expect(japanese.topicClustersPath).toBe("/out/collections/COL/knowledge/topic-clusters.ja-JP.md");
     expect(english.reviewDraftPath).not.toBe(japanese.reviewDraftPath);
+    expect(english.reviewReportPath).toBe("/out/collections/COL/writing/formal-review-report.en-US.md");
+    expect(japanese.reviewReportPath).toBe("/out/collections/COL/writing/formal-review-report.ja-JP.md");
     expect(english.ideaListPath).not.toBe(japanese.ideaListPath);
     expect(writes.get(english.reviewDraftPath)).toContain("Manual Review Draft");
     expect(writes.get(japanese.reviewDraftPath)).toContain("手動レビュー草稿");
+    expect(writes.get(english.reviewReportPath)).toContain("Formal Review Report");
+    expect(writes.get(japanese.reviewReportPath)).toContain("正式レビュー報告書");
     expect(writes.get(english.ideaListPath)).toContain("Idea List");
     expect(writes.get(japanese.ideaListPath)).toContain("アイデアリスト");
     expect(writes.get(english.paperNotesIndexPath)).toContain("Paper Notes");
