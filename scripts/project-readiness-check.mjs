@@ -214,6 +214,12 @@ const SOURCE_MARKERS = [
     markers: ["runProviderCatalog", "catalogProfileResult", "catalogProfileIssues", "catalogInputChecks", "catalogInputCheck", "--catalog", "verify:provider:catalog", "model-list endpoint present while capability is disabled", "inputChecks", "image_url", "input_file", "document"]
   },
   {
+    id: "provider.settings-connection-response",
+    description: "Settings connection tests require parseable model text and surface 200-level provider errors",
+    files: ["addon/content/preferences.js", "tests/preferencesLocalAgent.test.ts"],
+    markers: ["extractProviderConnectionText", "Provider error", "No text returned from model", "marks settings connection tests OK only after extracting model text", "fails settings connection tests when a 200 response still contains a provider error"]
+  },
+  {
     id: "provider.retry-boundary",
     description: "Provider requests retry only retryable HTTP failures and fail fast on bad credentials or invalid requests",
     files: ["addon/bootstrap.js", "addon/content/workbench.js", "tests/bootstrapProvider.test.ts", "tests/workbenchWriteback.test.ts"],

@@ -429,7 +429,12 @@ var ZoteroMarkdownSummaryPrefs = {
       const request = connectionTestRequestForProfile(profile);
       const response = await fetch(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(request.body) });
       const text = await response.text();
-      this.setStatus(response.ok ? this.t("testOk") : `${this.t("testFailed")}: ${providerErrorText(response.status, text)}`);
+      if (!response.ok) {
+        this.setStatus(`${this.t("testFailed")}: ${providerErrorText(response.status, text)}`);
+        return;
+      }
+      extractProviderConnectionText(profile.protocol, text);
+      this.setStatus(this.t("testOk"));
     } catch (err) {
       this.setStatus(`${this.t("testFailed")}: ${safeError(err)}`);
     }
@@ -1162,6 +1167,80 @@ function safeError(err) {
 
 function providerErrorText(status, text) {
   return `HTTP ${status}: ${redact(providerErrorDetail(text))}`;
+}
+
+function extractProviderConnectionText(protocol, text) {
+  const data = safeParseJSON(text);
+  const errorText = providerResponseErrorDetail(data);
+  if (errorText) throw new Error(`Provider error: ${redact(errorText)}`);
+  const value = data
+    ? providerTextFromResponse(protocol, data)
+    : String(text || "").trim();
+  if (!String(value || "").trim()) throw new Error("No text returned from model");
+  return String(value).trim();
+}
+
+function providerResponseErrorDetail(data) {
+  if (!data || typeof data !== "object") return "";
+  const error = data.error || (data.type === "error" ? data : null);
+  if (!error) return "";
+  if (typeof error === "string") return error;
+  const message = error.message || data.message || "";
+  const code = error.code || data.code || "";
+  const type = error.type || data.type || "";
+  return [code, type, message || JSON.stringify(error)].filter(Boolean).join(" - ");
+}
+
+function providerTextFromResponse(protocol, data) {
+  if (protocol === "anthropic_messages") return anthropicTextFromResponse(data);
+  return data?.output_text
+    || modelTextFromValue(data?.choices?.[0]?.message?.content)
+    || modelTextFromValue(data?.choices?.[0]?.delta?.content)
+    || data?.choices?.[0]?.text
+    || data?.choices?.[0]?.delta?.text
+    || modelTextFromValue(data?.output)
+    || modelTextFromValue(data?.content)
+    || modelTextFromValue(data?.part)
+    || modelTextFromValue(data?.item)
+    || modelTextFromValue(data?.message)
+    || modelTextFromValue(data?.response)
+    || "";
+}
+
+function anthropicTextFromResponse(data) {
+  const content = data?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part?.type === "text" && typeof part.text === "string") return part.text;
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  return typeof data?.text === "string" ? data.text : "";
+}
+
+function modelTextFromValue(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map((part) => modelTextFromValue(part)).filter(Boolean).join("\n");
+  if (typeof value === "object") {
+    if (isReasoningModelPart(value)) return "";
+    if (typeof value.text === "string") return value.text;
+    if (typeof value.output_text === "string") return value.output_text;
+    if (typeof value.content === "string") return value.content;
+    if (Array.isArray(value.content)) return modelTextFromValue(value.content);
+    if (Array.isArray(value.output)) return modelTextFromValue(value.output);
+  }
+  return "";
+}
+
+function isReasoningModelPart(value) {
+  const type = String(value?.type || "");
+  return type.includes("reasoning") || type === "thinking";
 }
 
 function localAgentErrorText(status, text) {

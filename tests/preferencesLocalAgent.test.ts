@@ -29,6 +29,7 @@ function loadPreferencesHelpers() {
     modelOptionsFromResponse: (data: any) => Array<{ id: string; label: string }>;
     providerErrorText: (status: number, text: string) => string;
     localAgentErrorText: (status: number, text: string) => string;
+    extractProviderConnectionText: (protocol: string, text: string) => string;
     normalizeProfileId: (value: string) => string;
     providerFromProfile: (profile: any) => string;
     builtInSkillTemplate: (skillId: string, outputLanguage: string) => string;
@@ -1498,6 +1499,72 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toContain("invalid_request_error");
     expect(elements.get("zms-status").value).toContain("Invalid API key [redacted]");
     expect(elements.get("zms-status").value).not.toContain("sk-test-secret");
+  });
+
+  it("marks settings connection tests OK only after extracting model text", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      initialModel: "model-a",
+      fetchResponse: {
+        output: [
+          {
+            content: [
+              { type: "reasoning", text: "hidden" },
+              { type: "output_text", text: "pong" }
+            ]
+          }
+        ]
+      }
+    });
+
+    await controller.testConnection();
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].url).toBe("https://api.openai.com/v1/responses");
+    expect(elements.get("zms-status").value).toBe("Connection OK");
+  });
+
+  it("fails settings connection tests when a 200 response still contains a provider error", async () => {
+    const { controller, elements } = loadPreferencesController({
+      initialModel: "model-a",
+      fetchResponse: {
+        error: {
+          code: "invalid_api_key",
+          type: "authentication_error",
+          message: "Invalid API key sk-test-secret"
+        }
+      }
+    });
+
+    await controller.testConnection();
+
+    expect(elements.get("zms-status").value).toContain("Connection failed: Provider error");
+    expect(elements.get("zms-status").value).toContain("invalid_api_key");
+    expect(elements.get("zms-status").value).toContain("authentication_error");
+    expect(elements.get("zms-status").value).toContain("Invalid API key [redacted]");
+    expect(elements.get("zms-status").value).not.toContain("sk-test-secret");
+  });
+
+  it("fails settings connection tests when a 200 response has no model text", async () => {
+    const { controller, elements } = loadPreferencesController({
+      initialModel: "model-a",
+      fetchResponse: { data: [] }
+    });
+
+    await controller.testConnection();
+
+    expect(elements.get("zms-status").value).toBe("Connection failed: No text returned from model");
+  });
+
+  it("extracts provider connection text variants from settings test responses", () => {
+    expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
+      choices: [{ message: { content: [{ type: "reasoning", text: "hidden" }, { type: "text", text: "chat ok" }] } }]
+    }))).toBe("chat ok");
+    expect(helpers.extractProviderConnectionText("openai_responses", JSON.stringify({
+      response: { output: [{ content: [{ type: "output_text", text: "responses ok" }] }] }
+    }))).toBe("responses ok");
+    expect(helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({
+      content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "anthropic ok" }]
+    }))).toBe("anthropic ok");
   });
 
   it("shows parsed provider errors when model listing fails", async () => {
