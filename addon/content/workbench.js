@@ -1339,13 +1339,29 @@ function readerURL(payload) {
     embedded: payload.embedded ? "1" : "0",
     refresh: String(Date.now())
   });
-  return `${ZMS_CHROME_CONTENT_URL}reader.xhtml?${params.toString()}`;
+  return contentSiblingURL("reader.xhtml", params);
+}
+
+function contentSiblingURL(fileName, params) {
+  const query = params.toString();
+  try {
+    const href = String(window.location?.href || "");
+    const index = href.indexOf("/content/");
+    if (index >= 0) return `${href.slice(0, index + "/content/".length)}${fileName}?${query}`;
+  } catch (_err) {
+    // Fall back to registered chrome content.
+  }
+  return `${ZMS_CHROME_CONTENT_URL}${fileName}?${query}`;
 }
 
 function getProfiles() {
   try {
     const profiles = JSON.parse(pref("profilesJson") || "[]");
-    if (Array.isArray(profiles) && profiles.length) return mergeDefaultProviderProfiles(profiles).map(hydrateProfile);
+    if (Array.isArray(profiles) && profiles.length) {
+      const merged = mergeDefaultProviderProfiles(profiles);
+      persistMergedProfilesIfNeeded(profiles, merged);
+      return merged.map(hydrateProfile);
+    }
   } catch (_err) {
     // Fall back to legacy settings.
   }
@@ -1365,6 +1381,18 @@ function getProfiles() {
     bodyExtra: defaults.bodyExtra,
     isDefault: true
   }];
+}
+
+function persistMergedProfilesIfNeeded(originalProfiles, mergedProfiles) {
+  const originalCount = Array.isArray(originalProfiles)
+    ? originalProfiles.filter((profile) => profile && typeof profile === "object" && !Array.isArray(profile)).length
+    : 0;
+  if (!Array.isArray(mergedProfiles) || mergedProfiles.length <= originalCount) return;
+  try {
+    setPref("profilesJson", JSON.stringify(mergedProfiles, null, 2));
+  } catch (_err) {
+    // Workbench can still use the merged in-memory profiles if a pref write is unavailable.
+  }
 }
 
 function hydrateProfile(profile) {

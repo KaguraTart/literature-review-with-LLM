@@ -308,7 +308,7 @@ function openEmbeddedWorkbench(item) {
   const title = panel.querySelector?.(".zms-embedded-title");
   if (title) title.textContent = t("openWorkbench");
   const frame = doc.getElementById(WORKBENCH_FRAME_ID);
-  frame.setAttribute("src", workbenchURL(item));
+  setEmbeddedFrameSource(frame, workbenchURL(item));
   panel.setAttribute("data-item-key", item.key || "");
   panel.setAttribute("data-view", "workbench");
   panel.hidden = false;
@@ -335,7 +335,7 @@ function openEmbeddedReader(payload) {
   const title = panel.querySelector?.(".zms-embedded-title");
   if (title) title.textContent = payload.title || t("openMarkdownReader");
   const frame = doc.getElementById(WORKBENCH_FRAME_ID);
-  frame.setAttribute("src", readerURL(payload));
+  setEmbeddedFrameSource(frame, readerURL(payload));
   panel.setAttribute("data-item-key", payload.itemKey || "");
   panel.setAttribute("data-view", "reader");
   panel.hidden = false;
@@ -405,6 +405,7 @@ function ensureEmbeddedWorkbenchPanel(doc, hostInfo) {
     frame.setAttribute("disablehistory", "true");
     frame.setAttribute("style", "width:100%;min-width:0;min-height:0;border:0;background:#ffffff;display:block;flex:1 1 auto;");
     frame.addEventListener("load", () => {
+      retryEmbeddedFrameIfError(frame);
       const win = frame.ownerDocument?.defaultView || frame.ownerGlobal;
       win?.setTimeout?.(() => focusEmbeddedFrame(frame), 50);
     });
@@ -501,7 +502,7 @@ function refreshEmbeddedWorkbenchForSelection(win) {
     if (!frame) return;
     const item = workbenchItemsForContext()[0];
     if (!item?.key || panel.getAttribute("data-item-key") === item.key) return;
-    frame.setAttribute("src", workbenchURL(item));
+    setEmbeddedFrameSource(frame, workbenchURL(item));
     panel.setAttribute("data-item-key", item.key || "");
     const title = panel.querySelector?.(".zms-embedded-title");
     if (title) title.textContent = t("openWorkbench");
@@ -589,7 +590,7 @@ function workbenchURL(item) {
     embedded: "1",
     refresh: String(Date.now())
   });
-  return `chrome://${CHROME_NAME}/content/workbench.xhtml?${params.toString()}`;
+  return contentPageURLs("workbench.xhtml", params);
 }
 
 function readerURL(payload) {
@@ -601,7 +602,40 @@ function readerURL(payload) {
     embedded: "1",
     refresh: String(Date.now())
   });
-  return `chrome://${CHROME_NAME}/content/reader.xhtml?${params.toString()}`;
+  return contentPageURLs("reader.xhtml", params);
+}
+
+function contentPageURLs(fileName, params) {
+  const query = params.toString();
+  const chromeURL = `chrome://${CHROME_NAME}/content/${fileName}?${query}`;
+  const rootURL = rootURI ? `${rootURI}content/${fileName}?${query}` : "";
+  return {
+    primary: rootURL || chromeURL,
+    fallback: rootURL ? chromeURL : ""
+  };
+}
+
+function setEmbeddedFrameSource(frame, urls) {
+  if (!frame) return;
+  const primary = typeof urls === "string" ? urls : urls?.primary || "";
+  const fallback = typeof urls === "string" ? "" : urls?.fallback || "";
+  frame.removeAttribute?.("data-zms-fallback-used");
+  frame.setAttribute("data-zms-fallback-src", fallback);
+  frame.setAttribute("src", primary);
+}
+
+function retryEmbeddedFrameIfError(frame) {
+  try {
+    const fallback = frame?.getAttribute?.("data-zms-fallback-src") || "";
+    if (!fallback || frame.getAttribute("data-zms-fallback-used") === "1") return;
+    const doc = frame.contentDocument;
+    const text = `${doc?.title || ""}\n${doc?.body?.textContent || ""}`;
+    if (!/problem loading page/i.test(String(text))) return;
+    frame.setAttribute("data-zms-fallback-used", "1");
+    frame.setAttribute("src", fallback);
+  } catch (_err) {
+    // Some frame principals cannot be inspected; rootURI remains the primary stable URL.
+  }
 }
 
 function showAlert(message) {

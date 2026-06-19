@@ -78,13 +78,25 @@ var ZoteroMarkdownSummaryReader = {
       embedded: "1",
       refresh: String(Date.now())
     });
-    window.location.href = `${ZMS_READER_CHROME_CONTENT_URL}workbench.xhtml?${params.toString()}`;
+    window.location.href = contentSiblingURL("workbench.xhtml", params);
   },
 
   t(key) {
     return readerMessage(key, this.state.uiLanguage);
   }
 };
+
+function contentSiblingURL(fileName, params) {
+  const query = params.toString();
+  try {
+    const href = String(window.location?.href || "");
+    const index = href.indexOf("/content/");
+    if (index >= 0) return `${href.slice(0, index + "/content/".length)}${fileName}?${query}`;
+  } catch (_err) {
+    // Fall back to registered chrome content.
+  }
+  return `${ZMS_READER_CHROME_CONTENT_URL}${fileName}?${query}`;
+}
 
 function renderMarkdown(markdown) {
   if (window.ZMSMarkdownRenderer?.renderMarkdown) {

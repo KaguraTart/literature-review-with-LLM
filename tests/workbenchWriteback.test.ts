@@ -123,7 +123,10 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
           }
         },
         Prefs: {
-          get: (key: string) => prefValues[key.replace(/^extensions\.zoteroMarkdownSummary\./, "")] ?? ""
+          get: (key: string) => prefValues[key.replace(/^extensions\.zoteroMarkdownSummary\./, "")] ?? "",
+          set: (key: string, value: any) => {
+            prefValues[key.replace(/^extensions\.zoteroMarkdownSummary\./, "")] = value;
+          }
         },
         Promise: {
           delay: () => Promise.resolve()
@@ -488,7 +491,7 @@ describe("workbench writeback helpers", () => {
   });
 
   it("adds missing default provider profiles to existing workbench profile lists", () => {
-    const loaded = loadWorkbenchHelpers(new Map(), {}, {
+    const prefs = {
       profilesJson: JSON.stringify([
         {
           id: "openai",
@@ -516,7 +519,8 @@ describe("workbench writeback helpers", () => {
           isDefault: false
         }
       ])
-    });
+    };
+    const loaded = loadWorkbenchHelpers(new Map(), {}, prefs);
     const profiles = loaded.getProfiles();
 
     expect(profiles.find((profile) => profile.id === "openai")).toMatchObject({
@@ -560,6 +564,12 @@ describe("workbench writeback helpers", () => {
       "ask-gemini-claude": { tool: "ask_all_agents", args: { agents: ["gemini", "claude"] } }
     });
     expect(profiles.filter((profile) => profile.isDefault)).toHaveLength(1);
+    const persistedProfiles = JSON.parse(prefs.profilesJson);
+    expect(persistedProfiles.map((profile: any) => profile.id)).toContain("openai-responses-compatible");
+    expect(persistedProfiles.find((profile: any) => profile.id === "openai")).toMatchObject({
+      apiKey: "kept-secret",
+      model: "kept-model"
+    });
   });
 
   it("normalizes damaged workbench provider profiles before use", () => {
