@@ -333,7 +333,7 @@ function anthropicAuthHeaderName(profile: ProviderProfile): "authorization" | "x
   if (explicit) return explicit;
   const id = String(profile?.id || "").toLowerCase();
   const baseURL = String(profile?.baseURL || "").replace(/\/+$/, "");
-  if (id === "deepseek-anthropic" || id === "deepseek_anthropic" || id === "zai-anthropic" || id === "zai_anthropic") return "authorization";
+  if (id === "anthropic-compatible" || id === "anthropic_compatible" || id === "deepseek-anthropic" || id === "deepseek_anthropic" || id === "zai-anthropic" || id === "zai_anthropic") return "authorization";
   if (baseURL === "https://api.deepseek.com/anthropic" || baseURL.startsWith("https://api.deepseek.com/anthropic/")) return "authorization";
   if (baseURL === "https://api.z.ai/api/anthropic" || baseURL.startsWith("https://api.z.ai/api/anthropic/")) return "authorization";
   return "x-api-key";

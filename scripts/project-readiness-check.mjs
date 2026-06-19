@@ -66,6 +66,7 @@ const REQUIRED_PROFILE_IDS = [
   "openai",
   "openai-compatible",
   "anthropic",
+  "anthropic-compatible",
   "gemini",
   "azure-openai",
   "xai",

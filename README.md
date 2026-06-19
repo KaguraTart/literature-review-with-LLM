@@ -12,7 +12,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 - **Paper-first chat inside Zotero**: open a compact workbench from the selected item and keep the conversation anchored to the current paper.
 - **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, and write selected answers back with a preview step.
-- **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible providers, Anthropic, Gemini OpenAI-compatible endpoints, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page.
+- **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page.
 - **Bring-your-own-key**: the plugin is free and open source; remote model providers require your own API keys.
 - **Local agent consultation**: optionally ask local Gemini, Claude, and opencode command-line tools for independent reading suggestions through the local bridge.
 - **Research workflow utilities**: includes skill prompts for deep summary, method extraction, experiment tables, citation checks, and candidate-paper discovery.
@@ -64,7 +64,7 @@ Open `Tools -> Literature Review with LLM Settings`.
 Important fields:
 
 - `默认接口档案`: choose the active provider profile.
-- `Provider`: built-in presets include MiniMax, OpenAI, Anthropic, Gemini OpenAI-compatible, Azure OpenAI, OpenRouter, DeepSeek, DashScope, SiliconFlow, Ollama, LM Studio, Local Agents, and others.
+- `Provider`: built-in presets include MiniMax, OpenAI, Anthropic, Anthropic-compatible, Gemini OpenAI-compatible, Azure OpenAI, OpenRouter, DeepSeek, DashScope, SiliconFlow, Ollama, LM Studio, Local Agents, and others.
 - `Base URL`: provider endpoint root, for example `https://api.openai.com/v1` or `http://127.0.0.1:11434/v1`.
 - `API Key`: provider API key. Local providers such as Ollama may not require one.
 - `Model`: model name used by the selected provider.
@@ -75,7 +75,7 @@ Important fields:
 Provider notes:
 
 - OpenAI-compatible providers use the chat-completions style endpoint.
-- Anthropic profiles use the messages endpoint.
+- Anthropic profiles use the messages endpoint. Use `Anthropic` for the official API key header, and `Anthropic Compatible Messages` for routers that expose Anthropic-style `/v1/messages` with bearer auth.
 - Gemini is currently configured through the OpenAI-compatible endpoint style.
 - MiniMax is the default preset in the current package, but you should still confirm the model and API key in preferences.
 - Local Agents route through a local HTTP bridge instead of directly calling remote model APIs.

@@ -141,6 +141,37 @@ describe("provider smoke verifier", () => {
     }, { responseBody: { content: [{ type: "text", text: "OK anthropic" }] } });
   });
 
+  it("calls an Anthropic-compatible endpoint with bearer auth", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "anthropic-compatible",
+        "--base-url", baseURL,
+        "--api-key", "anthropic-compatible-secret",
+        "--model", "mock-anthropic-compatible",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "anthropic_messages",
+        endpoint: `${baseURL}/v1/messages`,
+        text: "OK anthropic compatible"
+      });
+      expect(requests[0]).toMatchObject({
+        method: "POST",
+        path: "/v1/messages",
+        authorization: "Bearer anthropic-compatible-secret",
+        anthropicVersion: "2023-06-01",
+        body: {
+          model: "mock-anthropic-compatible",
+          max_tokens: 64,
+          stream: false
+        }
+      });
+      expect(requests[0].xApiKey).toBeUndefined();
+    }, { responseBody: { content: [{ type: "text", text: "OK anthropic compatible" }] } });
+  });
+
   it("prints a sanitized dry-run request without calling the endpoint", async () => {
     await withMockProvider(async (baseURL, requests) => {
       const report = await runSmoke([
@@ -211,8 +242,8 @@ describe("provider smoke verifier", () => {
     expect(report).toMatchObject({
       ok: true,
       catalog: true,
-      profileCount: 25,
-      checked: 24,
+      profileCount: 26,
+      checked: 25,
       skipped: 1
     });
     expect(report.results.find((result: any) => result.id === "local-agents")).toMatchObject({
@@ -232,6 +263,13 @@ describe("provider smoke verifier", () => {
       protocol: "anthropic_messages",
       endpoint: "https://api.anthropic.com/v1/messages",
       authHeaderNames: ["x-api-key"],
+      bodyKeys: expect.arrayContaining(["messages", "max_tokens"])
+    });
+    expect(report.results.find((result: any) => result.id === "anthropic-compatible")).toMatchObject({
+      ok: true,
+      protocol: "anthropic_messages",
+      endpoint: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT/v1/messages",
+      authHeaderNames: ["authorization"],
       bodyKeys: expect.arrayContaining(["messages", "max_tokens"])
     });
     expect(report.results.find((result: any) => result.id === "perplexity")).toMatchObject({
@@ -296,16 +334,18 @@ describe("provider smoke verifier", () => {
       live: true,
       counts: {
         passed: 0,
-        skipped: 3,
+        skipped: 4,
         failed: 0
       }
     });
     expect(report.results.map((result: any) => [result.id, result.status])).toEqual([
       ["openai", "skipped"],
       ["anthropic", "skipped"],
+      ["anthropic-compatible", "skipped"],
       ["openai-compatible", "skipped"]
     ]);
-    expect(report.results[2].missing).toContain("OPENAI_COMPATIBLE_BASE_URL");
+    expect(report.results[2].missing).toContain("ANTHROPIC_COMPATIBLE_BASE_URL");
+    expect(report.results[3].missing).toContain("OPENAI_COMPATIBLE_BASE_URL");
   });
 
   it("skips live provider model-list checks without requiring model names", async () => {
@@ -317,13 +357,14 @@ describe("provider smoke verifier", () => {
       models: true,
       counts: {
         passed: 0,
-        skipped: 3,
+        skipped: 4,
         failed: 0
       }
     });
     expect(report.results.map((result: any) => [result.id, result.missing])).toEqual([
       ["openai", ["OPENAI_API_KEY"]],
       ["anthropic", ["ANTHROPIC_API_KEY"]],
+      ["anthropic-compatible", ["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_BASE_URL"]],
       ["openai-compatible", ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"]]
     ]);
   });
@@ -337,6 +378,9 @@ describe("provider smoke verifier", () => {
         ANTHROPIC_API_KEY: "live-anthropic-secret",
         ANTHROPIC_MODEL: "live-anthropic",
         ANTHROPIC_BASE_URL: baseURL,
+        ANTHROPIC_COMPATIBLE_API_KEY: "live-anthropic-compatible-secret",
+        ANTHROPIC_COMPATIBLE_MODEL: "live-anthropic-compatible",
+        ANTHROPIC_COMPATIBLE_BASE_URL: baseURL,
         OPENAI_COMPATIBLE_API_KEY: "live-compatible-secret",
         OPENAI_COMPATIBLE_MODEL: "live-compatible",
         OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`
@@ -346,7 +390,7 @@ describe("provider smoke verifier", () => {
         ok: true,
         live: true,
         counts: {
-          passed: 3,
+          passed: 4,
           skipped: 0,
           failed: 0
         }
@@ -354,18 +398,23 @@ describe("provider smoke verifier", () => {
       expect(report.results.map((result: any) => [result.id, result.report.text])).toEqual([
         ["openai", "OK live responses"],
         ["anthropic", "OK live anthropic"],
+        ["anthropic-compatible", "OK live anthropic"],
         ["openai-compatible", "OK live chat"]
       ]);
       expect(requests.map((request) => request.path)).toEqual([
         "/v1/responses",
         "/v1/messages",
+        "/v1/messages",
         "/v1/chat/completions"
       ]);
       expect(requests[0].authorization).toBe("Bearer live-openai-secret");
       expect(requests[1].xApiKey).toBe("live-anthropic-secret");
-      expect(requests[2].authorization).toBe("Bearer live-compatible-secret");
+      expect(requests[2].authorization).toBe("Bearer live-anthropic-compatible-secret");
+      expect(requests[2].xApiKey).toBeUndefined();
+      expect(requests[3].authorization).toBe("Bearer live-compatible-secret");
       expect(JSON.stringify(report)).not.toContain("live-openai-secret");
       expect(JSON.stringify(report)).not.toContain("live-anthropic-secret");
+      expect(JSON.stringify(report)).not.toContain("live-anthropic-compatible-secret");
       expect(JSON.stringify(report)).not.toContain("live-compatible-secret");
     });
   });
@@ -377,6 +426,8 @@ describe("provider smoke verifier", () => {
         OPENAI_BASE_URL: `${baseURL}/v1`,
         ANTHROPIC_API_KEY: "live-anthropic-models-secret",
         ANTHROPIC_BASE_URL: baseURL,
+        ANTHROPIC_COMPATIBLE_API_KEY: "live-anthropic-compatible-models-secret",
+        ANTHROPIC_COMPATIBLE_BASE_URL: baseURL,
         OPENAI_COMPATIBLE_API_KEY: "live-compatible-models-secret",
         OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`
       }));
@@ -386,7 +437,7 @@ describe("provider smoke verifier", () => {
         live: true,
         models: true,
         counts: {
-          passed: 3,
+          passed: 4,
           skipped: 0,
           failed: 0
         }
@@ -394,18 +445,23 @@ describe("provider smoke verifier", () => {
       expect(report.results.map((result: any) => [result.id, result.report.modelCount])).toEqual([
         ["openai", 2],
         ["anthropic", 2],
+        ["anthropic-compatible", 2],
         ["openai-compatible", 2]
       ]);
       expect(requests.map((request) => request.path)).toEqual([
+        "/v1/models",
         "/v1/models",
         "/v1/models",
         "/v1/models"
       ]);
       expect(requests[0].authorization).toBe("Bearer live-openai-models-secret");
       expect(requests[1].xApiKey).toBe("live-anthropic-models-secret");
-      expect(requests[2].authorization).toBe("Bearer live-compatible-models-secret");
+      expect(requests[2].authorization).toBe("Bearer live-anthropic-compatible-models-secret");
+      expect(requests[2].xApiKey).toBeUndefined();
+      expect(requests[3].authorization).toBe("Bearer live-compatible-models-secret");
       expect(JSON.stringify(report)).not.toContain("live-openai-models-secret");
       expect(JSON.stringify(report)).not.toContain("live-anthropic-models-secret");
+      expect(JSON.stringify(report)).not.toContain("live-anthropic-compatible-models-secret");
       expect(JSON.stringify(report)).not.toContain("live-compatible-models-secret");
     });
   });
@@ -499,6 +555,9 @@ function scrubProviderEnv(overrides: NodeJS.ProcessEnv = {}) {
     ANTHROPIC_API_KEY: "",
     ANTHROPIC_MODEL: "",
     ANTHROPIC_BASE_URL: "",
+    ANTHROPIC_COMPATIBLE_API_KEY: "",
+    ANTHROPIC_COMPATIBLE_MODEL: "",
+    ANTHROPIC_COMPATIBLE_BASE_URL: "",
     OPENAI_COMPATIBLE_API_KEY: "",
     OPENAI_COMPATIBLE_MODEL: "",
     OPENAI_COMPATIBLE_BASE_URL: "",

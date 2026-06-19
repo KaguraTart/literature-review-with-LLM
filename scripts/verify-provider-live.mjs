@@ -24,6 +24,17 @@ const DEFAULT_CASES = [
     requireBaseURL: false
   },
   {
+    id: "anthropic-compatible",
+    label: "Anthropic-compatible Messages",
+    profile: "anthropic-compatible",
+    protocol: "anthropic_messages",
+    apiKeyEnv: "ANTHROPIC_COMPATIBLE_API_KEY",
+    modelEnv: "ANTHROPIC_COMPATIBLE_MODEL",
+    baseURLEnv: "ANTHROPIC_COMPATIBLE_BASE_URL",
+    requireBaseURL: true,
+    allowLocalNoAuth: true
+  },
+  {
     id: "openai-compatible",
     label: "OpenAI-compatible Chat",
     profile: "openai-compatible",
@@ -212,6 +223,7 @@ function redactKnownSecrets(text, env) {
   for (const key of [
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
+    "ANTHROPIC_COMPATIBLE_API_KEY",
     "OPENAI_COMPATIBLE_API_KEY"
   ]) {
     const value = String(env[key] || "");
@@ -271,13 +283,15 @@ function usage() {
     "  OPENAI_API_KEY=... npm run verify:provider:models:live -- --include openai",
     "  ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=... npm run verify:provider:live -- --include anthropic",
     "  ANTHROPIC_API_KEY=... npm run verify:provider:models:live -- --include anthropic",
+    "  ANTHROPIC_COMPATIBLE_API_KEY=... ANTHROPIC_COMPATIBLE_MODEL=... ANTHROPIC_COMPATIBLE_BASE_URL=... npm run verify:provider:live -- --include anthropic-compatible",
+    "  ANTHROPIC_COMPATIBLE_API_KEY=... ANTHROPIC_COMPATIBLE_BASE_URL=... npm run verify:provider:models:live -- --include anthropic-compatible",
     "  OPENAI_COMPATIBLE_API_KEY=... OPENAI_COMPATIBLE_MODEL=... OPENAI_COMPATIBLE_BASE_URL=... npm run verify:provider:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_API_KEY=... OPENAI_COMPATIBLE_BASE_URL=... npm run verify:provider:models:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_MODEL=... OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:models:live -- --include openai-compatible",
     "",
     "Options:",
-    "  --include LIST           Comma-separated cases: openai, anthropic, openai-compatible",
+    "  --include LIST           Comma-separated cases: openai, anthropic, anthropic-compatible, openai-compatible",
     "  --prompt TEXT            Override the smoke prompt",
     "  --context TEXT           Override the smoke context",
     "  --timeout-ms NUMBER      Per-provider timeout",

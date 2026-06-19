@@ -538,6 +538,7 @@ describe("workbench writeback helpers", () => {
       "kimi",
       "perplexity",
       "deepseek",
+      "anthropic-compatible",
       "zai-anthropic",
       "zhipu",
       "volcengine",
@@ -918,6 +919,13 @@ describe("workbench writeback helpers", () => {
       apiKey: "sk-test-secret",
       customHeaders: { Authorization: "Bearer routed-secret" }
     })).not.toHaveProperty("x-api-key");
+    expect(helpers.headersForProfile({
+      id: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      baseURL: "https://anthropic-router.example",
+      apiKey: "anthropic-compatible-secret",
+      customHeaders: {}
+    })).toMatchObject({ authorization: "Bearer anthropic-compatible-secret", "anthropic-version": "2023-06-01" });
     expect(helpers.headersForProfile({
       id: "deepseek-anthropic",
       protocol: "anthropic_messages",

@@ -109,6 +109,7 @@ const REQUIRED_MARKERS = [
   ["prefs.js", "\"id\":\"perplexity\"", "default Perplexity profile"],
   ["prefs.js", "\"baseURL\":\"https://api.perplexity.ai\"", "Perplexity OpenAI-compatible base URL"],
   ["prefs.js", "\"id\":\"deepseek\"", "default DeepSeek profile"],
+  ["prefs.js", "\"id\":\"anthropic-compatible\"", "default Anthropic-compatible profile"],
   ["prefs.js", "\"id\":\"deepseek-anthropic\"", "default DeepSeek Anthropic profile"],
   ["prefs.js", "\"id\":\"zai-anthropic\"", "default Z.AI Anthropic profile"],
   ["prefs.js", "\"id\":\"openrouter\"", "default OpenRouter profile"],

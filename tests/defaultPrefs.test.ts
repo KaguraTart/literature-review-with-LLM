@@ -16,6 +16,7 @@ describe("default provider profiles", () => {
       "openai",
       "openai-compatible",
       "anthropic",
+      "anthropic-compatible",
       "gemini",
       "azure-openai",
       "xai",
@@ -59,6 +60,13 @@ describe("default provider profiles", () => {
       endpointMode: "base_url",
       baseURL: "https://api.anthropic.com",
       capabilities: { pdfBase64: true, streaming: true }
+    });
+    expect(profiles.find((profile: any) => profile.id === "anthropic-compatible")).toMatchObject({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT",
+      capabilities: { pdfBase64: false, streaming: true, modelList: true },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     });
     expect(profiles.find((profile: any) => profile.id === "gemini")).toMatchObject({
       protocol: "openai_chat",

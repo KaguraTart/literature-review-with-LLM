@@ -39,6 +39,9 @@ function settingsProviderDefaults(provider) {
   if (id === "anthropic") {
     return { ...common, protocol: "anthropic_messages", baseURL: "https://api.anthropic.com", capabilities: { ...commonCapabilities, pdfBase64: true } };
   }
+  if (id === "anthropic_compatible" || id === "anthropic-compatible") {
+    return { ...common, protocol: "anthropic_messages", baseURL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT", capabilities: commonCapabilities, bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false } };
+  }
   if (id === "azure_openai" || id === "azure-openai") {
     return { ...common, protocol: "openai_responses", baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1", capabilities: { ...commonCapabilities, pdfBase64: true } };
   }
@@ -129,8 +132,9 @@ function settingsProviderDefaults(provider) {
 function settingsProviderFromProfile(profile) {
   if (profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent) return "local-agents";
   const id = String(profile?.id || "").trim();
-  if (["minimax", "openai", "anthropic", "openai-compatible", "openai_compatible", "gemini", "azure-openai", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "moonshot", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "zai-anthropic", "zai_anthropic", "z_ai_anthropic", "z-ai-anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "glm", "bigmodel", "volcengine", "ark", "doubao", "qianfan", "baidu", "hunyuan", "tencent", "ollama", "lm-studio", "lm_studio"].includes(id)) {
+  if (["minimax", "openai", "anthropic", "anthropic-compatible", "anthropic_compatible", "openai-compatible", "openai_compatible", "gemini", "azure-openai", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "moonshot", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "zai-anthropic", "zai_anthropic", "z_ai_anthropic", "z-ai-anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "glm", "bigmodel", "volcengine", "ark", "doubao", "qianfan", "baidu", "hunyuan", "tencent", "ollama", "lm-studio", "lm_studio"].includes(id)) {
     if (id === "azure-openai") return "azure_openai";
+    if (id === "anthropic-compatible") return "anthropic_compatible";
     if (id === "moonshot") return "kimi";
     if (id === "glm" || id === "bigmodel") return "zhipu";
     if (id === "ark" || id === "doubao") return "volcengine";

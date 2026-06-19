@@ -291,6 +291,14 @@ describe("provider adapters", () => {
     })).not.toHaveProperty("x-api-key");
     expect(headersFor({
       ...profile,
+      id: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      baseURL: "https://anthropic-router.example",
+      apiKey: "anthropic-compatible-secret",
+      customHeaders: {}
+    })).toMatchObject({ authorization: "Bearer anthropic-compatible-secret", "anthropic-version": "2023-06-01" });
+    expect(headersFor({
+      ...profile,
       id: "deepseek-anthropic",
       protocol: "anthropic_messages",
       baseURL: "https://api.deepseek.com/anthropic",

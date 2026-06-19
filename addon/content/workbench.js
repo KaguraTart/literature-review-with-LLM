@@ -1388,7 +1388,7 @@ function hydrateProfile(profile) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "anthropic", "gemini", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return ["minimax", "openai", "openai_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = workbenchProviderDefaults(provider);
     return {
       id: defaults.id,
@@ -1434,6 +1434,7 @@ function normalizeDefaultProfileSelection(profiles) {
 function providerProfileCatalogKey(profile) {
   const id = String(profile?.id || "").trim();
   if (id === "openai_compatible") return "openai-compatible";
+  if (id === "anthropic_compatible") return "anthropic-compatible";
   if (id === "azure_openai") return "azure-openai";
   if (id === "moonshot") return "kimi";
   if (id === "deepseek_anthropic") return "deepseek-anthropic";
@@ -1514,6 +1515,9 @@ function workbenchProviderDefaults(provider) {
   if (id === "anthropic") {
     return { id: "anthropic", name: "Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.anthropic.com", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, bodyExtra: {} };
   }
+  if (id === "anthropic_compatible" || id === "anthropic-compatible") {
+    return { id: "anthropic-compatible", name: "Anthropic Compatible Messages", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT", model: "", capabilities: commonCapabilities, bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false } };
+  }
   if (id === "minimax") {
     return { id: "minimax", name: "MiniMax", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.minimaxi.com/v1", model: "MiniMax-M2.7", capabilities: commonCapabilities, bodyExtra: { extra_body: { reasoning_split: true } } };
   }
@@ -1588,6 +1592,7 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   const id = String(profile?.id || fallbackProvider || "").trim();
   if (id === "moonshot") return "kimi";
   if (id === "zai-anthropic" || id === "zai_anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") return "zai_anthropic";
+  if (id === "anthropic-compatible" || id === "anthropic_compatible") return "anthropic_compatible";
   if (["xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "gemini"].includes(id)) return id;
   if (id === "glm" || id === "bigmodel") return "zhipu";
   if (id === "ark" || id === "doubao") return "volcengine";
@@ -3165,7 +3170,7 @@ function anthropicAuthHeaderName(profile) {
   if (explicit) return explicit;
   const id = String(profile?.id || "").toLowerCase();
   const baseURL = String(profile?.baseURL || "").replace(/\/+$/, "");
-  if (id === "deepseek-anthropic" || id === "deepseek_anthropic" || id === "zai-anthropic" || id === "zai_anthropic") return "authorization";
+  if (id === "anthropic-compatible" || id === "anthropic_compatible" || id === "deepseek-anthropic" || id === "deepseek_anthropic" || id === "zai-anthropic" || id === "zai_anthropic") return "authorization";
   if (baseURL === "https://api.deepseek.com/anthropic" || baseURL.startsWith("https://api.deepseek.com/anthropic/")) return "authorization";
   if (baseURL === "https://api.z.ai/api/anthropic" || baseURL.startsWith("https://api.z.ai/api/anthropic/")) return "authorization";
   return "x-api-key";

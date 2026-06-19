@@ -440,6 +440,14 @@ describe("preferences local-agent config helpers", () => {
       customHeaders: { Authorization: "Bearer routed-secret" }
     })).not.toHaveProperty("x-api-key");
     expect(helpers.headersForProfile({
+      id: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://anthropic-router.example",
+      apiKey: "anthropic-compatible-secret",
+      customHeaders: {}
+    })).toMatchObject({ authorization: "Bearer anthropic-compatible-secret", "anthropic-version": "2023-06-01" });
+    expect(helpers.headersForProfile({
       id: "deepseek-anthropic",
       protocol: "anthropic_messages",
       endpointMode: "base_url",
@@ -670,6 +678,13 @@ describe("preferences local-agent config helpers", () => {
       protocol: "anthropic_messages",
       capabilities: { streaming: true, pdfBase64: true }
     });
+    expect(helpers.providerDefaults("anthropic_compatible")).toMatchObject({
+      id: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      baseURL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT",
+      capabilities: { streaming: true, pdfBase64: false, modelList: true },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    });
     expect(helpers.providerDefaults("xai")).toMatchObject({
       id: "xai",
       protocol: "openai_chat",
@@ -801,6 +816,7 @@ describe("preferences local-agent config helpers", () => {
       "openai",
       "openai-compatible",
       "anthropic",
+      "anthropic-compatible",
       "gemini",
       "azure-openai",
       "xai",
@@ -840,6 +856,12 @@ describe("preferences local-agent config helpers", () => {
       protocol: "anthropic_messages",
       endpointMode: "base_url",
       baseURL: "https://api.anthropic.com"
+    });
+    expect(profiles.find((profile) => profile.id === "anthropic-compatible")).toMatchObject({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT",
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     });
     expect(profiles.find((profile) => profile.id === "gemini")).toMatchObject({
       protocol: "openai_chat",
@@ -1268,6 +1290,7 @@ describe("preferences local-agent config helpers", () => {
       "openai",
       "openai-compatible",
       "anthropic",
+      "anthropic-compatible",
       "gemini",
       "azure-openai",
       "xai",
@@ -1299,6 +1322,7 @@ describe("preferences local-agent config helpers", () => {
       "openai",
       "openai-compatible",
       "anthropic",
+      "anthropic-compatible",
       "gemini",
       "azure-openai",
       "xai",

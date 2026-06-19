@@ -744,7 +744,7 @@ function anthropicAuthHeaderName(profile) {
   if (explicit) return explicit;
   const id = String(profile?.id || "").toLowerCase();
   const baseURL = String(profile?.baseURL || "").replace(/\/+$/, "");
-  if (id === "deepseek-anthropic" || id === "deepseek_anthropic" || id === "zai-anthropic" || id === "zai_anthropic") return "authorization";
+  if (id === "anthropic-compatible" || id === "anthropic_compatible" || id === "deepseek-anthropic" || id === "deepseek_anthropic" || id === "zai-anthropic" || id === "zai_anthropic") return "authorization";
   if (baseURL === "https://api.deepseek.com/anthropic" || baseURL.startsWith("https://api.deepseek.com/anthropic/")) return "authorization";
   if (baseURL === "https://api.z.ai/api/anthropic" || baseURL.startsWith("https://api.z.ai/api/anthropic/")) return "authorization";
   return "x-api-key";
@@ -1386,6 +1386,19 @@ function providerDefaults(provider) {
       bodyExtra: {}
     };
   }
+  if (id === "anthropic_compatible" || id === "anthropic-compatible") {
+    return {
+      id: "anthropic-compatible",
+      name: "Anthropic Compatible Messages",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT",
+      fullURL: "",
+      model: "",
+      capabilities: { ...commonCapabilities, pdfBase64: false },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    };
+  }
   if (id === "openai") {
     return {
       id: "openai",
@@ -1712,7 +1725,7 @@ function providerDefaults(provider) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "anthropic", "gemini", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return ["minimax", "openai", "openai_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = providerDefaults(provider);
     return {
       id: defaults.id,
@@ -1758,6 +1771,7 @@ function normalizeDefaultProfileSelection(profiles) {
 function providerProfileCatalogKey(profile) {
   const id = String(profile?.id || "").trim();
   if (id === "openai_compatible") return "openai-compatible";
+  if (id === "anthropic_compatible") return "anthropic-compatible";
   if (id === "azure_openai") return "azure-openai";
   if (id === "moonshot") return "kimi";
   if (id === "deepseek_anthropic") return "deepseek-anthropic";
@@ -1778,6 +1792,7 @@ function isKnownProviderId(value) {
     "openai-compatible",
     "openai_compatible",
     "anthropic",
+    "anthropic-compatible",
     "gemini",
     "azure-openai",
     "azure_openai",
@@ -1973,6 +1988,7 @@ function providerFromProfile(profile) {
   if (id === "gemini") return "gemini";
   if (id === "azure-openai" || id === "azure_openai") return "azure_openai";
   if (id === "openai-compatible" || id === "openai_compatible") return "openai_compatible";
+  if (id === "anthropic-compatible" || id === "anthropic_compatible") return "anthropic_compatible";
   if (id === "moonshot") return "kimi";
   if (id === "xai" || id === "groq" || id === "mistral" || id === "together" || id === "kimi" || id === "perplexity" || id === "deepseek" || id === "openrouter" || id === "dashscope" || id === "qwen" || id === "siliconflow" || id === "zhipu" || id === "volcengine" || id === "qianfan" || id === "hunyuan" || id === "ollama") return id;
   if (id === "glm" || id === "bigmodel") return "zhipu";
