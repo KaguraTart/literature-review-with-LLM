@@ -4,14 +4,14 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 [中文说明](README.zh-CN.md)
 
-> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, single-paper reading-log export, first-pass multi-paper comparison with a reusable Markdown literature-matrix report, collection topic-cluster workspace, and configurable bounded citation-network expansion are in place; cross-collection synthesis and richer cross-paper analysis are still planned.
+> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, single-paper reading-log export, formal review-draft export, first-pass multi-paper comparison with a reusable Markdown literature-matrix report, collection topic-cluster workspace, and configurable bounded citation-network expansion are in place; cross-collection synthesis and richer cross-paper analysis are still planned.
 
 ![Zotero paper chat workbench](docs/assets/workbench-chat.png)
 
 ## Highlights
 
 - **Paper-first chat inside Zotero**: open a compact workbench from the selected item and keep the conversation anchored to the current paper.
-- **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, export evidence-labeled paper reading logs, and write selected answers back with a preview step.
+- **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, export evidence-labeled paper reading logs and formal review drafts, and write selected answers back with a preview step.
 - **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page.
 - **Multi-paper comparison and literature matrix**: when multiple Zotero items are selected, the first item becomes the focal paper and the rest become comparison context; the workbench can export an evidence-labeled Markdown literature matrix, and the built-in `Literature Matrix` skill can continue the analysis with an LLM.
 - **Collection synthesis workspace**: collection batch runs write `papers.json`, paper-note indexes, method matrices, research-gap matrices, heuristic topic clusters, research-question cards, idea lists, and a manual review draft scaffold.
@@ -31,6 +31,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - Ask image-based questions by pasting screenshots, dropping images, or selecting local image files in the workbench; image-only sends use a default image-analysis prompt.
 - Write selected answers back into the Markdown summary with a preview step and backup file.
 - Export a structured paper reading log with context-quality diagnostics, reading checklist, evidence snippets, and reuse-plan fields.
+- Export a formal review-draft scaffold with positioning notes, taxonomy tables, evidence-backed draft sections, risk checks, and an evidence index.
 - Configure multiple model providers from Zotero preferences.
 - Generate collection workspace artifacts during collection batch runs, including method matrices, topic clusters, gap matrices, and review-draft scaffolds.
 - Use built-in skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation audit, and local-agent review.
@@ -136,7 +137,7 @@ The workbench is designed as a compact paper chat surface:
 - Message area: rendered Markdown answers with raw Markdown copy support.
 - Composer: ask questions about the selected paper.
 - Image attachments: paste screenshots, drop images, or select local image files; requests are sent in the active provider protocol's image format. Image-only sends are converted into a default analysis request.
-- Settings drawer: model, consultation mode, paper metadata, session tools, reading-log export, and candidate-paper utilities.
+- Settings drawer: model, consultation mode, paper metadata, session tools, reading-log/review-draft export, and candidate-paper utilities.
 
 Typical questions:
 
@@ -195,7 +196,7 @@ build/update.json
 - Multi-paper comparison is available as a first-pass workbench workflow, with up to 5 comparison papers by default and a reusable Markdown literature-matrix export. Collection batch runs now generate heuristic topic clusters and synthesis matrices, but the clustering is deterministic and should be reviewed before final writing.
 - Single-turn image attachments and the `Figure/Table Extractor` skill are supported, but chart, table, and handwritten-note understanding still depends on the selected model. Local OCR and chart-data reconstruction are not implemented yet.
 - Formula rendering is lightweight. It supports common inline/display math patterns, but it is not a full TeX engine.
-- Paper reading logs are structured Markdown scaffolds with evidence excerpts and manual fields; they are not yet a polished long-form review report.
+- Paper reading logs and formal review drafts are structured Markdown scaffolds with evidence excerpts and manual fields; they still need human editing before becoming polished long-form review reports.
 - Candidate-paper search now has explainable ranking, duplicate reconciliation, configurable bounded citation-network expansion, and a Markdown candidate-review report, but richer review workflows still need more work.
 - The workbench UI is still being refined; some controls and settings are intentionally compact but may need more usability work.
 - Raw PDF input depends on provider capability. Many providers still use extracted Zotero text instead.
@@ -209,7 +210,7 @@ build/update.json
 - Improve structured extraction quality for screenshots, PDF figures, tables, and experimental results with local OCR/table reconstruction.
 - Add richer candidate-paper review workflows after the current configurable citation-network policies.
 - Add per-provider setup guides with screenshots.
-- Add more export templates for thesis notes and formal review reports beyond the current candidate-review, literature-matrix, and paper-reading-log reports.
+- Add more export templates for thesis notes, proposal notes, and polished journal/report formats beyond the current candidate-review, literature-matrix, paper-reading-log, and formal-review-draft reports.
 
 ## Security and Privacy
 

@@ -323,6 +323,19 @@ const SOURCE_MARKERS = [
     ]
   },
   {
+    id: "review-draft.report",
+    description: "Workbench exports a reusable formal review draft with evidence labels, taxonomy sections, and writing checks",
+    files: ["addon/content/workbench.xhtml", "addon/content/workbench.js", "addon/content/messages.js", "tests/workbenchWriteback.test.ts"],
+    markers: [
+      "zms-export-review-draft",
+      "exportReviewDraft",
+      "renderReviewDraftMarkdown",
+      "reviewDraftMarkdownPath",
+      "templateVersion: formal-review-draft-v1",
+      "reviewDraftDone"
+    ]
+  },
+  {
     id: "collection.workspace",
     description: "Collection workspace artifacts, topic clustering, and summary insight extraction are wired",
     files: ["addon/bootstrap.js"],

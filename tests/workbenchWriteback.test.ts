@@ -207,6 +207,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     candidateStatusText: (records: any[], path: string, translate?: (key: string) => string) => string;
     candidateReviewMarkdownPath: (outputDir: string, item: any) => string;
     renderCandidateReviewMarkdown: (records: any[], options?: any) => string;
+    reviewDraftMarkdownPath: (outputDir: string, item: any) => string;
+    renderReviewDraftMarkdown: (context: any, options?: any) => string;
     applyCitationNetworkPolicyToDom: (policy: string) => void;
     citationNetworkOptionsFromDom: () => any;
     citationNetworkPolicyDefaults: (policy: string) => any;
@@ -237,6 +239,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
       saveSession: () => Promise<void>;
       exportReadingLog: () => Promise<void>;
       exportComparisonReport: () => Promise<void>;
+      exportReviewDraft: () => Promise<void>;
       searchCandidates: () => Promise<void>;
       t: (key: string) => string;
       sessionDir: () => string;
@@ -1586,6 +1589,127 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("Comparison Paper");
     expect(files.get(reportPath)).toContain("[paper2:summary-compare source=summary locator=summary:1 hash=comparehash]");
     expect(dom.elements.get("zms-status").textContent).toContain(`comparisonReportDone: ${reportPath}`);
+  });
+
+  it("renders a formal review draft with evidence-backed writing sections", () => {
+    const loaded = loadWorkbenchHelpers();
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const item = {
+      key: "FOC",
+      getCollections: () => [10]
+    };
+    const draft = loaded.renderReviewDraftMarkdown({
+      metadata: {
+        title: "Focal Review Paper",
+        authors: ["Ada One"],
+        year: "2026",
+        doi: "10.1000/focal"
+      },
+      chunks: [
+        {
+          chunkId: "focal-method",
+          sourceType: "summary",
+          locator: "summary:1",
+          sourceHash: "focalhash",
+          text: "The method taxonomy separates graph attention models from optimization baselines."
+        },
+        {
+          chunkId: "focal-limit",
+          sourceType: "note",
+          locator: "note:1",
+          sourceHash: "limithash",
+          text: "Limitations include missing ablations and weak evidence for sparse scenarios."
+        }
+      ],
+      diagnostics: { chunkCount: 2, fulltextChars: 1200, annotationCount: 0, noteCount: 1 },
+      comparisonContexts: [
+        {
+          itemKey: "CMP",
+          metadata: { title: "Comparison Evidence Paper", authors: ["Bo Two"], year: "2025", doi: "" },
+          chunks: [
+            {
+              chunkId: "compare-results",
+              sourceType: "summary",
+              locator: "summary:1",
+              sourceHash: "comparehash",
+              text: "The comparison paper reports dataset metrics and a stronger experiment setup."
+            }
+          ],
+          diagnostics: { chunkCount: 1, fulltextChars: 800, annotationCount: 0, noteCount: 0 }
+        }
+      ]
+    }, {
+      item,
+      outputLanguage: "zh-CN",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      draftPath: "/tmp/out/collections/COL/writing/review-draft-FOC.md",
+      contextSourceHash: "sourcehash"
+    });
+
+    expect(draft).toContain("templateVersion: formal-review-draft-v1");
+    expect(draft).toContain("# 正式综述草稿");
+    expect(draft).toContain("## 写作定位");
+    expect(draft).toContain("## 方法分类与证据矩阵");
+    expect(draft).toContain("## 证据综合草稿");
+    expect(draft).toContain("### 方法谱系");
+    expect(draft).toContain("[chunk:focal-method source=summary locator=summary:1 hash=focalhash]");
+    expect(draft).toContain("[paper2:compare-results source=summary locator=summary:1 hash=comparehash]");
+    expect(draft).toContain("## 风险与核查点");
+    expect(draft).toContain("## 证据摘录索引");
+  });
+
+  it("exports a formal review draft from the workbench context", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "FOC",
+      getCollections: () => [10]
+    };
+    workbench.state.contextSourceHash = "sourcehash";
+    workbench.state.context = {
+      metadata: { title: "Focal Review Paper", authors: ["Ada One"], year: "2026", doi: "10.1000/focal" },
+      chunks: [
+        {
+          chunkId: "focal-method",
+          sourceType: "summary",
+          locator: "summary:1",
+          sourceHash: "focalhash",
+          text: "The focal paper defines the research question and method taxonomy."
+        }
+      ],
+      diagnostics: { chunkCount: 1, fulltextChars: 900, annotationCount: 0, noteCount: 0 },
+      comparisonContexts: [
+        {
+          itemKey: "CMP",
+          metadata: { title: "Comparison Evidence Paper", authors: ["Bo Two"], year: "2025", doi: "" },
+          chunks: [
+            {
+              chunkId: "compare-results",
+              sourceType: "summary",
+              locator: "summary:1",
+              sourceHash: "comparehash",
+              text: "The comparison paper reports experiment metrics and limitations."
+            }
+          ],
+          diagnostics: { chunkCount: 1, fulltextChars: 1000, annotationCount: 0, noteCount: 0 }
+        }
+      ]
+    };
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportReviewDraft();
+
+    const draftPath = "/tmp/out/collections/COL/writing/review-draft-FOC.md";
+    expect(files.get(draftPath)).toContain("# Formal Review Draft");
+    expect(files.get(draftPath)).toContain("Focal Review Paper");
+    expect(files.get(draftPath)).toContain("[paper2:compare-results source=summary locator=summary:1 hash=comparehash]");
+    expect(dom.elements.get("zms-status").textContent).toContain(`reviewDraftDone: ${draftPath}`);
   });
 
   it("chooses citation-network seeds from the current item and high-value candidates", () => {

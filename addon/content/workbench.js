@@ -139,6 +139,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-save-session": () => this.saveSession({ quiet: false }),
       "zms-export-reading-log": () => this.exportReadingLog(),
       "zms-export-comparison-report": () => this.exportComparisonReport(),
+      "zms-export-review-draft": () => this.exportReviewDraft(),
       "zms-search-candidates": () => this.searchCandidates(),
       "zms-expand-citation-network": () => this.expandCandidateCitationNetwork(),
       "zms-load-candidates": () => this.loadCandidates(),
@@ -430,6 +431,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-save-session", this.t("saveSession"));
     setText("zms-export-reading-log", this.t("exportReadingLog"));
     setText("zms-export-comparison-report", this.t("exportComparisonReport"));
+    setText("zms-export-review-draft", this.t("exportReviewDraft"));
     setText("zms-open-reader", this.t("openReader"));
     setText("zms-writeback-title", this.t("writePreview"));
     setText("zms-write-action-label", this.t("action"));
@@ -1384,6 +1386,30 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.setStatus(`${this.t("readingLogDone")}: ${logPath}`);
     } catch (err) {
       this.setStatus(`${this.t("readingLogFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async exportReviewDraft() {
+    try {
+      const now = new Date().toISOString();
+      const draftPath = reviewDraftMarkdownPath(this.state.outputDir, this.state.item);
+      const reviewContext = {
+        ...(this.state.context || {}),
+        comparisonContexts: Array.isArray(this.state.context?.comparisonContexts)
+          ? this.state.context.comparisonContexts
+          : this.state.comparisonContexts || []
+      };
+      this.setStatus(this.t("reviewDraftExporting"));
+      await writeTextAtomic(draftPath, renderReviewDraftMarkdown(reviewContext, {
+        item: this.state.item,
+        outputLanguage: this.state.outputLanguage,
+        generatedAt: now,
+        draftPath,
+        contextSourceHash: this.state.contextSourceHash
+      }), `${draftPath}.${Date.now()}.tmp`);
+      this.setStatus(`${this.t("reviewDraftDone")}: ${draftPath}`);
+    } catch (err) {
+      this.setStatus(`${this.t("reviewDraftFailed")}: ${safeError(err)}`);
     }
   },
 
@@ -3546,6 +3572,289 @@ function comparisonReportLabels(outputLanguage) {
   };
 }
 
+function renderReviewDraftMarkdown(context, options = {}) {
+  const labels = reviewDraftLabels(options.outputLanguage);
+  const generatedAt = options.generatedAt || new Date().toISOString();
+  const focal = {
+    role: labels.focal,
+    evidencePrefix: "chunk",
+    itemKey: options.item?.key || "",
+    metadata: context?.metadata || {},
+    chunks: context?.chunks || [],
+    diagnostics: context?.diagnostics || {}
+  };
+  const comparisons = (context?.comparisonContexts || []).map((entry, index) => ({
+    role: `${labels.comparison} ${index + 1}`,
+    evidencePrefix: `paper${index + 2}`,
+    itemKey: entry.itemKey || "",
+    metadata: entry.metadata || {},
+    chunks: entry.chunks || [],
+    diagnostics: entry.diagnostics || {}
+  }));
+  const papers = [focal, ...comparisons];
+  const collectionKey = workbenchCollectionKey(options.item);
+  const sections = reviewDraftSections(labels);
+  const lines = [
+    "---",
+    "templateVersion: formal-review-draft-v1",
+    `generatedAt: ${generatedAt}`,
+    `collectionKey: ${yamlScalar(collectionKey)}`,
+    `focalItemKey: ${yamlScalar(focal.itemKey)}`,
+    `comparisonCount: ${comparisons.length}`,
+    `contextSourceHash: ${yamlScalar(options.contextSourceHash || "")}`,
+    `draftPath: ${yamlScalar(options.draftPath || "")}`,
+    "---",
+    "",
+    `# ${labels.title}`,
+    "",
+    `- ${labels.focalPaper}: ${mdText(focal.metadata.title || focal.itemKey || "")}`,
+    `- ${labels.comparisonCount}: ${comparisons.length}`,
+    `- ${labels.generatedAt}: ${generatedAt}`,
+    `- ${labels.draftFile}: ${mdText(options.draftPath || "")}`,
+    "",
+    `## ${labels.positioning}`,
+    "",
+    `- ${labels.reviewTopic}: `,
+    `- ${labels.targetQuestion}: `,
+    `- ${labels.scopeBoundary}: `,
+    `- ${labels.inclusionRule}: `,
+    `- ${labels.mainClaim}: `,
+    "",
+    `## ${labels.paperInventory}`,
+    "",
+    `| ${labels.role} | ${labels.evidence} | ${labels.paperTitle} | ${labels.authors} | ${labels.year} | DOI | ${labels.contextQuality} |`,
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    ...papers.map((entry) => comparisonInventoryRow(entry, labels)),
+    "",
+    `## ${labels.argumentSpine}`,
+    "",
+    `- [ ] ${labels.spineBackground}`,
+    `- [ ] ${labels.spineTaxonomy}`,
+    `- [ ] ${labels.spineEvidence}`,
+    `- [ ] ${labels.spineGap}`,
+    `- [ ] ${labels.spineBridge}`,
+    "",
+    `## ${labels.taxonomy}`,
+    "",
+    `| ${labels.dimension} | ${labels.evidenceExcerpts} | ${labels.draftNote} |`,
+    "| --- | --- | --- |"
+  ];
+  for (const section of sections) {
+    const evidence = reviewDraftEvidenceAcrossPapers(papers, section, labels, 2);
+    lines.push([
+      section.label,
+      evidence.length ? evidence.map((item) => `${item.label} ${truncateText(item.text, 220)}`).join("<br>") : labels.noEvidence,
+      labels.manualPlaceholder
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+  }
+  lines.push(
+    "",
+    `## ${labels.synthesis}`,
+    ""
+  );
+  for (const section of sections) {
+    const evidence = reviewDraftEvidenceAcrossPapers(papers, section, labels, 3);
+    lines.push(
+      `### ${section.label}`,
+      "",
+      `- ${labels.keyEvidence}: ${evidence.length ? evidence.map((item) => `${item.label} ${truncateText(item.text, 240)}`).join("<br>") : labels.noEvidence}`,
+      `- ${labels.draftParagraph}: `,
+      `- ${labels.confidenceAndGaps}: `,
+      ""
+    );
+  }
+  lines.push(
+    `## ${labels.risks}`,
+    "",
+    `- [ ] ${labels.riskEvidence}`,
+    `- [ ] ${labels.riskComparability}`,
+    `- [ ] ${labels.riskMissingPapers}`,
+    `- [ ] ${labels.riskTerminology}`,
+    "",
+    `## ${labels.writingPlan}`,
+    "",
+    `- ${labels.sectionPlan}: `,
+    `- ${labels.transitionPlan}: `,
+    `- ${labels.figureTablePlan}: `,
+    `- ${labels.followUpSearch}: `,
+    "",
+    `## ${labels.evidenceIndex}`,
+    ""
+  );
+  for (const paper of papers) {
+    lines.push(`### ${paper.role}: ${mdText(paper.metadata.title || paper.itemKey || "")}`, "");
+    const evidence = comparisonEvidenceForContext(paper, reviewDraftOverviewDimension(labels), labels, 6);
+    if (evidence.length) {
+      for (const item of evidence) lines.push(`- ${item.label} ${truncateText(item.text, 360)}`);
+    } else {
+      lines.push(`- ${comparisonMetadataLabel(paper)} ${labels.metadataOnly}`);
+    }
+    lines.push("");
+  }
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+function reviewDraftEvidenceAcrossPapers(papers, section, labels, limitPerPaper = 2) {
+  const evidence = [];
+  for (const paper of papers || []) {
+    const selected = comparisonEvidenceForContext(paper, section, labels, limitPerPaper);
+    evidence.push(...selected.map((item) => ({
+      ...item,
+      role: paper.role
+    })));
+  }
+  return evidence;
+}
+
+function reviewDraftSections(labels) {
+  return [
+    { id: "background", label: labels.background, query: "background motivation problem gap challenge 背景 动机 问题 空白 挑战" },
+    { id: "methodTaxonomy", label: labels.methodTaxonomy, query: "method model algorithm taxonomy framework category 方法 模型 算法 分类 框架" },
+    { id: "dataEvidence", label: labels.dataEvidence, query: "experiment data dataset metric evaluation result evidence 实验 数据 指标 评估 结果 证据" },
+    { id: "findings", label: labels.findings, query: "finding conclusion contribution insight result 发现 结论 贡献 启发 结果" },
+    { id: "limitations", label: labels.limitations, query: "limitation weakness failure threat validity future 局限 不足 失败 威胁 有效性 未来" },
+    { id: "futureWork", label: labels.futureWork, query: "future work open question research agenda next step 未来 开放问题 后续 研究议程" }
+  ];
+}
+
+function reviewDraftOverviewDimension(labels) {
+  return {
+    id: "overview",
+    label: labels.evidenceIndex,
+    query: "summary abstract method experiment result limitation contribution review 摘要 方法 实验 结果 局限 贡献 综述"
+  };
+}
+
+function reviewDraftLabels(outputLanguage) {
+  const zh = /^zh/i.test(String(outputLanguage || ""));
+  if (zh) {
+    return {
+      title: "正式综述草稿",
+      focal: "焦点论文",
+      comparison: "对比论文",
+      focalPaper: "焦点论文",
+      comparisonCount: "对比论文数",
+      generatedAt: "生成时间",
+      draftFile: "草稿文件",
+      positioning: "写作定位",
+      reviewTopic: "综述主题",
+      targetQuestion: "核心问题",
+      scopeBoundary: "范围边界",
+      inclusionRule: "纳入规则",
+      mainClaim: "拟写主线",
+      paperInventory: "论文清单",
+      role: "角色",
+      evidence: "证据标签",
+      paperTitle: "题名",
+      authors: "作者",
+      year: "年份",
+      contextQuality: "上下文质量",
+      argumentSpine: "论证骨架",
+      spineBackground: "用一段话说明领域背景和问题压力。",
+      spineTaxonomy: "给出方法分类或研究脉络。",
+      spineEvidence: "用证据标签支撑关键判断。",
+      spineGap: "指出现有方法的局限和证据缺口。",
+      spineBridge: "衔接到下一步研究或实验设计。",
+      taxonomy: "方法分类与证据矩阵",
+      dimension: "维度",
+      evidenceExcerpts: "证据摘录",
+      draftNote: "草稿要点",
+      manualPlaceholder: "补充段落判断、置信度和可写位置",
+      synthesis: "证据综合草稿",
+      keyEvidence: "关键证据",
+      draftParagraph: "草稿段落",
+      confidenceAndGaps: "置信度与缺口",
+      risks: "风险与核查点",
+      riskEvidence: "检查是否存在无证据支撑的概括。",
+      riskComparability: "确认不同论文的数据、场景和指标是否可比较。",
+      riskMissingPapers: "记录仍需补充检索的代表性论文。",
+      riskTerminology: "统一术语、缩写和分类边界。",
+      writingPlan: "写作计划",
+      sectionPlan: "章节安排",
+      transitionPlan: "段落衔接",
+      figureTablePlan: "图表或表格计划",
+      followUpSearch: "后续检索",
+      evidenceIndex: "证据摘录索引",
+      background: "背景与问题压力",
+      methodTaxonomy: "方法谱系",
+      dataEvidence: "数据、实验与指标",
+      findings: "核心发现",
+      limitations: "局限与适用边界",
+      futureWork: "后续研究线索",
+      chunks: "片段",
+      fulltextChars: "全文字符",
+      annotations: "注释",
+      notesCount: "笔记",
+      error: "错误",
+      unknown: "未知",
+      noEvidence: "暂无可用证据片段，请人工补充或等待 Zotero 完成全文索引。",
+      metadataOnly: "仅有题录或上下文不足，请低置信度处理。"
+    };
+  }
+  return {
+    title: "Formal Review Draft",
+    focal: "Focal paper",
+    comparison: "Comparison paper",
+    focalPaper: "Focal paper",
+    comparisonCount: "Comparison papers",
+    generatedAt: "Generated at",
+    draftFile: "Draft file",
+    positioning: "Review Positioning",
+    reviewTopic: "Review topic",
+    targetQuestion: "Target question",
+    scopeBoundary: "Scope boundary",
+    inclusionRule: "Inclusion rule",
+    mainClaim: "Main claim",
+    paperInventory: "Paper Inventory",
+    role: "Role",
+    evidence: "Evidence label",
+    paperTitle: "Title",
+    authors: "Authors",
+    year: "Year",
+    contextQuality: "Context quality",
+    argumentSpine: "Argument Spine",
+    spineBackground: "State the field background and problem pressure in one paragraph.",
+    spineTaxonomy: "Define a method taxonomy or research lineage.",
+    spineEvidence: "Support key judgments with evidence labels.",
+    spineGap: "Identify method limits and evidence gaps.",
+    spineBridge: "Bridge to the next research step or experiment design.",
+    taxonomy: "Method Taxonomy and Evidence Matrix",
+    dimension: "Dimension",
+    evidenceExcerpts: "Evidence excerpts",
+    draftNote: "Draft note",
+    manualPlaceholder: "Add paragraph judgment, confidence, and writing placement",
+    synthesis: "Evidence-backed Draft Sections",
+    keyEvidence: "Key evidence",
+    draftParagraph: "Draft paragraph",
+    confidenceAndGaps: "Confidence and gaps",
+    risks: "Risks and Checks",
+    riskEvidence: "Check whether any general claim lacks evidence.",
+    riskComparability: "Confirm that data, scenarios, and metrics are comparable.",
+    riskMissingPapers: "Record representative papers that still need follow-up search.",
+    riskTerminology: "Normalize terminology, abbreviations, and taxonomy boundaries.",
+    writingPlan: "Writing Plan",
+    sectionPlan: "Section plan",
+    transitionPlan: "Transitions",
+    figureTablePlan: "Figure or table plan",
+    followUpSearch: "Follow-up search",
+    evidenceIndex: "Evidence Excerpt Index",
+    background: "Background and Problem Pressure",
+    methodTaxonomy: "Method Lineage",
+    dataEvidence: "Data, Experiments, and Metrics",
+    findings: "Key Findings",
+    limitations: "Limitations and Boundary Conditions",
+    futureWork: "Future Research Leads",
+    chunks: "chunks",
+    fulltextChars: "fulltext chars",
+    annotations: "annotations",
+    notesCount: "notes",
+    error: "error",
+    unknown: "unknown",
+    noEvidence: "No evidence excerpts are available yet; add notes manually or wait for Zotero full-text indexing.",
+    metadataOnly: "Metadata only or insufficient context; treat as low-confidence."
+  };
+}
+
 function markdownTableCell(value) {
   const text = mdText(value);
   return text ? text.replace(/\|/g, "\\|").replace(/\n/g, "<br>") : "";
@@ -5061,6 +5370,12 @@ function comparisonReportMarkdownPath(outputDir, item) {
   const collectionKey = workbenchCollectionKey(item);
   const itemKey = sanitizeFilename(item?.key || "focus");
   return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", `literature-matrix-${itemKey}.md`);
+}
+
+function reviewDraftMarkdownPath(outputDir, item) {
+  const collectionKey = workbenchCollectionKey(item);
+  const itemKey = sanitizeFilename(item?.key || "focus");
+  return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", `review-draft-${itemKey}.md`);
 }
 
 function candidateSearchOptionsFromDom(item) {
