@@ -209,7 +209,6 @@ build/update.json
 - Improve structured extraction quality for screenshots, PDF figures, tables, and experimental results with local OCR/table reconstruction.
 - Add configurable deeper citation-network expansion policies and richer candidate-paper review workflows.
 - Add per-provider setup guides with screenshots.
-- Add stronger UI tests for the embedded Zotero side panel.
 - Add more export templates for thesis notes and formal review reports beyond the current candidate-review, literature-matrix, and paper-reading-log reports.
 
 ## Security and Privacy

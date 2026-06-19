@@ -20,7 +20,10 @@ class FakeElement {
       if (name === "position") this.style.position = "";
     }
   };
-  contentWindow = { focus() {} };
+  contentWindow: any = { focus() {} };
+  contentDocument: any = null;
+  ownerDocument: FakeDocument | null = null;
+  ownerGlobal: any = null;
 
   constructor(public localName: string, namespaceURI = "") {
     this.namespaceURI = namespaceURI;
@@ -97,15 +100,15 @@ class FakeDocument {
   documentElement = new FakeElement("window");
 
   createXULElement(name: string) {
-    return new FakeElement(name);
+    return this.attachOwner(new FakeElement(name));
   }
 
   createElement(name: string) {
-    return new FakeElement(name);
+    return this.attachOwner(new FakeElement(name));
   }
 
   createElementNS(namespaceURI: string, name: string) {
-    return new FakeElement(name, namespaceURI);
+    return this.attachOwner(new FakeElement(name, namespaceURI));
   }
 
   getElementById(id: string) {
@@ -114,6 +117,11 @@ class FakeDocument {
 
   querySelector(selector: string) {
     return this.documentElement.querySelector(selector);
+  }
+
+  attachOwner(element: FakeElement) {
+    element.ownerDocument = this;
+    return element;
   }
 }
 
@@ -124,6 +132,8 @@ function loadBootstrapUi(doc = new FakeDocument(), overrides: Record<string, any
     setTimeout: (callback: () => void) => callback(),
     getComputedStyle: () => ({ position: "static" })
   };
+  doc.documentElement.ownerDocument = doc;
+  doc.documentElement.ownerGlobal = win;
   const sandbox: any = {
     HTML_NS,
     CHROME_NAME: "zotero-markdown-summary",
@@ -260,6 +270,37 @@ describe("bootstrap UI runtime wiring", () => {
     expect(button?.eventListeners.get("click")?.length).toBe(1);
   });
 
+  it("opens the embedded workbench when the HTML side-nav button is clicked", () => {
+    const doc = new FakeDocument();
+    const sidenav = doc.createElementNS(HTML_NS, "nav");
+    sidenav.id = "zotero-context-pane-sidenav";
+    const host = doc.createElementNS(HTML_NS, "section");
+    host.id = "zotero-context-pane";
+    doc.documentElement.append(sidenav, host);
+    const { helpers } = loadBootstrapUi(doc);
+
+    helpers.registerSidenavButton({ document: doc, setTimeout: (callback: () => void) => callback() });
+    const event = {
+      defaultPrevented: false,
+      propagationStopped: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+      stopPropagation() {
+        this.propagationStopped = true;
+      }
+    };
+    doc.getElementById("zotero-markdown-summary-sidenav-button")?.eventListeners.get("click")?.[0]?.(event);
+
+    const panel = doc.getElementById("zotero-markdown-summary-workbench-panel");
+    const frame = doc.getElementById("zotero-markdown-summary-workbench-frame");
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
+    expect(panel?.parentNode).toBe(host);
+    expect(panel?.getAttribute("data-view")).toBe("workbench");
+    expect(frame?.getAttribute("src")).toContain("workbench.xhtml?");
+  });
+
   it("opens an embedded workbench panel with item launch parameters", () => {
     const doc = new FakeDocument();
     const host = doc.createXULElement("vbox");
@@ -329,6 +370,79 @@ describe("bootstrap UI runtime wiring", () => {
     expect(frame?.getAttribute("src")).toContain("itemID=43");
     expect(frame?.getAttribute("src")).toContain("itemIDs=43%2C44");
     expect(frame?.getAttribute("src")).toContain("itemKeys=ITEM43%2CITEM44");
+  });
+
+  it("closes the embedded workbench and restores the dock host layout", () => {
+    const doc = new FakeDocument();
+    const host = doc.createElementNS(HTML_NS, "section");
+    host.id = "zotero-context-pane";
+    doc.documentElement.appendChild(host);
+    const { helpers } = loadBootstrapUi(doc);
+
+    helpers.openEmbeddedWorkbench({ id: 42, key: "ITEM42" });
+    const panel = doc.getElementById("zotero-markdown-summary-workbench-panel");
+    const close = panel?.querySelector(".zms-embedded-close");
+    expect(panel?.parentNode).toBe(host);
+    expect(host.style.position).toBe("relative");
+    expect(host.hasAttribute("data-zms-previous-position")).toBe(true);
+    expect(doc.getElementById("zotero-markdown-summary-workbench-style")).toBeTruthy();
+
+    close?.eventListeners.get("click")?.[0]?.({});
+
+    expect(doc.getElementById("zotero-markdown-summary-workbench-panel")).toBeNull();
+    expect(doc.getElementById("zotero-markdown-summary-workbench-style")).toBeNull();
+    expect(host.style.position).toBe("");
+    expect(host.hasAttribute("data-zms-previous-position")).toBe(false);
+  });
+
+  it("opens the embedded Markdown reader without letting selection refresh replace it", () => {
+    const doc = new FakeDocument();
+    const host = doc.createXULElement("vbox");
+    host.id = "zotero-context-pane";
+    doc.documentElement.appendChild(host);
+    let selectedItems = [{ id: 43, key: "ITEM43" }];
+    const { helpers, win } = loadBootstrapUi(doc, {
+      selectedWorkbenchItems: () => selectedItems
+    });
+
+    helpers.openEmbeddedReader({
+      path: "/tmp/summary.md",
+      title: "Summary Reader",
+      itemID: 42,
+      itemKey: "ITEM42"
+    });
+    selectedItems = [{ id: 99, key: "ITEM99" }];
+    helpers.refreshEmbeddedWorkbenchForSelection(win);
+
+    const panel = doc.getElementById("zotero-markdown-summary-workbench-panel");
+    const frame = doc.getElementById("zotero-markdown-summary-workbench-frame");
+    const title = panel?.querySelector(".zms-embedded-title");
+    expect(panel?.getAttribute("data-view")).toBe("reader");
+    expect(panel?.getAttribute("data-item-key")).toBe("ITEM42");
+    expect(title?.textContent).toBe("Summary Reader");
+    expect(frame?.getAttribute("src")).toContain("reader.xhtml?");
+    expect(frame?.getAttribute("src")).toContain("path=%2Ftmp%2Fsummary.md");
+    expect(frame?.getAttribute("src")).not.toContain("ITEM99");
+  });
+
+  it("retries an unusable embedded chrome frame with the root fallback URL before dialog fallback", () => {
+    const doc = new FakeDocument();
+    const host = doc.createXULElement("vbox");
+    host.id = "zotero-context-pane";
+    doc.documentElement.appendChild(host);
+    const { helpers } = loadBootstrapUi(doc);
+
+    helpers.openEmbeddedWorkbench({ id: 42, key: "ITEM42" });
+    const frame = doc.getElementById("zotero-markdown-summary-workbench-frame");
+    frame!.contentWindow = { location: { href: "about:blank" }, focus() {} };
+    frame!.contentDocument = { title: "", body: { textContent: "" } };
+    const fallback = frame?.getAttribute("data-zms-fallback-src");
+
+    helpers.retryEmbeddedFrameIfError(frame);
+
+    expect(frame?.getAttribute("data-zms-fallback-used")).toBe("1");
+    expect(frame?.getAttribute("src")).toBe(fallback);
+    expect(frame?.getAttribute("src")).toContain("file:///tmp/content/workbench.xhtml?");
   });
 
   it("uses HTML elements when embedding the workbench into an HTML host", () => {

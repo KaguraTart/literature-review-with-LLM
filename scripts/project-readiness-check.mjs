@@ -344,9 +344,20 @@ const SOURCE_MARKERS = [
   },
   {
     id: "ui.runtime-wiring",
-    description: "Bootstrap UI runtime creates toolbar, side pane, and embedded workbench DOM elements",
+    description: "Bootstrap UI runtime creates and exercises toolbar, side pane, embedded workbench, reader, close, refresh, and frame fallback behavior",
     files: ["tests/bootstrapUiRuntime.test.ts"],
-    markers: ["registerToolbarButton", "registerSidenavButton", "openEmbeddedWorkbench", "zotero-markdown-summary-workbench-frame", "embedded=1", "uses HTML elements"]
+    markers: [
+      "registerToolbarButton",
+      "registerSidenavButton",
+      "openEmbeddedWorkbench",
+      "opens the embedded workbench when the HTML side-nav button is clicked",
+      "closes the embedded workbench and restores the dock host layout",
+      "opens the embedded Markdown reader without letting selection refresh replace it",
+      "retries an unusable embedded chrome frame with the root fallback URL",
+      "zotero-markdown-summary-workbench-frame",
+      "embedded=1",
+      "uses HTML elements"
+    ]
   },
   {
     id: "ui.entry-click-fallback",
