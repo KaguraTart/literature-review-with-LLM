@@ -276,8 +276,8 @@ describe("bootstrap UI runtime wiring", () => {
     expect(panel?.hidden).toBe(false);
     expect(panel?.getAttribute("data-item-key")).toBe("ITEM42");
     expect(panel?.getAttribute("data-mode")).toBe("dock");
-    expect(frame?.getAttribute("src")).toContain("file:///tmp/content/workbench.xhtml?");
-    expect(frame?.getAttribute("data-zms-fallback-src")).toContain("chrome://zotero-markdown-summary/content/workbench.xhtml?");
+    expect(frame?.getAttribute("src")).toContain("chrome://zotero-markdown-summary/content/workbench.xhtml?");
+    expect(frame?.getAttribute("data-zms-fallback-src")).toContain("file:///tmp/content/workbench.xhtml?");
     expect(frame?.getAttribute("src")).toContain("itemID=42");
     expect(frame?.getAttribute("src")).toContain("itemKey=ITEM42");
     expect(frame?.getAttribute("src")).toContain("embedded=1");

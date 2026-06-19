@@ -309,6 +309,7 @@ function openEmbeddedWorkbench(item) {
   if (title) title.textContent = t("openWorkbench");
   const frame = doc.getElementById(WORKBENCH_FRAME_ID);
   setEmbeddedFrameSource(frame, workbenchURL(item));
+  scheduleEmbeddedFrameRecovery(win, frame, () => openWorkbenchDialog(item));
   panel.setAttribute("data-item-key", item.key || "");
   panel.setAttribute("data-view", "workbench");
   panel.hidden = false;
@@ -336,6 +337,7 @@ function openEmbeddedReader(payload) {
   if (title) title.textContent = payload.title || t("openMarkdownReader");
   const frame = doc.getElementById(WORKBENCH_FRAME_ID);
   setEmbeddedFrameSource(frame, readerURL(payload));
+  scheduleEmbeddedFrameRecovery(win, frame, () => openChromeDialog("content/reader.xhtml", "zotero-markdown-summary-reader", payload));
   panel.setAttribute("data-item-key", payload.itemKey || "");
   panel.setAttribute("data-view", "reader");
   panel.hidden = false;
@@ -610,8 +612,8 @@ function contentPageURLs(fileName, params) {
   const chromeURL = `chrome://${CHROME_NAME}/content/${fileName}?${query}`;
   const rootURL = rootURI ? `${rootURI}content/${fileName}?${query}` : "";
   return {
-    primary: rootURL || chromeURL,
-    fallback: rootURL ? chromeURL : ""
+    primary: chromeURL,
+    fallback: rootURL
   };
 }
 
@@ -620,6 +622,7 @@ function setEmbeddedFrameSource(frame, urls) {
   const primary = typeof urls === "string" ? urls : urls?.primary || "";
   const fallback = typeof urls === "string" ? "" : urls?.fallback || "";
   frame.removeAttribute?.("data-zms-fallback-used");
+  frame.removeAttribute?.("data-zms-dialog-fallback-used");
   frame.setAttribute("data-zms-fallback-src", fallback);
   frame.setAttribute("src", primary);
 }
@@ -628,13 +631,40 @@ function retryEmbeddedFrameIfError(frame) {
   try {
     const fallback = frame?.getAttribute?.("data-zms-fallback-src") || "";
     if (!fallback || frame.getAttribute("data-zms-fallback-used") === "1") return;
-    const doc = frame.contentDocument;
-    const text = `${doc?.title || ""}\n${doc?.body?.textContent || ""}`;
-    if (!/problem loading page/i.test(String(text))) return;
+    if (!embeddedFrameLooksUnusable(frame)) return;
     frame.setAttribute("data-zms-fallback-used", "1");
     frame.setAttribute("src", fallback);
   } catch (_err) {
-    // Some frame principals cannot be inspected; rootURI remains the primary stable URL.
+    // Some frame principals cannot be inspected; the scheduled dialog fallback remains available.
+  }
+}
+
+function scheduleEmbeddedFrameRecovery(win, frame, dialogFallback) {
+  if (!win?.setTimeout || !frame) return;
+  win.setTimeout(() => {
+    if (!embeddedFrameLooksUnusable(frame)) return;
+    retryEmbeddedFrameIfError(frame);
+  }, 1200);
+  win.setTimeout(() => {
+    if (!embeddedFrameLooksUnusable(frame) || frame.getAttribute("data-zms-dialog-fallback-used") === "1") return;
+    frame.setAttribute("data-zms-dialog-fallback-used", "1");
+    try {
+      dialogFallback?.();
+    } catch (err) {
+      Zotero.debug(`[Markdown Summary] Failed to recover embedded frame: ${safeError(err)}`);
+    }
+  }, 3000);
+}
+
+function embeddedFrameLooksUnusable(frame) {
+  try {
+    const href = String(frame?.contentWindow?.location?.href || "");
+    const doc = frame?.contentDocument;
+    const text = `${doc?.title || ""}\n${doc?.body?.textContent || ""}`;
+    if (/problem loading page/i.test(String(text))) return true;
+    return href === "about:blank";
+  } catch (_err) {
+    return false;
   }
 }
 
