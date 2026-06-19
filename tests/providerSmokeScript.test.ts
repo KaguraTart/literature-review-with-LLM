@@ -313,7 +313,21 @@ describe("provider smoke verifier", () => {
       endpoint: "https://api.openai.com/v1/responses",
       modelsEndpoint: "https://api.openai.com/v1/models",
       authHeaderNames: ["authorization"],
-      bodyKeys: expect.arrayContaining(["input", "max_output_tokens"])
+      bodyKeys: expect.arrayContaining(["input", "max_output_tokens"]),
+      inputChecks: [
+        { mode: "text", supported: true, ok: true, contentTypes: ["input_text", "input_text"], issues: [] },
+        { mode: "image", supported: true, ok: true, contentTypes: ["input_text", "input_text", "input_image"], issues: [] },
+        { mode: "pdf", supported: true, ok: true, contentTypes: ["input_file", "input_text"], issues: [] }
+      ]
+    });
+    expect(report.results.find((result: any) => result.id === "openai-compatible")).toMatchObject({
+      ok: true,
+      protocol: "openai_chat",
+      inputChecks: [
+        { mode: "text", supported: true, ok: true, contentTypes: [], issues: [] },
+        { mode: "image", supported: true, ok: true, contentTypes: ["text", "image_url"], issues: [] },
+        { mode: "pdf", supported: false, ok: true, rejected: true, contentTypes: [], issues: [] }
+      ]
     });
     expect(report.results.find((result: any) => result.id === "openai-responses-compatible")).toMatchObject({
       ok: true,
@@ -321,21 +335,34 @@ describe("provider smoke verifier", () => {
       endpoint: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1/responses",
       modelsEndpoint: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1/models",
       authHeaderNames: ["authorization"],
-      bodyKeys: expect.arrayContaining(["input", "max_output_tokens"])
+      bodyKeys: expect.arrayContaining(["input", "max_output_tokens"]),
+      inputChecks: expect.arrayContaining([
+        expect.objectContaining({ mode: "image", supported: true, ok: true, contentTypes: ["input_text", "input_text", "input_image"] }),
+        expect.objectContaining({ mode: "pdf", supported: true, ok: true, contentTypes: ["input_file", "input_text"] })
+      ])
     });
     expect(report.results.find((result: any) => result.id === "anthropic")).toMatchObject({
       ok: true,
       protocol: "anthropic_messages",
       endpoint: "https://api.anthropic.com/v1/messages",
       authHeaderNames: ["x-api-key"],
-      bodyKeys: expect.arrayContaining(["messages", "max_tokens"])
+      bodyKeys: expect.arrayContaining(["messages", "max_tokens"]),
+      inputChecks: [
+        { mode: "text", supported: true, ok: true, contentTypes: ["text"], issues: [] },
+        { mode: "image", supported: true, ok: true, contentTypes: ["image", "text"], issues: [] },
+        { mode: "pdf", supported: true, ok: true, contentTypes: ["document", "text"], issues: [] }
+      ]
     });
     expect(report.results.find((result: any) => result.id === "anthropic-compatible")).toMatchObject({
       ok: true,
       protocol: "anthropic_messages",
       endpoint: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT/v1/messages",
       authHeaderNames: ["authorization"],
-      bodyKeys: expect.arrayContaining(["messages", "max_tokens"])
+      bodyKeys: expect.arrayContaining(["messages", "max_tokens"]),
+      inputChecks: expect.arrayContaining([
+        expect.objectContaining({ mode: "image", supported: true, ok: true, contentTypes: ["image", "text"] }),
+        expect.objectContaining({ mode: "pdf", supported: false, ok: true, rejected: true })
+      ])
     });
     expect(report.results.find((result: any) => result.id === "perplexity")).toMatchObject({
       ok: true,

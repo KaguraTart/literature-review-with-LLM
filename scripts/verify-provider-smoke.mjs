@@ -537,13 +537,17 @@ function catalogProfileResult(defaultProfile) {
       customHeaders: { ...(defaultProfile.customHeaders || {}) },
       bodyExtra: { ...(defaultProfile.bodyExtra || {}) }
     };
-    const request = catalogSmokeRequest(profile);
+    const request = catalogSmokeRequest(profile, catalogTextInput());
     const endpoint = endpointFor(request);
     if (!isLocalEndpoint(endpoint)) profile.apiKey = "catalog-secret";
     const headers = headersFor(profile);
-    const body = bodyFor(catalogSmokeRequest(profile));
+    const body = bodyFor(catalogSmokeRequest(profile, catalogTextInput()));
     const modelsEndpoint = modelsEndpointFor(profile) || "";
-    const issues = catalogProfileIssues(profile, endpoint, headers, body, modelsEndpoint);
+    const inputChecks = catalogInputChecks(profile);
+    const issues = [
+      ...catalogProfileIssues(profile, endpoint, headers, body, modelsEndpoint),
+      ...inputChecks.flatMap((check) => check.issues.map((issue) => `${check.mode}: ${issue}`))
+    ];
     return {
       ok: issues.length === 0,
       skipped: false,
@@ -558,6 +562,7 @@ function catalogProfileResult(defaultProfile) {
       authHeaderNames: authHeaderNames(headers),
       bodyKeys: Object.keys(body || {}).sort(),
       contentTypes: requestContentTypes(body),
+      inputChecks,
       issues
     };
   } catch (error) {
@@ -573,16 +578,112 @@ function catalogProfileResult(defaultProfile) {
   }
 }
 
-function catalogSmokeRequest(profile) {
+function catalogSmokeRequest(profile, input) {
   return {
     profile,
     system: "You are a provider catalog verifier.",
     messages: [{ role: "user", content: DEFAULT_PROMPT }],
-    input: { type: "text", text: DEFAULT_CONTEXT },
+    input,
     temperature: 0,
     maxOutputTokens: 64,
     stream: false
   };
+}
+
+function catalogTextInput() {
+  return { type: "text", text: DEFAULT_CONTEXT };
+}
+
+function catalogImageInput() {
+  return {
+    type: "text",
+    text: DEFAULT_CONTEXT,
+    images: [{ name: "catalog.png", mimeType: "image/png", base64: DEFAULT_IMAGE_BASE64 }]
+  };
+}
+
+function catalogPDFInput() {
+  return {
+    type: "pdf_base64",
+    filename: "catalog.pdf",
+    base64: DEFAULT_PDF_BASE64
+  };
+}
+
+function catalogInputChecks(profile) {
+  const checks = [
+    catalogInputCheck(profile, "text", catalogTextInput(), true)
+  ];
+  checks.push(catalogInputCheck(profile, "image", catalogImageInput(), profile.capabilities?.imageBase64 === true));
+  checks.push(catalogInputCheck(profile, "pdf", catalogPDFInput(), profile.capabilities?.pdfBase64 === true));
+  return checks;
+}
+
+function catalogInputCheck(profile, mode, input, supported) {
+  try {
+    const body = bodyFor(catalogSmokeRequest(profile, input));
+    const contentTypes = requestContentTypes(body);
+    const issues = catalogInputIssues(profile, mode, contentTypes);
+    if (!supported) {
+      issues.push(`${mode} request body was accepted while capability is disabled`);
+    }
+    return {
+      mode,
+      supported,
+      ok: supported && issues.length === 0,
+      contentTypes,
+      issues
+    };
+  } catch (error) {
+    if (!supported && expectedUnsupportedCatalogInputError(mode, error)) {
+      return {
+        mode,
+        supported,
+        ok: true,
+        rejected: true,
+        contentTypes: [],
+        issues: []
+      };
+    }
+    return {
+      mode,
+      supported,
+      ok: false,
+      contentTypes: [],
+      issues: [error?.message || String(error)]
+    };
+  }
+}
+
+function catalogInputIssues(profile, mode, contentTypes) {
+  if (mode === "text") return contentTypes.includes("text") || contentTypes.includes("input_text") || !contentTypes.length
+    ? []
+    : ["text input did not produce a text content block"];
+  if (mode === "image") {
+    const expected = profile.protocol === "openai_responses"
+      ? "input_image"
+      : profile.protocol === "anthropic_messages"
+        ? "image"
+        : "image_url";
+    return contentTypes.includes(expected) ? [] : [`missing ${expected} image content block`];
+  }
+  if (mode === "pdf") {
+    const expected = profile.protocol === "openai_responses"
+      ? "input_file"
+      : profile.protocol === "anthropic_messages"
+        ? "document"
+        : "";
+    if (!expected) return ["PDF input is not valid for OpenAI Chat Completions profiles"];
+    return contentTypes.includes(expected) ? [] : [`missing ${expected} PDF content block`];
+  }
+  return [];
+}
+
+function expectedUnsupportedCatalogInputError(mode, error) {
+  const message = String(error?.message || error || "");
+  if (mode === "image") return /image input/i.test(message);
+  if (mode === "pdf") return /PDF base64|extracted text input/i.test(message);
+  return false;
 }
 
 function catalogProfileIssues(profile, endpoint, headers, body, modelsEndpoint) {

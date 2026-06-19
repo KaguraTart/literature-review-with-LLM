@@ -209,9 +209,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "provider.catalog-shape-verifier",
-    description: "Default provider profiles can be checked offline for endpoint, auth header, model-list capability, and request-body shape",
+    description: "Default provider profiles can be checked offline for endpoint, auth header, model-list capability, and text/image/PDF request-body shape",
     files: ["scripts/verify-provider-smoke.mjs", "package.json", "tests/providerSmokeScript.test.ts"],
-    markers: ["runProviderCatalog", "catalogProfileResult", "catalogProfileIssues", "--catalog", "verify:provider:catalog", "model-list endpoint present while capability is disabled"]
+    markers: ["runProviderCatalog", "catalogProfileResult", "catalogProfileIssues", "catalogInputChecks", "catalogInputCheck", "--catalog", "verify:provider:catalog", "model-list endpoint present while capability is disabled", "inputChecks", "image_url", "input_file", "document"]
   },
   {
     id: "provider.retry-boundary",
