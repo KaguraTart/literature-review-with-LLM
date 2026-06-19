@@ -2,14 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   arxivSearchUrl,
   buildCandidateSearchRequests,
+  buildCitationNetworkRequests,
   candidateFingerprint,
   crossrefSearchUrl,
   dedupeCandidatePapers,
   parseArxivAtom,
   parseCrossrefWorksResponse,
+  parseSemanticScholarCitationNetworkResponse,
   parseSemanticScholarResponse,
   parseUnpaywallDoiResponse,
   parseUnpaywallSearchResponse,
+  semanticScholarCitationNetworkUrl,
   semanticScholarSearchUrl,
   unpaywallDoiUrl,
   unpaywallTitleSearchUrl
@@ -58,6 +61,38 @@ describe("candidate source adapters", () => {
     })).searchParams.get("is_oa")).toBe("true");
     expect(unpaywallDoiUrl("https://doi.org/10.1000/XYZ", "me@example.test"))
       .toBe("https://api.unpaywall.org/v2/10.1000%2Fxyz?email=me%40example.test");
+  });
+
+  it("builds Semantic Scholar citation-network requests from DOI and paper IDs", () => {
+    const requests = buildCitationNetworkRequests({
+      seeds: [
+        { title: "Seed Paper", doi: "10.1000/Seed" },
+        { title: "S2 Seed", semanticScholarId: "S2-Seed" },
+        { title: "Title Only" }
+      ],
+      limit: 6,
+      directions: ["references", "citations"],
+      semanticScholarApiKey: "ss-test-key"
+    });
+
+    expect(requests).toHaveLength(4);
+    expect(requests.map((request) => request.networkDirection)).toEqual([
+      "references",
+      "citations",
+      "references",
+      "citations"
+    ]);
+    expect(requests[0]).toMatchObject({
+      source: "semantic_scholar",
+      headers: { "x-api-key": "ss-test-key" },
+      seedId: "DOI:10.1000/seed",
+      seedTitle: "Seed Paper"
+    });
+    const url = new URL(requests[0].url);
+    expect(url.pathname).toContain("/paper/DOI%3A10.1000%2Fseed/references");
+    expect(url.searchParams.get("fields")).toContain("citedPaper.title");
+    expect(new URL(requests[1].url).searchParams.get("fields")).toContain("citingPaper.title");
+    expect(semanticScholarCitationNetworkUrl("S2-Seed", "citations", 3)).toContain("/paper/S2-Seed/citations?");
   });
 
   it("parses arXiv Atom records", () => {
@@ -117,6 +152,48 @@ describe("candidate source adapters", () => {
       authors: ["R. Zhang", "M. Chen"],
       pdfUrl: "https://example.test/paper.pdf",
       citationCount: 17
+    });
+  });
+
+  it("parses Semantic Scholar references and citations into network-origin candidates", () => {
+    const references = parseSemanticScholarCitationNetworkResponse({
+      data: [
+        {
+          citedPaper: {
+            paperId: "S2-Ref",
+            title: "Foundational Conflict Resolution",
+            authors: [{ name: "A. Ref" }],
+            year: 2020,
+            externalIds: { DOI: "10.1000/ref" },
+            citationCount: 41
+          }
+        }
+      ]
+    }, "references", { semanticScholarId: "S2-Seed", title: "Seed Paper" });
+    const citations = parseSemanticScholarCitationNetworkResponse({
+      data: [
+        {
+          citingPaper: {
+            paperId: "S2-Cite",
+            title: "Recent Conflict Resolution",
+            authors: [{ name: "A. Cite" }],
+            year: 2025,
+            externalIds: { ArXiv: "2501.00001" },
+            openAccessPdf: { url: "https://example.test/cite.pdf" }
+          }
+        }
+      ]
+    }, "citations", { doi: "10.1000/seed", title: "Seed DOI Paper" });
+
+    expect(references[0]).toMatchObject({
+      id: "doi:10.1000/ref",
+      sourceIds: { semantic_scholar: "S2-Ref" },
+      networkOrigins: [{ direction: "references", seedId: "S2-Seed", seedTitle: "Seed Paper" }]
+    });
+    expect(citations[0]).toMatchObject({
+      id: "arxiv:2501.00001",
+      pdfUrl: "https://example.test/cite.pdf",
+      networkOrigins: [{ direction: "citations", seedId: "DOI:10.1000/seed", seedTitle: "Seed DOI Paper" }]
     });
   });
 

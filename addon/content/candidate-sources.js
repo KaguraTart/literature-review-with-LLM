@@ -13,6 +13,20 @@ var ZMSCandidateSources = (() => {
     "publicationDate"
   ].join(",");
 
+  const SEMANTIC_SCHOLAR_NETWORK_PAPER_FIELDS = [
+    "paperId",
+    "title",
+    "authors",
+    "year",
+    "abstract",
+    "venue",
+    "url",
+    "externalIds",
+    "openAccessPdf",
+    "citationCount",
+    "publicationDate"
+  ];
+
   const CROSSREF_SELECT_FIELDS = [
     "DOI",
     "title",
@@ -57,6 +71,36 @@ var ZMSCandidateSources = (() => {
     };
   }
 
+  async function expandCandidateCitationNetwork(fetchImpl, options, existingRecords = []) {
+    const requests = buildCitationNetworkRequests(options);
+    const settled = await Promise.allSettled(requests.map((request) => fetchCandidateRequest(fetchImpl, request)));
+    const papers = [];
+    const errors = [];
+    for (let index = 0; index < settled.length; index += 1) {
+      const result = settled[index];
+      const request = requests[index];
+      if (result.status === "fulfilled") {
+        papers.push(...result.value);
+      } else {
+        errors.push({ source: `${request.source}:${request.networkDirection || "network"}`, error: safeError(result.reason) });
+      }
+    }
+    const now = options.now || new Date().toISOString();
+    const existingIdentities = candidateIdentitiesFromRecords(existingRecords);
+    const records = sortCandidateRecords(dedupeCandidatePapers(papers).map((paper) => candidateRecordFromPaper(paper, {
+      query: options.query || "citation-network",
+      collectionKey: options.collectionKey,
+      now,
+      existing: existingIdentities
+    })));
+    return {
+      records,
+      papers,
+      errors,
+      requests
+    };
+  }
+
   async function fetchCandidateRequest(fetchImpl, request) {
     const response = await fetchImpl(request.url, {
       method: request.method || "GET",
@@ -66,6 +110,12 @@ var ZMSCandidateSources = (() => {
     if (!response.ok) throw new Error(`${request.source} HTTP ${response.status}: ${text.slice(0, 300)}`);
     if (request.source === "arxiv") return parseArxivAtom(text);
     const data = text ? JSON.parse(text) : {};
+    if (request.source === "semantic_scholar" && request.networkDirection) {
+      return parseSemanticScholarCitationNetworkResponse(data, request.networkDirection, {
+        semanticScholarId: request.seedId,
+        title: request.seedTitle
+      });
+    }
     if (request.source === "semantic_scholar") return parseSemanticScholarResponse(data);
     if (request.source === "crossref") return parseCrossrefWorksResponse(data);
     if (request.source === "unpaywall") return parseUnpaywallSearchResponse(data);
@@ -91,6 +141,29 @@ var ZMSCandidateSources = (() => {
     return requests;
   }
 
+  function buildCitationNetworkRequests(options) {
+    const directions = normalizeCitationDirections(options?.directions);
+    const perSeedLimit = clamp(Number(options?.perSeedLimit || options?.limit) || 8, 1, 100);
+    const seeds = (options?.seeds || [])
+      .map((seed) => ({ raw: seed, semanticScholarId: semanticScholarSeedId(seed) }))
+      .filter((seed) => seed.semanticScholarId);
+    const requests = [];
+    for (const seed of seeds) {
+      for (const direction of directions) {
+        requests.push({
+          source: "semantic_scholar",
+          method: "GET",
+          url: semanticScholarCitationNetworkUrl(seed.semanticScholarId, direction, perSeedLimit),
+          headers: options?.semanticScholarApiKey ? { "x-api-key": options.semanticScholarApiKey } : undefined,
+          networkDirection: direction,
+          seedId: seed.semanticScholarId,
+          seedTitle: cleanText(seed.raw?.title) || undefined
+        });
+      }
+    }
+    return requests;
+  }
+
   function arxivSearchUrl(options) {
     const params = new URLSearchParams({
       search_query: `all:${String(options.query || "").trim()}`,
@@ -112,6 +185,17 @@ var ZMSCandidateSources = (() => {
     if (options.year) params.set("year", String(options.year));
     if (options.openAccessOnly) params.set("openAccessPdf", "true");
     return `https://api.semanticscholar.org/graph/v1/paper/search?${params.toString()}`;
+  }
+
+  function semanticScholarCitationNetworkUrl(paperId, direction, limit = 8, offset = 0) {
+    const normalizedDirection = direction === "citations" ? "citations" : "references";
+    const fieldPrefix = normalizedDirection === "references" ? "citedPaper" : "citingPaper";
+    const params = new URLSearchParams({
+      limit: String(clamp(Number(limit) || 8, 1, 100)),
+      offset: String(Math.max(0, Number(offset) || 0)),
+      fields: SEMANTIC_SCHOLAR_NETWORK_PAPER_FIELDS.map((field) => `${fieldPrefix}.${field}`).join(",")
+    });
+    return `https://api.semanticscholar.org/graph/v1/paper/${encodeURIComponent(paperId)}/${normalizedDirection}?${params.toString()}`;
   }
 
   function crossrefSearchUrl(options) {
@@ -166,28 +250,22 @@ var ZMSCandidateSources = (() => {
 
   function parseSemanticScholarResponse(data) {
     const records = Array.isArray(data?.data) ? data.data : [];
+    return records.map((item) => semanticScholarPaperFromItem(item)).filter(Boolean);
+  }
+
+  function parseSemanticScholarCitationNetworkResponse(data, direction, seed) {
+    const records = Array.isArray(data?.data) ? data.data : [];
+    const normalizedDirection = direction === "citations" ? "citations" : "references";
+    const paperKey = normalizedDirection === "references" ? "citedPaper" : "citingPaper";
+    const seedId = semanticScholarSeedId(seed || {}) || cleanText(seed?.candidateId) || cleanText(seed?.doi) || cleanText(seed?.arxivId);
+    const seedTitle = cleanText(seed?.title) || undefined;
     return records.map((item) => {
-      const title = cleanText(item?.title);
-      if (!title) return null;
-      const externalIds = item?.externalIds || {};
-      const doi = normalizeDoi(externalIds.DOI || externalIds.Doi);
-      const arxivId = cleanText(externalIds.ArXiv || externalIds.arXiv);
-      const pdfUrl = cleanText(item?.openAccessPdf?.url);
-      return candidate({
-        source: "semantic_scholar",
-        sourceId: cleanText(item?.paperId) || doi || arxivId || title,
-        title,
-        authors: authorNames(item?.authors),
-        year: numberOrUndefined(item?.year) || yearFromDate(item?.publicationDate),
-        doi,
-        arxivId: arxivId || undefined,
-        venue: cleanText(item?.venue) || undefined,
-        abstract: cleanText(item?.abstract) || undefined,
-        url: cleanText(item?.url) || undefined,
-        pdfUrl: pdfUrl || undefined,
-        isOpenAccess: !!pdfUrl,
-        citationCount: numberOrUndefined(item?.citationCount)
-      });
+      const paper = semanticScholarPaperFromItem(item?.[paperKey]);
+      if (!paper || !seedId) return paper;
+      return {
+        ...paper,
+        networkOrigins: mergeNetworkOrigins(paper.networkOrigins, [{ direction: normalizedDirection, seedId, seedTitle }])
+      };
     }).filter(Boolean);
   }
 
@@ -280,7 +358,8 @@ var ZMSCandidateSources = (() => {
       updatedAt: now,
       isOpenAccess: paper.isOpenAccess,
       citationCount: paper.citationCount,
-      score: paper.score
+      score: paper.score,
+      networkOrigins: paper.networkOrigins ? paper.networkOrigins.map((origin) => ({ ...origin })) : undefined
     });
   }
 
@@ -301,6 +380,7 @@ var ZMSCandidateSources = (() => {
         sources: [...new Set([...(previous.sources || []), ...(record.sources || [])])],
         sourceIds: { ...(previous.sourceIds || {}), ...(record.sourceIds || {}) },
         ids: { ...(previous.ids || {}), ...(record.ids || {}) },
+        networkOrigins: mergeNetworkOrigins(previous.networkOrigins, record.networkOrigins),
         quality: record.quality,
         updatedAt: record.updatedAt
       }));
@@ -371,6 +451,30 @@ var ZMSCandidateSources = (() => {
     return { ...paper, id: candidateFingerprint(paper) };
   }
 
+  function semanticScholarPaperFromItem(item) {
+    const title = cleanText(item?.title);
+    if (!title) return null;
+    const externalIds = item?.externalIds || {};
+    const doi = normalizeDoi(externalIds.DOI || externalIds.Doi);
+    const arxivId = cleanText(externalIds.ArXiv || externalIds.arXiv);
+    const pdfUrl = cleanText(item?.openAccessPdf?.url);
+    return candidate({
+      source: "semantic_scholar",
+      sourceId: cleanText(item?.paperId) || doi || arxivId || title,
+      title,
+      authors: authorNames(item?.authors),
+      year: numberOrUndefined(item?.year) || yearFromDate(item?.publicationDate),
+      doi,
+      arxivId: arxivId || undefined,
+      venue: cleanText(item?.venue) || undefined,
+      abstract: cleanText(item?.abstract) || undefined,
+      url: cleanText(item?.url) || undefined,
+      pdfUrl: pdfUrl || undefined,
+      isOpenAccess: !!pdfUrl,
+      citationCount: numberOrUndefined(item?.citationCount)
+    });
+  }
+
   function candidateFingerprint(paper) {
     const doi = normalizeDoi(paper.doi);
     if (doi) return `doi:${doi}`;
@@ -394,9 +498,24 @@ var ZMSCandidateSources = (() => {
       pdfUrl: left.pdfUrl || right.pdfUrl,
       isOpenAccess: left.isOpenAccess || right.isOpenAccess,
       citationCount: maxNumber(left.citationCount, right.citationCount),
-      score: maxNumber(left.score, right.score)
+      score: maxNumber(left.score, right.score),
+      networkOrigins: mergeNetworkOrigins(left.networkOrigins, right.networkOrigins)
     };
     return { ...merged, id: candidateFingerprint(merged) };
+  }
+
+  function mergeNetworkOrigins(left = [], right = []) {
+    const byKey = new Map();
+    for (const origin of [...(left || []), ...(right || [])]) {
+      if (!origin?.direction || !origin?.seedId) continue;
+      byKey.set(`${origin.direction}:${origin.seedId}`, {
+        direction: origin.direction,
+        seedId: origin.seedId,
+        seedTitle: origin.seedTitle
+      });
+    }
+    const origins = [...byKey.values()];
+    return origins.length ? origins : undefined;
   }
 
   function cloneCandidateRecord(record) {
@@ -407,7 +526,8 @@ var ZMSCandidateSources = (() => {
       sourceIds: { ...(record.sourceIds || {}) },
       ids: { ...(record.ids || {}) },
       quality: { ...(record.quality || {}) },
-      priority: record.priority ? { ...record.priority, reasons: [...(record.priority.reasons || [])] } : undefined
+      priority: record.priority ? { ...record.priority, reasons: [...(record.priority.reasons || [])] } : undefined,
+      networkOrigins: record.networkOrigins ? record.networkOrigins.map((origin) => ({ ...origin })) : undefined
     };
   }
 
@@ -469,6 +589,11 @@ var ZMSCandidateSources = (() => {
         reasons.push("source relevance score");
       }
     }
+    const networkCount = Array.isArray(record.networkOrigins) ? record.networkOrigins.length : 0;
+    if (networkCount > 0) {
+      score += Math.min(8, networkCount * 4);
+      reasons.push("citation-network relation");
+    }
     if (Number(record.year) >= 2023) {
       score += 8;
       reasons.push("recent publication");
@@ -513,6 +638,30 @@ var ZMSCandidateSources = (() => {
     if (record.decision === "exclude") return 4;
     if (record.quality?.dedupeStatus === "uncertain") return 3;
     return 2;
+  }
+
+  function normalizeCitationDirections(directions) {
+    const valid = (directions || []).filter((direction) => direction === "references" || direction === "citations");
+    return valid.length ? [...new Set(valid)] : ["references", "citations"];
+  }
+
+  function semanticScholarSeedId(seed) {
+    const semanticScholarId = cleanText(seed?.semanticScholarId);
+    if (semanticScholarId) return semanticScholarId;
+    const doi = normalizeDoi(seed?.doi || candidateIdValue(seed?.candidateId, "doi"));
+    if (doi) return `DOI:${doi}`;
+    const arxivId = normalizeArxivId(seed?.arxivId || candidateIdValue(seed?.candidateId, "arxiv"));
+    if (arxivId) return `ARXIV:${arxivId}`;
+    const url = cleanText(seed?.url);
+    if (/^(https?:\/\/)?(www\.)?(semanticscholar|arxiv|doi)\./i.test(url) || /^https?:\/\/doi\.org\//i.test(url)) return url;
+    const candidateId = cleanText(seed?.candidateId);
+    if (candidateId && !candidateId.startsWith("title:")) return candidateId;
+    return "";
+  }
+
+  function candidateIdValue(candidateId, prefix) {
+    const text = cleanText(candidateId);
+    return text.toLowerCase().startsWith(`${prefix}:`) ? text.slice(prefix.length + 1) : "";
   }
 
   function xmlValue(xml, tag) {
@@ -632,9 +781,13 @@ var ZMSCandidateSources = (() => {
 
   return {
     buildCandidateSearchRequests,
+    buildCitationNetworkRequests,
     searchCandidateSources,
+    expandCandidateCitationNetwork,
     parseArxivAtom,
     parseSemanticScholarResponse,
+    parseSemanticScholarCitationNetworkResponse,
+    semanticScholarCitationNetworkUrl,
     parseCrossrefWorksResponse,
     parseUnpaywallSearchResponse,
     dedupeCandidatePapers,

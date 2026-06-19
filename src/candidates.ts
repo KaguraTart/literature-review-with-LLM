@@ -1,4 +1,11 @@
 export type CandidateSource = "arxiv" | "semantic_scholar" | "crossref" | "unpaywall";
+export type CitationNetworkDirection = "references" | "citations";
+
+export interface CitationNetworkOrigin {
+  direction: CitationNetworkDirection;
+  seedId: string;
+  seedTitle?: string;
+}
 
 export interface CandidatePaper {
   id: string;
@@ -17,6 +24,7 @@ export interface CandidatePaper {
   isOpenAccess?: boolean;
   citationCount?: number;
   score?: number;
+  networkOrigins?: CitationNetworkOrigin[];
 }
 
 export interface CandidateSearchRequest {
@@ -24,6 +32,9 @@ export interface CandidateSearchRequest {
   method: "GET";
   url: string;
   headers?: Record<string, string>;
+  networkDirection?: CitationNetworkDirection;
+  seedId?: string;
+  seedTitle?: string;
 }
 
 export interface CandidateSearchOptions {
@@ -33,6 +44,23 @@ export interface CandidateSearchOptions {
   year?: string;
   email?: string;
   openAccessOnly?: boolean;
+  semanticScholarApiKey?: string;
+}
+
+export interface CandidateNetworkSeed {
+  candidateId?: string;
+  title?: string;
+  doi?: string;
+  arxivId?: string;
+  semanticScholarId?: string;
+  url?: string;
+}
+
+export interface CandidateNetworkOptions {
+  seeds: CandidateNetworkSeed[];
+  limit?: number;
+  perSeedLimit?: number;
+  directions?: CitationNetworkDirection[];
   semanticScholarApiKey?: string;
 }
 
@@ -49,6 +77,20 @@ const SEMANTIC_SCHOLAR_FIELDS = [
   "citationCount",
   "publicationDate"
 ].join(",");
+
+const SEMANTIC_SCHOLAR_NETWORK_PAPER_FIELDS = [
+  "paperId",
+  "title",
+  "authors",
+  "year",
+  "abstract",
+  "venue",
+  "url",
+  "externalIds",
+  "openAccessPdf",
+  "citationCount",
+  "publicationDate"
+];
 
 const CROSSREF_SELECT_FIELDS = [
   "DOI",
@@ -83,6 +125,30 @@ export function buildCandidateSearchRequests(options: CandidateSearchOptions): C
   return requests;
 }
 
+export function buildCitationNetworkRequests(options: CandidateNetworkOptions): CandidateSearchRequest[] {
+  const directions = normalizeCitationDirections(options.directions);
+  const perSeedLimit = clamp(options.perSeedLimit ?? options.limit ?? 8, 1, 100);
+  const seeds = (options.seeds || []).map((seed) => ({
+    raw: seed,
+    semanticScholarId: semanticScholarSeedId(seed)
+  })).filter((seed): seed is { raw: CandidateNetworkSeed; semanticScholarId: string } => !!seed.semanticScholarId);
+  const requests: CandidateSearchRequest[] = [];
+  for (const seed of seeds) {
+    for (const direction of directions) {
+      requests.push({
+        source: "semantic_scholar",
+        method: "GET",
+        url: semanticScholarCitationNetworkUrl(seed.semanticScholarId, direction, perSeedLimit),
+        headers: options.semanticScholarApiKey ? { "x-api-key": options.semanticScholarApiKey } : undefined,
+        networkDirection: direction,
+        seedId: seed.semanticScholarId,
+        seedTitle: cleanText(seed.raw.title) || undefined
+      });
+    }
+  }
+  return requests;
+}
+
 export function arxivSearchUrl(options: CandidateSearchOptions): string {
   const params = new URLSearchParams({
     search_query: `all:${options.query.trim()}`,
@@ -104,6 +170,21 @@ export function semanticScholarSearchUrl(options: CandidateSearchOptions): strin
   if (options.year) params.set("year", options.year);
   if (options.openAccessOnly) params.set("openAccessPdf", "true");
   return `https://api.semanticscholar.org/graph/v1/paper/search?${params.toString()}`;
+}
+
+export function semanticScholarCitationNetworkUrl(
+  paperId: string,
+  direction: CitationNetworkDirection,
+  limit = 8,
+  offset = 0
+): string {
+  const fieldPrefix = direction === "references" ? "citedPaper" : "citingPaper";
+  const params = new URLSearchParams({
+    limit: String(clamp(limit, 1, 100)),
+    offset: String(Math.max(0, offset)),
+    fields: SEMANTIC_SCHOLAR_NETWORK_PAPER_FIELDS.map((field) => `${fieldPrefix}.${field}`).join(",")
+  });
+  return `https://api.semanticscholar.org/graph/v1/paper/${encodeURIComponent(paperId)}/${direction}?${params.toString()}`;
 }
 
 export function crossrefSearchUrl(options: CandidateSearchOptions): string {
@@ -171,28 +252,27 @@ export function parseArxivAtom(xml: string): CandidatePaper[] {
 export function parseSemanticScholarResponse(data: unknown): CandidatePaper[] {
   const records: any[] = Array.isArray((data as any)?.data) ? (data as any).data : [];
   return records
+    .map((item: any): CandidatePaper | null => semanticScholarPaperFromItem(item))
+    .filter((item): item is CandidatePaper => !!item);
+}
+
+export function parseSemanticScholarCitationNetworkResponse(
+  data: unknown,
+  direction: CitationNetworkDirection,
+  seed: CandidateNetworkSeed
+): CandidatePaper[] {
+  const records: any[] = Array.isArray((data as any)?.data) ? (data as any).data : [];
+  const paperKey = direction === "references" ? "citedPaper" : "citingPaper";
+  const seedId = semanticScholarSeedId(seed) || cleanText(seed.candidateId) || cleanText(seed.doi) || cleanText(seed.arxivId);
+  const seedTitle = cleanText(seed.title) || undefined;
+  return records
     .map((item: any): CandidatePaper | null => {
-      const title = cleanText(item?.title);
-      if (!title) return null;
-      const externalIds = item?.externalIds || {};
-      const doi = normalizeDoi(externalIds.DOI || externalIds.Doi);
-      const arxivId = cleanText(externalIds.ArXiv || externalIds.arXiv);
-      const pdfUrl = cleanText(item?.openAccessPdf?.url);
-      return candidate({
-        source: "semantic_scholar",
-        sourceId: cleanText(item?.paperId) || doi || arxivId || title,
-        title,
-        authors: authorNames(item?.authors),
-        year: numberOrUndefined(item?.year) || yearFromDate(item?.publicationDate),
-        doi,
-        arxivId: arxivId || undefined,
-        venue: cleanText(item?.venue) || undefined,
-        abstract: cleanText(item?.abstract) || undefined,
-        url: cleanText(item?.url) || undefined,
-        pdfUrl: pdfUrl || undefined,
-        isOpenAccess: !!pdfUrl,
-        citationCount: numberOrUndefined(item?.citationCount)
-      });
+      const paper = semanticScholarPaperFromItem(item?.[paperKey]);
+      if (!paper || !seedId) return paper;
+      return {
+        ...paper,
+        networkOrigins: mergeNetworkOrigins(paper.networkOrigins, [{ direction, seedId, seedTitle }])
+      };
     })
     .filter((item): item is CandidatePaper => !!item);
 }
@@ -287,6 +367,30 @@ function candidate(input: Omit<CandidatePaper, "id" | "sources" | "sourceIds"> &
   };
 }
 
+function semanticScholarPaperFromItem(item: any): CandidatePaper | null {
+  const title = cleanText(item?.title);
+  if (!title) return null;
+  const externalIds = item?.externalIds || {};
+  const doi = normalizeDoi(externalIds.DOI || externalIds.Doi);
+  const arxivId = cleanText(externalIds.ArXiv || externalIds.arXiv);
+  const pdfUrl = cleanText(item?.openAccessPdf?.url);
+  return candidate({
+    source: "semantic_scholar",
+    sourceId: cleanText(item?.paperId) || doi || arxivId || title,
+    title,
+    authors: authorNames(item?.authors),
+    year: numberOrUndefined(item?.year) || yearFromDate(item?.publicationDate),
+    doi,
+    arxivId: arxivId || undefined,
+    venue: cleanText(item?.venue) || undefined,
+    abstract: cleanText(item?.abstract) || undefined,
+    url: cleanText(item?.url) || undefined,
+    pdfUrl: pdfUrl || undefined,
+    isOpenAccess: !!pdfUrl,
+    citationCount: numberOrUndefined(item?.citationCount)
+  });
+}
+
 function mergeCandidatePaper(left: CandidatePaper, right: CandidatePaper): CandidatePaper {
   const sources = [...new Set([...left.sources, ...right.sources])];
   const sourceIds = { ...left.sourceIds, ...right.sourceIds };
@@ -305,8 +409,50 @@ function mergeCandidatePaper(left: CandidatePaper, right: CandidatePaper): Candi
     isOpenAccess: left.isOpenAccess || right.isOpenAccess,
     citationCount: maxNumber(left.citationCount, right.citationCount),
     score: maxNumber(left.score, right.score),
+    networkOrigins: mergeNetworkOrigins(left.networkOrigins, right.networkOrigins),
     id: candidateFingerprint({ ...left, doi: left.doi || right.doi, arxivId: left.arxivId || right.arxivId })
   };
+}
+
+function mergeNetworkOrigins(left: CitationNetworkOrigin[] = [], right: CitationNetworkOrigin[] = []): CitationNetworkOrigin[] | undefined {
+  const byKey = new Map<string, CitationNetworkOrigin>();
+  for (const origin of [...left, ...right]) {
+    if (!origin?.direction || !origin?.seedId) continue;
+    const key = `${origin.direction}:${origin.seedId}`;
+    byKey.set(key, {
+      direction: origin.direction,
+      seedId: origin.seedId,
+      seedTitle: origin.seedTitle
+    });
+  }
+  const origins = [...byKey.values()];
+  return origins.length ? origins : undefined;
+}
+
+function normalizeCitationDirections(directions?: CitationNetworkDirection[]): CitationNetworkDirection[] {
+  const valid = (directions || []).filter((direction): direction is CitationNetworkDirection => {
+    return direction === "references" || direction === "citations";
+  });
+  return valid.length ? [...new Set(valid)] : ["references", "citations"];
+}
+
+function semanticScholarSeedId(seed: CandidateNetworkSeed): string {
+  const semanticScholarId = cleanText(seed.semanticScholarId);
+  if (semanticScholarId) return semanticScholarId;
+  const doi = normalizeDoi(seed.doi || candidateIdValue(seed.candidateId, "doi"));
+  if (doi) return `DOI:${doi}`;
+  const arxivId = normalizeArxivId(seed.arxivId || candidateIdValue(seed.candidateId, "arxiv"));
+  if (arxivId) return `ARXIV:${arxivId}`;
+  const url = cleanText(seed.url);
+  if (/^(https?:\/\/)?(www\.)?(semanticscholar|arxiv|doi)\./i.test(url) || /^https?:\/\/doi\.org\//i.test(url)) return url;
+  const candidateId = cleanText(seed.candidateId);
+  if (candidateId && !candidateId.startsWith("title:")) return candidateId;
+  return "";
+}
+
+function candidateIdValue(candidateId: unknown, prefix: "doi" | "arxiv"): string {
+  const text = cleanText(candidateId);
+  return text.toLowerCase().startsWith(`${prefix}:`) ? text.slice(prefix.length + 1) : "";
 }
 
 function xmlValue(xml: string, tag: string): string {

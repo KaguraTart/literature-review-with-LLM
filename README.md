@@ -4,7 +4,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 [中文说明](README.zh-CN.md)
 
-> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, first-pass multi-paper comparison, and collection topic-cluster workspace are in place; cross-collection synthesis and richer cross-paper analysis are still planned.
+> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, first-pass multi-paper comparison, collection topic-cluster workspace, and one-hop citation-network expansion are in place; cross-collection synthesis and richer cross-paper analysis are still planned.
 
 ![Zotero paper chat workbench](docs/assets/workbench-chat.png)
 
@@ -19,7 +19,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - **Bring-your-own-key**: the plugin is free and open source; remote model providers require your own API keys.
 - **Local agent consultation**: optionally ask local Gemini, Claude, and opencode command-line tools for independent reading suggestions through the local bridge.
 - **Research workflow utilities**: includes skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation checks, and candidate-paper discovery.
-- **Candidate-paper review queue**: arXiv / Crossref / Semantic Scholar / Unpaywall results are deduplicated, ranked with explainable priority signals, saved as JSONL, and can be imported after manual review.
+- **Candidate-paper review queue**: arXiv / Crossref / Semantic Scholar / Unpaywall results are deduplicated, ranked with explainable priority signals, expanded through one-hop Semantic Scholar references/citations, saved as JSONL, and imported only after manual review.
 - **Research-domain prompt packs**: choose general reading, AI/ML systems, transportation and urban airspace, biomedicine, social science/policy, or literature-review writing packs. The selected pack is applied in both the paper chat workbench and direct summary generation.
 
 ## Features
@@ -35,7 +35,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - Use built-in skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation audit, and local-agent review.
 - Select a research-domain prompt pack from Zotero preferences or the workbench settings drawer.
 - Optional local-agent bridge for Gemini, Claude, and opencode CLI tools.
-- Candidate-paper discovery utilities for arXiv / Crossref / Semantic Scholar workflows.
+- Candidate-paper discovery utilities for arXiv / Crossref / Semantic Scholar workflows, including one-hop references/citations expansion from seeded papers.
 - Candidate-paper ranking stores priority tier, score, recommended decision, and reasons in `candidates.jsonl`.
 
 ## Installation
@@ -194,7 +194,7 @@ build/update.json
 - Multi-paper comparison is available as a first-pass workbench workflow, with up to 5 comparison papers by default. Collection batch runs now generate heuristic topic clusters and synthesis matrices, but the clustering is deterministic and should be reviewed before final writing.
 - Single-turn image attachments and the `Figure/Table Extractor` skill are supported, but chart, table, and handwritten-note understanding still depends on the selected model. Local OCR and chart-data reconstruction are not implemented yet.
 - Formula rendering is lightweight. It supports common inline/display math patterns, but it is not a full TeX engine.
-- Candidate-paper search now has explainable ranking and duplicate reconciliation, but citation-network expansion and richer review workflows still need more work.
+- Candidate-paper search now has explainable ranking, duplicate reconciliation, and one-hop citation-network expansion, but deeper multi-hop expansion and richer review workflows still need more work.
 - The workbench UI is still being refined; some controls and settings are intentionally compact but may need more usability work.
 - Raw PDF input depends on provider capability. Many providers still use extracted Zotero text instead.
 - Local-agent calls depend on local CLI tools and their own authentication state.
@@ -205,7 +205,7 @@ build/update.json
 
 - Improve cross-collection clustering, richer synthesis matrices, and batch report generation.
 - Improve structured extraction quality for screenshots, PDF figures, tables, and experimental results with local OCR/table reconstruction.
-- Add citation-network expansion and richer candidate-paper review workflows.
+- Add deeper multi-hop citation-network expansion and richer candidate-paper review workflows.
 - Add per-provider setup guides with screenshots.
 - Add stronger UI tests for the embedded Zotero side panel.
 - Add export templates for thesis notes, review reports, and paper reading logs.

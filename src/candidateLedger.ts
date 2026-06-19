@@ -1,4 +1,4 @@
-import { candidateFingerprint, type CandidatePaper, type CandidateSource } from "./candidates.js";
+import { candidateFingerprint, type CandidatePaper, type CandidateSource, type CitationNetworkOrigin } from "./candidates.js";
 
 export type CandidateSourceType = "doi" | "arxiv" | "publisher" | "direct_pdf" | "proceedings" | "abstract_page" | "webpage";
 export type CandidateDedupeStatus = "new" | "duplicate" | "uncertain";
@@ -69,6 +69,7 @@ export interface ImportCandidateRecord {
   isOpenAccess?: boolean;
   citationCount?: number;
   score?: number;
+  networkOrigins?: CitationNetworkOrigin[];
   importStatus?: "imported" | "skipped_duplicate" | "failed";
   zoteroItemID?: number;
   zoteroItemKey?: string;
@@ -153,7 +154,8 @@ export function candidateRecordFromPaper(paper: CandidatePaper, options: Candida
     updatedAt: now,
     isOpenAccess: paper.isOpenAccess,
     citationCount: paper.citationCount,
-    score: paper.score
+    score: paper.score,
+    networkOrigins: paper.networkOrigins ? paper.networkOrigins.map((origin) => ({ ...origin })) : undefined
   });
 }
 
@@ -290,6 +292,7 @@ export function mergeCandidateRecords(
       sources: [...new Set([...previous.sources, ...record.sources])],
       sourceIds: { ...previous.sourceIds, ...record.sourceIds },
       ids: { ...previous.ids, ...record.ids },
+      networkOrigins: mergeNetworkOrigins(previous.networkOrigins, record.networkOrigins),
       quality: record.quality,
       updatedAt: record.updatedAt
     }));
@@ -414,6 +417,11 @@ function candidatePriority(record: ImportCandidateRecord): CandidatePriority {
       reasons.push("source relevance score");
     }
   }
+  const networkCount = Array.isArray(record.networkOrigins) ? record.networkOrigins.length : 0;
+  if (networkCount > 0) {
+    score += Math.min(8, networkCount * 4);
+    reasons.push("citation-network relation");
+  }
   if (Number(record.year) >= 2023) {
     score += 8;
     reasons.push("recent publication");
@@ -464,8 +472,19 @@ function cloneCandidateRecord(record: ImportCandidateRecord): ImportCandidateRec
     sourceIds: { ...record.sourceIds },
     ids: { ...record.ids },
     quality: { ...record.quality },
-    priority: record.priority ? { ...record.priority, reasons: [...(record.priority.reasons || [])] } : undefined
+    priority: record.priority ? { ...record.priority, reasons: [...(record.priority.reasons || [])] } : undefined,
+    networkOrigins: record.networkOrigins ? record.networkOrigins.map((origin) => ({ ...origin })) : undefined
   };
+}
+
+function mergeNetworkOrigins(left: CitationNetworkOrigin[] = [], right: CitationNetworkOrigin[] = []): CitationNetworkOrigin[] | undefined {
+  const byKey = new Map<string, CitationNetworkOrigin>();
+  for (const origin of [...left, ...right]) {
+    if (!origin?.direction || !origin?.seedId) continue;
+    byKey.set(`${origin.direction}:${origin.seedId}`, { ...origin });
+  }
+  const origins = [...byKey.values()];
+  return origins.length ? origins : undefined;
 }
 
 function normalizeDoi(value: unknown): string {

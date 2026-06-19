@@ -185,6 +185,74 @@ describe("runtime candidate source search", () => {
     expect(sorted[2].priority).toMatchObject({ tier: "duplicate", recommendedDecision: "exclude" });
   });
 
+  it("expands Semantic Scholar references and citations into ranked runtime records", async () => {
+    const runtime = loadRuntime();
+    const calls: any[] = [];
+    const fetchImpl = async (url: string, init: any) => {
+      calls.push({ url, init });
+      if (url.includes("/references?")) {
+        return ok(JSON.stringify({
+          data: [
+            {
+              citedPaper: {
+                paperId: "S2-Ref",
+                title: "Foundational UAV Conflict Resolution",
+                authors: [{ name: "R. Ref" }],
+                year: 2020,
+                externalIds: { DOI: "10.1000/ref" },
+                citationCount: 58
+              }
+            }
+          ]
+        }));
+      }
+      if (url.includes("/citations?")) {
+        return ok(JSON.stringify({
+          data: [
+            {
+              citingPaper: {
+                paperId: "S2-Cite",
+                title: "Recent UAV Conflict Resolution",
+                authors: [{ name: "R. Cite" }],
+                year: 2025,
+                externalIds: { ArXiv: "2501.00001" },
+                openAccessPdf: { url: "https://example.test/cite.pdf" },
+                citationCount: 6
+              }
+            }
+          ]
+        }));
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+
+    const result = await runtime.ZMSCandidateSources.expandCandidateCitationNetwork(fetchImpl, {
+      seeds: [{ doi: "10.1000/seed", title: "Seed Paper" }],
+      directions: ["references", "citations"],
+      limit: 4,
+      semanticScholarApiKey: "ss-key",
+      collectionKey: "COL",
+      now: "2026-06-19T00:00:00.000Z"
+    }, []);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].init.headers).toEqual({ "x-api-key": "ss-key" });
+    expect(result.records).toHaveLength(2);
+    expect(result.records.map((record: any) => record.candidateId)).toEqual([
+      "arxiv:2501.00001",
+      "doi:10.1000/ref"
+    ]);
+    expect(result.records[0]).toMatchObject({
+      collectionKey: "COL",
+      pdfUrl: "https://example.test/cite.pdf",
+      networkOrigins: [{ direction: "citations", seedId: "DOI:10.1000/seed", seedTitle: "Seed Paper" }],
+      priority: { tier: "high", recommendedDecision: "include" }
+    });
+    expect(result.records[1]).toMatchObject({
+      networkOrigins: [{ direction: "references", seedId: "DOI:10.1000/seed", seedTitle: "Seed Paper" }]
+    });
+  });
+
   it("preserves prior human decisions while merging new discoveries", () => {
     const runtime = loadRuntime();
     const existing = [{

@@ -205,6 +205,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     renderImportLedgerJsonl: (entries: any[]) => string;
     candidateDecisionCounts: (records: any[]) => any;
     candidateStatusText: (records: any[], path: string, translate?: (key: string) => string) => string;
+    citationNetworkSeedsForWorkbench: (records: any[], item: any, limit?: number) => any[];
+    citationNetworkMetaText: (record: any) => string;
     applyCandidateDecisions: (records: any[], decisions: Record<string, string>, now: string) => any[];
     discoveredLedgerEntries: (records: any[], existingCandidateIds: Set<string>, now?: string) => any[];
     decisionLedgerEntries: (records: any[], previousDecisions: Map<string, string>, changedDecisions: Record<string, string>, now?: string) => any[];
@@ -1280,6 +1282,53 @@ describe("workbench writeback helpers", () => {
     ]);
     expect(helpers.renderImportLedgerJsonl(helpers.discoveredLedgerEntries([record], new Set())))
       .toContain("\"action\":\"discovered\"");
+  });
+
+  it("chooses citation-network seeds from the current item and high-value candidates", () => {
+    const loaded = loadWorkbenchHelpers();
+    const item = {
+      key: "ITEM",
+      getField: (field: string) => {
+        if (field === "title") return "Current Paper";
+        if (field === "DOI") return "10.1000/current";
+        return "";
+      }
+    };
+    const seeds = loaded.citationNetworkSeedsForWorkbench([
+      {
+        candidateId: "title:title-only:2026",
+        title: "Title Only",
+        decision: "include",
+        ids: {},
+        quality: { dedupeStatus: "new" },
+        priority: { tier: "high" }
+      },
+      {
+        candidateId: "doi:10.1000/dup",
+        title: "Duplicate",
+        decision: "include",
+        ids: { doi: "10.1000/dup" },
+        quality: { dedupeStatus: "duplicate" },
+        priority: { tier: "high" }
+      },
+      {
+        candidateId: "doi:10.1000/a",
+        title: "Candidate A",
+        decision: "to_read",
+        ids: { doi: "10.1000/a", semanticScholarId: "S2-A" },
+        sourceIds: { semantic_scholar: "S2-A" },
+        quality: { dedupeStatus: "new" },
+        priority: { tier: "medium" }
+      }
+    ], item, 3);
+
+    expect(seeds).toEqual([
+      expect.objectContaining({ candidateId: "ITEM", title: "Current Paper", doi: "10.1000/current" }),
+      expect.objectContaining({ candidateId: "doi:10.1000/a", semanticScholarId: "S2-A" })
+    ]);
+    expect(loaded.citationNetworkMetaText({
+      networkOrigins: [{ direction: "references", seedId: "S2-A", seedTitle: "Candidate A" }]
+    })).toBe("network:references:Candidate A");
   });
 
   it("imports included candidates as metadata-only Zotero items", async () => {

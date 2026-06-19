@@ -138,6 +138,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-open-reader": () => this.openReader(),
       "zms-save-session": () => this.saveSession({ quiet: false }),
       "zms-search-candidates": () => this.searchCandidates(),
+      "zms-expand-citation-network": () => this.expandCandidateCitationNetwork(),
       "zms-load-candidates": () => this.loadCandidates(),
       "zms-save-candidates": () => this.saveCandidates(),
       "zms-import-candidates": () => this.importIncludedCandidates(),
@@ -396,6 +397,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-candidate-email-label", this.t("candidateEmail"));
     setText("zms-candidate-semantic-key-label", this.t("candidateSemanticKey"));
     setText("zms-search-candidates", this.t("candidateSearch"));
+    setText("zms-expand-citation-network", this.t("expandCitationNetwork"));
     setText("zms-load-candidates", this.t("loadCandidates"));
     setText("zms-save-candidates", this.t("saveCandidateDecisions"));
     setText("zms-import-candidates", this.t("importCandidates"));
@@ -785,6 +787,45 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.setStatus(`${this.t("candidateSearchDone")}: ${result.records.length}${errorSuffix}`);
     } catch (err) {
       this.setStatus(`${this.t("candidateSearchFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async expandCandidateCitationNetwork() {
+    try {
+      if (!window.ZMSCandidateSources?.expandCandidateCitationNetwork) {
+        this.setStatus(this.t("candidateCitationNetworkUnavailable"));
+        return;
+      }
+      this.state.candidatePath = candidateJsonlPath(this.state.outputDir, this.state.item);
+      const existing = this.state.candidates.length
+        ? this.state.candidates
+        : await loadCandidateRecords(this.state.candidatePath).catch(() => []);
+      const seeds = citationNetworkSeedsForWorkbench(existing, this.state.item, 4);
+      if (!seeds.length) {
+        this.setStatus(this.t("candidateCitationNetworkNoSeeds"));
+        return;
+      }
+      const existingCandidateIds = new Set(existing.map((record) => record.candidateId));
+      const options = candidateSearchOptionsFromDom(this.state.item);
+      const perSeedLimit = Math.max(1, Math.ceil((options.limit || 8) / Math.max(1, seeds.length)));
+      this.setStatus(this.t("candidateCitationNetworkRunning"));
+      const result = await window.ZMSCandidateSources.expandCandidateCitationNetwork(fetch.bind(window), {
+        ...options,
+        query: options.query || this.state.item?.getField?.("title") || this.state.item?.key || "citation-network",
+        seeds,
+        directions: ["references", "citations"],
+        perSeedLimit,
+        collectionKey: workbenchCollectionKey(this.state.item),
+        now: new Date().toISOString()
+      }, existing);
+      this.state.candidates = window.ZMSCandidateSources.mergeCandidateRecords(existing, result.records);
+      await saveCandidateRecords(this.state.candidatePath, this.state.candidates);
+      await appendImportLedgerEntries(importLedgerJsonlPath(this.state.outputDir, this.state.item), discoveredLedgerEntries(result.records, existingCandidateIds));
+      this.renderCandidates(candidateSearchErrorSummary(result.errors, (key) => this.t(key)));
+      const errorSuffix = result.errors?.length ? `; ${this.t("candidateSourceErrors")}: ${result.errors.map((item) => item.source).join(", ")}` : "";
+      this.setStatus(`${this.t("candidateCitationNetworkDone")}: ${result.records.length}; seeds ${seeds.length}${errorSuffix}`);
+    } catch (err) {
+      this.setStatus(`${this.t("candidateCitationNetworkFailed")}: ${safeError(err)}`);
     }
   },
 
@@ -4461,6 +4502,80 @@ function candidateSearchOptionsFromDom(item) {
   };
 }
 
+function citationNetworkSeedsForWorkbench(records, item, limit = 4) {
+  const seeds = [];
+  const seen = new Set();
+  const pushSeed = (seed) => {
+    const key = citationNetworkSeedKey(seed);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    seeds.push(seed);
+  };
+  pushSeed(citationNetworkSeedFromItem(item));
+  for (const record of citationNetworkSeedRecords(records)) {
+    if (seeds.length >= limit) break;
+    pushSeed(citationNetworkSeedFromRecord(record));
+  }
+  return seeds.slice(0, Math.max(1, limit));
+}
+
+function citationNetworkSeedRecords(records) {
+  return [...(records || [])]
+    .filter((record) => record?.quality?.dedupeStatus !== "duplicate")
+    .filter((record) => {
+      const decision = normalizeCandidateDecision(record.decision);
+      const tier = record?.priority?.tier;
+      return decision === "include" || decision === "to_read" || tier === "high" || tier === "medium";
+    });
+}
+
+function citationNetworkSeedFromItem(item) {
+  if (!item) return null;
+  const extra = item.getField?.("extra") || "";
+  return {
+    candidateId: item.key,
+    title: item.getField?.("title") || item.getDisplayTitle?.() || item.key,
+    doi: item.getField?.("DOI") || doiFromText(extra),
+    arxivId: arxivIdFromText(extra) || arxivIdFromText(item.getField?.("url")),
+    url: item.getField?.("url") || ""
+  };
+}
+
+function citationNetworkSeedFromRecord(record) {
+  return {
+    candidateId: record.candidateId,
+    title: record.title,
+    doi: record.ids?.doi,
+    arxivId: record.ids?.arxivId,
+    semanticScholarId: record.ids?.semanticScholarId || record.sourceIds?.semantic_scholar,
+    url: record.sourceUrl || record.pdfUrl
+  };
+}
+
+function citationNetworkSeedKey(seed) {
+  if (!seed) return "";
+  if (seed.semanticScholarId) return `s2:${seed.semanticScholarId}`;
+  const doi = normalizeCandidateDoi(seed.doi || (String(seed.candidateId || "").startsWith("doi:") ? String(seed.candidateId).slice(4) : ""));
+  if (doi) return `doi:${doi}`;
+  const arxivId = normalizeCandidateArxivId(seed.arxivId || (String(seed.candidateId || "").startsWith("arxiv:") ? String(seed.candidateId).slice(6) : ""));
+  if (arxivId) return `arxiv:${arxivId}`;
+  const url = String(seed.url || "").trim();
+  if (url) return `url:${url}`;
+  const candidateId = String(seed.candidateId || "").trim();
+  return candidateId && !candidateId.startsWith("title:") ? `id:${candidateId}` : "";
+}
+
+function doiFromText(value) {
+  const match = String(value || "").match(/(?:doi:\s*|https?:\/\/(?:dx\.)?doi\.org\/)(10\.\S+)/i);
+  return normalizeCandidateDoi(match?.[1] || "");
+}
+
+function arxivIdFromText(value) {
+  const text = String(value || "");
+  const match = text.match(/(?:arxiv:\s*|arxiv\.org\/(?:abs|pdf)\/)([a-z-]*\/?\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+\/\d{7}(?:v\d+)?)/i);
+  return normalizeCandidateArxivId(match?.[1] || "");
+}
+
 function candidateSearchErrorSummary(errors, translate = (key) => key) {
   if (!errors?.length) return "";
   return `${translate("candidateSourceErrors")}: ${errors.map((item) => `${item.source}: ${item.error}`).join("; ")}`;
@@ -4582,6 +4697,7 @@ function candidateMetaText(record) {
   const quality = record.quality || {};
   return [
     candidatePriorityMetaText(record),
+    citationNetworkMetaText(record),
     [record.authors || []].flat().filter(Boolean).slice(0, 3).join(", "),
     record.year || "",
     record.sourceType || "",
@@ -4592,6 +4708,15 @@ function candidateMetaText(record) {
     quality.reason || "",
     record.sourceUrl || record.pdfUrl || ""
   ].filter(Boolean).join(" | ");
+}
+
+function citationNetworkMetaText(record) {
+  const origins = Array.isArray(record?.networkOrigins) ? record.networkOrigins : [];
+  if (!origins.length) return "";
+  return `network:${origins.slice(0, 2).map((origin) => {
+    const seed = origin.seedTitle || origin.seedId || "";
+    return [origin.direction, seed].filter(Boolean).join(":");
+  }).join(",")}`;
 }
 
 function candidatePriorityMetaText(record) {

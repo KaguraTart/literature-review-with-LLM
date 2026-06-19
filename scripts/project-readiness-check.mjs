@@ -269,20 +269,22 @@ const SOURCE_MARKERS = [
   },
   {
     id: "candidate.sources",
-    description: "Candidate source search, merge, explainable ranking, and record conversion runtime is present",
+    description: "Candidate source search, citation-network expansion, merge, explainable ranking, and record conversion runtime is present",
     files: ["addon/content/candidate-sources.js"],
-    markers: ["searchCandidateSources", "parseArxivAtom", "mergeCandidateRecords", "candidateRecordFromPaper", "sortCandidateRecords", "candidatePriority"]
+    markers: ["searchCandidateSources", "expandCandidateCitationNetwork", "buildCitationNetworkRequests", "parseSemanticScholarCitationNetworkResponse", "mergeCandidateRecords", "candidateRecordFromPaper", "sortCandidateRecords", "candidatePriority"]
   },
   {
     id: "candidate.actions",
-    description: "Workbench supports candidate search, import, PDF attachment, and duplicate reconciliation",
+    description: "Workbench supports candidate search, citation-network expansion, import, PDF attachment, and duplicate reconciliation",
     files: ["addon/content/workbench.xhtml", "addon/content/workbench.js"],
     markers: [
       "zms-search-candidates",
+      "zms-expand-citation-network",
       "zms-import-candidates",
       "zms-attach-candidate-pdfs",
       "zms-reconcile-candidate-duplicates",
       "importIncludedCandidates",
+      "expandCandidateCitationNetwork",
       "attachCandidatePdfs",
       "reconcileCandidateDuplicates"
     ]
