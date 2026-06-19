@@ -178,6 +178,12 @@ const SOURCE_MARKERS = [
     markers: ["https://api.openai.com/v1", "https://api.anthropic.com", "http://127.0.0.1:3333/mcp", "ask-gemini-claude"]
   },
   {
+    id: "prompt.packs",
+    description: "Research-domain prompt packs are configurable and applied in workbench and direct summary prompts",
+    files: ["addon/prefs.js", "addon/bootstrap.js", "addon/content/bootstrap-settings.js", "addon/content/preferences.xhtml", "addon/content/workbench.xhtml", "addon/content/workbench.js", "tests/workbenchWriteback.test.ts", "tests/bootstrapProvider.test.ts"],
+    markers: ["promptPackId", "promptPackInstructionBlock", "zms-promptPackId", "zms-prompt-pack", "promptTextForRequest", "adds prompt pack instructions"]
+  },
+  {
     id: "provider.profile-migration",
     description: "Settings and workbench merge missing built-in provider profiles without overwriting user profiles",
     files: ["addon/content/preferences.js", "addon/content/workbench.js"],

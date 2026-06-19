@@ -27,6 +27,19 @@
         </menulist>
       </hbox>
       <hbox align="center" class="zms-row">
+        <label class="zms-label" id="zms-promptPackId-label" value="提示模板包"/>
+        <menulist id="zms-promptPackId">
+          <menupopup>
+            <menuitem label="通用 / General" value="general"/>
+            <menuitem label="AI / ML / Systems" value="ai-ml"/>
+            <menuitem label="交通与城市空域 / Transportation" value="transportation"/>
+            <menuitem label="医学与生命科学 / Biomedicine" value="biomedicine"/>
+            <menuitem label="社科与政策 / Social science" value="social-science"/>
+            <menuitem label="综述写作 / Review writing" value="review-writing"/>
+          </menupopup>
+        </menulist>
+      </hbox>
+      <hbox align="center" class="zms-row">
         <label class="zms-label" id="zms-activeProfileId-label" value="默认接口档案"/>
         <html:input class="zms-field" id="zms-activeProfileId" list="zms-profile-options"/>
         <html:datalist id="zms-profile-options"/>

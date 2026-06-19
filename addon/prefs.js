@@ -10,6 +10,7 @@ pref("stream", true);
 pref("summaryVersion", "1");
 pref("uiLanguage", "auto");
 pref("outputLanguage", "zh-CN");
+pref("promptPackId", "general");
 pref("systemPrompt", "你是学术论文阅读助手，输出中文 Markdown 摘要。");
 pref("userPrompt", "请按研究问题、方法、实验、结论、局限、可借鉴点总结。");
 pref("activeProfileId", "minimax");

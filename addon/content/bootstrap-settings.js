@@ -24,6 +24,7 @@ function getSettings() {
     stream: !!pref("stream") && (profile?.capabilities?.streaming !== false),
     summaryVersion: pref("summaryVersion") || "1",
     outputLanguage: pref("outputLanguage") || "zh-CN",
+    promptPackId: pref("promptPackId") || "general",
     systemPrompt: pref("systemPrompt") || SYSTEM_PROMPT,
     userPrompt: pref("userPrompt") || USER_PROMPT
   };

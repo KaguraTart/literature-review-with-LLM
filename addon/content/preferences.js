@@ -43,6 +43,7 @@ var ZoteroMarkdownSummaryPrefs = {
     "userPrompt",
     "uiLanguage",
     "outputLanguage",
+    "promptPackId",
     "activeProfileId",
     "profilesJson"
   ],
@@ -614,6 +615,7 @@ var ZoteroMarkdownSummaryPrefs = {
     for (const key of [
       "uiLanguage",
       "outputLanguage",
+      "promptPackId",
       "activeProfileId",
       "provider",
       "baseURL",

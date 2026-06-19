@@ -159,6 +159,10 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     assertRemoteProfileReady: (profile: any, translate?: (key: string) => string) => void;
     normalizeSkillId: (value: string) => string;
     defaultImageQuestion: (outputLanguage: string) => string;
+    normalizePromptPackId: (value: string) => string;
+    promptPackInstruction: (promptPackId: string, outputLanguage: string) => string;
+    promptPackInstructionBlock: (promptPackId: string, outputLanguage: string) => string;
+    promptTextForRequest: (skillTemplate: string, savedSummaryPrompt: string, userText: string, promptPackId: string, outputLanguage: string) => string;
     userTextForSend: (rawContent: string, skillId: string, imageCount: number, outputLanguage: string) => string;
     displayTextForSend: (rawContent: string, skillId: string, imageCount: number, outputLanguage: string, labelFor?: (id: string) => string) => string;
     providerBodyExtra: (bodyExtra: any) => Record<string, any>;
@@ -779,6 +783,20 @@ describe("workbench writeback helpers", () => {
     expect(helpers.userTextForSend("", "figure-table-extractor", 1, "zh-CN")).toBe("");
     expect(helpers.displayTextForSend("", "figure-table-extractor", 1, "zh-CN", (id) => `label:${id}`))
       .toBe("label:figure-table-extractor");
+  });
+
+  it("builds domain-specific prompt pack instructions for workbench requests", () => {
+    expect(helpers.normalizePromptPackId("transportation")).toBe("transportation");
+    expect(helpers.normalizePromptPackId("unknown")).toBe("general");
+    expect(helpers.promptPackInstruction("transportation", "zh-CN")).toContain("道路/空域");
+    expect(helpers.promptPackInstruction("ai-ml", "en-US")).toContain("model architecture");
+    expect(helpers.promptPackInstructionBlock("review-writing", "en-US")).toContain("Research domain prompt pack");
+    expect(helpers.promptPackInstructionBlock("general", "zh-CN")).toBe("");
+    const prompt = helpers.promptTextForRequest("Skill template", "", "Question", "transportation", "zh-CN");
+    expect(prompt).toContain("研究领域提示模板包");
+    expect(prompt).toContain("交通场景");
+    expect(prompt).toContain("Skill template");
+    expect(prompt).toContain("Question");
   });
 
   it("merges consecutive Anthropic workbench messages before sending", () => {

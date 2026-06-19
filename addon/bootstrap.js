@@ -15,6 +15,7 @@ const WORKBENCH_STYLE_ID = "zotero-markdown-summary-workbench-style";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SYSTEM_PROMPT = "你是学术论文阅读助手，输出中文 Markdown 摘要。";
 const USER_PROMPT = "请按研究问题、方法、实验、结论、局限、可借鉴点总结。";
+const PROMPT_PACK_IDS = ["general", "ai-ml", "transportation", "biomedicine", "social-science", "review-writing"];
 var UI_MESSAGES = typeof ZMS_I18N === "undefined" ? {} : ZMS_I18N;
 
 async function startup({ id, rootURI: startupRootURI }) {
@@ -713,9 +714,10 @@ function buildOutputPath(item, pdf, settings, sourceHash) {
 
 function summaryPromptsForSettings(settings) {
   const outputLanguage = normalizeSummaryOutputLanguage(settings?.outputLanguage);
+  const promptPack = promptPackInstructionBlock(settings?.promptPackId, outputLanguage);
   return {
     system: summarySystemPromptForLanguage(settings?.systemPrompt, outputLanguage),
-    user: summaryUserPromptForLanguage(settings?.userPrompt, outputLanguage)
+    user: [promptPack, summaryUserPromptForLanguage(settings?.userPrompt, outputLanguage)].filter(Boolean).join("\n\n")
   };
 }
 
@@ -755,6 +757,44 @@ function summaryLanguageInstruction(outputLanguage) {
   if (outputLanguage === "en-US") return "Write the output in English.";
   if (outputLanguage === "ja-JP") return "日本語で出力してください。";
   return "请使用中文输出。";
+}
+
+function normalizePromptPackId(value) {
+  const id = String(value || "").trim();
+  return PROMPT_PACK_IDS.includes(id) ? id : "general";
+}
+
+function promptPackInstructionBlock(promptPackId, outputLanguage) {
+  const instruction = promptPackInstruction(promptPackId, outputLanguage);
+  if (!instruction) return "";
+  if (outputLanguage === "zh-CN") return `研究领域提示模板包：\n${instruction}`;
+  if (outputLanguage === "ja-JP") return `研究分野プロンプトパック:\n${instruction}`;
+  return `Research domain prompt pack:\n${instruction}`;
+}
+
+function promptPackInstruction(promptPackId, outputLanguage) {
+  const id = normalizePromptPackId(promptPackId);
+  if (id === "general") return "";
+  if (outputLanguage === "zh-CN") {
+    if (id === "ai-ml") return "聚焦模型架构、训练目标、数据集、指标、baseline 公平性、消融实验、复现成本、算力假设和失败模式。";
+    if (id === "transportation") return "聚焦交通场景、道路/空域/网络约束、需求与流量、安全风险、路径规划或控制策略、仿真设置、可扩展性和运行管理含义。";
+    if (id === "biomedicine") return "聚焦研究设计、样本/队列、干预或暴露、终点指标、偏倚来源、统计不确定性、生物或临床合理性；不要给出医疗建议。";
+    if (id === "social-science") return "聚焦理论框架、变量构造、测量有效性、样本代表性、因果识别、混杂因素、外部有效性和政策含义。";
+    if (id === "review-writing") return "聚焦综述写作：提炼研究空白、分类维度、可比较指标、证据强弱、代表性论文位置和后续研究路线。";
+  }
+  if (outputLanguage === "ja-JP") {
+    if (id === "ai-ml") return "モデル構造、学習目標、データセット、評価指標、ベースラインの公平性、アブレーション、再現コスト、計算資源の仮定、失敗モードに注目してください。";
+    if (id === "transportation") return "交通シナリオ、道路・空域・ネットワーク制約、需要と流量、安全リスク、経路計画または制御、シミュレーション設定、拡張性、運用上の意味に注目してください。";
+    if (id === "biomedicine") return "研究デザイン、サンプルまたはコホート、介入または曝露、エンドポイント、バイアス、不確実性、生物学的または臨床的妥当性に注目してください。医療助言は行わないでください。";
+    if (id === "social-science") return "理論枠組み、構成概念、測定妥当性、サンプル代表性、因果識別、交絡、外的妥当性、政策的含意に注目してください。";
+    if (id === "review-writing") return "レビュー執筆に向けて、研究ギャップ、分類軸、比較可能な指標、証拠の強さ、代表論文の位置づけ、今後の研究ルートを抽出してください。";
+  }
+  if (id === "ai-ml") return "Focus on model architecture, training objective, datasets, metrics, baseline fairness, ablations, reproducibility cost, compute assumptions, and failure modes.";
+  if (id === "transportation") return "Focus on traffic or airspace scenario, road/airspace/network constraints, demand and flow, safety risk, routing or control policy, simulation setup, scalability, and operational implications.";
+  if (id === "biomedicine") return "Focus on study design, sample or cohort, intervention or exposure, endpoints, bias sources, statistical uncertainty, biological or clinical plausibility; do not provide medical advice.";
+  if (id === "social-science") return "Focus on theory, constructs, measurement validity, sample representativeness, causal identification, confounders, external validity, and policy implications.";
+  if (id === "review-writing") return "Focus on literature-review writing: research gaps, taxonomy dimensions, comparable measures, evidence strength, representative-paper positioning, and future research routes.";
+  return "";
 }
 
 function normalizeSummaryOutputLanguage(value) {

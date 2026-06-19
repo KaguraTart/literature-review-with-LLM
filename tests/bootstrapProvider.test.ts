@@ -131,6 +131,7 @@ function loadBootstrapProviderHelpers(fetchResponse: any = { output_text: "ok" }
       findPdfAttachment: (item: any) => Promise<any>;
       openEmbeddedReader: (payload: any) => boolean;
       summaryPromptsForSettings: (settings: any) => { system: string; user: string };
+      promptPackInstruction: (promptPackId: string, outputLanguage: string) => string;
     }
   };
 }
@@ -734,6 +735,22 @@ describe("bootstrap provider helpers", () => {
     expect(custom.system).toContain("Write the output in English.");
     expect(custom.user).toContain("Custom summary prompt.");
     expect(custom.user).toContain("Write the output in English.");
+  });
+
+  it("adds prompt pack instructions to direct summary prompts", () => {
+    const { helpers } = loadBootstrapProviderHelpers();
+    const prompts = helpers.summaryPromptsForSettings({
+      outputLanguage: "zh-CN",
+      promptPackId: "transportation",
+      systemPrompt: "system",
+      userPrompt: "user"
+    });
+
+    expect(helpers.promptPackInstruction("transportation", "zh-CN")).toContain("交通场景");
+    expect(prompts.system).toContain("system");
+    expect(prompts.user).toContain("研究领域提示模板包");
+    expect(prompts.user).toContain("交通场景");
+    expect(prompts.user).toContain("user");
   });
 
   it("uses Responses instructions and filters local-agent config from request body", async () => {

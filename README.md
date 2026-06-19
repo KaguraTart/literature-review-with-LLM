@@ -18,6 +18,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - **Bring-your-own-key**: the plugin is free and open source; remote model providers require your own API keys.
 - **Local agent consultation**: optionally ask local Gemini, Claude, and opencode command-line tools for independent reading suggestions through the local bridge.
 - **Research workflow utilities**: includes skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation checks, and candidate-paper discovery.
+- **Research-domain prompt packs**: choose general reading, AI/ML systems, transportation and urban airspace, biomedicine, social science/policy, or literature-review writing packs. The selected pack is applied in both the paper chat workbench and direct summary generation.
 
 ## Features
 
@@ -29,6 +30,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - Write selected answers back into the Markdown summary with a preview step and backup file.
 - Configure multiple model providers from Zotero preferences.
 - Use built-in skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation audit, and local-agent review.
+- Select a research-domain prompt pack from Zotero preferences or the workbench settings drawer.
 - Optional local-agent bridge for Gemini, Claude, and opencode CLI tools.
 - Candidate-paper discovery utilities for arXiv / Crossref / Semantic Scholar workflows.
 
@@ -202,7 +204,6 @@ build/update.json
 - Add better candidate-paper ranking and citation-network expansion.
 - Add per-provider setup guides with screenshots.
 - Add stronger UI tests for the embedded Zotero side panel.
-- Add configurable prompt packs for different research domains.
 - Add export templates for thesis notes, review reports, and paper reading logs.
 
 ## Security and Privacy
