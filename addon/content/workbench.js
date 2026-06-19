@@ -819,6 +819,9 @@ var ZoteroMarkdownSummaryWorkbench = {
         seeds,
         directions: ["references", "citations"],
         perSeedLimit,
+        maxHops: 2,
+        nextHopSeedLimit: 4,
+        maxNetworkRequests: 12,
         collectionKey: workbenchCollectionKey(this.state.item),
         now: new Date().toISOString()
       }, existing);
@@ -827,7 +830,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       await appendImportLedgerEntries(importLedgerJsonlPath(this.state.outputDir, this.state.item), discoveredLedgerEntries(result.records, existingCandidateIds));
       this.renderCandidates(candidateSearchErrorSummary(result.errors, (key) => this.t(key)));
       const errorSuffix = result.errors?.length ? `; ${this.t("candidateSourceErrors")}: ${result.errors.map((item) => item.source).join(", ")}` : "";
-      this.setStatus(`${this.t("candidateCitationNetworkDone")}: ${result.records.length}; seeds ${seeds.length}${errorSuffix}`);
+      this.setStatus(`${this.t("candidateCitationNetworkDone")}: ${result.records.length}; seeds ${seeds.length}; hops ${result.hops || 1}${errorSuffix}`);
     } catch (err) {
       this.setStatus(`${this.t("candidateCitationNetworkFailed")}: ${safeError(err)}`);
     }
@@ -5126,7 +5129,8 @@ function candidateReviewDecisionLabel(labels) {
 
 function candidateReviewNetworkOrigins(origins) {
   return (origins || []).map((origin) => {
-    return [origin.direction, origin.seedTitle || origin.seedId].filter(Boolean).join(" from ");
+    const hop = origin.hop ? `hop ${origin.hop}` : "";
+    return [origin.direction, origin.seedTitle || origin.seedId, hop].filter(Boolean).join(" from ");
   }).join("; ");
 }
 
@@ -5288,7 +5292,8 @@ function citationNetworkMetaText(record) {
   if (!origins.length) return "";
   return `network:${origins.slice(0, 2).map((origin) => {
     const seed = origin.seedTitle || origin.seedId || "";
-    return [origin.direction, seed].filter(Boolean).join(":");
+    const hop = origin.hop ? `hop${origin.hop}` : "";
+    return [origin.direction, seed, hop].filter(Boolean).join(":");
   }).join(",")}`;
 }
 

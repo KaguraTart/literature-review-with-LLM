@@ -253,6 +253,79 @@ describe("runtime candidate source search", () => {
     });
   });
 
+  it("follows a bounded second hop from high-value citation-network results", async () => {
+    const runtime = loadRuntime();
+    const calls: any[] = [];
+    const fetchImpl = async (url: string, init: any) => {
+      calls.push({ url, init });
+      if (url.includes("/paper/S2-Hop1/references?")) {
+        return ok(JSON.stringify({ data: [] }));
+      }
+      if (url.includes("/paper/S2-Hop1/citations?")) {
+        return ok(JSON.stringify({
+          data: [
+            {
+              citingPaper: {
+                paperId: "S2-Hop2",
+                title: "Second Hop Conflict Resolution",
+                authors: [{ name: "H. Two" }],
+                year: 2024,
+                externalIds: { DOI: "10.1000/hop2" },
+                citationCount: 21
+              }
+            }
+          ]
+        }));
+      }
+      if (url.includes("/references?")) {
+        return ok(JSON.stringify({
+          data: [
+            {
+              citedPaper: {
+                paperId: "S2-Hop1",
+                title: "First Hop Conflict Resolution",
+                authors: [{ name: "H. One" }],
+                year: 2025,
+                externalIds: { DOI: "10.1000/hop1" },
+                openAccessPdf: { url: "https://example.test/hop1.pdf" },
+                citationCount: 42
+              }
+            }
+          ]
+        }));
+      }
+      if (url.includes("/citations?")) {
+        return ok(JSON.stringify({ data: [] }));
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+
+    const result = await runtime.ZMSCandidateSources.expandCandidateCitationNetwork(fetchImpl, {
+      seeds: [{ doi: "10.1000/seed", title: "Seed Paper" }],
+      directions: ["references", "citations"],
+      limit: 2,
+      maxHops: 2,
+      nextHopSeedLimit: 1,
+      maxNetworkRequests: 4,
+      collectionKey: "COL",
+      now: "2026-06-19T00:00:00.000Z"
+    }, []);
+
+    expect(result.hops).toBe(2);
+    expect(calls).toHaveLength(4);
+    expect(calls[2].url).toContain("/paper/S2-Hop1/references?");
+    expect(calls[3].url).toContain("/paper/S2-Hop1/citations?");
+    const hop1 = result.records.find((record: any) => record.candidateId === "doi:10.1000/hop1");
+    const hop2 = result.records.find((record: any) => record.candidateId === "doi:10.1000/hop2");
+    expect(hop1).toMatchObject({
+      pdfUrl: "https://example.test/hop1.pdf",
+      networkOrigins: [{ direction: "references", seedId: "DOI:10.1000/seed", seedTitle: "Seed Paper", hop: 1 }]
+    });
+    expect(hop2).toMatchObject({
+      networkOrigins: [{ direction: "citations", seedId: "S2-Hop1", seedTitle: "First Hop Conflict Resolution", hop: 2 }]
+    });
+  });
+
   it("preserves prior human decisions while merging new discoveries", () => {
     const runtime = loadRuntime();
     const existing = [{

@@ -269,9 +269,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "candidate.sources",
-    description: "Candidate source search, citation-network expansion, merge, explainable ranking, and record conversion runtime is present",
+    description: "Candidate source search, bounded multi-hop citation-network expansion, merge, explainable ranking, and record conversion runtime is present",
     files: ["addon/content/candidate-sources.js"],
-    markers: ["searchCandidateSources", "expandCandidateCitationNetwork", "buildCitationNetworkRequests", "parseSemanticScholarCitationNetworkResponse", "mergeCandidateRecords", "candidateRecordFromPaper", "sortCandidateRecords", "candidatePriority"]
+    markers: ["searchCandidateSources", "expandCandidateCitationNetwork", "buildCitationNetworkRequests", "maxHops", "maxNetworkRequests", "nextCitationFrontier", "networkHop", "parseSemanticScholarCitationNetworkResponse", "mergeCandidateRecords", "candidateRecordFromPaper", "sortCandidateRecords", "candidatePriority"]
   },
   {
     id: "candidate.actions",

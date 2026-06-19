@@ -72,18 +72,42 @@ var ZMSCandidateSources = (() => {
   }
 
   async function expandCandidateCitationNetwork(fetchImpl, options, existingRecords = []) {
-    const requests = buildCitationNetworkRequests(options);
-    const settled = await Promise.allSettled(requests.map((request) => fetchCandidateRequest(fetchImpl, request)));
     const papers = [];
     const errors = [];
-    for (let index = 0; index < settled.length; index += 1) {
-      const result = settled[index];
-      const request = requests[index];
-      if (result.status === "fulfilled") {
-        papers.push(...result.value);
-      } else {
-        errors.push({ source: `${request.source}:${request.networkDirection || "network"}`, error: safeError(result.reason) });
+    const requests = [];
+    const maxHops = clamp(Number(options?.maxHops) || 1, 1, 3);
+    const maxNetworkRequests = clamp(Number(options?.maxNetworkRequests || options?.maxRequests) || 12, 1, 100);
+    const nextHopSeedLimit = clamp(Number(options?.nextHopSeedLimit || options?.seedLimit) || 4, 1, 20);
+    let frontier = normalizeCitationSeeds(options?.seeds || []);
+    const seenSeedKeys = new Set(frontier.map((seed) => citationSeedKey(seed)));
+    const seenRequestKeys = new Set();
+    let completedHops = 0;
+    for (let hop = 1; hop <= maxHops && frontier.length && requests.length < maxNetworkRequests; hop += 1) {
+      const hopRequests = buildCitationNetworkRequests({ ...options, seeds: frontier })
+        .map((request) => ({ ...request, networkHop: hop }))
+        .filter((request) => {
+          const key = citationRequestKey(request);
+          if (seenRequestKeys.has(key)) return false;
+          seenRequestKeys.add(key);
+          return true;
+        })
+        .slice(0, Math.max(0, maxNetworkRequests - requests.length));
+      if (!hopRequests.length) break;
+      requests.push(...hopRequests);
+      const settled = await Promise.allSettled(hopRequests.map((request) => fetchCandidateRequest(fetchImpl, request)));
+      const hopPapers = [];
+      for (let index = 0; index < settled.length; index += 1) {
+        const result = settled[index];
+        const request = hopRequests[index];
+        if (result.status === "fulfilled") {
+          hopPapers.push(...result.value);
+        } else {
+          errors.push({ source: `${request.source}:${request.networkDirection || "network"}:hop${hop}`, error: safeError(result.reason) });
+        }
       }
+      papers.push(...hopPapers);
+      completedHops = hop;
+      frontier = nextCitationFrontier(hopPapers, seenSeedKeys, nextHopSeedLimit);
     }
     const now = options.now || new Date().toISOString();
     const existingIdentities = candidateIdentitiesFromRecords(existingRecords);
@@ -97,7 +121,8 @@ var ZMSCandidateSources = (() => {
       records,
       papers,
       errors,
-      requests
+      requests,
+      hops: completedHops
     };
   }
 
@@ -113,7 +138,8 @@ var ZMSCandidateSources = (() => {
     if (request.source === "semantic_scholar" && request.networkDirection) {
       return parseSemanticScholarCitationNetworkResponse(data, request.networkDirection, {
         semanticScholarId: request.seedId,
-        title: request.seedTitle
+        title: request.seedTitle,
+        hop: request.networkHop
       });
     }
     if (request.source === "semantic_scholar") return parseSemanticScholarResponse(data);
@@ -259,12 +285,13 @@ var ZMSCandidateSources = (() => {
     const paperKey = normalizedDirection === "references" ? "citedPaper" : "citingPaper";
     const seedId = semanticScholarSeedId(seed || {}) || cleanText(seed?.candidateId) || cleanText(seed?.doi) || cleanText(seed?.arxivId);
     const seedTitle = cleanText(seed?.title) || undefined;
+    const hop = numberOrUndefined(seed?.hop);
     return records.map((item) => {
       const paper = semanticScholarPaperFromItem(item?.[paperKey]);
       if (!paper || !seedId) return paper;
       return {
         ...paper,
-        networkOrigins: mergeNetworkOrigins(paper.networkOrigins, [{ direction: normalizedDirection, seedId, seedTitle }])
+        networkOrigins: mergeNetworkOrigins(paper.networkOrigins, [{ direction: normalizedDirection, seedId, seedTitle, ...(hop ? { hop } : {}) }])
       };
     }).filter(Boolean);
   }
@@ -508,10 +535,12 @@ var ZMSCandidateSources = (() => {
     const byKey = new Map();
     for (const origin of [...(left || []), ...(right || [])]) {
       if (!origin?.direction || !origin?.seedId) continue;
-      byKey.set(`${origin.direction}:${origin.seedId}`, {
+      const hop = numberOrUndefined(origin.hop);
+      byKey.set(`${origin.direction}:${origin.seedId}:${hop || ""}`, {
         direction: origin.direction,
         seedId: origin.seedId,
-        seedTitle: origin.seedTitle
+        seedTitle: origin.seedTitle,
+        ...(hop ? { hop } : {})
       });
     }
     const origins = [...byKey.values()];
@@ -643,6 +672,61 @@ var ZMSCandidateSources = (() => {
   function normalizeCitationDirections(directions) {
     const valid = (directions || []).filter((direction) => direction === "references" || direction === "citations");
     return valid.length ? [...new Set(valid)] : ["references", "citations"];
+  }
+
+  function normalizeCitationSeeds(seeds) {
+    const byKey = new Map();
+    for (const seed of seeds || []) {
+      const normalized = {
+        ...seed,
+        semanticScholarId: semanticScholarSeedId(seed),
+        title: cleanText(seed?.title) || undefined
+      };
+      if (!normalized.semanticScholarId) continue;
+      const key = citationSeedKey(normalized);
+      if (!byKey.has(key)) byKey.set(key, normalized);
+    }
+    return [...byKey.values()];
+  }
+
+  function nextCitationFrontier(papers, seenSeedKeys, limit) {
+    const deduped = dedupeCandidatePapers(papers)
+      .map((paper) => ({ paper, record: withCandidatePriority(candidateRecordFromPaper(paper, { existing: [] })) }))
+      .sort((left, right) => candidateRecordCompare(left.record, right.record));
+    const out = [];
+    for (const { paper } of deduped) {
+      const seed = citationSeedFromPaper(paper);
+      const key = citationSeedKey(seed);
+      if (!key || seenSeedKeys.has(key)) continue;
+      seenSeedKeys.add(key);
+      out.push(seed);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  function citationSeedFromPaper(paper) {
+    return {
+      semanticScholarId: cleanText(paper?.sourceIds?.semantic_scholar) || undefined,
+      doi: paper?.doi,
+      arxivId: paper?.arxivId,
+      url: paper?.url,
+      candidateId: paper?.id,
+      title: paper?.title
+    };
+  }
+
+  function citationSeedKey(seed) {
+    return semanticScholarSeedId(seed).toLowerCase();
+  }
+
+  function citationRequestKey(request) {
+    return [
+      request.source || "",
+      request.seedId || "",
+      request.networkDirection || "",
+      request.url || ""
+    ].join("|").toLowerCase();
   }
 
   function semanticScholarSeedId(seed) {
@@ -782,6 +866,8 @@ var ZMSCandidateSources = (() => {
   return {
     buildCandidateSearchRequests,
     buildCitationNetworkRequests,
+    normalizeCitationSeeds,
+    nextCitationFrontier,
     searchCandidateSources,
     expandCandidateCitationNetwork,
     parseArxivAtom,

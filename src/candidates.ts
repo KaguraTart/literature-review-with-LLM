@@ -5,6 +5,7 @@ export interface CitationNetworkOrigin {
   direction: CitationNetworkDirection;
   seedId: string;
   seedTitle?: string;
+  hop?: number;
 }
 
 export interface CandidatePaper {
@@ -35,6 +36,7 @@ export interface CandidateSearchRequest {
   networkDirection?: CitationNetworkDirection;
   seedId?: string;
   seedTitle?: string;
+  networkHop?: number;
 }
 
 export interface CandidateSearchOptions {
@@ -62,6 +64,9 @@ export interface CandidateNetworkOptions {
   perSeedLimit?: number;
   directions?: CitationNetworkDirection[];
   semanticScholarApiKey?: string;
+  maxHops?: number;
+  maxNetworkRequests?: number;
+  nextHopSeedLimit?: number;
 }
 
 const SEMANTIC_SCHOLAR_FIELDS = [
@@ -265,13 +270,14 @@ export function parseSemanticScholarCitationNetworkResponse(
   const paperKey = direction === "references" ? "citedPaper" : "citingPaper";
   const seedId = semanticScholarSeedId(seed) || cleanText(seed.candidateId) || cleanText(seed.doi) || cleanText(seed.arxivId);
   const seedTitle = cleanText(seed.title) || undefined;
+  const hop = numberOrUndefined((seed as CandidateNetworkSeed & { hop?: number }).hop);
   return records
     .map((item: any): CandidatePaper | null => {
       const paper = semanticScholarPaperFromItem(item?.[paperKey]);
       if (!paper || !seedId) return paper;
       return {
         ...paper,
-        networkOrigins: mergeNetworkOrigins(paper.networkOrigins, [{ direction, seedId, seedTitle }])
+        networkOrigins: mergeNetworkOrigins(paper.networkOrigins, [{ direction, seedId, seedTitle, ...(hop ? { hop } : {}) }])
       };
     })
     .filter((item): item is CandidatePaper => !!item);
@@ -418,11 +424,13 @@ function mergeNetworkOrigins(left: CitationNetworkOrigin[] = [], right: Citation
   const byKey = new Map<string, CitationNetworkOrigin>();
   for (const origin of [...left, ...right]) {
     if (!origin?.direction || !origin?.seedId) continue;
-    const key = `${origin.direction}:${origin.seedId}`;
+    const hop = numberOrUndefined(origin.hop);
+    const key = `${origin.direction}:${origin.seedId}:${hop || ""}`;
     byKey.set(key, {
       direction: origin.direction,
       seedId: origin.seedId,
-      seedTitle: origin.seedTitle
+      seedTitle: origin.seedTitle,
+      ...(hop ? { hop } : {})
     });
   }
   const origins = [...byKey.values()];
