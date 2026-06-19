@@ -177,9 +177,11 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     profileMessageMetadata: (profile: any) => any;
     providerErrorText: (status: number, text: string) => string;
     extractResponseText: (protocol: string, data: any) => string;
+    extractProviderConnectionText: (protocol: string, text: string) => string;
     getProfiles: () => any[];
     requestMessagesWithHistory: (messages: any[], latestUserText: string, requestPrompt: string, options?: { limit?: number; compaction?: any }) => any[];
     bodyForProfile: (profile: any, messages: any[], outputLanguage: string, systemPrompt: string, requestInput?: any, streamEnabled?: boolean) => any;
+    connectionTestBodyForProfile: (profile: any) => any;
     shouldStream: (profile: any, streamEnabled?: boolean) => boolean;
     normalizeBoolean: (value: any, fallback?: boolean) => boolean;
     headersForProfile: (profile: any) => Record<string, string>;
@@ -841,6 +843,62 @@ describe("workbench writeback helpers", () => {
       expect.objectContaining({ type: "document" }),
       expect.objectContaining({ type: "text" })
     ]));
+  });
+
+  it("builds workbench settings connection tests with generation-compatible request bodies", () => {
+    expect(helpers.connectionTestBodyForProfile({
+      protocol: "openai_chat",
+      model: "chat-model"
+    })).toMatchObject({
+      model: "chat-model",
+      messages: [
+        { role: "system", content: expect.stringContaining("connection test endpoint") },
+        { role: "user", content: "ping" }
+      ],
+      max_tokens: 32,
+      stream: false,
+      n: 1
+    });
+
+    expect(helpers.connectionTestBodyForProfile({
+      protocol: "openai_responses",
+      model: "responses-model"
+    })).toMatchObject({
+      model: "responses-model",
+      instructions: expect.stringContaining("connection test endpoint"),
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_text", text: "ping" }]
+        }
+      ],
+      max_output_tokens: 32,
+      stream: false
+    });
+
+    expect(helpers.connectionTestBodyForProfile({
+      protocol: "anthropic_messages",
+      model: "claude-model"
+    })).toMatchObject({
+      model: "claude-model",
+      system: expect.stringContaining("connection test endpoint"),
+      max_tokens: 32,
+      stream: false,
+      messages: [{ role: "user", content: "ping" }]
+    });
+  });
+
+  it("validates workbench settings connection responses before marking them usable", () => {
+    expect(helpers.extractProviderConnectionText("openai_responses", JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: "pong" }] }]
+    }))).toBe("pong");
+
+    expect(() => helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
+      error: { code: "invalid_api_key", message: "Bad key sk-test-secret" }
+    }))).toThrow("invalid_api_key - Bad key [redacted]");
+
+    expect(() => helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({ content: [] })))
+      .toThrow("No text returned from model");
   });
 
   it("validates remote profile credentials before sending provider requests", () => {

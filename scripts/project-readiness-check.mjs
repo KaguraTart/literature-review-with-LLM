@@ -215,9 +215,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "provider.settings-connection-response",
-    description: "Settings connection tests require parseable model text and surface 200-level provider errors",
-    files: ["addon/content/preferences.js", "tests/preferencesLocalAgent.test.ts"],
-    markers: ["extractProviderConnectionText", "Provider error", "No text returned from model", "marks settings connection tests OK only after extracting model text", "fails settings connection tests when a 200 response still contains a provider error"]
+    description: "Settings connection tests use generation-compatible request bodies, require parseable model text, and surface 200-level provider errors",
+    files: ["addon/content/preferences.js", "addon/content/workbench.js", "tests/preferencesLocalAgent.test.ts", "tests/workbenchWriteback.test.ts"],
+    markers: ["extractProviderConnectionText", "connectionTestBodyForProfile", "Provider error", "No text returned from model", "input_text", "builds workbench settings connection tests with generation-compatible request bodies", "marks settings connection tests OK only after extracting model text", "fails settings connection tests when a 200 response still contains a provider error"]
   },
   {
     id: "provider.retry-boundary",

@@ -1336,24 +1336,38 @@ function normalizeModelOptions(modelOptions) {
 }
 
 function connectionTestBodyForProfile(profile) {
+  const system = "You are a provider connection test endpoint. Reply with pong only.";
   if (profile.protocol === "anthropic_messages") {
     return {
       model: profile.model,
+      system,
       max_tokens: 32,
+      stream: false,
       messages: [{ role: "user", content: "ping" }]
     };
   }
   if (profile.protocol === "openai_responses") {
     return {
       model: profile.model,
-      input: "ping",
-      max_output_tokens: 32
+      instructions: system,
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_text", text: "ping" }]
+        }
+      ],
+      max_output_tokens: 32,
+      stream: false
     };
   }
   return {
     model: profile.model,
-    messages: [{ role: "user", content: "ping" }],
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: "ping" }
+    ],
     max_tokens: 32,
+    stream: false,
     n: 1
   };
 }

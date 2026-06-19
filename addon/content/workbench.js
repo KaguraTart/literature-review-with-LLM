@@ -572,7 +572,12 @@ var ZoteroMarkdownSummaryWorkbench = {
         body: JSON.stringify(withProviderBodyDefaults(profile, connectionTestBodyForProfile(profile)))
       });
       const text = await response.text();
-      this.setStatus(response.ok ? this.t("testOk") : `${this.t("testFailed")}: ${providerErrorText(response.status, text)}`);
+      if (!response.ok) {
+        this.setStatus(`${this.t("testFailed")}: ${providerErrorText(response.status, text)}`);
+        return;
+      }
+      extractProviderConnectionText(profile.protocol, text);
+      this.setStatus(this.t("testOk"));
     } catch (err) {
       this.setStatus(`${this.t("testFailed")}: ${safeError(err)}`);
     }
@@ -2641,24 +2646,38 @@ function setPref(key, value) {
 }
 
 function connectionTestBodyForProfile(profile) {
+  const system = "You are a provider connection test endpoint. Reply with pong only.";
   if (profile.protocol === "anthropic_messages") {
     return {
       model: profile.model,
+      system,
       max_tokens: 32,
+      stream: false,
       messages: [{ role: "user", content: "ping" }]
     };
   }
   if (profile.protocol === "openai_responses") {
     return {
       model: profile.model,
-      input: "ping",
-      max_output_tokens: 32
+      instructions: system,
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_text", text: "ping" }]
+        }
+      ],
+      max_output_tokens: 32,
+      stream: false
     };
   }
   return {
     model: profile.model,
-    messages: [{ role: "user", content: "ping" }],
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: "ping" }
+    ],
     max_tokens: 32,
+    stream: false,
     n: 1
   };
 }
@@ -4696,6 +4715,16 @@ function extractResponseText(protocol, data) {
       || modelTextFromStreamContainer(data);
   if (!text) throw new Error("No text returned from model");
   return String(text).trim();
+}
+
+function extractProviderConnectionText(protocol, text) {
+  const data = safeParseJSON(text);
+  if (!data) {
+    const plainText = String(text || "").trim();
+    if (!plainText) throw new Error("No text returned from model");
+    return plainText;
+  }
+  return extractResponseText(protocol, data);
 }
 
 function anthropicMessages(messages, requestInput, baseText) {

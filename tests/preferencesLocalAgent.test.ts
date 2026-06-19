@@ -266,8 +266,15 @@ describe("preferences local-agent config helpers", () => {
     expect(request.headers).toMatchObject({ authorization: "Bearer sk-test-secret", "x-route": "paper" });
     expect(request.body).toMatchObject({
       model: "model-a",
-      input: "ping",
+      instructions: expect.stringContaining("connection test endpoint"),
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_text", text: "ping" }]
+        }
+      ],
       max_output_tokens: 32,
+      stream: false,
       response_format: { type: "json_object" }
     });
     expect(request.body).not.toHaveProperty("localAgent");
@@ -317,8 +324,12 @@ describe("preferences local-agent config helpers", () => {
     expect(request.headers).toMatchObject({ authorization: "Bearer sk-test-secret", "x-route": "paper" });
     expect(request.body).toMatchObject({
       model: "router-model",
-      messages: [{ role: "user", content: "ping" }],
+      messages: [
+        { role: "system", content: expect.stringContaining("connection test endpoint") },
+        { role: "user", content: "ping" }
+      ],
       max_tokens: 32,
+      stream: false,
       n: 1
     });
     expect(request.body).not.toHaveProperty("extra_body");
@@ -535,7 +546,9 @@ describe("preferences local-agent config helpers", () => {
     });
     expect(request.body).toMatchObject({
       model: "model-b",
+      system: expect.stringContaining("connection test endpoint"),
       max_tokens: 32,
+      stream: false,
       metadata: { source: "settings" },
       messages: [{ role: "user", content: "ping" }]
     });
