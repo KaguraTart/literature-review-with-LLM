@@ -137,6 +137,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     const bindings = {
       "zms-open-reader": () => this.openReader(),
       "zms-save-session": () => this.saveSession({ quiet: false }),
+      "zms-export-comparison-report": () => this.exportComparisonReport(),
       "zms-search-candidates": () => this.searchCandidates(),
       "zms-expand-citation-network": () => this.expandCandidateCitationNetwork(),
       "zms-load-candidates": () => this.loadCandidates(),
@@ -406,6 +407,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-attach-candidate-pdfs", this.t("attachCandidatePdfs"));
     setText("zms-reconcile-candidate-duplicates", this.t("reconcileCandidateDuplicates"));
     setText("zms-save-session", this.t("saveSession"));
+    setText("zms-export-comparison-report", this.t("exportComparisonReport"));
     setText("zms-open-reader", this.t("openReader"));
     setText("zms-writeback-title", this.t("writePreview"));
     setText("zms-write-action-label", this.t("action"));
@@ -1309,6 +1311,35 @@ var ZoteroMarkdownSummaryWorkbench = {
       if (!options.quiet) this.setStatus(this.t("saved"));
     } catch (err) {
       this.setStatus(`${this.t("saveFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async exportComparisonReport() {
+    try {
+      const comparisonContexts = Array.isArray(this.state.context?.comparisonContexts)
+        ? this.state.context.comparisonContexts
+        : this.state.comparisonContexts || [];
+      if (!comparisonContexts.length) {
+        this.setStatus(this.t("comparisonReportNone"));
+        return;
+      }
+      const now = new Date().toISOString();
+      const reportPath = comparisonReportMarkdownPath(this.state.outputDir, this.state.item);
+      const reportContext = {
+        ...(this.state.context || {}),
+        comparisonContexts
+      };
+      this.setStatus(this.t("comparisonReportExporting"));
+      await writeTextAtomic(reportPath, renderComparisonReportMarkdown(reportContext, {
+        item: this.state.item,
+        outputLanguage: this.state.outputLanguage,
+        generatedAt: now,
+        reportPath,
+        contextSourceHash: this.state.contextSourceHash
+      }), `${reportPath}.${Date.now()}.tmp`);
+      this.setStatus(`${this.t("comparisonReportDone")}: ${reportPath}`);
+    } catch (err) {
+      this.setStatus(`${this.t("comparisonReportFailed")}: ${safeError(err)}`);
     }
   },
 
@@ -3032,6 +3063,262 @@ function comparisonSummaryText(contexts, uiLanguage) {
   return `${label}: ${entries.slice(0, MAX_COMPARISON_PAPERS).join(" | ")}`;
 }
 
+function renderComparisonReportMarkdown(context, options = {}) {
+  const labels = comparisonReportLabels(options.outputLanguage);
+  const generatedAt = options.generatedAt || new Date().toISOString();
+  const focal = {
+    role: labels.focal,
+    evidencePrefix: "chunk",
+    itemKey: options.item?.key || "",
+    metadata: context?.metadata || {},
+    chunks: context?.chunks || [],
+    diagnostics: context?.diagnostics || {}
+  };
+  const comparisons = (context?.comparisonContexts || []).map((entry, index) => ({
+    role: `${labels.comparison} ${index + 1}`,
+    evidencePrefix: `paper${index + 2}`,
+    itemKey: entry.itemKey || "",
+    metadata: entry.metadata || {},
+    chunks: entry.chunks || [],
+    diagnostics: entry.diagnostics || {}
+  }));
+  const contexts = [focal, ...comparisons];
+  const collectionKey = workbenchCollectionKey(options.item);
+  const dimensions = comparisonReportDimensions(labels);
+  const lines = [
+    "---",
+    "templateVersion: literature-matrix-v1",
+    `generatedAt: ${generatedAt}`,
+    `collectionKey: ${yamlScalar(collectionKey)}`,
+    `focalItemKey: ${yamlScalar(focal.itemKey)}`,
+    `comparisonCount: ${comparisons.length}`,
+    `contextSourceHash: ${yamlScalar(options.contextSourceHash || "")}`,
+    `reportPath: ${yamlScalar(options.reportPath || "")}`,
+    "---",
+    "",
+    `# ${labels.title}`,
+    "",
+    `- ${labels.focalPaper}: ${mdText(focal.metadata.title || focal.itemKey || "")}`,
+    `- ${labels.comparisonCount}: ${comparisons.length}`,
+    `- ${labels.generatedAt}: ${generatedAt}`,
+    `- ${labels.reportFile}: ${mdText(options.reportPath || "")}`,
+    "",
+    `## ${labels.inventory}`,
+    "",
+    `| ${labels.role} | ${labels.evidence} | ${labels.paperTitle} | ${labels.authors} | ${labels.year} | DOI | ${labels.contextQuality} |`,
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    ...contexts.map((entry) => comparisonInventoryRow(entry, labels)),
+    "",
+    `## ${labels.matrix}`,
+    ""
+  ];
+  for (const dimension of dimensions) {
+    lines.push(
+      `### ${dimension.label}`,
+      "",
+      `| ${labels.paper} | ${labels.evidenceExcerpts} | ${labels.manualJudgment} |`,
+      "| --- | --- | --- |"
+    );
+    for (const entry of contexts) {
+      lines.push(comparisonDimensionRow(entry, dimension, labels));
+    }
+    lines.push("");
+  }
+  lines.push(
+    `## ${labels.crossAnalysis}`,
+    "",
+    `- [ ] ${labels.sharedAssumptions}`,
+    `- [ ] ${labels.keyDifferences}`,
+    `- [ ] ${labels.evidenceStrength}`,
+    `- [ ] ${labels.conflicts}`,
+    `- [ ] ${labels.reviewDraftNotes}`,
+    "",
+    `## ${labels.evidenceMap}`,
+    ""
+  );
+  for (const entry of contexts) {
+    lines.push(`### ${entry.role}: ${mdText(entry.metadata.title || entry.itemKey || "")}`, "");
+    const evidence = comparisonEvidenceForContext(entry, comparisonEvidenceOverviewDimension(labels), labels, 5);
+    if (evidence.length) {
+      for (const item of evidence) lines.push(`- ${item.label} ${truncateText(item.text, 360)}`);
+    } else {
+      lines.push(`- ${comparisonMetadataLabel(entry)} ${labels.metadataOnly}`);
+    }
+    lines.push("");
+  }
+  lines.push(`## ${labels.notes}`, "", `- ${labels.notesPlaceholder}`, "");
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+function comparisonInventoryRow(entry, labels) {
+  const metadata = entry.metadata || {};
+  const authors = Array.isArray(metadata.authors) ? metadata.authors.join(", ") : "";
+  return [
+    entry.role,
+    comparisonMetadataLabel(entry),
+    metadata.title || entry.itemKey || "",
+    authors,
+    metadata.year || "",
+    metadata.doi || "",
+    comparisonContextQuality(entry.diagnostics, labels)
+  ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |");
+}
+
+function comparisonDimensionRow(entry, dimension, labels) {
+  const evidence = comparisonEvidenceForContext(entry, dimension, labels, 3);
+  const evidenceText = evidence.length
+    ? evidence.map((item) => `${item.label} ${truncateText(item.text, 240)}`).join("<br>")
+    : `${comparisonMetadataLabel(entry)} ${labels.metadataOnly}`;
+  return [
+    entry.role,
+    evidenceText,
+    labels.manualPlaceholder
+  ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |");
+}
+
+function comparisonEvidenceForContext(entry, dimension, labels, limit = 3) {
+  const chunks = selectRelevantChunks(entry.chunks || [], dimension.query, limit);
+  return chunks.map((chunk) => ({
+    label: chunkEvidenceLabel(chunk, entry.evidencePrefix || "chunk"),
+    text: chunk.text || ""
+  })).filter((item) => item.text);
+}
+
+function comparisonMetadataLabel(entry) {
+  return `[${entry.evidencePrefix || "chunk"}:metadata itemKey=${entry.itemKey || "unknown"}]`;
+}
+
+function comparisonContextQuality(diagnostics, labels) {
+  if (!diagnostics) return labels.unknown;
+  const parts = [
+    `${labels.chunks}: ${Number(diagnostics.chunkCount) || 0}`,
+    `${labels.fulltextChars}: ${Number(diagnostics.fulltextChars) || 0}`,
+    `${labels.annotations}: ${Number(diagnostics.annotationCount) || 0}`,
+    `${labels.notesCount}: ${Number(diagnostics.noteCount) || 0}`,
+    diagnostics.error ? `${labels.error}: ${diagnostics.error}` : ""
+  ].filter(Boolean);
+  return parts.join("; ");
+}
+
+function comparisonReportDimensions(labels) {
+  return [
+    { id: "researchQuestion", label: labels.researchQuestion, query: "research question objective problem motivation 研究问题 研究目标 问题 背景 动机" },
+    { id: "method", label: labels.method, query: "method model algorithm framework architecture 方法 模型 算法 框架 结构" },
+    { id: "dataExperiment", label: labels.dataExperiment, query: "experiment dataset data metric evaluation result 实验 数据集 指标 评估 结果" },
+    { id: "assumption", label: labels.assumption, query: "assumption setting condition scenario limitation 假设 条件 场景 约束" },
+    { id: "finding", label: labels.finding, query: "finding conclusion contribution result insight 发现 结论 贡献 结果" },
+    { id: "limitation", label: labels.limitation, query: "limitation weakness threat failure future 局限 不足 威胁 失败 未来" },
+    { id: "reusableIdea", label: labels.reusableIdea, query: "reuse reusable idea implication design lesson 可复用 启发 借鉴 设计 经验" }
+  ];
+}
+
+function comparisonEvidenceOverviewDimension(labels) {
+  return {
+    id: "overview",
+    label: labels.evidenceMap,
+    query: "summary abstract conclusion method experiment limitation contribution 摘要 方法 实验 结论 局限 贡献"
+  };
+}
+
+function comparisonReportLabels(outputLanguage) {
+  const zh = /^zh/i.test(String(outputLanguage || ""));
+  if (zh) {
+    return {
+      title: "文献对比矩阵",
+      focal: "焦点论文",
+      comparison: "对比论文",
+      focalPaper: "焦点论文",
+      comparisonCount: "对比论文数",
+      generatedAt: "生成时间",
+      reportFile: "报告文件",
+      inventory: "论文清单",
+      role: "角色",
+      evidence: "证据标签",
+      paperTitle: "题名",
+      authors: "作者",
+      year: "年份",
+      contextQuality: "上下文质量",
+      matrix: "对比矩阵",
+      paper: "论文",
+      evidenceExcerpts: "证据摘录",
+      manualJudgment: "人工判断",
+      manualPlaceholder: "补充判断、置信度和综述写作位置",
+      crossAnalysis: "横向分析清单",
+      sharedAssumptions: "归纳共同假设和共同适用场景。",
+      keyDifferences: "标出方法、数据、评价指标和结论的关键差异。",
+      evidenceStrength: "检查每个结论是否有证据标签支撑，并标注低置信度单元。",
+      conflicts: "记录可能矛盾的发现或不可直接比较的条件。",
+      reviewDraftNotes: "提炼可写入综述的小标题和段落要点。",
+      evidenceMap: "证据摘录索引",
+      notes: "人工备注",
+      notesPlaceholder: "在这里记录最终纳入综述的分类、段落位置和后续检索需求。",
+      chunks: "片段",
+      fulltextChars: "全文字符",
+      annotations: "注释",
+      notesCount: "笔记",
+      error: "错误",
+      unknown: "未知",
+      metadataOnly: "仅有题录或上下文不足，请低置信度处理。",
+      researchQuestion: "研究问题",
+      method: "方法/模型",
+      dataExperiment: "数据与实验",
+      assumption: "假设与场景",
+      finding: "核心发现",
+      limitation: "局限",
+      reusableIdea: "可复用思想"
+    };
+  }
+  return {
+    title: "Literature Matrix",
+    focal: "Focal paper",
+    comparison: "Comparison paper",
+    focalPaper: "Focal paper",
+    comparisonCount: "Comparison papers",
+    generatedAt: "Generated at",
+    reportFile: "Report file",
+    inventory: "Paper Inventory",
+    role: "Role",
+    evidence: "Evidence label",
+    paperTitle: "Title",
+    authors: "Authors",
+    year: "Year",
+    contextQuality: "Context quality",
+    matrix: "Comparison Matrix",
+    paper: "Paper",
+    evidenceExcerpts: "Evidence excerpts",
+    manualJudgment: "Manual judgment",
+    manualPlaceholder: "Add judgment, confidence, and review-writing placement",
+    crossAnalysis: "Cross-paper Analysis Checklist",
+    sharedAssumptions: "Summarize shared assumptions and applicable scenarios.",
+    keyDifferences: "Mark decisive differences in method, data, metrics, and conclusions.",
+    evidenceStrength: "Check whether every claim has evidence labels and mark low-confidence cells.",
+    conflicts: "Record conflicting findings or conditions that prevent direct comparison.",
+    reviewDraftNotes: "Extract review section headings and paragraph notes.",
+    evidenceMap: "Evidence Excerpt Index",
+    notes: "Manual Notes",
+    notesPlaceholder: "Record final taxonomy placement, section use, and follow-up search needs here.",
+    chunks: "chunks",
+    fulltextChars: "fulltext chars",
+    annotations: "annotations",
+    notesCount: "notes",
+    error: "error",
+    unknown: "unknown",
+    metadataOnly: "Metadata only or insufficient context; treat as low-confidence.",
+    researchQuestion: "Research Question",
+    method: "Method / Model",
+    dataExperiment: "Data and Experiments",
+    assumption: "Assumptions and Scenario",
+    finding: "Key Findings",
+    limitation: "Limitations",
+    reusableIdea: "Reusable Ideas"
+  };
+}
+
+function markdownTableCell(value) {
+  const text = mdText(value);
+  return text ? text.replace(/\|/g, "\\|").replace(/\n/g, "<br>") : "";
+}
+
 function contextDiagnosticsText(diagnostics, translate = (key) => key) {
   if (!diagnostics) return "";
   const lines = [
@@ -4530,6 +4817,12 @@ function importLedgerJsonlPath(outputDir, item) {
 function candidateReviewMarkdownPath(outputDir, item) {
   const collectionKey = workbenchCollectionKey(item);
   return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", "candidate-review.md");
+}
+
+function comparisonReportMarkdownPath(outputDir, item) {
+  const collectionKey = workbenchCollectionKey(item);
+  const itemKey = sanitizeFilename(item?.key || "focus");
+  return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", `literature-matrix-${itemKey}.md`);
 }
 
 function candidateSearchOptionsFromDom(item) {

@@ -293,6 +293,19 @@ const SOURCE_MARKERS = [
     ]
   },
   {
+    id: "comparison.report",
+    description: "Workbench exports a reusable multi-paper literature matrix report from comparison contexts",
+    files: ["addon/content/workbench.xhtml", "addon/content/workbench.js", "addon/content/messages.js", "tests/workbenchWriteback.test.ts"],
+    markers: [
+      "zms-export-comparison-report",
+      "exportComparisonReport",
+      "renderComparisonReportMarkdown",
+      "comparisonReportMarkdownPath",
+      "templateVersion: literature-matrix-v1",
+      "comparisonReportDone"
+    ]
+  },
+  {
     id: "collection.workspace",
     description: "Collection workspace artifacts, topic clustering, and summary insight extraction are wired",
     files: ["addon/bootstrap.js"],

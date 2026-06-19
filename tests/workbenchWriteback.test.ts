@@ -207,6 +207,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     candidateStatusText: (records: any[], path: string, translate?: (key: string) => string) => string;
     candidateReviewMarkdownPath: (outputDir: string, item: any) => string;
     renderCandidateReviewMarkdown: (records: any[], options?: any) => string;
+    comparisonReportMarkdownPath: (outputDir: string, item: any) => string;
+    renderComparisonReportMarkdown: (context: any, options?: any) => string;
     citationNetworkSeedsForWorkbench: (records: any[], item: any, limit?: number) => any[];
     citationNetworkMetaText: (record: any) => string;
     applyCandidateDecisions: (records: any[], decisions: Record<string, string>, now: string) => any[];
@@ -228,6 +230,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
       renderSessions: () => Promise<void>;
       setStatus: (message: string) => void;
       saveSession: () => Promise<void>;
+      exportComparisonReport: () => Promise<void>;
       searchCandidates: () => Promise<void>;
       t: (key: string) => string;
       sessionDir: () => string;
@@ -1372,6 +1375,124 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reviewPath)).toContain("# Candidate Paper Review");
     expect(files.get(reviewPath)).toContain("**Candidate A** (2025)");
     expect(dom.elements.get("zms-status").textContent).toContain(`candidateReviewDone: ${reviewPath}`);
+  });
+
+  it("renders a literature matrix report with comparison evidence labels", () => {
+    const loaded = loadWorkbenchHelpers();
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const item = {
+      key: "FOC",
+      getCollections: () => [10]
+    };
+    const report = loaded.renderComparisonReportMarkdown({
+      metadata: {
+        title: "Focal Paper",
+        authors: ["Ada One"],
+        year: "2026",
+        doi: "10.1000/focal"
+      },
+      chunks: [
+        {
+          chunkId: "summary-focal",
+          sourceType: "summary",
+          locator: "summary:1",
+          sourceHash: "focalhash",
+          text: "The focal method uses graph attention and reports limitations in sparse scenarios."
+        }
+      ],
+      diagnostics: { chunkCount: 1, fulltextChars: 1200, annotationCount: 1, noteCount: 0 },
+      comparisonContexts: [
+        {
+          itemKey: "CMP",
+          metadata: {
+            title: "Comparison Paper",
+            authors: ["Bo Two"],
+            year: "2025",
+            doi: "10.1000/compare"
+          },
+          chunks: [
+            {
+              chunkId: "summary-compare",
+              sourceType: "summary",
+              locator: "summary:1",
+              sourceHash: "comparehash",
+              text: "The comparison model evaluates transformer attention on a larger dataset."
+            }
+          ],
+          diagnostics: { chunkCount: 1, fulltextChars: 900, annotationCount: 0, noteCount: 1 }
+        }
+      ]
+    }, {
+      item,
+      outputLanguage: "zh-CN",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      reportPath: "/tmp/out/collections/COL/writing/literature-matrix-FOC.md",
+      contextSourceHash: "sourcehash"
+    });
+
+    expect(report).toContain("templateVersion: literature-matrix-v1");
+    expect(report).toContain("# 文献对比矩阵");
+    expect(report).toContain("| 焦点论文 | [chunk:metadata itemKey=FOC]");
+    expect(report).toContain("| 对比论文 1 | [paper2:metadata itemKey=CMP]");
+    expect(report).toContain("### 方法/模型");
+    expect(report).toContain("[chunk:summary-focal source=summary locator=summary:1 hash=focalhash]");
+    expect(report).toContain("[paper2:summary-compare source=summary locator=summary:1 hash=comparehash]");
+    expect(report).toContain("## 横向分析清单");
+    expect(report).toContain("## 证据摘录索引");
+  });
+
+  it("exports a literature matrix report from comparison contexts", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "FOC",
+      getCollections: () => [10]
+    };
+    workbench.state.contextSourceHash = "sourcehash";
+    workbench.state.context = {
+      metadata: { title: "Focal Paper", authors: ["Ada One"], year: "2026", doi: "10.1000/focal" },
+      chunks: [
+        {
+          chunkId: "summary-focal",
+          sourceType: "summary",
+          locator: "summary:1",
+          sourceHash: "focalhash",
+          text: "The focal paper defines the research question and method."
+        }
+      ],
+      diagnostics: { chunkCount: 1, fulltextChars: 1200, annotationCount: 0, noteCount: 0 },
+      comparisonContexts: [
+        {
+          itemKey: "CMP",
+          metadata: { title: "Comparison Paper", authors: ["Bo Two"], year: "2025", doi: "" },
+          chunks: [
+            {
+              chunkId: "summary-compare",
+              sourceType: "summary",
+              locator: "summary:1",
+              sourceHash: "comparehash",
+              text: "The comparison paper reports experiment metrics and limitations."
+            }
+          ],
+          diagnostics: { chunkCount: 1, fulltextChars: 1000, annotationCount: 0, noteCount: 0 }
+        }
+      ]
+    };
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportComparisonReport();
+
+    const reportPath = "/tmp/out/collections/COL/writing/literature-matrix-FOC.md";
+    expect(files.get(reportPath)).toContain("# Literature Matrix");
+    expect(files.get(reportPath)).toContain("Comparison Paper");
+    expect(files.get(reportPath)).toContain("[paper2:summary-compare source=summary locator=summary:1 hash=comparehash]");
+    expect(dom.elements.get("zms-status").textContent).toContain(`comparisonReportDone: ${reportPath}`);
   });
 
   it("chooses citation-network seeds from the current item and high-value candidates", () => {

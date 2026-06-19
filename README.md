@@ -4,7 +4,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 [中文说明](README.zh-CN.md)
 
-> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, first-pass multi-paper comparison, collection topic-cluster workspace, and one-hop citation-network expansion are in place; cross-collection synthesis and richer cross-paper analysis are still planned.
+> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, first-pass multi-paper comparison with a reusable Markdown literature-matrix report, collection topic-cluster workspace, and one-hop citation-network expansion are in place; cross-collection synthesis and richer cross-paper analysis are still planned.
 
 ![Zotero paper chat workbench](docs/assets/workbench-chat.png)
 
@@ -13,7 +13,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - **Paper-first chat inside Zotero**: open a compact workbench from the selected item and keep the conversation anchored to the current paper.
 - **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, and write selected answers back with a preview step.
 - **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page.
-- **Multi-paper comparison and literature matrix**: when multiple Zotero items are selected, the first item becomes the focal paper and the rest become comparison context; the built-in `Literature Matrix` skill creates an evidence-grounded cross-paper matrix.
+- **Multi-paper comparison and literature matrix**: when multiple Zotero items are selected, the first item becomes the focal paper and the rest become comparison context; the workbench can export an evidence-labeled Markdown literature matrix, and the built-in `Literature Matrix` skill can continue the analysis with an LLM.
 - **Collection synthesis workspace**: collection batch runs write `papers.json`, paper-note indexes, method matrices, research-gap matrices, heuristic topic clusters, research-question cards, idea lists, and a manual review draft scaffold.
 - **Image questions and figure extraction**: paste screenshots, drop images, or choose local image files; the built-in `Figure/Table Extractor` skill turns paper figures, tables, and result panels into structured Markdown.
 - **Bring-your-own-key**: the plugin is free and open source; remote model providers require your own API keys.
@@ -191,7 +191,7 @@ build/update.json
 
 ## Current Limitations
 
-- Multi-paper comparison is available as a first-pass workbench workflow, with up to 5 comparison papers by default. Collection batch runs now generate heuristic topic clusters and synthesis matrices, but the clustering is deterministic and should be reviewed before final writing.
+- Multi-paper comparison is available as a first-pass workbench workflow, with up to 5 comparison papers by default and a reusable Markdown literature-matrix export. Collection batch runs now generate heuristic topic clusters and synthesis matrices, but the clustering is deterministic and should be reviewed before final writing.
 - Single-turn image attachments and the `Figure/Table Extractor` skill are supported, but chart, table, and handwritten-note understanding still depends on the selected model. Local OCR and chart-data reconstruction are not implemented yet.
 - Formula rendering is lightweight. It supports common inline/display math patterns, but it is not a full TeX engine.
 - Candidate-paper search now has explainable ranking, duplicate reconciliation, one-hop citation-network expansion, and a Markdown candidate-review report, but deeper multi-hop expansion and richer review workflows still need more work.
@@ -203,12 +203,12 @@ build/update.json
 
 ## TODO
 
-- Improve cross-collection clustering, richer synthesis matrices, and batch report generation.
+- Improve cross-collection clustering, richer synthesis matrices, and polished batch report generation.
 - Improve structured extraction quality for screenshots, PDF figures, tables, and experimental results with local OCR/table reconstruction.
 - Add deeper multi-hop citation-network expansion and richer candidate-paper review workflows.
 - Add per-provider setup guides with screenshots.
 - Add stronger UI tests for the embedded Zotero side panel.
-- Add more export templates for thesis notes, formal review reports, and paper reading logs.
+- Add more export templates for thesis notes, formal review reports, and paper reading logs beyond the current candidate-review and literature-matrix reports.
 
 ## Security and Privacy
 
