@@ -396,7 +396,7 @@ function openaiResponsesInput(request: ModelRequest): OpenAIResponsesInputItem[]
     if (lastUserIndex >= 0) {
       input[lastUserIndex] = {
         ...input[lastUserIndex],
-        content: [...input[lastUserIndex].content, filePart]
+        content: [filePart, ...input[lastUserIndex].content]
       };
     } else {
       input.push({ role: "user", content: [filePart] });

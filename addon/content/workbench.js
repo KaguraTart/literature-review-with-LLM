@@ -4505,7 +4505,7 @@ function openaiResponsesInput(messages, requestInput = {}) {
     appendOpenAIResponsesPart(input, lastUserIndex, { type: "input_text", text: `CONTEXT:\n${contextText}` });
   }
   if (requestInput?.type === "pdf_base64" && requestInput.base64) {
-    appendOpenAIResponsesPart(input, lastUserIndex, {
+    prependOpenAIResponsesPart(input, lastUserIndex, {
       type: "input_file",
       filename: requestInput.filename || "paper.pdf",
       file_data: `data:application/pdf;base64,${requestInput.base64}`
@@ -4546,6 +4546,17 @@ function appendOpenAIResponsesPart(input, lastUserIndex, part) {
     input[lastUserIndex] = {
       ...input[lastUserIndex],
       content: [...input[lastUserIndex].content, part]
+    };
+    return;
+  }
+  input.push({ role: "user", content: [part] });
+}
+
+function prependOpenAIResponsesPart(input, lastUserIndex, part) {
+  if (lastUserIndex >= 0) {
+    input[lastUserIndex] = {
+      ...input[lastUserIndex],
+      content: [part, ...input[lastUserIndex].content]
     };
     return;
   }

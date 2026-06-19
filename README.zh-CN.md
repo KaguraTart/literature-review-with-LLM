@@ -156,6 +156,8 @@ npm run build
 npm run check
 ```
 
+完整检查会运行测试、类型检查、provider 文本/图片/PDF mock 校验、provider catalog 校验、写回 smoke 校验、打包校验、readiness 检查和空白字符检查。
+
 构建产物位置：
 
 ```text

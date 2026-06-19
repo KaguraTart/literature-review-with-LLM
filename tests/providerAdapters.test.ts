@@ -446,7 +446,9 @@ describe("provider adapters", () => {
       input: { type: "pdf_base64" as const, base64: "abc", filename: "paper.pdf" }
     };
     expect(endpointFor(request)).toBe("https://api.openai.com/v1/responses");
-    expect(JSON.stringify(bodyFor(request))).toContain("input_file");
+    const body = bodyFor(request);
+    expect(JSON.stringify(body)).toContain("input_file");
+    expect((body.input as any[])[0].content.map((part: any) => part.type)).toEqual(["input_file", "input_text"]);
   });
 
   it("maps Anthropic PDF input and auth headers", () => {

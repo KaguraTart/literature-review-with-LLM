@@ -173,7 +173,7 @@ Full verification:
 npm run check
 ```
 
-The full check runs tests, type checking, provider mock/catalog checks, writeback smoke tests, package verification, readiness checks, and whitespace validation.
+The full check runs tests, type checking, provider text/image/PDF mock checks, provider catalog checks, writeback smoke tests, package verification, readiness checks, and whitespace validation.
 
 ## Release Packaging
 

@@ -214,6 +214,55 @@ describe("provider smoke verifier", () => {
     expect(JSON.stringify(report)).not.toContain("mock-secret");
   });
 
+  it("runs built-in mock image checks across provider protocols", async () => {
+    const report = await runSmoke(["--mock", "--image", "--json"]);
+
+    expect(report.ok).toBe(true);
+    expect(report).toMatchObject({
+      mock: true,
+      inputMode: "image"
+    });
+    expect(report.results.map((result: any) => [result.profile, result.protocol, result.contentTypes])).toEqual([
+      ["openai-compatible", "openai_chat", ["text", "image_url"]],
+      ["openai", "openai_responses", ["input_text", "input_text", "input_image"]],
+      ["openai-responses-compatible", "openai_responses", ["input_text", "input_text", "input_image"]],
+      ["anthropic", "anthropic_messages", ["image", "text"]]
+    ]);
+    expect(report.requests.map((request: any) => request.contentTypes)).toEqual([
+      ["text", "image_url"],
+      ["input_text", "input_text", "input_image"],
+      ["input_text", "input_text", "input_image"],
+      ["image", "text"]
+    ]);
+    expect(JSON.stringify(report)).not.toContain("mock-secret");
+  });
+
+  it("runs built-in mock PDF checks for raw-document provider protocols", async () => {
+    const report = await runSmoke(["--mock", "--pdf", "--json"]);
+
+    expect(report.ok).toBe(true);
+    expect(report).toMatchObject({
+      mock: true,
+      inputMode: "pdf"
+    });
+    expect(report.results.map((result: any) => [result.profile, result.protocol, result.contentTypes])).toEqual([
+      ["openai", "openai_responses", ["input_file", "input_text"]],
+      ["openai-responses-compatible", "openai_responses", ["input_file", "input_text"]],
+      ["anthropic", "anthropic_messages", ["document", "text"]]
+    ]);
+    expect(report.requests.map((request: any) => request.path)).toEqual([
+      "/v1/responses",
+      "/v1/responses",
+      "/v1/messages"
+    ]);
+    expect(report.requests.map((request: any) => request.contentTypes)).toEqual([
+      ["input_file", "input_text"],
+      ["input_file", "input_text"],
+      ["document", "text"]
+    ]);
+    expect(JSON.stringify(report)).not.toContain("mock-secret");
+  });
+
   it("runs built-in mock model-list checks across provider protocols", async () => {
     const report = await runSmoke(["--mock", "--models", "--json"]);
 

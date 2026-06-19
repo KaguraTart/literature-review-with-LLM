@@ -14,6 +14,8 @@ import {
 
 const DEFAULT_PROMPT = "Reply with OK only.";
 const DEFAULT_CONTEXT = "Provider smoke-test context.";
+const DEFAULT_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+const DEFAULT_PDF_BASE64 = "JVBERi0xLjQKMSAwIG9iago8PD4+CmVuZG9iagp0cmFpbGVyCjw8Pj4KJSVFT0YK";
 
 if (isMainModule()) {
   try {
@@ -45,7 +47,7 @@ export async function runProviderSmoke(options = {}) {
     profile,
     system: String(options.system || "You are a provider smoke-test endpoint."),
     messages: [{ role: "user", content: String(options.prompt || DEFAULT_PROMPT) }],
-    input: { type: "text", text: String(options.context || DEFAULT_CONTEXT) },
+    input: smokeInput(options),
     temperature: numberOption(options.temperature, 0),
     maxOutputTokens: numberOption(options.maxOutputTokens, 64),
     stream: false
@@ -61,6 +63,7 @@ export async function runProviderSmoke(options = {}) {
       protocol: profile.protocol,
       endpoint,
       modelsEndpoint: modelsEndpointFor(profile) || "",
+      inputMode: smokeInputMode(options),
       request: sanitizedRequest(headers, body)
     };
   }
@@ -95,6 +98,8 @@ export async function runProviderSmoke(options = {}) {
       protocol: profile.protocol,
       endpoint,
       model: profile.model,
+      inputMode: smokeInputMode(options),
+      contentTypes: requestContentTypes(body),
       text,
       usage: parsed?.usage || null
     };
@@ -218,12 +223,7 @@ export async function runMockProviderSmoke(options = {}) {
   if (!address || typeof address === "string") throw new Error("Mock provider server did not bind to a TCP port");
   const baseURL = `http://127.0.0.1:${address.port}`;
   try {
-    const cases = [
-      { profile: "openai-compatible", baseURL: `${baseURL}/v1`, model: "mock-chat" },
-      { profile: "openai", baseURL: `${baseURL}/v1`, model: "mock-responses" },
-      { profile: "openai-responses-compatible", baseURL: `${baseURL}/v1`, model: "mock-responses-compatible" },
-      { profile: "anthropic", baseURL, model: "mock-anthropic" }
-    ];
+    const cases = mockSmokeCases(options, baseURL);
     const results = [];
     for (const entry of cases) {
       results.push(await runProviderSmoke({
@@ -239,6 +239,7 @@ export async function runMockProviderSmoke(options = {}) {
     return {
       ok: results.every((result) => result.ok),
       mock: true,
+      inputMode: smokeInputMode(options),
       baseURL,
       results,
       requests: requests.map(mockRequestSummary)
@@ -248,6 +249,23 @@ export async function runMockProviderSmoke(options = {}) {
       server.close((error) => error ? rejectClose(error) : resolveClose());
     });
   }
+}
+
+function mockSmokeCases(options, baseURL) {
+  const multimodal = Boolean(options.image || options.pdf);
+  if (options.pdf) {
+    return [
+      { profile: "openai", baseURL: `${baseURL}/v1`, model: "mock-responses" },
+      { profile: "openai-responses-compatible", baseURL: `${baseURL}/v1`, model: "mock-responses-compatible" },
+      { profile: "anthropic", baseURL, model: "mock-anthropic" }
+    ];
+  }
+  return [
+    { profile: "openai-compatible", baseURL: `${baseURL}/v1`, model: multimodal ? "mock-chat-vision" : "mock-chat" },
+    { profile: "openai", baseURL: `${baseURL}/v1`, model: multimodal ? "mock-responses-vision" : "mock-responses" },
+    { profile: "openai-responses-compatible", baseURL: `${baseURL}/v1`, model: multimodal ? "mock-responses-compatible-vision" : "mock-responses-compatible" },
+    { profile: "anthropic", baseURL, model: multimodal ? "mock-anthropic-vision" : "mock-anthropic" }
+  ];
 }
 
 export async function runMockProviderModels(options = {}) {
@@ -323,6 +341,8 @@ function parseArgs(args) {
     customHeaders: {},
     bodyExtra: {},
     models: false,
+    image: false,
+    pdf: false,
     dryRun: false,
     mock: false,
     json: false,
@@ -388,6 +408,10 @@ function parseArgs(args) {
       options.dryRun = true;
     } else if (key === "--models") {
       options.models = true;
+    } else if (key === "--image") {
+      options.image = true;
+    } else if (key === "--pdf") {
+      options.pdf = true;
     } else if (key === "--mock") {
       options.mock = true;
     } else if (key === "--catalog") {
@@ -399,6 +423,32 @@ function parseArgs(args) {
     }
   }
   return options;
+}
+
+function smokeInput(options) {
+  const images = options.image
+    ? [{ name: "smoke.png", mimeType: "image/png", base64: DEFAULT_IMAGE_BASE64 }]
+    : [];
+  if (options.pdf) {
+    return {
+      type: "pdf_base64",
+      filename: "smoke.pdf",
+      base64: DEFAULT_PDF_BASE64,
+      images
+    };
+  }
+  return {
+    type: "text",
+    text: String(options.context || DEFAULT_CONTEXT),
+    images
+  };
+}
+
+function smokeInputMode(options) {
+  if (options.pdf && options.image) return "pdf+image";
+  if (options.pdf) return "pdf";
+  if (options.image) return "image";
+  return "text";
 }
 
 function buildProfile(options, requirements = {}) {
@@ -730,11 +780,17 @@ function stringField(...values) {
 }
 
 function requestContentTypes(body) {
-  if (Array.isArray(body?.input?.[0]?.content)) {
-    return body.input[0].content.map((part) => part?.type).filter(Boolean);
+  if (Array.isArray(body?.input)) {
+    return body.input
+      .flatMap((message) => Array.isArray(message?.content) ? message.content : [])
+      .map((part) => part?.type)
+      .filter(Boolean);
   }
-  if (Array.isArray(body?.messages?.[0]?.content)) {
-    return body.messages[0].content.map((part) => part?.type).filter(Boolean);
+  if (Array.isArray(body?.messages)) {
+    return body.messages
+      .flatMap((message) => Array.isArray(message?.content) ? message.content : [])
+      .map((part) => part?.type)
+      .filter(Boolean);
   }
   return [];
 }
@@ -888,6 +944,8 @@ function usage() {
     "  --header name=value       Add or override a request header",
     "  --body-extra-json JSON    Merge extra provider body fields",
     "  --models                 Verify model-list endpoint instead of text generation",
+    "  --image                  Include a tiny base64 PNG in the generation request",
+    "  --pdf                    Include a tiny base64 PDF in the generation request",
     "  --mock                   Run built-in local mock checks for chat, responses, and messages",
     "  --catalog                Verify all default provider profile request shapes offline",
     "  --dry-run                 Print sanitized request shape without calling the endpoint",

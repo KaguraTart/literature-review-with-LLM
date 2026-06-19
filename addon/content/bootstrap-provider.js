@@ -75,7 +75,7 @@ function openaiResponsesInputForSummary(request) {
     content.push({ type: "input_text", text: `CONTEXT:\n${request.input.text}` });
   }
   if (request.input.type === "pdf_base64") {
-    content.push({
+    content.unshift({
       type: "input_file",
       filename: request.input.filename || "paper.pdf",
       file_data: `data:application/pdf;base64,${request.input.base64}`

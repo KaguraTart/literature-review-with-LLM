@@ -199,7 +199,13 @@ const SOURCE_MARKERS = [
     id: "provider.smoke-script",
     description: "Provider smoke verification can call OpenAI-compatible, Responses, and Anthropic endpoints with sanitized output",
     files: ["scripts/verify-provider-smoke.mjs"],
-    markers: ["runProviderSmoke", "runMockProviderSmoke", "runProviderModels", "runMockProviderModels", "endpointFor", "headersFor", "bodyFor", "extractResponseText", "api-key-env", "dryRun", "mockProviderResponse", "modelOptionsFromItems", "profileHasUsableAuth", "isLocalEndpoint"]
+    markers: ["runProviderSmoke", "runMockProviderSmoke", "runProviderModels", "runMockProviderModels", "endpointFor", "headersFor", "bodyFor", "extractResponseText", "api-key-env", "dryRun", "mockProviderResponse", "modelOptionsFromItems", "profileHasUsableAuth", "isLocalEndpoint", "smokeInputMode"]
+  },
+  {
+    id: "provider.multimodal-smoke",
+    description: "Provider smoke verification covers OpenAI image, Responses PDF/image, and Anthropic image/document request bodies",
+    files: ["scripts/verify-provider-smoke.mjs", "package.json", "tests/providerSmokeScript.test.ts"],
+    markers: ["--image", "--pdf", "verify:provider:multimodal:mock", "input_image", "input_file", "document", "runs built-in mock image checks", "runs built-in mock PDF checks"]
   },
   {
     id: "provider.catalog-shape-verifier",
@@ -580,6 +586,13 @@ function addPackageScriptChecks(checks) {
     checkScript.includes("verify:provider:mock"),
     checkScript,
     "Add npm run verify:provider:mock to the check chain"
+  ));
+  checks.push(check(
+    "package.script.check-provider-multimodal-mock",
+    "npm run check includes provider multimodal mock verification",
+    checkScript.includes("verify:provider:multimodal:mock"),
+    checkScript,
+    "Add npm run verify:provider:multimodal:mock to the check chain"
   ));
   checks.push(check(
     "package.script.check-provider-catalog",
