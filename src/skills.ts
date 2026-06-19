@@ -45,6 +45,16 @@ export const defaultSkills: SkillDefinition[] = [
     outputSchema: "experiment-table-v1"
   },
   {
+    id: "literature-matrix-builder",
+    titleMessageId: "skill-literature-matrix-builder-title",
+    descriptionMessageId: "skill-literature-matrix-builder-description",
+    version: "1",
+    inputScope: "current_paper",
+    evidencePolicy: "fulltext_or_abstract",
+    templatePath: "skills/literature-matrix-builder.md",
+    outputSchema: "literature-matrix-v1"
+  },
+  {
     id: "citation-audit",
     titleMessageId: "skill-citation-audit-title",
     descriptionMessageId: "skill-citation-audit-description",
@@ -145,6 +155,9 @@ export function builtInSkillTemplate(skillId: SkillId, outputLanguage: OutputLan
   if (skillId === "experiment-table-builder") {
     return `${common}\n\nBuild a Markdown table for datasets, baselines, metrics, ablations, results, and limitations.`;
   }
+  if (skillId === "literature-matrix-builder") {
+    return literatureMatrixTemplate(common, outputLanguage);
+  }
   if (skillId === "citation-audit") {
     return `${common}\n\nAudit the current summary or answer. List unsupported claims, weak evidence, and what source is needed.`;
   }
@@ -170,6 +183,16 @@ export function builtInSkillTemplate(skillId: SkillId, outputLanguage: OutputLan
     return `${common}\n\nCheck whether local agent tooling is reachable, report reachable/unreachable components, and suggest concrete remediation steps.`;
   }
   return paperDeepSummaryTemplate(common, outputLanguage);
+}
+
+function literatureMatrixTemplate(common: string, outputLanguage: OutputLanguage): string {
+  if (outputLanguage === "zh-CN") {
+    return `${common}\n\n生成 literature matrix。若上下文包含 Comparison paper，请同时比较焦点论文和所有对比论文；否则先为当前论文建立单篇矩阵。输出 Markdown，至少包含：论文清单、对比矩阵、交叉分析、综述草稿要点。每个矩阵单元必须引用 [chunk:<id>]、[paper2:<id>] 或 [metadata] 等证据；缺证据时写低置信度，不要补全不存在的信息。`;
+  }
+  if (outputLanguage === "ja-JP") {
+    return `${common}\n\nliterature matrix を作成してください。Comparison paper がある場合は、焦点論文と比較論文を同時に比較してください。ない場合は、現在の論文だけで単一論文の行列を作成してください。各セルには [chunk:<id>]、[paper2:<id>]、または [metadata] のような根拠ラベルを付け、根拠が弱い場合は低信頼と明記してください。`;
+  }
+  return `${common}\n\nCreate a literature matrix. If the context contains Comparison papers, compare the focal paper against every comparison paper; otherwise build a single-paper matrix for the current paper first. Include a paper inventory, comparison matrix, cross-paper analysis, and review-draft notes. Every matrix cell must cite evidence labels such as [chunk:<id>], [paper2:<id>], or [metadata]. Mark unsupported cells as low-confidence instead of filling gaps.`;
 }
 
 function paperDeepSummaryTemplate(common: string, outputLanguage: OutputLanguage): string {

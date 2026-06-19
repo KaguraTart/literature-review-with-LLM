@@ -4,7 +4,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 [中文说明](README.zh-CN.md)
 
-> Current status: usable but still early. The core single-paper workflow and image-question flow are in place; several larger research-assistant workflows are still planned.
+> Current status: usable but still early. The core single-paper workflow, image-question flow, and first-pass multi-paper comparison workflow are in place; clustering, batch synthesis, and richer figure/table extraction are still planned.
 
 ![Zotero paper chat workbench](docs/assets/workbench-chat.png)
 
@@ -13,6 +13,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - **Paper-first chat inside Zotero**: open a compact workbench from the selected item and keep the conversation anchored to the current paper.
 - **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, and write selected answers back with a preview step.
 - **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page.
+- **Multi-paper comparison and literature matrix**: when multiple Zotero items are selected, the first item becomes the focal paper and the rest become comparison context; the built-in `Literature Matrix` skill creates an evidence-grounded cross-paper matrix.
 - **Image questions in the workbench**: paste screenshots, drop images, or choose local image files; the workbench checks whether the active provider profile declares image input support before sending.
 - **Bring-your-own-key**: the plugin is free and open source; remote model providers require your own API keys.
 - **Local agent consultation**: optionally ask local Gemini, Claude, and opencode command-line tools for independent reading suggestions through the local bridge.
@@ -178,7 +179,7 @@ The release asset is uploaded under GitHub Releases rather than committed to the
 
 ## Current Limitations
 
-- Multi-paper comparison and cross-paper synthesis are not implemented yet.
+- Multi-paper comparison is available as a first-pass workbench workflow, with up to 5 comparison papers by default. Automatic clustering and collection-level synthesis matrices are not implemented yet.
 - Single-turn image attachments are supported, but chart, table, and handwritten-note understanding still depends on the selected model. Dedicated structured extraction for figures and tables is not implemented yet.
 - Formula rendering is lightweight. It supports common inline/display math patterns, but it is not a full TeX engine.
 - Candidate-paper search is still utility-grade and needs stronger deduplication, ranking, and review workflows.
@@ -190,7 +191,7 @@ The release asset is uploaded under GitHub Releases rather than committed to the
 
 ## TODO
 
-- Add multi-paper comparison, clustering, and literature-matrix generation.
+- Improve multi-paper clustering, collection-level synthesis matrices, and batch report generation.
 - Add richer structured extraction for screenshots, PDF figures, tables, and experimental results.
 - Add better candidate-paper ranking and citation-network expansion.
 - Add per-provider setup guides with screenshots.

@@ -1128,6 +1128,8 @@ describe("preferences local-agent config helpers", () => {
   });
 
   it("keeps local-agent skill reset templates specific to their tools", () => {
+    expect(helpers.builtInSkillTemplate("literature-matrix-builder", "en-US")).toContain("literature matrix");
+    expect(helpers.builtInSkillTemplate("literature-matrix-builder", "zh-CN")).toContain("[paper2:<id>]");
     expect(helpers.builtInSkillTemplate("ask-all-agents", "en-US")).toContain("Gemini, Claude, and opencode");
     expect(helpers.builtInSkillTemplate("ask-gemini-claude", "en-US")).toContain("Gemini and Claude");
     expect(helpers.builtInSkillTemplate("check-local-agents", "en-US")).toContain("availability");

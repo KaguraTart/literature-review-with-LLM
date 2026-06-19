@@ -9,6 +9,7 @@ const ZMS_SKILL_IDS = [
   "paper-deep-summary",
   "method-extractor",
   "experiment-table-builder",
+  "literature-matrix-builder",
   "citation-audit",
   "custom-summary",
   "ask-gemini",
@@ -3060,6 +3061,7 @@ function builtInSkillTemplate(skillId, outputLanguage) {
   ].join("\n");
   if (skillId === "method-extractor") return `${common}\n\nExtract method, model, algorithm flow, inputs, outputs, constraints, and reusable details.`;
   if (skillId === "experiment-table-builder") return `${common}\n\nBuild a Markdown table for datasets, baselines, metrics, ablations, results, and limitations.`;
+  if (skillId === "literature-matrix-builder") return literatureMatrixTemplate(common, outputLanguage);
   if (skillId === "citation-audit") return `${common}\n\nAudit claims and identify unsupported or weakly supported statements.`;
   if (skillId === "custom-summary") return `${common}\n\nFollow the user's custom research goal and produce a structured Markdown note.`;
   if (skillId === "ask-gemini") {
@@ -3081,6 +3083,16 @@ function builtInSkillTemplate(skillId, outputLanguage) {
     return `${common}\n\nRun a quick local-agent health check and report each subagent status, likely failure causes, and command-level remediation suggestions.`;
   }
   return paperDeepSummaryTemplate(common, outputLanguage);
+}
+
+function literatureMatrixTemplate(common, outputLanguage) {
+  if (outputLanguage === "zh-CN") {
+    return `${common}\n\n生成 literature matrix。若上下文包含 Comparison paper，请同时比较焦点论文和所有对比论文；否则先为当前论文建立单篇矩阵。输出 Markdown，至少包含：\n\n1. 论文清单：题名、年份、研究对象、问题类型、证据标签。\n2. 对比矩阵：研究问题、方法/模型、数据或场景、实验指标、核心发现、局限、可复用思想、证据标签。\n3. 交叉分析：共同假设、关键差异、证据强弱、可能矛盾、可合并的研究路线。\n4. 综述草稿要点：适合放入文献综述的小标题和 3-6 条可直接改写的要点。\n\n每个矩阵单元必须引用 [chunk:<id>]、[paper2:<id>] 或 [metadata] 等证据；缺证据时写低置信度，不要补全不存在的信息。`;
+  }
+  if (outputLanguage === "ja-JP") {
+    return `${common}\n\nliterature matrix を作成してください。Comparison paper がある場合は、焦点論文と比較論文を同時に比較してください。ない場合は、現在の論文だけで単一論文の行列を作成してください。Markdown で、論文一覧、比較行列、横断分析、レビュー草稿の要点を含めてください。各セルには [chunk:<id>]、[paper2:<id>]、または [metadata] のような根拠ラベルを付け、根拠が弱い場合は低信頼と明記してください。`;
+  }
+  return `${common}\n\nCreate a literature matrix. If the context contains Comparison papers, compare the focal paper against every comparison paper; otherwise build a single-paper matrix for the current paper first. Use Markdown and include:\n\n1. Paper inventory: title, year, research object, problem type, and evidence labels.\n2. Comparison matrix: research question, method/model, data or scenario, experimental metrics, key findings, limitations, reusable ideas, and evidence labels.\n3. Cross-paper analysis: shared assumptions, decisive differences, evidence strength, possible contradictions, and mergeable research directions.\n4. Review-draft notes: section headings and 3-6 bullets that can be rewritten into a literature review.\n\nEvery matrix cell must cite evidence labels such as [chunk:<id>], [paper2:<id>], or [metadata]. Mark unsupported cells as low-confidence instead of filling gaps.`;
 }
 
 function languageInstruction(outputLanguage) {

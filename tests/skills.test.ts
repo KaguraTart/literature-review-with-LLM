@@ -7,6 +7,7 @@ describe("skills", () => {
       "paper-deep-summary",
       "method-extractor",
       "experiment-table-builder",
+      "literature-matrix-builder",
       "citation-audit",
       "custom-summary",
       "ask-gemini",
@@ -26,6 +27,7 @@ describe("skills", () => {
 
   it("keeps skill templates evidence-oriented", () => {
     expect(builtInSkillTemplate("citation-audit", "en-US")).toContain("evidence");
+    expect(builtInSkillTemplate("literature-matrix-builder", "en-US")).toContain("[paper2:<id>]");
     expect(builtInSkillTemplate("paper-deep-summary", "ja-JP")).toContain("日本語");
   });
 
