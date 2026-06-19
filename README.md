@@ -4,7 +4,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 [中文说明](README.zh-CN.md)
 
-> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, and first-pass multi-paper comparison workflow are in place; clustering, batch synthesis, and richer cross-paper analysis are still planned.
+> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, first-pass multi-paper comparison, and collection topic-cluster workspace are in place; cross-collection synthesis and richer cross-paper analysis are still planned.
 
 ![Zotero paper chat workbench](docs/assets/workbench-chat.png)
 
@@ -14,6 +14,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, and write selected answers back with a preview step.
 - **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page.
 - **Multi-paper comparison and literature matrix**: when multiple Zotero items are selected, the first item becomes the focal paper and the rest become comparison context; the built-in `Literature Matrix` skill creates an evidence-grounded cross-paper matrix.
+- **Collection synthesis workspace**: collection batch runs write `papers.json`, paper-note indexes, method matrices, research-gap matrices, heuristic topic clusters, research-question cards, idea lists, and a manual review draft scaffold.
 - **Image questions and figure extraction**: paste screenshots, drop images, or choose local image files; the built-in `Figure/Table Extractor` skill turns paper figures, tables, and result panels into structured Markdown.
 - **Bring-your-own-key**: the plugin is free and open source; remote model providers require your own API keys.
 - **Local agent consultation**: optionally ask local Gemini, Claude, and opencode command-line tools for independent reading suggestions through the local bridge.
@@ -29,6 +30,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - Ask image-based questions by pasting screenshots, dropping images, or selecting local image files in the workbench; image-only sends use a default image-analysis prompt.
 - Write selected answers back into the Markdown summary with a preview step and backup file.
 - Configure multiple model providers from Zotero preferences.
+- Generate collection workspace artifacts during collection batch runs, including method matrices, topic clusters, gap matrices, and review-draft scaffolds.
 - Use built-in skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation audit, and local-agent review.
 - Select a research-domain prompt pack from Zotero preferences or the workbench settings drawer.
 - Optional local-agent bridge for Gemini, Claude, and opencode CLI tools.
@@ -187,7 +189,7 @@ build/update.json
 
 ## Current Limitations
 
-- Multi-paper comparison is available as a first-pass workbench workflow, with up to 5 comparison papers by default. Automatic clustering and collection-level synthesis matrices are not implemented yet.
+- Multi-paper comparison is available as a first-pass workbench workflow, with up to 5 comparison papers by default. Collection batch runs now generate heuristic topic clusters and synthesis matrices, but the clustering is deterministic and should be reviewed before final writing.
 - Single-turn image attachments and the `Figure/Table Extractor` skill are supported, but chart, table, and handwritten-note understanding still depends on the selected model. Local OCR and chart-data reconstruction are not implemented yet.
 - Formula rendering is lightweight. It supports common inline/display math patterns, but it is not a full TeX engine.
 - Candidate-paper search is still utility-grade and needs stronger deduplication, ranking, and review workflows.
@@ -199,7 +201,7 @@ build/update.json
 
 ## TODO
 
-- Improve multi-paper clustering, collection-level synthesis matrices, and batch report generation.
+- Improve cross-collection clustering, richer synthesis matrices, and batch report generation.
 - Improve structured extraction quality for screenshots, PDF figures, tables, and experimental results with local OCR/table reconstruction.
 - Add better candidate-paper ranking and citation-network expansion.
 - Add per-provider setup guides with screenshots.

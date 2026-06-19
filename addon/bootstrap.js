@@ -320,6 +320,7 @@ async function batchGenerateItems(items, force, collectionContext) {
   const batchReportPath = await writeBatchRunReport(settings, collectionContext, results, { force });
   const indexMessage = papersIndexPath ? `; papers.json: ${papersIndexPath}` : "";
   const matrixMessage = collectionArtifacts?.methodMatrixPath ? `; method-matrix: ${collectionArtifacts.methodMatrixPath}` : "";
+  const clusterMessage = collectionArtifacts?.topicClustersPath ? `; topic-clusters: ${collectionArtifacts.topicClustersPath}` : "";
   const draftMessage = collectionArtifacts?.reviewDraftPath ? `; review-draft: ${collectionArtifacts.reviewDraftPath}` : "";
   const reportMessage = batchReportPath ? `; ${t("batchReport")}: ${batchReportPath}` : "";
   const skipped = skippedNoPdf + skippedExisting;
@@ -327,7 +328,7 @@ async function batchGenerateItems(items, force, collectionContext) {
   if (skippedNoPdf > 0) extraParts.push(`${t("batchSkippedNoPdf")}: ${skippedNoPdf}`);
   if (skippedExisting > 0) extraParts.push(`${t("batchSkippedExisting")}: ${skippedExisting}`);
   const skippedSuffix = extraParts.length ? ` (${extraParts.join("; ")})` : "";
-  showProgress(`${t("batchDone")}: ${generated}; ${t("batchSkipped")}: ${skipped}${skippedSuffix}; ${t("batchFailed")}: ${failed}${indexMessage}${matrixMessage}${draftMessage}${reportMessage}`);
+  showProgress(`${t("batchDone")}: ${generated}; ${t("batchSkipped")}: ${skipped}${skippedSuffix}; ${t("batchFailed")}: ${failed}${indexMessage}${matrixMessage}${clusterMessage}${draftMessage}${reportMessage}`);
 }
 
 async function generateForItem(item, settings, force) {
@@ -860,12 +861,14 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
   const paperNotesIndexPath = artifacts.paperNotesIndexPath;
   const methodMatrixPath = artifacts.methodMatrixPath;
   const gapMatrixPath = artifacts.gapMatrixPath;
+  const topicClustersPath = artifacts.topicClustersPath;
   const researchQuestionCardsPath = artifacts.researchQuestionCardsPath;
   const reviewDraftPath = artifacts.reviewDraftPath;
   const ideaListPath = artifacts.ideaListPath;
   await writeText(paperNotesIndexPath, renderPaperNotesIndex(collectionContext, results, outputLanguage));
   await writeText(methodMatrixPath, renderMethodMatrix(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(gapMatrixPath, renderResearchGapMatrix(collectionContext, results, outputLanguage, summaryInsights));
+  await writeText(topicClustersPath, renderTopicClusters(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(researchQuestionCardsPath, renderResearchQuestionCards(collectionContext, results, outputLanguage));
   await writeText(reviewDraftPath, renderManualReviewDraft(collectionContext, results, outputLanguage));
   await writeText(ideaListPath, renderIdeaList(collectionContext, results, outputLanguage, summaryInsights));
@@ -875,6 +878,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
     paperNotesIndexPath,
     methodMatrixPath,
     gapMatrixPath,
+    topicClustersPath,
     researchQuestionCardsPath,
     reviewDraftPath,
     ideaListPath
@@ -896,6 +900,7 @@ function collectionWorkspaceArtifactPaths(dirs, outputLanguage) {
     paperNotesIndexPath: PathUtils.join(dirs.paperNotes, `index.${language}.md`),
     methodMatrixPath: PathUtils.join(dirs.knowledge, `method-matrix.${language}.md`),
     gapMatrixPath: PathUtils.join(dirs.knowledge, `research-gaps.${language}.md`),
+    topicClustersPath: PathUtils.join(dirs.knowledge, `topic-clusters.${language}.md`),
     researchQuestionCardsPath: PathUtils.join(dirs.knowledge, `research-question-cards.${language}.md`),
     reviewDraftPath: PathUtils.join(dirs.writing, `manual-review-draft.${language}.md`),
     ideaListPath: PathUtils.join(dirs.writing, `idea-list.${language}.md`)
@@ -1107,6 +1112,92 @@ function renderResearchGapMatrix(collectionContext, results, outputLanguage = "z
   ].join("\n");
 }
 
+function renderTopicClusters(collectionContext, results, outputLanguage = "zh-CN", summaryInsights = new Map()) {
+  const labels = collectionTemplateLabels(outputLanguage);
+  const clusters = topicClusterEntries(results, summaryInsights, labels);
+  const sections = clusters.map((cluster) => {
+    const methodSignals = uniqueInsightLines(cluster.items.map(({ insight }) => insight.method).filter(Boolean)).slice(0, 3);
+    const gapSignals = uniqueInsightLines(cluster.items.flatMap(({ insight }) => insightValues(insight.limitations, insight.missingEvidence, insight.validationNeeds))).slice(0, 3);
+    const rows = cluster.items.map(({ item, insight }) => [
+      escapeMarkdownTable(item.title || item.itemKey),
+      escapeMarkdownTable(item.year),
+      escapeMarkdownTable(insight.method || labels.pendingInsight),
+      escapeMarkdownTable(insightValues(insight.limitations, insight.missingEvidence, insight.validationNeeds)[0] || labels.gapMatrixPendingEvidence),
+      escapeMarkdownTable(item.summaryPath || labels.pendingSummaryPath)
+    ].join(" | ")).map((row) => `| ${row} |`).join("\n");
+    return [
+      `## ${cluster.label} (${cluster.items.length})`,
+      "",
+      `- ${labels.clusterSynthesis}: ${labels.clusterSynthesisText(methodSignals.join("; ") || labels.pendingInsight, gapSignals.join("; ") || labels.gapMatrixPendingEvidence)}`,
+      `- ${labels.clusterWritingEntry}: ${labels.clusterWritingText(cluster.label, methodSignals[0] || labels.pendingInsight, gapSignals[0] || labels.gapMatrixPendingEvidence)}`,
+      "",
+      `| ${labels.paperColumn} | ${labels.yearColumn} | ${labels.methodSignalColumn} | ${labels.gapSignalColumn} | ${labels.summaryColumn} |`,
+      "| --- | --- | --- | --- | --- |",
+      rows,
+      ""
+    ].join("\n");
+  }).join("\n");
+  return [
+    `# ${collectionContext.name || collectionContext.key} ${labels.topicClusters}`,
+    "",
+    labels.topicClustersNote,
+    "",
+    sections || `- ${labels.noSummary}`,
+    ""
+  ].join("\n");
+}
+
+function topicClusterEntries(results, summaryInsights = new Map(), labels = collectionTemplateLabels("zh-CN")) {
+  const definitions = topicClusterDefinitions(labels);
+  const clusters = new Map();
+  for (const item of batchReportItems(results).filter((entry) => entry.status === "generated" || entry.status === "skipped_existing")) {
+    const insight = summaryInsights.get(item.itemKey) || {};
+    const text = topicClusterSourceText(item, insight);
+    const definition = definitions.find((entry) => entry.pattern.test(text)) || definitions[definitions.length - 1];
+    if (!clusters.has(definition.id)) clusters.set(definition.id, { id: definition.id, label: definition.label, items: [] });
+    clusters.get(definition.id).items.push({ item, insight });
+  }
+  return Array.from(clusters.values()).sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label));
+}
+
+function topicClusterDefinitions(labels) {
+  return [
+    { id: "transportation-airspace", label: labels.clusterTransportationAirspace, pattern: /traffic|transport|airspace|road|vehicle|route|routing|uam|uav|drone|flight|airport|mobility|交通|道路|空域|城市空中|无人机|航路|路径|车辆|机场|出行|飛行|空域|交通/i },
+    { id: "safety-risk", label: labels.clusterSafetyRisk, pattern: /safety|risk|hazard|conflict|collision|robust|uncertainty|failure|安全|风险|冲突|碰撞|不确定|鲁棒|失效|危険|リスク|衝突/i },
+    { id: "ai-methods", label: labels.clusterAiMethods, pattern: /transformer|attention|llm|language model|graph|neural|deep learning|machine learning|reinforcement|ppo|ctde|gnn|gat|baseline|ablation|模型|大模型|图神经|强化学习|深度学习|注意力|算法|消融|ベースライン|機械学習/i },
+    { id: "data-evaluation", label: labels.clusterDataEvaluation, pattern: /dataset|benchmark|simulation|experiment|evaluation|metric|ablation|数据|数据集|仿真|实验|指标|评估|验证|ベンチマーク|データ|評価|実験/i },
+    { id: "biomedicine", label: labels.clusterBiomedicine, pattern: /clinical|patient|cohort|biomed|medical|therapy|disease|trial|临床|患者|队列|医学|疾病|治疗|生物|臨床|患者|医学/i },
+    { id: "human-policy", label: labels.clusterHumanPolicy, pattern: /policy|governance|human|social|user|behavior|regulation|privacy|政策|治理|人因|用户|行为|社会|监管|隐私|ポリシー|社会|規制/i },
+    { id: "other", label: labels.clusterOther, pattern: /[\s\S]/ }
+  ];
+}
+
+function topicClusterSourceText(item, insight = {}) {
+  return insightValues(
+    item.title,
+    item.year,
+    insight.method,
+    insight.dataScenario,
+    insight.metrics,
+    insight.limitations,
+    insight.missingEvidence,
+    insight.validationNeeds,
+    insight.ideas
+  ).join(" ");
+}
+
+function insightValues(...values) {
+  const lines = [];
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      lines.push(...value.filter(Boolean).map((item) => String(item)));
+    } else if (value) {
+      lines.push(String(value));
+    }
+  }
+  return lines;
+}
+
 function renderIdeaList(collectionContext, results, outputLanguage = "zh-CN", summaryInsights = new Map()) {
   const labels = collectionTemplateLabels(outputLanguage);
   const generatedItems = batchReportItems(results).filter((item) => item.status === "generated" || item.status === "skipped_existing");
@@ -1184,6 +1275,8 @@ function collectionTemplateLabels(outputLanguage) {
       paperNotes: "Paper Notes",
       methodMatrix: "Method Matrix",
       methodMatrixNote: "Use this matrix to manually consolidate methods, data, metrics, and limitations after single-paper summaries are available.",
+      topicClusters: "Topic Clusters",
+      topicClustersNote: "Heuristic collection-level clusters built from titles and extracted summary signals. Treat them as a review starting point, not final taxonomy.",
       gapMatrix: "Research Gap Matrix",
       gapMatrixNote: "Use this matrix to consolidate limitations, missing evidence, and validation needs before moving claims into writing.",
       gapMatrixPendingLimitation: "Pending limitation extraction",
@@ -1193,10 +1286,23 @@ function collectionTemplateLabels(outputLanguage) {
       pendingRejectCondition: "Pending falsification condition",
       paperColumn: "Paper",
       yearColumn: "Year",
+      methodSignalColumn: "Method Signal",
+      gapSignalColumn: "Gap / Validation Signal",
       limitationColumn: "Observed Limitation",
       missingEvidenceColumn: "Missing Evidence",
       validationColumn: "Validation Need",
       summaryColumn: "Summary",
+      clusterSynthesis: "Synthesis",
+      clusterWritingEntry: "Writing entry",
+      clusterSynthesisText: (methods, gaps) => `Method signals: ${methods}. Evidence gaps: ${gaps}.`,
+      clusterWritingText: (cluster, method, gap) => `Use the ${cluster} cluster to compare ${method} against ${gap}.`,
+      clusterTransportationAirspace: "Transportation / Urban Airspace",
+      clusterSafetyRisk: "Safety / Risk",
+      clusterAiMethods: "AI / Model Methods",
+      clusterDataEvaluation: "Data / Evaluation",
+      clusterBiomedicine: "Biomedicine",
+      clusterHumanPolicy: "Human / Policy",
+      clusterOther: "Other / Needs Manual Review",
       researchQuestionCards: "Research Question Cards",
       cardTemplate: "Card Template",
       researchQuestionTemplate: [
@@ -1246,6 +1352,8 @@ function collectionTemplateLabels(outputLanguage) {
       paperNotes: "論文ノート",
       methodMatrix: "手法マトリクス",
       methodMatrixNote: "単一論文の要約が揃った後、手法、データ、評価指標、限界を手動で統合するためのマトリクスです。",
+      topicClusters: "トピッククラスタ",
+      topicClustersNote: "タイトルと単一論文要約から抽出した手がかりに基づくヒューリスティックな collection レベルのクラスタです。最終分類ではなくレビューの出発点として扱ってください。",
       gapMatrix: "研究ギャップマトリクス",
       gapMatrixNote: "執筆に入る前に、限界、不足している証拠、検証ニーズを整理するためのマトリクスです。",
       gapMatrixPendingLimitation: "限界の抽出待ち",
@@ -1255,10 +1363,23 @@ function collectionTemplateLabels(outputLanguage) {
       pendingRejectCondition: "棄却条件の抽出待ち",
       paperColumn: "論文",
       yearColumn: "年",
+      methodSignalColumn: "手法の手がかり",
+      gapSignalColumn: "ギャップ・検証の手がかり",
       limitationColumn: "観察された限界",
       missingEvidenceColumn: "不足している証拠",
       validationColumn: "検証ニーズ",
       summaryColumn: "要約",
+      clusterSynthesis: "統合メモ",
+      clusterWritingEntry: "執筆入口",
+      clusterSynthesisText: (methods, gaps) => `手法の手がかり: ${methods}。証拠ギャップ: ${gaps}。`,
+      clusterWritingText: (cluster, method, gap) => `${cluster} クラスタで ${method} と ${gap} を比較する。`,
+      clusterTransportationAirspace: "交通・都市空域",
+      clusterSafetyRisk: "安全・リスク",
+      clusterAiMethods: "AI・モデル手法",
+      clusterDataEvaluation: "データ・評価",
+      clusterBiomedicine: "医学・生命科学",
+      clusterHumanPolicy: "人間・政策",
+      clusterOther: "その他・手動確認",
       researchQuestionCards: "研究課題カード",
       cardTemplate: "カードテンプレート",
       researchQuestionTemplate: [
@@ -1307,6 +1428,8 @@ function collectionTemplateLabels(outputLanguage) {
     paperNotes: "论文笔记",
     methodMatrix: "方法矩阵",
     methodMatrixNote: "此矩阵用于在单篇总结完成后手动汇总方法、数据、指标和局限。",
+    topicClusters: "主题聚类",
+    topicClustersNote: "基于标题和单篇总结抽取线索生成的启发式集合级聚类，用作综述起点，不等同于最终分类。",
     gapMatrix: "研究空白矩阵",
     gapMatrixNote: "此矩阵用于在进入写作前整理局限、缺失证据和验证需求。",
     gapMatrixPendingLimitation: "待抽取局限",
@@ -1316,10 +1439,23 @@ function collectionTemplateLabels(outputLanguage) {
     pendingRejectCondition: "待抽取推翻条件",
     paperColumn: "论文",
     yearColumn: "年份",
+    methodSignalColumn: "方法线索",
+    gapSignalColumn: "空白/验证线索",
     limitationColumn: "已观察局限",
     missingEvidenceColumn: "缺失证据",
     validationColumn: "验证需求",
     summaryColumn: "总结",
+    clusterSynthesis: "综合线索",
+    clusterWritingEntry: "写作入口",
+    clusterSynthesisText: (methods, gaps) => `方法线索：${methods}。证据空白：${gaps}。`,
+    clusterWritingText: (cluster, method, gap) => `围绕“${cluster}”比较 ${method} 与 ${gap}。`,
+    clusterTransportationAirspace: "交通与城市空域",
+    clusterSafetyRisk: "安全与风险",
+    clusterAiMethods: "AI 与模型方法",
+    clusterDataEvaluation: "数据与评估",
+    clusterBiomedicine: "医学与生命科学",
+    clusterHumanPolicy: "人因与政策",
+    clusterOther: "其他/待人工归类",
     researchQuestionCards: "研究问题卡",
     cardTemplate: "卡片模板",
     researchQuestionTemplate: [

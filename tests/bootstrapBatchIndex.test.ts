@@ -253,6 +253,7 @@ describe("batch papers index", () => {
       paperNotesIndexPath: "/out/collections/COL/paper-notes/index.zh-CN.md",
       methodMatrixPath: "/out/collections/COL/knowledge/method-matrix.zh-CN.md",
       gapMatrixPath: "/out/collections/COL/knowledge/research-gaps.zh-CN.md",
+      topicClustersPath: "/out/collections/COL/knowledge/topic-clusters.zh-CN.md",
       researchQuestionCardsPath: "/out/collections/COL/knowledge/research-question-cards.zh-CN.md",
       reviewDraftPath: "/out/collections/COL/writing/manual-review-draft.zh-CN.md",
       ideaListPath: "/out/collections/COL/writing/idea-list.zh-CN.md"
@@ -268,6 +269,8 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.methodMatrixPath)).toContain("方法矩阵");
     expect(writes.get(artifacts.gapMatrixPath)).toContain("研究空白矩阵");
     expect(writes.get(artifacts.gapMatrixPath)).toContain("缺失证据");
+    expect(writes.get(artifacts.topicClustersPath)).toContain("主题聚类");
+    expect(writes.get(artifacts.topicClustersPath)).toContain("综合线索");
     expect(writes.get(artifacts.researchQuestionCardsPath)).toContain("研究问题卡");
     expect(writes.get(artifacts.researchQuestionCardsPath)).toContain("最小下一步动作");
     expect(writes.get(artifacts.reviewDraftPath)).toContain("手动综述草稿");
@@ -344,6 +347,57 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.ideaListPath)).toContain("推翻条件: If mixed priority traffic erases the safety gain.");
   });
 
+  it("builds heuristic collection topic clusters from summary insights", async () => {
+    const files = new Map<string, string>([
+      ["/out/a.md", [
+        "# Urban airspace conflict resolution",
+        "",
+        "## 方法",
+        "",
+        "- PPO-based CTDE scheduler with a safety filter.",
+        "",
+        "## 实验与验证",
+        "",
+        "- Tested with mixed priority flights in an urban airspace simulation.",
+        "",
+        "## 局限",
+        "",
+        "- No field data from real flight operations."
+      ].join("\n")],
+      ["/out/b.md", [
+        "# Transformer baseline selection",
+        "",
+        "## Method",
+        "",
+        "- Transformer attention baseline with ablation experiments.",
+        "",
+        "## Evaluation",
+        "",
+        "- Evaluated on public benchmark datasets.",
+        "",
+        "## Limitation",
+        "",
+        "- Compute cost is not reported."
+      ].join("\n")]
+    ]);
+    const { writes, helpers } = loadBootstrapHelpers(files);
+    const artifacts = await helpers.writeCollectionWorkspace(
+      { outputLanguage: "zh-CN", summaryVersion: "1", outputDir: "/out" },
+      { key: "COL", name: "Collection", type: "collection", parentLibraryID: 1, outputDir: "/out/collections/COL" },
+      [
+        { status: "generated", itemKey: "A", title: "Urban airspace conflict resolution", year: "2026", summaryPath: "/out/a.md" },
+        { status: "generated", itemKey: "B", title: "Transformer baseline selection", year: "2025", summaryPath: "/out/b.md" }
+      ]
+    );
+    const clusters = writes.get(artifacts.topicClustersPath) || "";
+    expect(clusters).toContain("交通与城市空域");
+    expect(clusters).toContain("AI 与模型方法");
+    expect(clusters).toContain("Urban airspace conflict resolution");
+    expect(clusters).toContain("Transformer baseline selection");
+    expect(clusters).toContain("No field data from real flight operations");
+    expect(clusters).toContain("Compute cost is not reported");
+  });
+
   it("localizes collection review and research question templates", async () => {
     const { writes, helpers } = loadBootstrapHelpers();
     const results = [{ status: "generated", itemKey: "A", title: "Paper A", year: "2026", summaryPath: "/out/a.md" }];
@@ -357,6 +411,7 @@ describe("batch papers index", () => {
     expect(writes.get(english.researchQuestionCardsPath)).toContain("Research Question Cards");
     expect(writes.get(english.researchQuestionCardsPath)).toContain("Minimum next action");
     expect(writes.get(english.gapMatrixPath)).toContain("Research Gap Matrix");
+    expect(writes.get(english.topicClustersPath)).toContain("Topic Clusters");
     expect(writes.get(english.ideaListPath)).toContain("Reject condition");
 
     const japanese = await helpers.writeCollectionWorkspace(
@@ -368,6 +423,7 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.researchQuestionCardsPath)).toContain("研究課題カード");
     expect(writes.get(japanese.researchQuestionCardsPath)).toContain("最小の次アクション");
     expect(writes.get(japanese.gapMatrixPath)).toContain("研究ギャップマトリクス");
+    expect(writes.get(japanese.topicClustersPath)).toContain("トピッククラスタ");
     expect(writes.get(japanese.ideaListPath)).toContain("棄却条件");
   });
 
@@ -397,6 +453,8 @@ describe("batch papers index", () => {
     expect(japanese.methodMatrixPath).toBe("/out/collections/COL/knowledge/method-matrix.ja-JP.md");
     expect(english.gapMatrixPath).toBe("/out/collections/COL/knowledge/research-gaps.en-US.md");
     expect(japanese.gapMatrixPath).toBe("/out/collections/COL/knowledge/research-gaps.ja-JP.md");
+    expect(english.topicClustersPath).toBe("/out/collections/COL/knowledge/topic-clusters.en-US.md");
+    expect(japanese.topicClustersPath).toBe("/out/collections/COL/knowledge/topic-clusters.ja-JP.md");
     expect(english.reviewDraftPath).not.toBe(japanese.reviewDraftPath);
     expect(english.ideaListPath).not.toBe(japanese.ideaListPath);
     expect(writes.get(english.reviewDraftPath)).toContain("Manual Review Draft");
