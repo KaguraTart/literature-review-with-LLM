@@ -207,6 +207,9 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     candidateStatusText: (records: any[], path: string, translate?: (key: string) => string) => string;
     candidateReviewMarkdownPath: (outputDir: string, item: any) => string;
     renderCandidateReviewMarkdown: (records: any[], options?: any) => string;
+    applyCitationNetworkPolicyToDom: (policy: string) => void;
+    citationNetworkOptionsFromDom: () => any;
+    citationNetworkPolicyDefaults: (policy: string) => any;
     readingLogMarkdownPath: (outputDir: string, item: any) => string;
     renderReadingLogMarkdown: (context: any, options?: any) => string;
     comparisonReportMarkdownPath: (outputDir: string, item: any) => string;
@@ -1630,6 +1633,103 @@ describe("workbench writeback helpers", () => {
     expect(loaded.citationNetworkMetaText({
       networkOrigins: [{ direction: "references", seedId: "S2-A", seedTitle: "Candidate A" }]
     })).toBe("network:references:Candidate A");
+  });
+
+  it("reads configurable citation-network policy options from the workbench controls", () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-citation-policy": "broad",
+      "zms-citation-direction": "citations",
+      "zms-citation-hops": "3",
+      "zms-citation-max-requests": "30",
+      "zms-citation-per-seed": "7",
+      "zms-citation-seed-limit": "6"
+    });
+    (loaded as any).document = dom;
+
+    expect(loaded.citationNetworkOptionsFromDom()).toMatchObject({
+      policy: "broad",
+      directions: ["citations"],
+      maxHops: 3,
+      maxNetworkRequests: 30,
+      perSeedLimit: 7,
+      seedLimit: 6,
+      nextHopSeedLimit: 6
+    });
+
+    loaded.applyCitationNetworkPolicyToDom("precise");
+
+    expect(dom.elements.get("zms-citation-hops").value).toBe("1");
+    expect(dom.elements.get("zms-citation-max-requests").value).toBe("6");
+    expect(dom.elements.get("zms-citation-per-seed").value).toBe("3");
+    expect(dom.elements.get("zms-citation-seed-limit").value).toBe("3");
+  });
+
+  it("passes custom citation-network policy settings into the workbench expansion request", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument({
+      "zms-candidate-query": "graph attention traffic",
+      "zms-candidate-limit": "10",
+      "zms-candidate-email": "",
+      "zms-candidate-semantic-key": "s2-key",
+      "zms-citation-policy": "broad",
+      "zms-citation-direction": "references",
+      "zms-citation-hops": "3",
+      "zms-citation-max-requests": "25",
+      "zms-citation-per-seed": "9",
+      "zms-citation-seed-limit": "5"
+    });
+    (loaded as any).document = dom;
+    const calls: any[] = [];
+    (loaded as any).window.ZMSCandidateSources = {
+      expandCandidateCitationNetwork: async (_fetchImpl: any, options: any, existing: any[]) => {
+        calls.push({ options, existing });
+        return { records: [], papers: [], errors: [], requests: [], hops: 3 };
+      },
+      mergeCandidateRecords: (existing: any[], records: any[]) => [...existing, ...records]
+    };
+    (loaded as any).fetch = async () => ({ ok: true, status: 200, text: async () => "{}" });
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.item = {
+      key: "ITEM",
+      getCollections: () => [10],
+      getField: (field: string) => {
+        if (field === "title") return "Current Paper";
+        if (field === "DOI") return "10.1000/current";
+        return "";
+      }
+    };
+    workbench.state.candidates = [
+      {
+        candidateId: "doi:10.1000/a",
+        title: "Candidate A",
+        decision: "to_read",
+        ids: { doi: "10.1000/a", semanticScholarId: "S2-A" },
+        sourceIds: { semantic_scholar: "S2-A" },
+        quality: { dedupeStatus: "new" },
+        priority: { tier: "high" }
+      }
+    ];
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).expandCandidateCitationNetwork();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].options).toMatchObject({
+      query: "graph attention traffic",
+      semanticScholarApiKey: "s2-key",
+      directions: ["references"],
+      maxHops: 3,
+      maxNetworkRequests: 25,
+      perSeedLimit: 9,
+      nextHopSeedLimit: 5,
+      networkPolicy: "broad"
+    });
+    expect(calls[0].options.seeds).toHaveLength(2);
+    expect(dom.elements.get("zms-status").textContent).toContain("candidateCitationNetworkDone: 0; seeds 2; hops 3; policy broad");
   });
 
   it("imports included candidates as metadata-only Zotero items", async () => {

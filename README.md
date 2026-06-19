@@ -4,7 +4,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 [中文说明](README.zh-CN.md)
 
-> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, single-paper reading-log export, first-pass multi-paper comparison with a reusable Markdown literature-matrix report, collection topic-cluster workspace, and bounded two-hop citation-network expansion are in place; cross-collection synthesis and richer cross-paper analysis are still planned.
+> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, single-paper reading-log export, first-pass multi-paper comparison with a reusable Markdown literature-matrix report, collection topic-cluster workspace, and configurable bounded citation-network expansion are in place; cross-collection synthesis and richer cross-paper analysis are still planned.
 
 ![Zotero paper chat workbench](docs/assets/workbench-chat.png)
 
@@ -19,7 +19,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - **Bring-your-own-key**: the plugin is free and open source; remote model providers require your own API keys.
 - **Local agent consultation**: optionally ask local Gemini, Claude, and opencode command-line tools for independent reading suggestions through the local bridge.
 - **Research workflow utilities**: includes skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation checks, and candidate-paper discovery.
-- **Candidate-paper review queue**: arXiv / Crossref / Semantic Scholar / Unpaywall results are deduplicated, ranked with explainable priority signals, expanded through bounded two-hop Semantic Scholar references/citations, exported as a Markdown review report, saved as JSONL, and imported only after manual review.
+- **Candidate-paper review queue**: arXiv / Crossref / Semantic Scholar / Unpaywall results are deduplicated, ranked with explainable priority signals, expanded through configurable bounded Semantic Scholar references/citations policies, exported as a Markdown review report, saved as JSONL, and imported only after manual review.
 - **Research-domain prompt packs**: choose general reading, AI/ML systems, transportation and urban airspace, biomedicine, social science/policy, or literature-review writing packs. The selected pack is applied in both the paper chat workbench and direct summary generation.
 
 ## Features
@@ -36,7 +36,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - Use built-in skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation audit, and local-agent review.
 - Select a research-domain prompt pack from Zotero preferences or the workbench settings drawer.
 - Optional local-agent bridge for Gemini, Claude, and opencode CLI tools.
-- Candidate-paper discovery utilities for arXiv / Crossref / Semantic Scholar workflows, including one-hop references/citations expansion from seeded papers and a Markdown review report export.
+- Candidate-paper discovery utilities for arXiv / Crossref / Semantic Scholar workflows, including configurable references/citations expansion from seeded papers and a Markdown review report export.
 - Candidate-paper ranking stores priority tier, score, recommended decision, and reasons in `candidates.jsonl`.
 
 ## Installation
@@ -196,7 +196,7 @@ build/update.json
 - Single-turn image attachments and the `Figure/Table Extractor` skill are supported, but chart, table, and handwritten-note understanding still depends on the selected model. Local OCR and chart-data reconstruction are not implemented yet.
 - Formula rendering is lightweight. It supports common inline/display math patterns, but it is not a full TeX engine.
 - Paper reading logs are structured Markdown scaffolds with evidence excerpts and manual fields; they are not yet a polished long-form review report.
-- Candidate-paper search now has explainable ranking, duplicate reconciliation, bounded two-hop citation-network expansion, and a Markdown candidate-review report, but configurable deeper expansion and richer review workflows still need more work.
+- Candidate-paper search now has explainable ranking, duplicate reconciliation, configurable bounded citation-network expansion, and a Markdown candidate-review report, but richer review workflows still need more work.
 - The workbench UI is still being refined; some controls and settings are intentionally compact but may need more usability work.
 - Raw PDF input depends on provider capability. Many providers still use extracted Zotero text instead.
 - Local-agent calls depend on local CLI tools and their own authentication state.
@@ -207,7 +207,7 @@ build/update.json
 
 - Improve cross-collection clustering, richer synthesis matrices, and polished batch report generation.
 - Improve structured extraction quality for screenshots, PDF figures, tables, and experimental results with local OCR/table reconstruction.
-- Add configurable deeper citation-network expansion policies and richer candidate-paper review workflows.
+- Add richer candidate-paper review workflows after the current configurable citation-network policies.
 - Add per-provider setup guides with screenshots.
 - Add more export templates for thesis notes and formal review reports beyond the current candidate-review, literature-matrix, and paper-reading-log reports.
 

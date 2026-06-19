@@ -77,6 +77,28 @@
         </html:div>
         <html:label id="zms-candidate-semantic-key-label" for="zms-candidate-semantic-key">Semantic Scholar API Key</html:label>
         <html:input id="zms-candidate-semantic-key" type="password"/>
+        <html:div class="zms-citation-policy-grid">
+          <html:label id="zms-citation-policy-label" for="zms-citation-policy">Network Policy</html:label>
+          <html:select id="zms-citation-policy">
+            <html:option id="zms-citation-policy-balanced" value="balanced" selected="selected">Balanced</html:option>
+            <html:option id="zms-citation-policy-precise" value="precise">Precise</html:option>
+            <html:option id="zms-citation-policy-broad" value="broad">Broad</html:option>
+          </html:select>
+          <html:label id="zms-citation-direction-label" for="zms-citation-direction">Direction</html:label>
+          <html:select id="zms-citation-direction">
+            <html:option id="zms-citation-direction-both" value="both" selected="selected">Both</html:option>
+            <html:option id="zms-citation-direction-references" value="references">References</html:option>
+            <html:option id="zms-citation-direction-citations" value="citations">Citations</html:option>
+          </html:select>
+          <html:label id="zms-citation-hops-label" for="zms-citation-hops">Hops</html:label>
+          <html:input id="zms-citation-hops" type="number" min="1" max="3" value="2"/>
+          <html:label id="zms-citation-max-requests-label" for="zms-citation-max-requests">Max Requests</html:label>
+          <html:input id="zms-citation-max-requests" type="number" min="1" max="100" value="12"/>
+          <html:label id="zms-citation-per-seed-label" for="zms-citation-per-seed">Per Seed</html:label>
+          <html:input id="zms-citation-per-seed" type="number" min="1" max="100" value="4"/>
+          <html:label id="zms-citation-seed-limit-label" for="zms-citation-seed-limit">Seeds</html:label>
+          <html:input id="zms-citation-seed-limit" type="number" min="1" max="20" value="4"/>
+        </html:div>
         <html:div class="zms-actions zms-candidate-actions">
           <html:button id="zms-search-candidates">Search</html:button>
           <html:button id="zms-expand-citation-network">Expand Network</html:button>

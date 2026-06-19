@@ -916,6 +916,19 @@ button:disabled {
   margin: 4px 0 6px;
 }
 
+.zms-citation-policy-grid {
+  display: grid;
+  grid-template-columns: minmax(72px, max-content) minmax(0, 1fr) minmax(72px, max-content) minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0 8px;
+}
+
+.zms-citation-policy-grid input,
+.zms-citation-policy-grid select {
+  min-width: 0;
+}
+
 .zms-candidate-list {
   max-height: 240px;
   overflow: auto;

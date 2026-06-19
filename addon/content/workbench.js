@@ -190,6 +190,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.state.escapeBound = true;
     }
     this.bindImageInput();
+    this.bindCitationNetworkPolicyControls();
     const composer = document.getElementById("zms-composer");
     if (input && input.dataset?.zmsFocusBound !== "1") {
       for (const eventName of ["pointerdown", "mousedown", "click"]) {
@@ -246,6 +247,13 @@ var ZoteroMarkdownSummaryWorkbench = {
       });
       if (composer.dataset) composer.dataset.zmsDropBound = "1";
     }
+  },
+
+  bindCitationNetworkPolicyControls() {
+    const policy = document.getElementById("zms-citation-policy");
+    if (!policy || policy.dataset?.zmsPolicyBound === "1") return;
+    policy.addEventListener("change", () => applyCitationNetworkPolicyToDom(policy.value));
+    if (policy.dataset) policy.dataset.zmsPolicyBound = "1";
   },
 
   chooseImages() {
@@ -399,6 +407,18 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-candidate-limit-label", this.t("candidateLimit"));
     setText("zms-candidate-email-label", this.t("candidateEmail"));
     setText("zms-candidate-semantic-key-label", this.t("candidateSemanticKey"));
+    setText("zms-citation-policy-label", this.t("citationPolicy"));
+    setText("zms-citation-direction-label", this.t("citationDirection"));
+    setText("zms-citation-hops-label", this.t("citationHops"));
+    setText("zms-citation-max-requests-label", this.t("citationMaxRequests"));
+    setText("zms-citation-per-seed-label", this.t("citationPerSeed"));
+    setText("zms-citation-seed-limit-label", this.t("citationSeedLimit"));
+    setText("zms-citation-policy-balanced", this.t("citationPolicyBalanced"));
+    setText("zms-citation-policy-precise", this.t("citationPolicyPrecise"));
+    setText("zms-citation-policy-broad", this.t("citationPolicyBroad"));
+    setText("zms-citation-direction-both", this.t("citationDirectionBoth"));
+    setText("zms-citation-direction-references", this.t("citationDirectionReferences"));
+    setText("zms-citation-direction-citations", this.t("citationDirectionCitations"));
     setText("zms-search-candidates", this.t("candidateSearch"));
     setText("zms-expand-citation-network", this.t("expandCitationNetwork"));
     setText("zms-load-candidates", this.t("loadCandidates"));
@@ -806,24 +826,25 @@ var ZoteroMarkdownSummaryWorkbench = {
       const existing = this.state.candidates.length
         ? this.state.candidates
         : await loadCandidateRecords(this.state.candidatePath).catch(() => []);
-      const seeds = citationNetworkSeedsForWorkbench(existing, this.state.item, 4);
+      const networkOptions = citationNetworkOptionsFromDom();
+      const seeds = citationNetworkSeedsForWorkbench(existing, this.state.item, networkOptions.seedLimit);
       if (!seeds.length) {
         this.setStatus(this.t("candidateCitationNetworkNoSeeds"));
         return;
       }
       const existingCandidateIds = new Set(existing.map((record) => record.candidateId));
       const options = candidateSearchOptionsFromDom(this.state.item);
-      const perSeedLimit = Math.max(1, Math.ceil((options.limit || 8) / Math.max(1, seeds.length)));
       this.setStatus(this.t("candidateCitationNetworkRunning"));
       const result = await window.ZMSCandidateSources.expandCandidateCitationNetwork(fetch.bind(window), {
         ...options,
         query: options.query || this.state.item?.getField?.("title") || this.state.item?.key || "citation-network",
         seeds,
-        directions: ["references", "citations"],
-        perSeedLimit,
-        maxHops: 2,
-        nextHopSeedLimit: 4,
-        maxNetworkRequests: 12,
+        directions: networkOptions.directions,
+        perSeedLimit: networkOptions.perSeedLimit,
+        maxHops: networkOptions.maxHops,
+        nextHopSeedLimit: networkOptions.nextHopSeedLimit,
+        maxNetworkRequests: networkOptions.maxNetworkRequests,
+        networkPolicy: networkOptions.policy,
         collectionKey: workbenchCollectionKey(this.state.item),
         now: new Date().toISOString()
       }, existing);
@@ -832,7 +853,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       await appendImportLedgerEntries(importLedgerJsonlPath(this.state.outputDir, this.state.item), discoveredLedgerEntries(result.records, existingCandidateIds));
       this.renderCandidates(candidateSearchErrorSummary(result.errors, (key) => this.t(key)));
       const errorSuffix = result.errors?.length ? `; ${this.t("candidateSourceErrors")}: ${result.errors.map((item) => item.source).join(", ")}` : "";
-      this.setStatus(`${this.t("candidateCitationNetworkDone")}: ${result.records.length}; seeds ${seeds.length}; hops ${result.hops || 1}${errorSuffix}`);
+      this.setStatus(`${this.t("candidateCitationNetworkDone")}: ${result.records.length}; seeds ${seeds.length}; hops ${result.hops || 1}; policy ${networkOptions.policy}${errorSuffix}`);
     } catch (err) {
       this.setStatus(`${this.t("candidateCitationNetworkFailed")}: ${safeError(err)}`);
     }
@@ -5052,6 +5073,55 @@ function candidateSearchOptionsFromDom(item) {
     semanticScholarApiKey: document.getElementById("zms-candidate-semantic-key")?.value?.trim() || "",
     openAccessOnly: true
   };
+}
+
+function citationNetworkOptionsFromDom() {
+  const policy = normalizeCitationNetworkPolicy(document.getElementById("zms-citation-policy")?.value);
+  const defaults = citationNetworkPolicyDefaults(policy);
+  const seedLimit = clampNumber(document.getElementById("zms-citation-seed-limit")?.value, 1, 20, defaults.seedLimit);
+  return {
+    policy,
+    directions: citationNetworkDirectionsFromValue(document.getElementById("zms-citation-direction")?.value),
+    maxHops: clampNumber(document.getElementById("zms-citation-hops")?.value, 1, 3, defaults.maxHops),
+    maxNetworkRequests: clampNumber(document.getElementById("zms-citation-max-requests")?.value, 1, 100, defaults.maxNetworkRequests),
+    perSeedLimit: clampNumber(document.getElementById("zms-citation-per-seed")?.value, 1, 100, defaults.perSeedLimit),
+    seedLimit,
+    nextHopSeedLimit: seedLimit
+  };
+}
+
+function applyCitationNetworkPolicyToDom(policyValue) {
+  const defaults = citationNetworkPolicyDefaults(policyValue);
+  setNumberInputValue("zms-citation-hops", defaults.maxHops);
+  setNumberInputValue("zms-citation-max-requests", defaults.maxNetworkRequests);
+  setNumberInputValue("zms-citation-per-seed", defaults.perSeedLimit);
+  setNumberInputValue("zms-citation-seed-limit", defaults.seedLimit);
+}
+
+function setNumberInputValue(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.value = String(value);
+}
+
+function normalizeCitationNetworkPolicy(value) {
+  return value === "precise" || value === "broad" ? value : "balanced";
+}
+
+function citationNetworkPolicyDefaults(policyValue) {
+  const policy = normalizeCitationNetworkPolicy(policyValue);
+  if (policy === "precise") {
+    return { maxHops: 1, maxNetworkRequests: 6, perSeedLimit: 3, seedLimit: 3 };
+  }
+  if (policy === "broad") {
+    return { maxHops: 3, maxNetworkRequests: 24, perSeedLimit: 8, seedLimit: 8 };
+  }
+  return { maxHops: 2, maxNetworkRequests: 12, perSeedLimit: 4, seedLimit: 4 };
+}
+
+function citationNetworkDirectionsFromValue(value) {
+  if (value === "references") return ["references"];
+  if (value === "citations") return ["citations"];
+  return ["references", "citations"];
 }
 
 function citationNetworkSeedsForWorkbench(records, item, limit = 4) {
