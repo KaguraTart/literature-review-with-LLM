@@ -283,6 +283,54 @@ describe("bootstrap UI runtime wiring", () => {
     expect(frame?.getAttribute("src")).toContain("embedded=1");
   });
 
+  it("passes all selected workbench items into embedded launch parameters", () => {
+    const doc = new FakeDocument();
+    const host = doc.createXULElement("vbox");
+    host.id = "zotero-context-pane";
+    doc.documentElement.appendChild(host);
+    const { helpers } = loadBootstrapUi(doc);
+
+    helpers.openEmbeddedWorkbench([
+      { id: 42, key: "ITEM42" },
+      { id: 43, key: "ITEM43" }
+    ]);
+
+    const panel = doc.getElementById("zotero-markdown-summary-workbench-panel");
+    const frame = doc.getElementById("zotero-markdown-summary-workbench-frame");
+    expect(panel?.getAttribute("data-item-key")).toBe("ITEM42");
+    expect(panel?.getAttribute("data-item-keys")).toBe("ITEM42,ITEM43");
+    expect(frame?.getAttribute("src")).toContain("itemID=42");
+    expect(frame?.getAttribute("src")).toContain("itemKey=ITEM42");
+    expect(frame?.getAttribute("src")).toContain("itemIDs=42%2C43");
+    expect(frame?.getAttribute("src")).toContain("itemKeys=ITEM42%2CITEM43");
+  });
+
+  it("refreshes the embedded workbench when the selected papers change", () => {
+    const doc = new FakeDocument();
+    const host = doc.createXULElement("vbox");
+    host.id = "zotero-context-pane";
+    doc.documentElement.appendChild(host);
+    let selectedItems = [{ id: 42, key: "ITEM42" }];
+    const { helpers, win } = loadBootstrapUi(doc, {
+      selectedWorkbenchItems: () => selectedItems
+    });
+
+    helpers.openEmbeddedWorkbench(selectedItems);
+    selectedItems = [
+      { id: 43, key: "ITEM43" },
+      { id: 44, key: "ITEM44" }
+    ];
+    helpers.refreshEmbeddedWorkbenchForSelection(win);
+
+    const panel = doc.getElementById("zotero-markdown-summary-workbench-panel");
+    const frame = doc.getElementById("zotero-markdown-summary-workbench-frame");
+    expect(panel?.getAttribute("data-item-key")).toBe("ITEM43");
+    expect(panel?.getAttribute("data-item-keys")).toBe("ITEM43,ITEM44");
+    expect(frame?.getAttribute("src")).toContain("itemID=43");
+    expect(frame?.getAttribute("src")).toContain("itemIDs=43%2C44");
+    expect(frame?.getAttribute("src")).toContain("itemKeys=ITEM43%2CITEM44");
+  });
+
   it("uses HTML elements when embedding the workbench into an HTML host", () => {
     const doc = new FakeDocument();
     const host = doc.createElementNS(HTML_NS, "section");

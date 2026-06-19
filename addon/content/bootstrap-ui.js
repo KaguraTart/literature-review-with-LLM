@@ -282,13 +282,14 @@ async function openAttachmentExternally(attachment) {
 
 async function openWorkbenchForContext(context) {
   try {
-    const item = workbenchItemsForContext(context)[0];
+    const items = workbenchItemsForContext(context);
+    const item = items[0];
     if (!item) {
       showAlert(t("selectOneItem"));
       return;
     }
-    if (!openEmbeddedWorkbench(item)) {
-      openWorkbenchDialog(item);
+    if (!openEmbeddedWorkbench(items)) {
+      openWorkbenchDialog(items);
     }
   } catch (err) {
     Zotero.debug(`[Markdown Summary] Failed to open workbench: ${safeError(err)}`);
@@ -296,7 +297,9 @@ async function openWorkbenchForContext(context) {
   }
 }
 
-function openEmbeddedWorkbench(item) {
+function openEmbeddedWorkbench(itemOrItems) {
+  const items = normalizeWorkbenchItems(itemOrItems);
+  const item = items[0];
   const win = Services.wm.getMostRecentWindow("navigator:browser");
   const doc = win?.document;
   if (!doc) {
@@ -308,9 +311,10 @@ function openEmbeddedWorkbench(item) {
   const title = panel.querySelector?.(".zms-embedded-title");
   if (title) title.textContent = t("openWorkbench");
   const frame = doc.getElementById(WORKBENCH_FRAME_ID);
-  setEmbeddedFrameSource(frame, workbenchURL(item));
-  scheduleEmbeddedFrameRecovery(win, frame, () => openWorkbenchDialog(item));
+  setEmbeddedFrameSource(frame, workbenchURL(items));
+  scheduleEmbeddedFrameRecovery(win, frame, () => openWorkbenchDialog(items));
   panel.setAttribute("data-item-key", item.key || "");
+  panel.setAttribute("data-item-keys", items.map((entry) => entry?.key || "").filter(Boolean).join(","));
   panel.setAttribute("data-view", "workbench");
   panel.hidden = false;
   panel.removeAttribute("hidden");
@@ -320,10 +324,14 @@ function openEmbeddedWorkbench(item) {
   return true;
 }
 
-function openWorkbenchDialog(item) {
+function openWorkbenchDialog(itemOrItems) {
+  const items = normalizeWorkbenchItems(itemOrItems);
+  const item = items[0];
   openChromeDialog("content/workbench.xhtml", "zotero-markdown-summary-workbench", {
     itemID: item?.id || 0,
-    itemKey: item?.key || ""
+    itemKey: item?.key || "",
+    itemIDs: items.map((entry) => entry?.id || 0).filter(Boolean).join(","),
+    itemKeys: items.map((entry) => entry?.key || "").filter(Boolean).join(",")
   });
 }
 
@@ -502,10 +510,13 @@ function refreshEmbeddedWorkbenchForSelection(win) {
     if (!panel || panel.hidden || panel.getAttribute("data-view") === "reader") return;
     const frame = doc.getElementById(WORKBENCH_FRAME_ID);
     if (!frame) return;
-    const item = workbenchItemsForContext()[0];
-    if (!item?.key || panel.getAttribute("data-item-key") === item.key) return;
-    setEmbeddedFrameSource(frame, workbenchURL(item));
+    const items = workbenchItemsForContext();
+    const item = items[0];
+    const itemKeys = items.map((entry) => entry?.key || "").filter(Boolean).join(",");
+    if (!item?.key || panel.getAttribute("data-item-keys") === itemKeys) return;
+    setEmbeddedFrameSource(frame, workbenchURL(items));
     panel.setAttribute("data-item-key", item.key || "");
+    panel.setAttribute("data-item-keys", itemKeys);
     const title = panel.querySelector?.(".zms-embedded-title");
     if (title) title.textContent = t("openWorkbench");
   } catch (_err) {
@@ -585,14 +596,31 @@ function ensureEmbeddedWorkbenchStyle(doc) {
   doc.documentElement.appendChild(style);
 }
 
-function workbenchURL(item) {
+function workbenchURL(itemOrItems) {
+  const items = normalizeWorkbenchItems(itemOrItems);
+  const item = items[0] || {};
   const params = new URLSearchParams({
     itemID: String(item.id || ""),
     itemKey: item.key || "",
+    itemIDs: items.map((entry) => entry?.id || 0).filter(Boolean).join(","),
+    itemKeys: items.map((entry) => entry?.key || "").filter(Boolean).join(","),
     embedded: "1",
     refresh: String(Date.now())
   });
   return contentPageURLs("workbench.xhtml", params);
+}
+
+function normalizeWorkbenchItems(itemOrItems) {
+  const input = Array.isArray(itemOrItems) ? itemOrItems : [itemOrItems];
+  const seen = new Set();
+  const out = [];
+  for (const item of input) {
+    const key = item?.id || item?.key;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
 }
 
 function readerURL(payload) {

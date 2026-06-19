@@ -29,8 +29,9 @@ const LOCAL_AGENT_SKILLS = {
 };
 const LOCAL_AGENT_TOOL_NAMES = new Set(Object.values(LOCAL_AGENT_SKILLS));
 const LOCAL_AGENT_AGGREGATE_SKILLS = ["ask-all-agents", "ask-gemini-claude", "check-local-agents"];
-  const ZMS_PREF_PREFIX = "extensions.zoteroMarkdownSummary";
-  const ZMS_CHROME_CONTENT_URL = "chrome://zotero-markdown-summary/content/";
+const ZMS_PREF_PREFIX = "extensions.zoteroMarkdownSummary";
+const ZMS_CHROME_CONTENT_URL = "chrome://zotero-markdown-summary/content/";
+const MAX_COMPARISON_PAPERS = 5;
 
 function wbMessage(scope, key, settingOrLocale) {
   if (typeof zmsMessage !== "function") return key;
@@ -43,6 +44,8 @@ var ZoteroMarkdownSummaryWorkbench = {
     item: null,
     pdf: null,
     context: null,
+    comparisonItems: [],
+    comparisonContexts: [],
     contextDiagnostics: null,
     contextSourceHash: "",
     messages: [],
@@ -84,10 +87,14 @@ var ZoteroMarkdownSummaryWorkbench = {
       if (this.state.launchPayload.embedded) {
         document.documentElement.setAttribute("data-embedded", "true");
       }
-      this.state.item = itemFromArgs(this.state.launchPayload);
+      const launchItems = itemsFromArgs(this.state.launchPayload);
+      this.state.item = launchItems[0] || itemFromArgs(this.state.launchPayload);
       if (!this.state.item) throw new Error(this.t("noItem"));
+      this.state.comparisonItems = launchItems.filter((item) => !sameZoteroItem(item, this.state.item)).slice(0, MAX_COMPARISON_PAPERS);
       this.state.pdf = await findPdfAttachment(this.state.item);
       this.state.context = await buildPaperContext(this.state.item, this.state.pdf, this.state.outputDir);
+      this.state.comparisonContexts = await buildComparisonContexts(this.state.comparisonItems, this.state.outputDir);
+      this.state.context.comparisonContexts = this.state.comparisonContexts;
       this.state.contextDiagnostics = this.state.context.diagnostics || null;
       this.state.contextSourceHash = buildContextSourceHash(this.state.context, this.state.item, this.state.pdf);
       await ensureDirectory(this.sessionDir());
@@ -97,7 +104,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       await this.renderSkills();
       // Try to resume the most recent conversation for this item so the
       // user does not have to start over when they reopen the workbench.
-      const latest = await latestSessionForItem(this.state.item, this.state.outputDir);
+      const latest = this.state.comparisonContexts.length ? null : await latestSessionForItem(this.state.item, this.state.outputDir);
       if (latest) {
         await this.loadSession(latest.path, { resume: true });
         this.setStatus(this.t("sessionResumed"));
@@ -412,7 +419,8 @@ var ZoteroMarkdownSummaryWorkbench = {
     const year = item.getField("date") || "";
     const doi = item.getField("DOI") || "";
     const diagnostics = contextDiagnosticsText(this.state.contextDiagnostics, (key) => this.t(key));
-    document.getElementById("zms-paper-meta").textContent = [title, creators, year, doi, diagnostics].filter(Boolean).join("\n");
+    const comparisonSummary = comparisonSummaryText(this.state.comparisonContexts, this.state.uiLanguage);
+    document.getElementById("zms-paper-meta").textContent = [title, creators, year, doi, comparisonSummary, diagnostics].filter(Boolean).join("\n");
     setText("zms-chat-paper-title", title);
     this.renderCandidateSearchDefaults();
   },
@@ -1287,7 +1295,8 @@ var ZoteroMarkdownSummaryWorkbench = {
       model: this.state.profile?.model || pref("model") || "",
       sourceLanguage: "auto",
       templateVersion: "workbench-v1",
-      summaryType: "paper-chat"
+      summaryType: this.state.comparisonContexts?.length ? "paper-comparison-chat" : "paper-chat",
+      comparisonItemKeys: (this.state.comparisonContexts || []).map((entry) => entry.itemKey).filter(Boolean).join(",")
     };
   }
 };
@@ -1297,6 +1306,59 @@ function itemFromArgs(args) {
   if (!args.itemKey) return null;
   const pane = Zotero.getActiveZoteroPane?.();
   return pane?.getSelectedItems?.().find((item) => item.key === args.itemKey) || null;
+}
+
+function itemsFromArgs(args) {
+  const ids = parseListParam(args.itemIDs).map((value) => Number(value)).filter(Boolean);
+  const keys = parseListParam(args.itemKeys);
+  if (args.itemID && !ids.includes(Number(args.itemID))) ids.unshift(Number(args.itemID));
+  if (args.itemKey && !keys.includes(args.itemKey)) keys.unshift(args.itemKey);
+  const paneItems = Zotero.getActiveZoteroPane?.().getSelectedItems?.() || [];
+  const items = [];
+  for (const id of ids) {
+    const item = Zotero.Items.get(Number(id));
+    if (item) items.push(item);
+  }
+  for (const key of keys) {
+    const item = paneItems.find((entry) => entry?.key === key) || itemByKey(key);
+    if (item) items.push(item);
+  }
+  const fallback = itemFromArgs(args);
+  if (fallback) items.push(fallback);
+  return uniqueZoteroItems(items);
+}
+
+function parseListParam(value) {
+  if (Array.isArray(value)) return value.map((entry) => String(entry || "").trim()).filter(Boolean);
+  return String(value || "").split(",").map((entry) => entry.trim()).filter(Boolean);
+}
+
+function itemByKey(key) {
+  if (!key) return null;
+  const libraryID = Zotero.Libraries?.userLibraryID || Zotero.getActiveZoteroPane?.().libraryID || 1;
+  try {
+    return Zotero.Items.getByLibraryAndKey?.(libraryID, key) || null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function uniqueZoteroItems(items) {
+  const seen = new Set();
+  const out = [];
+  for (const item of items || []) {
+    const key = item?.id || item?.key;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+function sameZoteroItem(a, b) {
+  if (!a || !b) return false;
+  if (a.id && b.id) return a.id === b.id;
+  return !!a.key && a.key === b.key;
 }
 
 function launchPayload() {
@@ -1323,6 +1385,8 @@ function payloadFromLocation() {
     return {
       itemID: Number(params.get("itemID")) || 0,
       itemKey: params.get("itemKey") || "",
+      itemIDs: params.get("itemIDs") || "",
+      itemKeys: params.get("itemKeys") || "",
       embedded: params.get("embedded") === "1"
     };
   } catch (_err) {
@@ -2503,7 +2567,11 @@ function buildContextSourceHash(context, item, pdf) {
   const itemKey = item?.key || "";
   const pdfKey = pdf?.key || "";
   const chunkParts = (context?.chunks || []).map((chunk) => `${chunk.chunkId}:${chunk.sourceHash}`).join("|");
-  return hashString(`${itemKey}|${pdfKey}|${chunkParts}`);
+  const comparisonParts = (context?.comparisonContexts || []).map((entry) => {
+    const chunks = (entry.chunks || []).map((chunk) => `${chunk.chunkId}:${chunk.sourceHash}`).join("|");
+    return `${entry.itemKey || ""}|${entry.pdfKey || ""}|${chunks}`;
+  }).join("||");
+  return hashString(`${itemKey}|${pdfKey}|${chunkParts}|${comparisonParts}`);
 }
 
 function setText(id, text) {
@@ -2668,6 +2736,40 @@ async function buildPaperContext(item, pdf, outputDir) {
   };
 }
 
+async function buildComparisonContexts(items, outputDir) {
+  const contexts = [];
+  for (const item of uniqueZoteroItems(items).slice(0, MAX_COMPARISON_PAPERS)) {
+    try {
+      const pdf = await findPdfAttachment(item);
+      const context = await buildPaperContext(item, pdf, outputDir);
+      contexts.push({
+        itemID: item?.id || 0,
+        itemKey: item?.key || "",
+        pdfKey: pdf?.key || "",
+        metadata: context.metadata,
+        chunks: context.chunks,
+        diagnostics: context.diagnostics
+      });
+    } catch (err) {
+      contexts.push({
+        itemID: item?.id || 0,
+        itemKey: item?.key || "",
+        pdfKey: "",
+        metadata: {
+          title: item?.getField?.("title") || item?.key || "",
+          authors: [],
+          year: item?.getField?.("date") || "",
+          doi: item?.getField?.("DOI") || "",
+          abstract: item?.getField?.("abstractNote") || ""
+        },
+        chunks: [],
+        diagnostics: { error: safeError(err), hasPdf: false, chunkCount: 0 }
+      });
+    }
+  }
+  return contexts;
+}
+
 async function safePdfPath(pdf) {
   try {
     return pdf && typeof pdf.getFilePathAsync === "function" ? await pdf.getFilePathAsync() : "";
@@ -2740,19 +2842,58 @@ function htmlToText(html) {
 function contextForPrompt(context, query) {
   const chunks = selectRelevantChunks(context.chunks, query, 8);
   const metadata = context.metadata;
+  const comparisonContexts = Array.isArray(context.comparisonContexts) ? context.comparisonContexts : [];
   return [
     "Paper metadata:",
     `Title: ${metadata.title}`,
     `Authors: ${metadata.authors.join(", ")}`,
     `Year: ${metadata.year}`,
     `DOI: ${metadata.doi}`,
+    ...comparisonInstructionLines(comparisonContexts),
     "",
     "Context excerpts:",
-    ...chunks.map((chunk) => `${chunkEvidenceLabel(chunk)} ${chunk.text}`)
+    ...chunks.map((chunk) => `${chunkEvidenceLabel(chunk)} ${chunk.text}`),
+    ...comparisonContextLines(comparisonContexts, query)
   ].join("\n");
 }
 
-function chunkEvidenceLabel(chunk) {
+function comparisonInstructionLines(comparisonContexts) {
+  if (!comparisonContexts.length) return [];
+  return [
+    "",
+    "Cross-paper comparison task:",
+    "- Treat the first paper above as the focal paper.",
+    "- Compare the focal paper with every comparison paper below across research question, method, data/experiments, assumptions, findings, limitations, and reusable ideas.",
+    "- Cite evidence labels from the focal paper and comparison papers when making comparative claims.",
+    "- If a comparison dimension is not supported by the available excerpts, mark it as low-confidence."
+  ];
+}
+
+function comparisonContextLines(comparisonContexts, query) {
+  const lines = [];
+  comparisonContexts.forEach((entry, index) => {
+    const metadata = entry.metadata || {};
+    const chunks = selectRelevantChunks(entry.chunks || [], query, 4);
+    lines.push(
+      "",
+      `Comparison paper ${index + 1}:`,
+      `Title: ${metadata.title || entry.itemKey || "unknown"}`,
+      `Authors: ${Array.isArray(metadata.authors) ? metadata.authors.join(", ") : ""}`,
+      `Year: ${metadata.year || ""}`,
+      `DOI: ${metadata.doi || ""}`
+    );
+    if (!chunks.length) {
+      lines.push(`[paper${index + 2}:metadata itemKey=${entry.itemKey || "unknown"}] No indexed excerpts available; use metadata only and mark details as low-confidence.`);
+      return;
+    }
+    for (const chunk of chunks) {
+      lines.push(`${chunkEvidenceLabel(chunk, `paper${index + 2}`)} ${chunk.text}`);
+    }
+  });
+  return lines;
+}
+
+function chunkEvidenceLabel(chunk, prefix = "chunk") {
   const source = chunk.sourceType || "unknown";
   const locator = chunk.locator || "";
   const hash = chunk.sourceHash || "";
@@ -2761,7 +2902,14 @@ function chunkEvidenceLabel(chunk) {
     locator ? `locator=${locator}` : "",
     hash ? `hash=${hash}` : ""
   ].filter(Boolean).join(" ");
-  return `[chunk:${chunk.chunkId || "unknown"} ${details}]`;
+  return `[${prefix}:${chunk.chunkId || "unknown"} ${details}]`;
+}
+
+function comparisonSummaryText(contexts, uiLanguage) {
+  const entries = (contexts || []).map((context) => context?.metadata?.title || context?.itemKey || "").filter(Boolean);
+  if (!entries.length) return "";
+  const label = uiLanguage === "zh-CN" ? "对比论文" : "Comparison papers";
+  return `${label}: ${entries.slice(0, MAX_COMPARISON_PAPERS).join(" | ")}`;
 }
 
 function contextDiagnosticsText(diagnostics, translate = (key) => key) {

@@ -2119,6 +2119,52 @@ describe("workbench writeback helpers", () => {
     expect(prompt).toContain("[chunk:summary-0001 source=summary locator=summary:1 hash=sumhash] Existing Markdown summary lists validation limitations and caveats.");
   });
 
+  it("includes comparison papers and evidence labels in prompt context", () => {
+    const prompt = helpers.contextForPrompt({
+      metadata: {
+        title: "Focal Paper",
+        authors: ["A. Author"],
+        year: "2026",
+        doi: "10.123/focal"
+      },
+      chunks: [
+        {
+          chunkId: "fulltext-0001",
+          sourceType: "fulltext",
+          locator: "fulltext:1",
+          sourceHash: "focalhash",
+          text: "The focal method uses graph attention for risk prediction."
+        }
+      ],
+      comparisonContexts: [
+        {
+          itemKey: "COMPARE1",
+          metadata: {
+            title: "Comparison Paper",
+            authors: ["B. Author"],
+            year: "2025",
+            doi: "10.123/compare"
+          },
+          chunks: [
+            {
+              chunkId: "summary-compare",
+              sourceType: "summary",
+              locator: "summary:2",
+              sourceHash: "comparehash",
+              text: "The comparison method uses transformer attention and reports limitation cases."
+            }
+          ]
+        }
+      ]
+    }, "compare attention limitations");
+
+    expect(prompt).toContain("Title: Focal Paper");
+    expect(prompt).toContain("Cross-paper comparison task:");
+    expect(prompt).toContain("Comparison paper 1:");
+    expect(prompt).toContain("Title: Comparison Paper");
+    expect(prompt).toContain("[paper2:summary-compare source=summary locator=summary:2 hash=comparehash] The comparison method uses transformer attention and reports limitation cases.");
+  });
+
   it("renders context diagnostics with clear missing-source warnings", () => {
     const text = helpers.contextDiagnosticsText({
       hasPdf: false,
