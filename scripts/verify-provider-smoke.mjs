@@ -56,6 +56,7 @@ export async function runProviderSmoke(options = {}) {
   const endpoint = endpointFor(request);
   const headers = headersFor(profile);
   const body = bodyFor(request);
+  const responseStream = body.stream === true;
   if (options.dryRun) {
     return {
       ok: true,
@@ -80,7 +81,7 @@ export async function runProviderSmoke(options = {}) {
       signal: controller.signal
     });
     const rawText = await response.text();
-    const parsed = request.stream ? null : parseResponseBody(rawText);
+    const parsed = responseStream ? null : parseResponseBody(rawText);
     if (!response.ok) {
       return {
         ok: false,
@@ -91,7 +92,7 @@ export async function runProviderSmoke(options = {}) {
         error: providerErrorText(parsed, rawText)
       };
     }
-    const text = request.stream ? streamTextFromBody(profile.protocol, rawText) : extractResponseText(profile.protocol, parsed);
+    const text = responseStream ? streamTextFromBody(profile.protocol, rawText) : extractResponseText(profile.protocol, parsed);
     return {
       ok: true,
       status: response.status,
@@ -99,7 +100,7 @@ export async function runProviderSmoke(options = {}) {
       protocol: profile.protocol,
       endpoint,
       model: profile.model,
-      stream: request.stream,
+      stream: responseStream,
       inputMode: smokeInputMode(options),
       contentTypes: requestContentTypes(body),
       text,
@@ -1190,7 +1191,7 @@ function usage() {
     "  --model MODEL             Override model",
     "  --max-pages NUMBER        Maximum model-list pages to follow",
     "  --header name=value       Add or override a request header",
-    "  --body-extra-json JSON    Merge extra provider body fields",
+    "  --body-extra-json JSON    Merge extra provider body fields; omitFields removes top-level body fields",
     "  --models                 Verify model-list endpoint instead of text generation",
     "  --image                  Include a tiny base64 PNG in the generation request",
     "  --pdf                    Include a tiny base64 PDF in the generation request",

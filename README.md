@@ -88,6 +88,7 @@ Provider notes:
 
 - OpenAI Compatible Chat profiles use the chat-completions style endpoint. Use this for most routers and providers that expose `/v1/chat/completions`.
 - OpenAI Compatible Chat profiles send `max_tokens` by default, but switch to `max_completion_tokens` for `o`-series reasoning models. For custom routers, set `bodyExtra.tokenLimitField` to `max_completion_tokens` or `max_tokens` to force either field.
+- Strict routers or reasoning models that reject default request fields can use `bodyExtra.omitFields`, for example `["temperature", "n", "max_tokens"]`. These names remove top-level request body fields before the request is sent.
 - OpenAI Compatible Responses profiles use the Responses style endpoint. Use this when a provider or router exposes `/v1/responses`; this profile can declare raw PDF and image input when the model supports it.
 - Anthropic profiles use the messages endpoint. Use `Anthropic` for the official API key header, and `Anthropic Compatible Messages` for routers that expose Anthropic-style `/v1/messages` with bearer auth.
 - Gemini is currently configured through the OpenAI-compatible endpoint style.

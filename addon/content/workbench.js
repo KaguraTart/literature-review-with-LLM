@@ -1294,7 +1294,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     if (!response.ok) {
       throw new Error(providerErrorText(response.status, await response.text()));
     }
-    if (shouldStream(profile, this.state.stream) && response.body) {
+    if (response.zmsRequestedStream === true && response.body) {
       return readStream(response, profile.protocol, onDelta);
     }
     const data = await response.json();
@@ -4500,9 +4500,38 @@ function providerBodyExtra(bodyExtra) {
     openAIChatTokenField: _openAIChatTokenField,
     chatTokenField: _chatTokenField,
     maxTokenField: _maxTokenField,
+    omitFields: _omitFields,
+    omitBodyFields: _omitBodyFields,
+    removeFields: _removeFields,
+    removeBodyFields: _removeBodyFields,
     ...rest
   } = bodyExtra;
   return rest;
+}
+
+function omitProviderBodyFields(body, bodyExtra) {
+  const fields = providerBodyOmitFields(bodyExtra);
+  if (!fields.size) return body;
+  const next = { ...body };
+  for (const field of fields) delete next[field];
+  return next;
+}
+
+function providerBodyOmitFields(bodyExtra) {
+  if (!bodyExtra || typeof bodyExtra !== "object" || Array.isArray(bodyExtra)) return new Set();
+  const values = [
+    bodyExtra.omitFields,
+    bodyExtra.omitBodyFields,
+    bodyExtra.removeFields,
+    bodyExtra.removeBodyFields
+  ];
+  return new Set(values.flatMap((value) => bodyFieldList(value)).filter(Boolean));
+}
+
+function bodyFieldList(value) {
+  if (Array.isArray(value)) return value.flatMap((item) => bodyFieldList(item));
+  if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean);
+  return [];
 }
 
 function openAIChatTokenLimit(profile, maxTokens) {
@@ -4536,7 +4565,7 @@ function modelPrefersCompletionTokenLimit(model) {
 }
 
 function withProviderBodyDefaults(profile, body) {
-  return { ...body, ...jsonModeBodyDefaults(profile), ...providerBodyExtra(profile.bodyExtra) };
+  return omitProviderBodyFields({ ...body, ...jsonModeBodyDefaults(profile), ...providerBodyExtra(profile.bodyExtra) }, profile.bodyExtra);
 }
 
 function jsonModeBodyDefaults(profile) {
@@ -4627,10 +4656,11 @@ async function requestModelWithRetry(profile, messages, outputLanguage, systemPr
   let lastError;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
+      const body = bodyForProfile(profile, messages, outputLanguage, systemPrompt, requestInput, streamEnabled);
       const response = await fetch(endpointForProfile(profile), {
         method: "POST",
         headers: headersForProfile(profile),
-        body: JSON.stringify(bodyForProfile(profile, messages, outputLanguage, systemPrompt, requestInput, streamEnabled)),
+        body: JSON.stringify(body),
         signal
       });
       if (!response.ok) {
@@ -4642,6 +4672,7 @@ async function requestModelWithRetry(profile, messages, outputLanguage, systemPr
         }
         throw error;
       }
+      response.zmsRequestedStream = body.stream === true;
       return response;
     } catch (err) {
       if (err?.name === "AbortError") throw err;

@@ -408,17 +408,22 @@ describe("provider adapters", () => {
           subagent: { endpoint: "http://127.0.0.1:3335/mcp" },
           authHeader: "authorization",
           directBrowserAccess: true,
-          anthropicDirectBrowserAccess: false
+          anthropicDirectBrowserAccess: false,
+          omitFields: ["temperature", "n", "max_tokens"]
         }
       }
     };
     const body = bodyFor(request);
     expect(body).toMatchObject({ response_format: { type: "json_object" } });
+    expect(body).not.toHaveProperty("temperature");
+    expect(body).not.toHaveProperty("n");
+    expect(body).not.toHaveProperty("max_tokens");
     expect(body).not.toHaveProperty("localAgent");
     expect(body).not.toHaveProperty("agent");
     expect(body).not.toHaveProperty("subagent");
     expect(body).not.toHaveProperty("directBrowserAccess");
     expect(body).not.toHaveProperty("anthropicDirectBrowserAccess");
+    expect(body).not.toHaveProperty("omitFields");
     expect(providerBodyExtra(request.profile.bodyExtra)).toEqual({ response_format: { type: "json_object" } });
   });
 

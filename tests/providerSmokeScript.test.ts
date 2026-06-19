@@ -40,6 +40,40 @@ describe("provider smoke verifier", () => {
     }, { responseBody: { choices: [{ message: { content: "OK chat" } }] } });
   });
 
+  it("omits configured provider body fields before sending and parsing the response", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-chat",
+        "--stream",
+        "--body-extra-json", JSON.stringify({
+          response_format: { type: "json_object" },
+          omitFields: ["temperature", "n", "max_tokens", "stream"]
+        }),
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_chat",
+        stream: false,
+        text: "OK stripped"
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0].body).toMatchObject({
+        model: "mock-chat",
+        response_format: { type: "json_object" }
+      });
+      expect(requests[0].body).not.toHaveProperty("temperature");
+      expect(requests[0].body).not.toHaveProperty("n");
+      expect(requests[0].body).not.toHaveProperty("max_tokens");
+      expect(requests[0].body).not.toHaveProperty("stream");
+      expect(requests[0].body).not.toHaveProperty("omitFields");
+    }, { responseBody: { choices: [{ message: { content: "OK stripped" } }] } });
+  });
+
   it("allows local OpenAI-compatible endpoints without API credentials", async () => {
     await withMockProvider(async (baseURL, requests) => {
       const report = await runSmoke([

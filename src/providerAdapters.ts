@@ -572,7 +572,7 @@ function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
 }
 
 function withBodyExtra(profile: ProviderProfile, body: Record<string, unknown>): Record<string, unknown> {
-  return { ...body, ...jsonModeBodyDefaults(profile), ...providerBodyExtra(profile.bodyExtra) };
+  return omitProviderBodyFields({ ...body, ...jsonModeBodyDefaults(profile), ...providerBodyExtra(profile.bodyExtra) }, profile.bodyExtra);
 }
 
 export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined): Record<string, unknown> {
@@ -589,9 +589,38 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
     openAIChatTokenField: _openAIChatTokenField,
     chatTokenField: _chatTokenField,
     maxTokenField: _maxTokenField,
+    omitFields: _omitFields,
+    omitBodyFields: _omitBodyFields,
+    removeFields: _removeFields,
+    removeBodyFields: _removeBodyFields,
     ...rest
   } = bodyExtra;
   return rest;
+}
+
+function omitProviderBodyFields(body: Record<string, unknown>, bodyExtra: Record<string, unknown> | undefined): Record<string, unknown> {
+  const fields = providerBodyOmitFields(bodyExtra);
+  if (!fields.size) return body;
+  const next = { ...body };
+  for (const field of fields) delete next[field];
+  return next;
+}
+
+function providerBodyOmitFields(bodyExtra: Record<string, unknown> | undefined): Set<string> {
+  if (!bodyExtra || typeof bodyExtra !== "object" || Array.isArray(bodyExtra)) return new Set();
+  const values = [
+    bodyExtra.omitFields,
+    bodyExtra.omitBodyFields,
+    bodyExtra.removeFields,
+    bodyExtra.removeBodyFields
+  ];
+  return new Set(values.flatMap((value) => bodyFieldList(value)).filter(Boolean));
+}
+
+function bodyFieldList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap((item) => bodyFieldList(item));
+  if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean);
+  return [];
 }
 
 function openAIChatTokenLimit(profile: ProviderProfile, maxTokens: number): Record<string, unknown> {

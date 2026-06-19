@@ -685,6 +685,21 @@ describe("workbench writeback helpers", () => {
     expect(explicitCompletionBody).not.toHaveProperty("max_tokens");
     expect(explicitCompletionBody).not.toHaveProperty("tokenLimitField");
 
+    const strippedChatBody = helpers.bodyForProfile({
+      protocol: "openai_chat",
+      model: "router-model",
+      capabilities: { streaming: true },
+      bodyExtra: {
+        response_format: { type: "json_object" },
+        omitFields: "temperature,n,max_tokens"
+      }
+    }, messages, "zh-CN", "system", {}, false);
+    expect(strippedChatBody).toMatchObject({ response_format: { type: "json_object" } });
+    expect(strippedChatBody).not.toHaveProperty("temperature");
+    expect(strippedChatBody).not.toHaveProperty("n");
+    expect(strippedChatBody).not.toHaveProperty("max_tokens");
+    expect(strippedChatBody).not.toHaveProperty("omitFields");
+
     expect(helpers.bodyForProfile({
       protocol: "openai_responses",
       model: "model-a",

@@ -351,6 +351,19 @@ describe("preferences local-agent config helpers", () => {
     expect(explicitLegacyRequest.body).not.toHaveProperty("max_completion_tokens");
     expect(explicitLegacyRequest.body).not.toHaveProperty("tokenLimitField");
 
+    const strippedRequest = helpers.connectionTestRequestForProfile({
+      ...profile,
+      bodyExtra: {
+        response_format: { type: "json_object" },
+        omitFields: ["temperature", "n", "max_tokens"]
+      }
+    });
+    expect(strippedRequest.body).toMatchObject({ response_format: { type: "json_object" } });
+    expect(strippedRequest.body).not.toHaveProperty("temperature");
+    expect(strippedRequest.body).not.toHaveProperty("n");
+    expect(strippedRequest.body).not.toHaveProperty("max_tokens");
+    expect(strippedRequest.body).not.toHaveProperty("omitFields");
+
     const pastedChatEndpointProfile = {
       ...profile,
       baseURL: "https://api.openai.com/v1/chat/completions"

@@ -766,6 +766,7 @@ describe("bootstrap provider helpers", () => {
       customHeaders: { "x-test": "1" },
       bodyExtra: {
         response_format: { type: "json_object" },
+        omitFields: ["temperature", "max_output_tokens"],
         localAgent: { endpoint: "http://127.0.0.1:3333/mcp" },
         agent: { endpoint: "http://127.0.0.1:3334/mcp" },
         subagent: { endpoint: "http://127.0.0.1:3335/mcp" }
@@ -794,6 +795,9 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[0].body).not.toHaveProperty("localAgent");
     expect(fetchCalls[0].body).not.toHaveProperty("agent");
     expect(fetchCalls[0].body).not.toHaveProperty("subagent");
+    expect(fetchCalls[0].body).not.toHaveProperty("omitFields");
+    expect(fetchCalls[0].body).not.toHaveProperty("temperature");
+    expect(fetchCalls[0].body).not.toHaveProperty("max_output_tokens");
   });
 
   it("uses Responses done snapshots only as a bootstrap stream fallback", async () => {
@@ -1509,6 +1513,7 @@ describe("bootstrap provider helpers", () => {
       customHeaders: { "anthropic-version": "2023-06-01" },
       bodyExtra: {
         metadata: { source: "zotero" },
+        omitFields: "stream,max_tokens",
         localAgent: { endpoint: "http://127.0.0.1:3333/mcp" },
         authHeader: "x-api-key"
       },
@@ -1528,14 +1533,16 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[0].headers).toMatchObject({ "anthropic-dangerous-direct-browser-access": "true" });
     expect(fetchCalls[0].body).toMatchObject({
       system: "system",
-      stream: true,
       metadata: { source: "zotero" }
     });
     expect(fetchCalls[0].body.messages[0].content[0].text).toContain("prompt");
     expect(fetchCalls[0].body.messages[0].content[0].text).toContain("paper text");
     expect(fetchCalls[0].body).not.toHaveProperty("temperature");
+    expect(fetchCalls[0].body).not.toHaveProperty("stream");
+    expect(fetchCalls[0].body).not.toHaveProperty("max_tokens");
     expect(fetchCalls[0].body).not.toHaveProperty("localAgent");
     expect(fetchCalls[0].body).not.toHaveProperty("authHeader");
+    expect(fetchCalls[0].body).not.toHaveProperty("omitFields");
   });
 
   it("allows disabling official Anthropic direct browser access in the bootstrap provider path", async () => {

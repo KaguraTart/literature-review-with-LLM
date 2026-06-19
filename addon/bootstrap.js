@@ -447,7 +447,7 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
     n: 1
   };
   const merged = withProviderBodyDefaults(summaryRequest, body);
-  if (summaryRequest.provider === "minimax" && merged.extra_body === undefined) {
+  if (summaryRequest.provider === "minimax" && merged.extra_body === undefined && !providerBodyOmitFields(bodyExtra).has("extra_body")) {
     merged.extra_body = { reasoning_split: true };
   }
   const headers = {
@@ -459,7 +459,7 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
   } else {
     if (!hasExplicitAuthHeader(headers)) setHeaderIfMissing(headers, "authorization", apiKey ? `Bearer ${apiKey}` : "");
   }
-  const data = await requestJSON(url, headers, merged, request.stream, summaryRequest.protocol || protocol);
+  const data = await requestJSON(url, headers, merged, merged.stream === true, summaryRequest.protocol || protocol);
   return {
     markdown: extractOpenAIText(data),
     usage: data.usage,
@@ -513,14 +513,14 @@ async function callAnthropic(summaryRequest, sourceHash) {
     setHeaderIfMissing(headers, "anthropic-dangerous-direct-browser-access", "true");
   }
   const messageUrl = endpointMode === "full_url" ? (fullURL || baseURL) : endpointForProtocol("anthropic_messages", baseURL);
-  const data = await requestJSON(messageUrl, headers, {
+  const merged = withProviderBodyDefaults(summaryRequest, {
     model,
     system: request.system,
     messages: [{ role: "user", content }],
     max_tokens: request.maxOutputTokens,
-    stream: request.stream,
-    ...providerBodyExtra(bodyExtra)
-  }, request.stream, "anthropic_messages");
+    stream: request.stream
+  });
+  const data = await requestJSON(messageUrl, headers, merged, merged.stream === true, "anthropic_messages");
   return {
     markdown: extractAnthropicText(data),
     usage: data.usage,
