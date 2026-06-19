@@ -208,6 +208,12 @@ const SOURCE_MARKERS = [
     markers: ["runProviderSmoke", "runMockProviderSmoke", "runProviderModels", "runMockProviderModels", "endpointFor", "headersFor", "bodyFor", "extractResponseText", "api-key-env", "dryRun", "mockProviderResponse", "modelOptionsFromItems", "profileHasUsableAuth", "isLocalEndpoint", "smokeInputMode"]
   },
   {
+    id: "provider.stream-smoke",
+    description: "Provider smoke verification covers streaming OpenAI-compatible, Responses, and Anthropic text/event-stream output",
+    files: ["scripts/verify-provider-smoke.mjs", "scripts/verify-provider-live.mjs", "package.json", "tests/providerSmokeScript.test.ts"],
+    markers: ["--stream", "verify:provider:stream:mock", "mockProviderStreamResponse", "streamTextFromBody", "parseStreamChunk", "runs built-in mock stream checks", "runs live provider stream checks"]
+  },
+  {
     id: "provider.multimodal-smoke",
     description: "Provider smoke verification covers OpenAI image, Responses PDF/image, and Anthropic image/document request bodies",
     files: ["scripts/verify-provider-smoke.mjs", "package.json", "tests/providerSmokeScript.test.ts"],

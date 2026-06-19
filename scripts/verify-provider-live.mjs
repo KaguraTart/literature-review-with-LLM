@@ -121,6 +121,7 @@ export async function runProviderLive(options = {}, env = process.env) {
       temperature: numberOption(options.temperature, 0),
       image: Boolean(options.image),
       pdf: Boolean(options.pdf),
+      stream: Boolean(options.stream),
       dryRun: Boolean(options.dryRun)
     };
 
@@ -155,6 +156,7 @@ export async function runProviderLive(options = {}, env = process.env) {
     live: true,
     models: Boolean(options.models),
     inputMode: liveInputMode(options),
+    stream: Boolean(options.stream),
     dryRun: Boolean(options.dryRun),
     failOnSkip: Boolean(options.failOnSkip),
     counts,
@@ -173,6 +175,7 @@ function parseArgs(args) {
     models: false,
     image: false,
     pdf: false,
+    stream: false,
     dryRun: false,
     failOnSkip: false,
     json: false,
@@ -207,6 +210,8 @@ function parseArgs(args) {
       options.image = true;
     } else if (key === "--pdf") {
       options.pdf = true;
+    } else if (key === "--stream") {
+      options.stream = true;
     } else if (key === "--dry-run") {
       options.dryRun = true;
     } else if (key === "--fail-on-skip") {
@@ -224,6 +229,9 @@ function parseArgs(args) {
 function validateLiveOptions(options) {
   if (options.models && (options.image || options.pdf)) {
     throw new Error("--image and --pdf verify generation inputs and cannot be combined with --models");
+  }
+  if (options.models && options.stream) {
+    throw new Error("--stream verifies generation output and cannot be combined with --models");
   }
 }
 
@@ -345,6 +353,7 @@ function usage() {
     "  OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:models:live -- --include openai-compatible",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --image",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --pdf",
+    "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --stream",
     "",
     "Options:",
     "  --include LIST           Comma-separated cases: openai, openai-responses-compatible, anthropic, anthropic-compatible, openai-compatible",
@@ -356,6 +365,7 @@ function usage() {
     "  --models                 Verify model-list endpoints instead of text generation",
     "  --image                  Include a tiny base64 PNG in generation checks",
     "  --pdf                    Include a tiny base64 PDF in generation checks",
+    "  --stream                 Verify streaming generation with text/event-stream responses",
     "  --dry-run                Print sanitized request shapes without calling providers",
     "  --fail-on-skip           Exit non-zero when any selected case is missing env config",
     "  --json                   Print machine-readable JSON"

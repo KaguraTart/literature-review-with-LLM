@@ -214,6 +214,29 @@ describe("provider smoke verifier", () => {
     expect(JSON.stringify(report)).not.toContain("mock-secret");
   });
 
+  it("runs built-in mock stream checks across provider protocols", async () => {
+    const report = await runSmoke(["--mock", "--stream", "--json"]);
+
+    expect(report.ok).toBe(true);
+    expect(report).toMatchObject({
+      mock: true,
+      inputMode: "text"
+    });
+    expect(report.results.map((result: any) => [result.profile, result.protocol, result.stream, result.text])).toEqual([
+      ["openai-compatible", "openai_chat", true, "OK chat"],
+      ["openai", "openai_responses", true, "OK responses"],
+      ["openai-responses-compatible", "openai_responses", true, "OK responses"],
+      ["anthropic", "anthropic_messages", true, "OK anthropic"]
+    ]);
+    expect(report.requests.map((request: any) => [request.path, request.bodyKeys.includes("stream")])).toEqual([
+      ["/v1/chat/completions", true],
+      ["/v1/responses", true],
+      ["/v1/responses", true],
+      ["/v1/messages", true]
+    ]);
+    expect(JSON.stringify(report)).not.toContain("mock-secret");
+  });
+
   it("runs built-in mock image checks across provider protocols", async () => {
     const report = await runSmoke(["--mock", "--image", "--json"]);
 
@@ -549,6 +572,56 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("runs live provider stream checks against mock endpoints", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--stream", "--json"], scrubProviderEnv({
+        OPENAI_API_KEY: "live-openai-stream-secret",
+        OPENAI_MODEL: "live-responses-stream",
+        OPENAI_BASE_URL: `${baseURL}/v1`,
+        OPENAI_RESPONSES_COMPATIBLE_API_KEY: "live-responses-compatible-stream-secret",
+        OPENAI_RESPONSES_COMPATIBLE_MODEL: "live-responses-compatible-stream",
+        OPENAI_RESPONSES_COMPATIBLE_BASE_URL: `${baseURL}/v1`,
+        ANTHROPIC_API_KEY: "live-anthropic-stream-secret",
+        ANTHROPIC_MODEL: "live-anthropic-stream",
+        ANTHROPIC_BASE_URL: baseURL,
+        ANTHROPIC_COMPATIBLE_API_KEY: "live-anthropic-compatible-stream-secret",
+        ANTHROPIC_COMPATIBLE_MODEL: "live-anthropic-compatible-stream",
+        ANTHROPIC_COMPATIBLE_BASE_URL: baseURL,
+        OPENAI_COMPATIBLE_API_KEY: "live-compatible-stream-secret",
+        OPENAI_COMPATIBLE_MODEL: "live-compatible-stream",
+        OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        stream: true,
+        counts: {
+          passed: 5,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results.map((result: any) => [result.id, result.report.stream, result.report.text])).toEqual([
+        ["openai", true, "OK live responses"],
+        ["openai-responses-compatible", true, "OK live responses"],
+        ["anthropic", true, "OK live anthropic"],
+        ["anthropic-compatible", true, "OK live anthropic"],
+        ["openai-compatible", true, "OK live chat"]
+      ]);
+      expect(requests.map((request) => [request.path, request.body.stream])).toEqual([
+        ["/v1/responses", true],
+        ["/v1/responses", true],
+        ["/v1/messages", true],
+        ["/v1/messages", true],
+        ["/v1/chat/completions", true]
+      ]);
+      expect(JSON.stringify(report)).not.toContain("live-openai-stream-secret");
+      expect(JSON.stringify(report)).not.toContain("live-anthropic-stream-secret");
+      expect(JSON.stringify(report)).not.toContain("live-compatible-stream-secret");
+    });
+  });
+
   it("runs live provider image checks against mock endpoints", async () => {
     await withLiveMockProvider(async (baseURL, requests) => {
       const report = await runLive(["--image", "--json"], scrubProviderEnv({
@@ -665,6 +738,21 @@ describe("provider smoke verifier", () => {
       maxBuffer: 1024 * 1024
     })).rejects.toMatchObject({
       stderr: expect.stringContaining("--image and --pdf verify generation inputs")
+    });
+  });
+
+  it("rejects live model-list checks with streaming output flags", async () => {
+    await expect(execFileAsync(process.execPath, [
+      "scripts/verify-provider-live.mjs",
+      "--models",
+      "--stream",
+      "--json"
+    ], {
+      cwd: process.cwd(),
+      env: scrubProviderEnv(),
+      maxBuffer: 1024 * 1024
+    })).rejects.toMatchObject({
+      stderr: expect.stringContaining("--stream verifies generation output")
     });
   });
 
@@ -922,13 +1010,19 @@ async function withLiveMockProvider(
   const server = createServer(async (request, response) => {
     const bodyText = await readRequestBody(request);
     const path = new URL(request.url || "/", "http://127.0.0.1").pathname;
+    const body = bodyText ? JSON.parse(bodyText) : {};
     requests.push({
       method: request.method,
       path,
       authorization: request.headers.authorization,
       xApiKey: request.headers["x-api-key"],
-      body: bodyText ? JSON.parse(bodyText) : {}
+      body
     });
+    if (body?.stream === true) {
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.end(liveMockStreamResponse(path));
+      return;
+    }
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify(liveMockResponse(path)));
   });
@@ -957,6 +1051,45 @@ function liveMockResponse(path: string) {
   if (path.endsWith("/responses")) return { output_text: "OK live responses" };
   if (path.endsWith("/messages")) return { content: [{ type: "text", text: "OK live anthropic" }] };
   return { choices: [{ message: { content: "OK live chat" } }] };
+}
+
+function liveMockStreamResponse(path: string) {
+  if (path.endsWith("/responses")) {
+    return [
+      "event: response.output_text.delta",
+      "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK live \"}",
+      "",
+      "event: response.output_text.delta",
+      "data: {",
+      "data: \"type\":\"response.output_text.delta\",",
+      "data: \"delta\":\"responses\"",
+      "data: }",
+      "",
+      "data: [DONE]",
+      ""
+    ].join("\n");
+  }
+  if (path.endsWith("/messages")) {
+    return [
+      "event: content_block_delta",
+      "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"OK live \"}}",
+      "",
+      "event: content_block_delta",
+      "data: {",
+      "data: \"type\":\"content_block_delta\",",
+      "data: \"delta\":{\"type\":\"text_delta\",\"text\":\"anthropic\"}",
+      "data: }",
+      "",
+      "data: [DONE]",
+      ""
+    ].join("\n");
+  }
+  return [
+    "data: {\"choices\":[{\"delta\":{\"content\":\"OK live \"}}]}",
+    "data: {\"choices\":[{\"delta\":{\"content\":\"chat\"}}]}",
+    "data: [DONE]",
+    ""
+  ].join("\n");
 }
 
 function readRequestBody(request: IncomingMessage) {

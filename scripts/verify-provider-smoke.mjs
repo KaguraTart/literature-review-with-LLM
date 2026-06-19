@@ -9,7 +9,8 @@ import {
   endpointFor,
   extractResponseText,
   headersFor,
-  modelsEndpointFor
+  modelsEndpointFor,
+  parseStreamChunk
 } from "../src/providerAdapters.ts";
 
 const DEFAULT_PROMPT = "Reply with OK only.";
@@ -50,7 +51,7 @@ export async function runProviderSmoke(options = {}) {
     input: smokeInput(options),
     temperature: numberOption(options.temperature, 0),
     maxOutputTokens: numberOption(options.maxOutputTokens, 64),
-    stream: false
+    stream: Boolean(options.stream)
   };
   const endpoint = endpointFor(request);
   const headers = headersFor(profile);
@@ -79,7 +80,7 @@ export async function runProviderSmoke(options = {}) {
       signal: controller.signal
     });
     const rawText = await response.text();
-    const parsed = parseResponseBody(rawText);
+    const parsed = request.stream ? null : parseResponseBody(rawText);
     if (!response.ok) {
       return {
         ok: false,
@@ -90,7 +91,7 @@ export async function runProviderSmoke(options = {}) {
         error: providerErrorText(parsed, rawText)
       };
     }
-    const text = extractResponseText(profile.protocol, parsed);
+    const text = request.stream ? streamTextFromBody(profile.protocol, rawText) : extractResponseText(profile.protocol, parsed);
     return {
       ok: true,
       status: response.status,
@@ -98,6 +99,7 @@ export async function runProviderSmoke(options = {}) {
       protocol: profile.protocol,
       endpoint,
       model: profile.model,
+      stream: request.stream,
       inputMode: smokeInputMode(options),
       contentTypes: requestContentTypes(body),
       text,
@@ -221,12 +223,18 @@ export async function runMockProviderSmoke(options = {}) {
   const server = createServer(async (request, response) => {
     const bodyText = await readRequestBody(request);
     const path = new URL(request.url || "/", "http://127.0.0.1").pathname;
+    const body = bodyText ? JSON.parse(bodyText) : {};
     requests.push({
       method: request.method,
       path,
       headerNames: Object.keys(request.headers || {}).map((key) => key.toLowerCase()).sort(),
-      body: bodyText ? JSON.parse(bodyText) : {}
+      body
     });
+    if (body?.stream === true) {
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.end(mockProviderStreamResponse(path));
+      return;
+    }
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify(mockProviderResponse(path)));
   });
@@ -360,6 +368,7 @@ function parseArgs(args) {
     mock: false,
     json: false,
     catalog: false,
+    stream: false,
     help: false
   };
   for (let index = 0; index < args.length; index += 1) {
@@ -425,6 +434,8 @@ function parseArgs(args) {
       options.image = true;
     } else if (key === "--pdf") {
       options.pdf = true;
+    } else if (key === "--stream") {
+      options.stream = true;
     } else if (key === "--mock") {
       options.mock = true;
     } else if (key === "--catalog") {
@@ -779,6 +790,73 @@ function parseResponseBody(text) {
   }
 }
 
+function streamTextFromBody(protocol, rawText) {
+  let text = "";
+  for (const record of streamRecords(rawText)) {
+    const delta = parseStreamChunk(protocol, record);
+    if (delta) text += delta;
+  }
+  if (!text.trim()) throw new Error("No text returned from model");
+  return text.trim();
+}
+
+function streamRecords(rawText) {
+  const records = [];
+  let recordLines = [];
+  const flush = () => {
+    if (!recordLines.length) return;
+    records.push(recordLines.join("\n"));
+    recordLines = [];
+  };
+  for (const line of String(rawText || "").split(/\r?\n/)) {
+    if (!line.trim()) {
+      flush();
+      continue;
+    }
+    if (shouldStartNewStreamRecord(recordLines, line)) flush();
+    recordLines.push(line);
+  }
+  flush();
+  return records;
+}
+
+function shouldStartNewStreamRecord(recordLines, nextLine) {
+  if (!recordLines.length || !isStreamFieldLine(nextLine)) return false;
+  return streamPayloads(recordLines.join("\n")).some((payload) => payload === "[DONE]" || !!parseResponseBodySafe(payload));
+}
+
+function streamPayloads(record) {
+  const dataLines = String(record || "")
+    .split(/\r?\n/)
+    .map((line) => sseFieldValue(line, "data"))
+    .filter((value) => value !== undefined);
+  if (!dataLines.length) return [];
+  const joined = dataLines.join("\n").trim();
+  if (!joined) return [];
+  if (dataLines.length === 1 || joined === "[DONE]" || parseResponseBodySafe(joined)) return [joined];
+  return dataLines.map((line) => String(line || "").trim()).filter(Boolean);
+}
+
+function sseFieldValue(line, field) {
+  const text = String(line || "");
+  const index = text.indexOf(":");
+  if (index < 0 || text.slice(0, index).trim() !== field) return undefined;
+  const value = text.slice(index + 1);
+  return value.startsWith(" ") ? value.slice(1) : value;
+}
+
+function parseResponseBodySafe(text) {
+  try {
+    return JSON.parse(text);
+  } catch (_err) {
+    return null;
+  }
+}
+
+function isStreamFieldLine(line) {
+  return /^(?:data|event|id|retry):/i.test(String(line || "").trim());
+}
+
 function mockModelListResponse(url) {
   if (url.searchParams.get("after_id") || url.searchParams.get("page_token") || url.searchParams.get("after") || url.searchParams.get("page")) {
     return {
@@ -803,6 +881,45 @@ function mockProviderResponse(path) {
   if (path.endsWith("/responses")) return { output_text: "OK responses", usage: { total_tokens: 3 } };
   if (path.endsWith("/messages")) return { content: [{ type: "text", text: "OK anthropic" }], usage: { input_tokens: 1, output_tokens: 2 } };
   return { choices: [{ message: { content: "OK chat" } }], usage: { total_tokens: 3 } };
+}
+
+function mockProviderStreamResponse(path) {
+  if (path.endsWith("/responses")) {
+    return [
+      "event: response.output_text.delta",
+      "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK \"}",
+      "",
+      "event: response.output_text.delta",
+      "data: {",
+      "data: \"type\":\"response.output_text.delta\",",
+      "data: \"delta\":\"responses\"",
+      "data: }",
+      "",
+      "data: [DONE]",
+      ""
+    ].join("\n");
+  }
+  if (path.endsWith("/messages")) {
+    return [
+      "event: content_block_delta",
+      "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"OK \"}}",
+      "",
+      "event: content_block_delta",
+      "data: {",
+      "data: \"type\":\"content_block_delta\",",
+      "data: \"delta\":{\"type\":\"text_delta\",\"text\":\"anthropic\"}",
+      "data: }",
+      "",
+      "data: [DONE]",
+      ""
+    ].join("\n");
+  }
+  return [
+    "data: {\"choices\":[{\"delta\":{\"content\":\"OK \"}}]}",
+    "data: {\"choices\":[{\"delta\":{\"content\":\"chat\"}}]}",
+    "data: [DONE]",
+    ""
+  ].join("\n");
 }
 
 function modelRequestSummary(request) {
@@ -994,7 +1111,7 @@ function formatReport(report) {
   }
   if (report.mock) {
     const lines = [
-      "Provider mock smoke passed",
+      report.results?.some((result) => result.stream) ? "Provider mock stream smoke passed" : "Provider mock smoke passed",
       `baseURL: ${report.baseURL}`
     ];
     for (const result of report.results || []) {
@@ -1047,6 +1164,7 @@ function formatReport(report) {
     `protocol: ${report.protocol}`,
     `endpoint: ${report.endpoint}`,
     `model: ${report.model}`,
+    `stream: ${report.stream ? "true" : "false"}`,
     `text: ${report.text}`
   ].join("\n") + "\n";
 }
@@ -1076,6 +1194,7 @@ function usage() {
     "  --models                 Verify model-list endpoint instead of text generation",
     "  --image                  Include a tiny base64 PNG in the generation request",
     "  --pdf                    Include a tiny base64 PDF in the generation request",
+    "  --stream                 Verify streaming generation with text/event-stream responses",
     "  --mock                   Run built-in local mock checks for chat, responses, and messages",
     "  --catalog                Verify all default provider profile request shapes offline",
     "  --dry-run                 Print sanitized request shape without calling the endpoint",
