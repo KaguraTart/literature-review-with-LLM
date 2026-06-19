@@ -127,9 +127,62 @@ describe("runtime candidate source search", () => {
         isAbstractOnly: false,
         dedupeStatus: "new"
       },
+      priority: {
+        tier: "high",
+        recommendedDecision: "include"
+      },
       pdfUrl: "https://arxiv.org/pdf/2401.00001",
       discoveredAt: "2026-06-13T00:00:00.000Z"
     });
+  });
+
+  it("sorts runtime candidate records by priority and duplicate risk", () => {
+    const runtime = loadRuntime();
+    const records = [
+      {
+        candidateId: "weak",
+        title: "Weak abstract candidate",
+        year: 2024,
+        decision: "user_pending",
+        sourceType: "abstract_page",
+        sources: ["crossref"],
+        sourceIds: {},
+        ids: {},
+        quality: { dedupeStatus: "new", isAbstractOnly: true, hasFullPaperSignal: false, hasPdfSignal: false }
+      },
+      {
+        candidateId: "duplicate",
+        title: "Duplicate candidate",
+        year: 2025,
+        decision: "user_pending",
+        sourceType: "doi",
+        sources: ["crossref"],
+        sourceIds: {},
+        ids: { doi: "10.1000/dup" },
+        quality: { dedupeStatus: "duplicate", isAbstractOnly: false, hasFullPaperSignal: true, hasPdfSignal: false }
+      },
+      {
+        candidateId: "strong",
+        title: "Strong candidate",
+        year: 2026,
+        decision: "user_pending",
+        sourceType: "direct_pdf",
+        sources: ["arxiv", "semantic_scholar"],
+        sourceIds: {},
+        ids: { doi: "10.1000/strong", arxivId: "2601.00001" },
+        pdfUrl: "https://example.test/strong.pdf",
+        isOpenAccess: true,
+        citationCount: 25,
+        quality: { dedupeStatus: "new", isAbstractOnly: false, hasFullPaperSignal: true, hasPdfSignal: true }
+      }
+    ];
+
+    const sorted = runtime.ZMSCandidateSources.sortCandidateRecords(records);
+
+    expect(sorted.map((record: any) => record.candidateId)).toEqual(["strong", "weak", "duplicate"]);
+    expect(sorted[0].priority).toMatchObject({ tier: "high", recommendedDecision: "include" });
+    expect(sorted[1].priority).toMatchObject({ tier: "low", recommendedDecision: "user_pending" });
+    expect(sorted[2].priority).toMatchObject({ tier: "duplicate", recommendedDecision: "exclude" });
   });
 
   it("preserves prior human decisions while merging new discoveries", () => {

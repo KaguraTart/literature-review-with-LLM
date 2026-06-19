@@ -4581,6 +4581,7 @@ function candidateElement(record, translate = (key) => key) {
 function candidateMetaText(record) {
   const quality = record.quality || {};
   return [
+    candidatePriorityMetaText(record),
     [record.authors || []].flat().filter(Boolean).slice(0, 3).join(", "),
     record.year || "",
     record.sourceType || "",
@@ -4591,6 +4592,12 @@ function candidateMetaText(record) {
     quality.reason || "",
     record.sourceUrl || record.pdfUrl || ""
   ].filter(Boolean).join(" | ");
+}
+
+function candidatePriorityMetaText(record) {
+  const priority = record?.priority || {};
+  if (!Number.isFinite(priority.score)) return "";
+  return [`rank:${priority.tier || "unknown"}`, String(priority.score), priority.recommendedDecision ? `recommend:${priority.recommendedDecision}` : ""].filter(Boolean).join(" ");
 }
 
 function candidateDecisionLabel(decision, translate = (key) => key) {

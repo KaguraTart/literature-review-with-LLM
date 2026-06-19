@@ -269,9 +269,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "candidate.sources",
-    description: "Candidate source search, merge, and record conversion runtime is present",
+    description: "Candidate source search, merge, explainable ranking, and record conversion runtime is present",
     files: ["addon/content/candidate-sources.js"],
-    markers: ["searchCandidateSources", "parseArxivAtom", "mergeCandidateRecords", "candidateRecordFromPaper"]
+    markers: ["searchCandidateSources", "parseArxivAtom", "mergeCandidateRecords", "candidateRecordFromPaper", "sortCandidateRecords", "candidatePriority"]
   },
   {
     id: "candidate.actions",

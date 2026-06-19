@@ -11,7 +11,8 @@ import {
   mergeCandidateRecords,
   parseCandidateJsonl,
   parseImportLedgerJsonl,
-  renderJsonl
+  renderJsonl,
+  sortCandidateRecords
 } from "../src/candidateLedger.js";
 
 function paper(overrides: Partial<CandidatePaper> = {}): CandidatePaper {
@@ -56,6 +57,10 @@ describe("candidate import ledger helpers", () => {
         hasPdfSignal: true,
         isAbstractOnly: false,
         dedupeStatus: "new"
+      },
+      priority: {
+        tier: "high",
+        recommendedDecision: "include"
       },
       decision: "include",
       query: "UAV conflict",
@@ -110,16 +115,58 @@ describe("candidate import ledger helpers", () => {
       now: "2026-06-13T00:00:00.000Z",
       existing: [{ itemKey: "DUP", doi: "10.1000/duplicate" }]
     });
-    records[0].decision = "include";
-    records[1].decision = "to_read";
-    records[2].decision = "include";
-    records[3].decision = "include";
+    records.find((record) => record.candidateId === "doi:10.1000/include")!.decision = "include";
+    records.find((record) => record.candidateId === "doi:10.1000/to-read")!.decision = "to_read";
+    records.find((record) => record.candidateId === "doi:10.1000/duplicate")!.decision = "include";
+    records.find((record) => record.candidateId === "title:summary-only:2024")!.decision = "include";
 
     expect(filterImportableCandidates(records).map((record) => record.candidateId)).toEqual(["doi:10.1000/include"]);
     expect(filterImportableCandidates(records, { includeToRead: true }).map((record) => record.candidateId))
       .toEqual(["doi:10.1000/include", "doi:10.1000/to-read"]);
     expect(filterImportableCandidates(records, { allowAbstractOnly: true }).map((record) => record.candidateId))
       .toEqual(["doi:10.1000/include", "title:summary-only:2024"]);
+  });
+
+  it("ranks candidate records by manual decision, source strength, and duplicate risk", () => {
+    const high = candidateRecordFromPaper(paper({
+      id: "doi:10.1000/high",
+      doi: "10.1000/high",
+      pdfUrl: "https://example.test/high.pdf",
+      isOpenAccess: true,
+      citationCount: 45,
+      sources: ["crossref", "semantic_scholar"],
+      sourceIds: { crossref: "10.1000/high", semantic_scholar: "S2-HIGH" }
+    }), { now: "2026-06-13T00:00:00.000Z" });
+    const weak = candidateRecordFromPaper(paper({
+      id: "title:weak abstract only candidate:2024",
+      doi: undefined,
+      arxivId: undefined,
+      title: "Weak abstract-only candidate",
+      url: "https://example.test/paper/summary/weak",
+      pdfUrl: undefined,
+      isOpenAccess: false,
+      sources: ["crossref"],
+      sourceIds: { crossref: "weak" }
+    }), { now: "2026-06-13T00:00:00.000Z" });
+    const duplicate = candidateRecordFromPaper(paper({
+      id: "doi:10.1000/duplicate",
+      doi: "10.1000/duplicate"
+    }), {
+      now: "2026-06-13T00:00:00.000Z",
+      existing: [{ itemKey: "EXISTING", doi: "10.1000/duplicate" }]
+    });
+
+    high.decision = "to_read";
+    const ranked = sortCandidateRecords([weak, duplicate, high]);
+
+    expect(ranked.map((record) => record.candidateId)).toEqual([
+      "doi:10.1000/high",
+      "title:weak abstract only candidate:2024",
+      "doi:10.1000/duplicate"
+    ]);
+    expect(ranked[0].priority).toMatchObject({ tier: "high", recommendedDecision: "include" });
+    expect(ranked[1].priority).toMatchObject({ tier: "low", recommendedDecision: "user_pending" });
+    expect(ranked[2].priority).toMatchObject({ tier: "duplicate", recommendedDecision: "exclude" });
   });
 
   it("generates import ledger entries and parses JSONL files", () => {

@@ -43,12 +43,12 @@ var ZMSCandidateSources = (() => {
     }
     const now = options.now || new Date().toISOString();
     const existingIdentities = candidateIdentitiesFromRecords(existingRecords);
-    const records = dedupeCandidatePapers(papers).map((paper) => candidateRecordFromPaper(paper, {
+    const records = sortCandidateRecords(dedupeCandidatePapers(papers).map((paper) => candidateRecordFromPaper(paper, {
       query: options.query,
       collectionKey: options.collectionKey,
       now,
       existing: existingIdentities
-    }));
+    })));
     return {
       records,
       papers,
@@ -254,7 +254,7 @@ var ZMSCandidateSources = (() => {
     const sourceType = candidateSourceType(paper);
     const quality = candidateQuality(paper, sourceType, options.existing || []);
     const now = options.now || new Date().toISOString();
-    return {
+    return withCandidatePriority({
       candidateId: paper.id || candidateFingerprint(paper),
       title: paper.title,
       authors: [...(paper.authors || [])],
@@ -281,19 +281,19 @@ var ZMSCandidateSources = (() => {
       isOpenAccess: paper.isOpenAccess,
       citationCount: paper.citationCount,
       score: paper.score
-    };
+    });
   }
 
   function mergeCandidateRecords(existing, incoming) {
     const byId = new Map();
-    for (const record of existing || []) byId.set(record.candidateId, cloneCandidateRecord(record));
+    for (const record of existing || []) byId.set(record.candidateId, withCandidatePriority(cloneCandidateRecord(record)));
     for (const record of incoming || []) {
       const previous = byId.get(record.candidateId);
       if (!previous) {
-        byId.set(record.candidateId, cloneCandidateRecord(record));
+        byId.set(record.candidateId, withCandidatePriority(cloneCandidateRecord(record)));
         continue;
       }
-      byId.set(record.candidateId, {
+      byId.set(record.candidateId, withCandidatePriority({
         ...previous,
         ...record,
         discoveredAt: previous.discoveredAt,
@@ -303,9 +303,9 @@ var ZMSCandidateSources = (() => {
         ids: { ...(previous.ids || {}), ...(record.ids || {}) },
         quality: record.quality,
         updatedAt: record.updatedAt
-      });
+      }));
     }
-    return [...byId.values()];
+    return sortCandidateRecords([...byId.values()]);
   }
 
   function candidateIdentitiesFromRecords(records) {
@@ -406,7 +406,8 @@ var ZMSCandidateSources = (() => {
       sources: [...(record.sources || [])],
       sourceIds: { ...(record.sourceIds || {}) },
       ids: { ...(record.ids || {}) },
-      quality: { ...(record.quality || {}) }
+      quality: { ...(record.quality || {}) },
+      priority: record.priority ? { ...record.priority, reasons: [...(record.priority.reasons || [])] } : undefined
     };
   }
 
@@ -416,6 +417,102 @@ var ZMSCandidateSources = (() => {
     if (input.isOpenAccess) return "open access location available";
     if (input.isAbstractOnly) return "abstract or weak webpage source only";
     return `${input.sourceType} source needs manual review`;
+  }
+
+  function withCandidatePriority(record) {
+    return {
+      ...record,
+      priority: candidatePriority(record)
+    };
+  }
+
+  function candidatePriority(record) {
+    const quality = record.quality || {};
+    const reasons = [];
+    let score = 0;
+    if (quality.dedupeStatus === "duplicate") {
+      return {
+        score: 0,
+        tier: "duplicate",
+        recommendedDecision: "exclude",
+        reasons: ["duplicate candidate or existing Zotero item"]
+      };
+    }
+    if (quality.hasPdfSignal || record.pdfUrl) {
+      score += 32;
+      reasons.push("PDF available");
+    }
+    if (record.ids?.doi || record.ids?.arxivId) {
+      score += 22;
+      reasons.push("stable DOI or arXiv identifier");
+    }
+    if (record.isOpenAccess) {
+      score += 10;
+      reasons.push("open access signal");
+    }
+    const sourceCount = new Set(record.sources || []).size;
+    if (sourceCount > 1) {
+      score += Math.min(14, (sourceCount - 1) * 7);
+      reasons.push(`${sourceCount} sources agree`);
+    }
+    if (Number.isFinite(record.citationCount)) {
+      const citationScore = Math.min(14, Math.floor(Math.log10(Number(record.citationCount) + 1) * 7));
+      if (citationScore > 0) {
+        score += citationScore;
+        reasons.push(`${record.citationCount} citations`);
+      }
+    }
+    if (Number.isFinite(record.score)) {
+      const sourceScore = Math.min(8, Math.floor(Number(record.score) / 10));
+      if (sourceScore > 0) {
+        score += sourceScore;
+        reasons.push("source relevance score");
+      }
+    }
+    if (Number(record.year) >= 2023) {
+      score += 8;
+      reasons.push("recent publication");
+    } else if (Number(record.year) >= 2020) {
+      score += 5;
+    } else if (Number(record.year) >= 2015) {
+      score += 2;
+    }
+    if (quality.dedupeStatus === "uncertain") {
+      score -= 18;
+      reasons.push("possible duplicate");
+    }
+    if (quality.isAbstractOnly) {
+      score -= 18;
+      reasons.push("abstract-only source");
+    }
+    if (!quality.hasFullPaperSignal) score -= 8;
+    score = Math.max(0, Math.min(100, Math.round(score)));
+    const tier = score >= 70 ? "high" : score >= 42 ? "medium" : "low";
+    const recommendedDecision = tier === "high" ? "include" : tier === "medium" ? "to_read" : "user_pending";
+    return { score, tier, recommendedDecision, reasons: reasons.length ? reasons : [quality.reason || "needs manual review"] };
+  }
+
+  function sortCandidateRecords(records) {
+    return [...(records || [])].map(withCandidatePriority).sort(candidateRecordCompare);
+  }
+
+  function candidateRecordCompare(left, right) {
+    const groupDelta = candidateSortGroup(left) - candidateSortGroup(right);
+    if (groupDelta) return groupDelta;
+    const scoreDelta = (right.priority?.score || 0) - (left.priority?.score || 0);
+    if (scoreDelta) return scoreDelta;
+    const yearDelta = Number(right.year || 0) - Number(left.year || 0);
+    if (yearDelta) return yearDelta;
+    return String(left.title || left.candidateId).localeCompare(String(right.title || right.candidateId));
+  }
+
+  function candidateSortGroup(record) {
+    if (record.quality?.dedupeStatus === "duplicate" || record.priority?.tier === "duplicate") return 5;
+    if (record.decision === "include") return 0;
+    if (record.decision === "to_read") return 1;
+    if (record.decision === "exclude") return 4;
+    if (record.quality?.dedupeStatus === "uncertain") return 3;
+    return 2;
   }
 
   function xmlValue(xml, tag) {
@@ -542,7 +639,8 @@ var ZMSCandidateSources = (() => {
     parseUnpaywallSearchResponse,
     dedupeCandidatePapers,
     candidateRecordFromPaper,
-    mergeCandidateRecords
+    mergeCandidateRecords,
+    sortCandidateRecords
   };
 })();
 
