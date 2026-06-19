@@ -74,6 +74,40 @@ describe("provider smoke verifier", () => {
     }, { responseBody: { choices: [{ message: { content: "OK stripped" } }] } });
   });
 
+  it("rejects non-object provider body-extra JSON", async () => {
+    await expect(execFileAsync(process.execPath, [
+      "scripts/verify-provider-smoke.mjs",
+      "--profile", "openai-compatible",
+      "--base-url", "http://127.0.0.1:11434/v1",
+      "--model", "local-chat",
+      "--body-extra-json", "[]",
+      "--dry-run",
+      "--json"
+    ], {
+      cwd: process.cwd(),
+      maxBuffer: 1024 * 1024
+    })).rejects.toMatchObject({
+      stderr: expect.stringContaining("--body-extra-json must be a JSON object")
+    });
+  });
+
+  it("rejects malformed provider body-extra JSON", async () => {
+    await expect(execFileAsync(process.execPath, [
+      "scripts/verify-provider-smoke.mjs",
+      "--profile", "openai-compatible",
+      "--base-url", "http://127.0.0.1:11434/v1",
+      "--model", "local-chat",
+      "--body-extra-json", "{",
+      "--dry-run",
+      "--json"
+    ], {
+      cwd: process.cwd(),
+      maxBuffer: 1024 * 1024
+    })).rejects.toMatchObject({
+      stderr: expect.stringContaining("--body-extra-json must be valid JSON")
+    });
+  });
+
   it("allows local OpenAI-compatible endpoints without API credentials", async () => {
     await withMockProvider(async (baseURL, requests) => {
       const report = await runSmoke([

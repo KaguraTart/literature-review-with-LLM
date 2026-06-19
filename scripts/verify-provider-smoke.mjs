@@ -425,7 +425,7 @@ function parseArgs(args) {
       options.customHeaders[name] = headerValue;
       index += 1;
     } else if (key === "--body-extra-json" && value) {
-      options.bodyExtra = JSON.parse(value);
+      options.bodyExtra = parseJSONOption(value, "--body-extra-json");
       index += 1;
     } else if (key === "--dry-run") {
       options.dryRun = true;
@@ -1081,6 +1081,19 @@ function splitAssignment(value, flag) {
   const index = String(value || "").indexOf("=");
   if (index <= 0) throw new Error(`${flag} expects name=value`);
   return [value.slice(0, index).trim(), value.slice(index + 1)];
+}
+
+function parseJSONOption(value, flag) {
+  let parsed;
+  try {
+    parsed = JSON.parse(String(value || "{}"));
+  } catch (error) {
+    throw new Error(`${flag} must be valid JSON: ${error?.message || String(error)}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${flag} must be a JSON object`);
+  }
+  return parsed;
 }
 
 function formatReport(report) {
