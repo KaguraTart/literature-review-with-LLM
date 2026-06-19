@@ -158,6 +158,9 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     commitWritePreview: (summaryPath: string, preview: any) => Promise<void>;
     assertRemoteProfileReady: (profile: any, translate?: (key: string) => string) => void;
     normalizeSkillId: (value: string) => string;
+    defaultImageQuestion: (outputLanguage: string) => string;
+    userTextForSend: (rawContent: string, skillId: string, imageCount: number, outputLanguage: string) => string;
+    displayTextForSend: (rawContent: string, skillId: string, imageCount: number, outputLanguage: string, labelFor?: (id: string) => string) => string;
     providerBodyExtra: (bodyExtra: any) => Record<string, any>;
     ensureSummaryFile: (item: any, pdf: any, outputDir: string, options?: any) => Promise<any>;
     findPdfAttachment: (item: any) => Promise<any>;
@@ -766,6 +769,16 @@ describe("workbench writeback helpers", () => {
       capabilities: { streaming: true, imageBase64: false },
       bodyExtra: {}
     }, messages, "zh-CN", "system", requestInput, false)).toThrow("does not support image input");
+  });
+
+  it("builds a default prompt for image-only sends", () => {
+    expect(helpers.defaultImageQuestion("zh-CN")).toContain("请解析这张图片");
+    expect(helpers.defaultImageQuestion("en-US")).toContain("Analyze this image");
+    expect(helpers.userTextForSend("", "", 1, "zh-CN")).toContain("当前论文");
+    expect(helpers.userTextForSend("  解释图  ", "", 1, "zh-CN")).toBe("解释图");
+    expect(helpers.userTextForSend("", "figure-table-extractor", 1, "zh-CN")).toBe("");
+    expect(helpers.displayTextForSend("", "figure-table-extractor", 1, "zh-CN", (id) => `label:${id}`))
+      .toBe("label:figure-table-extractor");
   });
 
   it("merges consecutive Anthropic workbench messages before sending", () => {
@@ -1915,6 +1928,45 @@ describe("workbench writeback helpers", () => {
     const assistant = dom.elements.get("zms-messages").children.find((child: any) => child.className.includes("zms-message-assistant"));
     const body = assistant.children.find((child: any) => child.className === "zms-message-body");
     expect(body.children.at(-1).className).toContain("zms-markdown");
+  });
+
+  it("sends image-only messages with a localized default prompt", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-input": "",
+      "zms-skill": ""
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.state.item = { key: "ITEM" };
+    workbench.state.profile = {
+      ...providerProfile(),
+      capabilities: { ...providerProfile().capabilities, imageBase64: true }
+    };
+    workbench.state.messages = [];
+    workbench.state.pendingImages = [
+      { id: "img-1", name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=", size: 5 }
+    ];
+    workbench.state.outputLanguage = "zh-CN";
+    workbench.state.uiLanguage = "zh-CN";
+    workbench.t = (key: string) => key;
+    workbench.saveSession = async () => undefined;
+    let captured: any = null;
+    workbench.callModel = async (content: string, skillId: string, _onDelta: (delta: string) => void, images: any[]) => {
+      captured = { content, skillId, images };
+      return "answer";
+    };
+
+    await workbench.send();
+
+    expect(captured.content).toContain("请解析这张图片");
+    expect(captured.skillId).toBe("");
+    expect(captured.images).toHaveLength(1);
+    expect(workbench.state.messages[0].content).toContain("请解析这张图片");
+    expect(workbench.state.messages[0].images).toEqual([
+      { name: "figure.png", mimeType: "image/png", size: 5 }
+    ]);
+    expect(workbench.state.pendingImages).toEqual([]);
   });
 
   it("prevents overlapping send requests from replacing the active abort controller", async () => {

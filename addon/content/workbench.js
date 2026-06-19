@@ -9,6 +9,7 @@ const ZMS_SKILL_IDS = [
   "paper-deep-summary",
   "method-extractor",
   "experiment-table-builder",
+  "figure-table-extractor",
   "literature-matrix-builder",
   "citation-audit",
   "custom-summary",
@@ -1018,9 +1019,11 @@ var ZoteroMarkdownSummaryWorkbench = {
 
   async send() {
     const input = document.getElementById("zms-input");
-    const content = input.value.trim();
+    const rawContent = input.value.trim();
     const skillId = document.getElementById("zms-skill").value;
     const images = [...this.state.pendingImages];
+    const content = userTextForSend(rawContent, skillId, images.length, this.state.outputLanguage);
+    const displayContent = displayTextForSend(rawContent, skillId, images.length, this.state.outputLanguage, (id) => this.t(id));
     if (this.state.requestInFlight) {
       this.setStatus(this.t("thinking"));
       return;
@@ -1035,7 +1038,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       return;
     }
     const messageProfile = profileMessageMetadata(this.state.profile);
-    const userMessage = makeMessage("user", content || this.t(skillId), { skillId, images: images.map(imageMessageMetadata), ...messageProfile });
+    const userMessage = makeMessage("user", displayContent, { skillId, images: images.map(imageMessageMetadata), ...messageProfile });
     this.state.messages.push(userMessage);
     this.appendMessageElement(userMessage);
     input.value = "";
@@ -3061,6 +3064,7 @@ function builtInSkillTemplate(skillId, outputLanguage) {
   ].join("\n");
   if (skillId === "method-extractor") return `${common}\n\nExtract method, model, algorithm flow, inputs, outputs, constraints, and reusable details.`;
   if (skillId === "experiment-table-builder") return `${common}\n\nBuild a Markdown table for datasets, baselines, metrics, ablations, results, and limitations.`;
+  if (skillId === "figure-table-extractor") return figureTableTemplate(common, outputLanguage);
   if (skillId === "literature-matrix-builder") return literatureMatrixTemplate(common, outputLanguage);
   if (skillId === "citation-audit") return `${common}\n\nAudit claims and identify unsupported or weakly supported statements.`;
   if (skillId === "custom-summary") return `${common}\n\nFollow the user's custom research goal and produce a structured Markdown note.`;
@@ -3083,6 +3087,16 @@ function builtInSkillTemplate(skillId, outputLanguage) {
     return `${common}\n\nRun a quick local-agent health check and report each subagent status, likely failure causes, and command-level remediation suggestions.`;
   }
   return paperDeepSummaryTemplate(common, outputLanguage);
+}
+
+function figureTableTemplate(common, outputLanguage) {
+  if (outputLanguage === "zh-CN") {
+    return `${common}\n\n请结构化解析论文中的截图、图表、表格或实验结果。优先结合图片附件、PDF/摘要上下文和用户问题；若没有图片附件，则只从文本上下文中抽取。输出 Markdown，至少包含：\n\n1. 对象类型：图、表、流程图、公式截图、实验结果表、消融结果或其他。\n2. 可读内容：标题、坐标轴、图例、表头、指标、数据集、模型名、公式符号和关键数值。\n3. 结论解释：这张图/表想证明什么，和论文主张如何对应。\n4. 可复用信息：适合写进综述、实验对比或方法复现的要点。\n5. 不确定性：模糊、遮挡、缺少上下文或模型无法可靠识别的部分。\n\n不要编造看不清的数字；所有来自文本上下文的判断标注 [chunk:<id>] 或 [metadata]，来自图片观察的判断标注 [image]。`;
+  }
+  if (outputLanguage === "ja-JP") {
+    return `${common}\n\n論文中のスクリーンショット、図、表、実験結果を構造化して解析してください。画像添付、PDF/要約コンテキスト、ユーザー質問を優先して使い、画像がない場合はテキスト根拠だけで抽出してください。Markdown で、対象タイプ、読み取れる内容、結論の解釈、再利用できる情報、不確実な点を含めてください。読めない数値は推測せず、テキスト根拠は [chunk:<id>] または [metadata]、画像観察は [image] と明記してください。`;
+  }
+  return `${common}\n\nExtract structured information from screenshots, figures, tables, formulas, or experimental-result panels. Prefer attached images plus the provided paper/PDF context and the user question; if no image is attached, extract only from the text context. Use Markdown and include: object type, readable content, interpretation, reusable review/experiment notes, and uncertainty. Do not invent unreadable numbers. Mark text-grounded claims with [chunk:<id>] or [metadata], and mark visual observations with [image].`;
 }
 
 function literatureMatrixTemplate(common, outputLanguage) {
@@ -3109,6 +3123,30 @@ function paperDeepSummaryTemplate(common, outputLanguage) {
     return `${common}\n\n単一論文の詳細読解レポートを作成してください。Markdown の章立ては、基本情報、研究背景、研究課題、手法、実験と検証、主な知見、貢献、限界、次の検討事項にしてください。根拠のある内容だけを書き、根拠が弱い箇所は低信頼として明記してください。`;
   }
   return `${common}\n\nCreate a deep paper reading report with Markdown sections for basic information, background, research question, method, experiments and validation, findings, contributions, limitations, and follow-up ideas. Keep every section evidence-grounded and mark unsupported points as low-confidence.`;
+}
+
+function defaultImageQuestion(outputLanguage) {
+  if (outputLanguage === "zh-CN") {
+    return "请解析这张图片，说明它展示的对象、关键文字或数值、与当前论文的关系、可用于综述或复现的要点，以及看不清或不确定的部分。";
+  }
+  if (outputLanguage === "ja-JP") {
+    return "この画像を解析し、示している対象、重要な文字や数値、現在の論文との関係、レビューや再現に使える要点、不明確な部分を説明してください。";
+  }
+  return "Analyze this image. Explain what it shows, key text or numbers, how it relates to the current paper, reusable notes for review or reproduction, and any unclear or uncertain parts.";
+}
+
+function userTextForSend(rawContent, skillId, imageCount, outputLanguage) {
+  const content = String(rawContent || "").trim();
+  if (content) return content;
+  if (!skillId && imageCount > 0) return defaultImageQuestion(outputLanguage);
+  return "";
+}
+
+function displayTextForSend(rawContent, skillId, imageCount, outputLanguage, labelFor) {
+  const content = String(rawContent || "").trim();
+  if (content) return content;
+  if (skillId) return labelFor?.(skillId) || skillId;
+  return userTextForSend("", "", imageCount, outputLanguage);
 }
 
 function normalizeSkillId(value) {

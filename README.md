@@ -4,7 +4,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 [中文说明](README.zh-CN.md)
 
-> Current status: usable but still early. The core single-paper workflow, image-question flow, and first-pass multi-paper comparison workflow are in place; clustering, batch synthesis, and richer figure/table extraction are still planned.
+> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, and first-pass multi-paper comparison workflow are in place; clustering, batch synthesis, and richer cross-paper analysis are still planned.
 
 ![Zotero paper chat workbench](docs/assets/workbench-chat.png)
 
@@ -14,10 +14,10 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, and write selected answers back with a preview step.
 - **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page.
 - **Multi-paper comparison and literature matrix**: when multiple Zotero items are selected, the first item becomes the focal paper and the rest become comparison context; the built-in `Literature Matrix` skill creates an evidence-grounded cross-paper matrix.
-- **Image questions in the workbench**: paste screenshots, drop images, or choose local image files; the workbench checks whether the active provider profile declares image input support before sending.
+- **Image questions and figure extraction**: paste screenshots, drop images, or choose local image files; the built-in `Figure/Table Extractor` skill turns paper figures, tables, and result panels into structured Markdown.
 - **Bring-your-own-key**: the plugin is free and open source; remote model providers require your own API keys.
 - **Local agent consultation**: optionally ask local Gemini, Claude, and opencode command-line tools for independent reading suggestions through the local bridge.
-- **Research workflow utilities**: includes skill prompts for deep summary, method extraction, experiment tables, citation checks, and candidate-paper discovery.
+- **Research workflow utilities**: includes skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation checks, and candidate-paper discovery.
 
 ## Features
 
@@ -25,10 +25,10 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - Open a paper chat workbench for the currently selected Zotero item.
 - Stream assistant output into Markdown rendering, including common headings, lists, tables, code blocks, and lightweight formula display.
 - Copy raw Markdown answers from the chat workbench.
-- Ask image-based questions by pasting screenshots, dropping images, or selecting local image files in the workbench.
+- Ask image-based questions by pasting screenshots, dropping images, or selecting local image files in the workbench; image-only sends use a default image-analysis prompt.
 - Write selected answers back into the Markdown summary with a preview step and backup file.
 - Configure multiple model providers from Zotero preferences.
-- Use built-in skill prompts for deep summary, method extraction, experiment table building, citation audit, and local-agent review.
+- Use built-in skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation audit, and local-agent review.
 - Optional local-agent bridge for Gemini, Claude, and opencode CLI tools.
 - Candidate-paper discovery utilities for arXiv / Crossref / Semantic Scholar workflows.
 
@@ -55,7 +55,7 @@ This plugin targets Zotero 9.x.
 2. Open `Tools -> Literature Review with LLM Settings` and configure a provider profile.
 3. Run `Tools -> 生成 Markdown 总结` or `Tools -> 打开论文聊天工作台`.
 4. Ask questions in the workbench, copy Markdown answers, or write an answer back into the summary file.
-5. For figure or screenshot questions, paste a screenshot, drop an image, or use the `+` button to select a local image. Image understanding depends on the selected model provider.
+5. For figure or screenshot questions, paste a screenshot, drop an image, or use the `+` button to select a local image. If you send only an image, the workbench automatically uses a default image-analysis question. Image understanding depends on the selected model provider.
 
 The generated Markdown files are saved under the configured output directory. By default, the plugin creates per-item summary/session files and links summary files back to Zotero.
 
@@ -128,7 +128,7 @@ The workbench is designed as a compact paper chat surface:
 - Top bar: current paper title, active model profile, settings button.
 - Message area: rendered Markdown answers with raw Markdown copy support.
 - Composer: ask questions about the selected paper.
-- Image attachments: paste screenshots, drop images, or select local image files; requests are sent in the active provider protocol's image format.
+- Image attachments: paste screenshots, drop images, or select local image files; requests are sent in the active provider protocol's image format. Image-only sends are converted into a default analysis request.
 - Settings drawer: model, consultation mode, paper metadata, session tools, and candidate-paper utilities.
 
 Typical questions:
@@ -180,7 +180,7 @@ The release asset is uploaded under GitHub Releases rather than committed to the
 ## Current Limitations
 
 - Multi-paper comparison is available as a first-pass workbench workflow, with up to 5 comparison papers by default. Automatic clustering and collection-level synthesis matrices are not implemented yet.
-- Single-turn image attachments are supported, but chart, table, and handwritten-note understanding still depends on the selected model. Dedicated structured extraction for figures and tables is not implemented yet.
+- Single-turn image attachments and the `Figure/Table Extractor` skill are supported, but chart, table, and handwritten-note understanding still depends on the selected model. Local OCR and chart-data reconstruction are not implemented yet.
 - Formula rendering is lightweight. It supports common inline/display math patterns, but it is not a full TeX engine.
 - Candidate-paper search is still utility-grade and needs stronger deduplication, ranking, and review workflows.
 - The workbench UI is still being refined; some controls and settings are intentionally compact but may need more usability work.
@@ -192,7 +192,7 @@ The release asset is uploaded under GitHub Releases rather than committed to the
 ## TODO
 
 - Improve multi-paper clustering, collection-level synthesis matrices, and batch report generation.
-- Add richer structured extraction for screenshots, PDF figures, tables, and experimental results.
+- Improve structured extraction quality for screenshots, PDF figures, tables, and experimental results with local OCR/table reconstruction.
 - Add better candidate-paper ranking and citation-network expansion.
 - Add per-provider setup guides with screenshots.
 - Add automatic update metadata workflow for XPI releases.

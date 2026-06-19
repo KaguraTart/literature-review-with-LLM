@@ -7,6 +7,7 @@ const ZMS_BUILT_IN_SKILL_IDS = [
   "paper-deep-summary",
   "method-extractor",
   "experiment-table-builder",
+  "figure-table-extractor",
   "literature-matrix-builder",
   "citation-audit",
   "custom-summary",
@@ -2230,6 +2231,9 @@ function builtInSkillTemplate(skillId, outputLanguage) {
   if (skillId === "experiment-table-builder") {
     return `${common}\n\nBuild a Markdown table for datasets, baselines, metrics, ablations, main results, and experimental limitations.`;
   }
+  if (skillId === "figure-table-extractor") {
+    return figureTableTemplate(common, outputLanguage);
+  }
   if (skillId === "literature-matrix-builder") {
     return literatureMatrixTemplate(common, outputLanguage);
   }
@@ -2258,6 +2262,16 @@ function builtInSkillTemplate(skillId, outputLanguage) {
     return `${common}\n\nCheck local Gemini, Claude, and opencode availability. Report each status, likely failure causes, and concrete command-level remediation steps.`;
   }
   return paperDeepSummaryTemplate(common, outputLanguage);
+}
+
+function figureTableTemplate(common, outputLanguage) {
+  if (outputLanguage === "zh-CN") {
+    return `${common}\n\n请结构化解析论文中的截图、图表、表格或实验结果。优先结合图片附件、PDF/摘要上下文和用户问题；若没有图片附件，则只从文本上下文中抽取。输出 Markdown，至少包含：对象类型、可读内容、结论解释、可复用信息、不确定性。不要编造看不清的数字；所有来自文本上下文的判断标注 [chunk:<id>] 或 [metadata]，来自图片观察的判断标注 [image]。`;
+  }
+  if (outputLanguage === "ja-JP") {
+    return `${common}\n\n論文中のスクリーンショット、図、表、実験結果を構造化して解析してください。画像添付、PDF/要約コンテキスト、ユーザー質問を優先して使い、画像がない場合はテキスト根拠だけで抽出してください。読めない数値は推測せず、テキスト根拠は [chunk:<id>] または [metadata]、画像観察は [image] と明記してください。`;
+  }
+  return `${common}\n\nExtract structured information from screenshots, figures, tables, formulas, or experimental-result panels. Prefer attached images plus the provided paper/PDF context and the user question; if no image is attached, extract only from the text context. Include object type, readable content, interpretation, reusable review/experiment notes, and uncertainty. Do not invent unreadable numbers. Mark text-grounded claims with [chunk:<id>] or [metadata], and visual observations with [image].`;
 }
 
 function literatureMatrixTemplate(common, outputLanguage) {
