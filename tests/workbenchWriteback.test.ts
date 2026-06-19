@@ -178,6 +178,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     sessionFilenameFor: (sessionId: string) => string;
     sessionIdFromPath: (path: string) => string;
     recentSessionFiles: (paths: string[]) => string[];
+    latestSessionForItem: (item: any, outputDir: string) => Promise<any>;
     candidateJsonlPath: (outputDir: string, item: any) => string;
     importLedgerJsonlPath: (outputDir: string, item: any) => string;
     importableCandidateRecords: (records: any[]) => any[];
@@ -1080,6 +1081,12 @@ describe("workbench writeback helpers", () => {
       "/tmp/chat-02.jsonl",
       "/tmp/chat-10.jsonl"
     ]);
+  });
+
+  it("returns no latest session when the item session directory is missing", async () => {
+    const loaded = loadWorkbenchHelpers();
+
+    await expect(loaded.latestSessionForItem({ key: "ITEM" }, "/tmp/zms")).resolves.toBeNull();
   });
 
   it("builds collection-scoped candidate JSONL paths", () => {

@@ -3947,6 +3947,14 @@ async function ensureDirectory(path) {
   if (!await IOUtils.exists(path)) await IOUtils.makeDirectory(path, { createAncestors: true, ignoreExisting: true });
 }
 
+async function pathExists(path) {
+  try {
+    return !!path && await IOUtils.exists(path);
+  } catch (_err) {
+    return false;
+  }
+}
+
 function parentDir(path) {
   const slashIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return slashIndex === -1 ? "." : path.slice(0, slashIndex);
