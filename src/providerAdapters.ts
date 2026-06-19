@@ -199,7 +199,7 @@ function openaiChatBody(request: ModelRequest): Record<string, unknown> {
     model: request.profile.model,
     messages,
     temperature: request.temperature,
-    max_tokens: request.maxOutputTokens,
+    ...openAIChatTokenLimit(request.profile, request.maxOutputTokens),
     stream: request.stream,
     n: 1
   });
@@ -559,9 +559,43 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
     anthropicAuthHeader: _anthropicAuthHeader,
     directBrowserAccess: _directBrowserAccess,
     anthropicDirectBrowserAccess: _anthropicDirectBrowserAccess,
+    tokenLimitField: _tokenLimitField,
+    openAIChatTokenField: _openAIChatTokenField,
+    chatTokenField: _chatTokenField,
+    maxTokenField: _maxTokenField,
     ...rest
   } = bodyExtra;
   return rest;
+}
+
+function openAIChatTokenLimit(profile: ProviderProfile, maxTokens: number): Record<string, unknown> {
+  return { [openAIChatTokenLimitField(profile)]: maxTokens };
+}
+
+function openAIChatTokenLimitField(profile: ProviderProfile): "max_tokens" | "max_completion_tokens" {
+  const extra = providerBodyExtra(profile.bodyExtra);
+  const explicit = normalizeOpenAIChatTokenLimitField(
+    profile.bodyExtra?.tokenLimitField
+    ?? profile.bodyExtra?.openAIChatTokenField
+    ?? profile.bodyExtra?.chatTokenField
+    ?? profile.bodyExtra?.maxTokenField
+  );
+  if (explicit) return explicit;
+  if (extra.max_completion_tokens !== undefined && extra.max_tokens === undefined) return "max_completion_tokens";
+  if (extra.max_tokens !== undefined && extra.max_completion_tokens === undefined) return "max_tokens";
+  return modelPrefersCompletionTokenLimit(profile.model) ? "max_completion_tokens" : "max_tokens";
+}
+
+function normalizeOpenAIChatTokenLimitField(value: unknown): "max_tokens" | "max_completion_tokens" | "" {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[.\s-]+/g, "_");
+  if (!normalized) return "";
+  if (normalized === "max_completion_tokens" || normalized === "completion_tokens" || normalized === "completion") return "max_completion_tokens";
+  if (normalized === "max_tokens" || normalized === "tokens") return "max_tokens";
+  return "";
+}
+
+function modelPrefersCompletionTokenLimit(model: unknown): boolean {
+  return /^o\d(?:$|[-_.])/i.test(String(model || "").trim());
 }
 
 function jsonModeBodyDefaults(profile: ProviderProfile): Record<string, unknown> {

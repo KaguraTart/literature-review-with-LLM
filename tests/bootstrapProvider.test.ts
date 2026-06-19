@@ -1231,6 +1231,31 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[1].body).toMatchObject({
       response_format: { type: "json_schema", json_schema: { name: "paper" } }
     });
+
+    await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test-secret",
+      model: "o1-preview",
+      capabilities: {},
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "Return text.",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(fetchCalls[2].body).toMatchObject({
+      max_completion_tokens: 1024
+    });
+    expect(fetchCalls[2].body).not.toHaveProperty("max_tokens");
   });
 
   it("throws redacted errors from bootstrap provider stream error events", async () => {

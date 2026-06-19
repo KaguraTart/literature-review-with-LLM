@@ -174,6 +174,44 @@ describe("provider adapters", () => {
     })).toBeUndefined();
   });
 
+  it("supports max_completion_tokens for OpenAI-compatible Chat reasoning models and overrides", () => {
+    const reasoningBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        model: "o1-preview"
+      }
+    });
+    expect(reasoningBody).toMatchObject({ max_completion_tokens: 8192 });
+    expect(reasoningBody).not.toHaveProperty("max_tokens");
+
+    const explicitCompletionBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        model: "router-model",
+        bodyExtra: {
+          tokenLimitField: "max_completion_tokens",
+          max_completion_tokens: 2048
+        }
+      }
+    });
+    expect(explicitCompletionBody).toMatchObject({ max_completion_tokens: 2048 });
+    expect(explicitCompletionBody).not.toHaveProperty("max_tokens");
+    expect(explicitCompletionBody).not.toHaveProperty("tokenLimitField");
+
+    const explicitLegacyBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        model: "o3-mini",
+        bodyExtra: { tokenLimitField: "max_tokens" }
+      }
+    });
+    expect(explicitLegacyBody).toMatchObject({ max_tokens: 8192 });
+    expect(explicitLegacyBody).not.toHaveProperty("max_completion_tokens");
+  });
+
   it("attaches image inputs for supported provider protocols", () => {
     const imageInput = {
       type: "text" as const,

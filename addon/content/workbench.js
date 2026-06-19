@@ -2676,7 +2676,7 @@ function connectionTestBodyForProfile(profile) {
       { role: "system", content: system },
       { role: "user", content: "ping" }
     ],
-    max_tokens: 32,
+    ...openAIChatTokenLimit(profile, 32),
     stream: false,
     n: 1
   };
@@ -4472,7 +4472,14 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
       stream
     });
   }
-  return withProviderBodyDefaults(profile, { model: profile.model, messages: [{ role: "system", content: system }, ...openaiChatMessages(messages, requestInput)], max_tokens: Number(pref("maxOutputTokens")) || 8192, temperature: Number(pref("temperature")) || 1, stream, n: 1 });
+  return withProviderBodyDefaults(profile, {
+    model: profile.model,
+    messages: [{ role: "system", content: system }, ...openaiChatMessages(messages, requestInput)],
+    ...openAIChatTokenLimit(profile, Number(pref("maxOutputTokens")) || 8192),
+    temperature: Number(pref("temperature")) || 1,
+    stream,
+    n: 1
+  });
 }
 
 function shouldStream(profile, streamEnabled = true) {
@@ -4489,9 +4496,43 @@ function providerBodyExtra(bodyExtra) {
     anthropicAuthHeader: _anthropicAuthHeader,
     directBrowserAccess: _directBrowserAccess,
     anthropicDirectBrowserAccess: _anthropicDirectBrowserAccess,
+    tokenLimitField: _tokenLimitField,
+    openAIChatTokenField: _openAIChatTokenField,
+    chatTokenField: _chatTokenField,
+    maxTokenField: _maxTokenField,
     ...rest
   } = bodyExtra;
   return rest;
+}
+
+function openAIChatTokenLimit(profile, maxTokens) {
+  return { [openAIChatTokenLimitField(profile)]: maxTokens };
+}
+
+function openAIChatTokenLimitField(profile) {
+  const extra = providerBodyExtra(profile?.bodyExtra);
+  const explicit = normalizeOpenAIChatTokenLimitField(
+    profile?.bodyExtra?.tokenLimitField
+    ?? profile?.bodyExtra?.openAIChatTokenField
+    ?? profile?.bodyExtra?.chatTokenField
+    ?? profile?.bodyExtra?.maxTokenField
+  );
+  if (explicit) return explicit;
+  if (extra.max_completion_tokens !== undefined && extra.max_tokens === undefined) return "max_completion_tokens";
+  if (extra.max_tokens !== undefined && extra.max_completion_tokens === undefined) return "max_tokens";
+  return modelPrefersCompletionTokenLimit(profile?.model) ? "max_completion_tokens" : "max_tokens";
+}
+
+function normalizeOpenAIChatTokenLimitField(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[.\s-]+/g, "_");
+  if (!normalized) return "";
+  if (normalized === "max_completion_tokens" || normalized === "completion_tokens" || normalized === "completion") return "max_completion_tokens";
+  if (normalized === "max_tokens" || normalized === "tokens") return "max_tokens";
+  return "";
+}
+
+function modelPrefersCompletionTokenLimit(model) {
+  return /^o\d(?:$|[-_.])/i.test(String(model || "").trim());
 }
 
 function withProviderBodyDefaults(profile, body) {

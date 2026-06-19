@@ -335,6 +335,22 @@ describe("preferences local-agent config helpers", () => {
     expect(request.body).not.toHaveProperty("extra_body");
     expect(modelList?.url).toBe("https://api.openai.com/v1/models");
 
+    const reasoningRequest = helpers.connectionTestRequestForProfile({
+      ...profile,
+      model: "o1-preview"
+    });
+    expect(reasoningRequest.body).toMatchObject({ max_completion_tokens: 32 });
+    expect(reasoningRequest.body).not.toHaveProperty("max_tokens");
+
+    const explicitLegacyRequest = helpers.connectionTestRequestForProfile({
+      ...profile,
+      model: "o3-mini",
+      bodyExtra: { tokenLimitField: "max_tokens" }
+    });
+    expect(explicitLegacyRequest.body).toMatchObject({ max_tokens: 32 });
+    expect(explicitLegacyRequest.body).not.toHaveProperty("max_completion_tokens");
+    expect(explicitLegacyRequest.body).not.toHaveProperty("tokenLimitField");
+
     const pastedChatEndpointProfile = {
       ...profile,
       baseURL: "https://api.openai.com/v1/chat/completions"

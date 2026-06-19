@@ -442,7 +442,7 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
     model,
     messages: openAIChatSummaryMessages(request),
     temperature: request.temperature,
-    max_tokens: request.maxOutputTokens,
+    ...openAIChatTokenLimit(summaryRequest, request.maxOutputTokens),
     stream: request.stream,
     n: 1
   };

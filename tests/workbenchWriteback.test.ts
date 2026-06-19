@@ -666,6 +666,25 @@ describe("workbench writeback helpers", () => {
       response_format: { type: "json_object" }
     });
 
+    const reasoningChatBody = helpers.bodyForProfile({
+      protocol: "openai_chat",
+      model: "o1-preview",
+      capabilities: { streaming: true },
+      bodyExtra: {}
+    }, messages, "zh-CN", "system", {}, false);
+    expect(reasoningChatBody).toMatchObject({ max_completion_tokens: 8192 });
+    expect(reasoningChatBody).not.toHaveProperty("max_tokens");
+
+    const explicitCompletionBody = helpers.bodyForProfile({
+      protocol: "openai_chat",
+      model: "router-model",
+      capabilities: { streaming: true },
+      bodyExtra: { tokenLimitField: "max_completion_tokens", max_completion_tokens: 2048 }
+    }, messages, "zh-CN", "system", {}, false);
+    expect(explicitCompletionBody).toMatchObject({ max_completion_tokens: 2048 });
+    expect(explicitCompletionBody).not.toHaveProperty("max_tokens");
+    expect(explicitCompletionBody).not.toHaveProperty("tokenLimitField");
+
     expect(helpers.bodyForProfile({
       protocol: "openai_responses",
       model: "model-a",

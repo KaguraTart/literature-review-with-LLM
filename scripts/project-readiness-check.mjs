@@ -155,9 +155,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "provider.protocols",
-    description: "OpenAI chat, OpenAI Responses, and Anthropic Messages protocol paths are present",
+    description: "OpenAI chat, OpenAI Responses, Anthropic Messages, JSON mode, and Chat token-limit field selection are present",
     files: ["src/providerAdapters.ts", "addon/content/bootstrap-provider.js", "addon/content/workbench.js"],
-    markers: ["openai_responses", "anthropic_messages", "jsonModeBodyDefaults"]
+    markers: ["openai_responses", "anthropic_messages", "jsonModeBodyDefaults", "openAIChatTokenLimit"]
   },
   {
     id: "provider.stream-snapshot-fallback",
