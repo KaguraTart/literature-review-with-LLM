@@ -172,6 +172,12 @@ const SOURCE_MARKERS = [
     markers: ["endpointForProtocol(protocol, baseURL)", "settingsProviderFromProfile", "azure_openai", "gemini"]
   },
   {
+    id: "provider.bootstrap-multimodal",
+    description: "Bootstrap generation can build protocol-specific image request bodies for OpenAI Chat, OpenAI Responses, and Anthropic Messages",
+    files: ["addon/bootstrap.js", "addon/content/bootstrap-provider.js", "tests/bootstrapProvider.test.ts"],
+    markers: ["requestInputImages", "imageDataURL", "openAIChatSummaryMessages", "input_image", "image_url", "当前接口档案不支持图片输入", "sends image attachments through bootstrap"]
+  },
+  {
     id: "provider.bootstrap-defaults",
     description: "Bootstrap legacy provider fallback keeps mainstream endpoints and local-agent tools",
     files: ["addon/content/bootstrap-settings.js"],

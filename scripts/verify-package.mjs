@@ -228,6 +228,8 @@ const requiredMarkers = [
   [bootstrapProvider, "streamErrorText", "provider stream error parser in bootstrap provider"],
   [bootstrapProvider, "Provider error:", "provider JSON error parser in bootstrap provider"],
   [bootstrapProvider, "openaiResponsesInputForSummary", "structured OpenAI Responses input in bootstrap provider"],
+  [bootstrapProvider, "openAIChatSummaryMessages", "structured OpenAI Chat image input in bootstrap provider"],
+  [bootstrapProvider, "requestInputImages", "shared bootstrap image attachment helper"],
   [bootstrapProvider, "jsonModeBodyDefaults", "protocol-specific JSON mode defaults in bootstrap provider"],
   [bootstrapProvider, "openAICompatibleBaseWithVersion", "OpenAI-compatible versioned base URL helper in bootstrap provider"],
   [bootstrapProvider, "usesVersionlessOpenAICompatibleBase", "versionless OpenAI-compatible base URL helper in bootstrap provider"],

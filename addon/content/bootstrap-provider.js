@@ -81,7 +81,36 @@ function openaiResponsesInputForSummary(request) {
       file_data: `data:application/pdf;base64,${request.input.base64}`
     });
   }
+  for (const image of requestInputImages(request.input)) {
+    content.push({
+      type: "input_image",
+      image_url: imageDataURL(image)
+    });
+  }
   return [{ role: "user", content }];
+}
+
+function openAIChatSummaryMessages(request) {
+  const userText = request.input.type === "text" ? `${request.prompt}\n\n${request.input.text}` : request.prompt;
+  const images = requestInputImages(request.input);
+  const userContent = images.length
+    ? [
+      { type: "text", text: userText },
+      ...images.map((image) => ({ type: "image_url", image_url: { url: imageDataURL(image) } }))
+    ]
+    : userText;
+  return [
+    { role: "system", content: request.system },
+    { role: "user", content: userContent }
+  ];
+}
+
+function requestInputImages(input) {
+  return Array.isArray(input?.images) ? input.images.filter((image) => image?.base64) : [];
+}
+
+function imageDataURL(image) {
+  return `data:${image?.mimeType || "image/png"};base64,${image?.base64 || ""}`;
 }
 
 function withProviderBodyDefaults(profile, body) {

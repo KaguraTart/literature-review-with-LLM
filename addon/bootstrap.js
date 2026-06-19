@@ -420,6 +420,10 @@ async function callProvider(summaryRequest, sourceHash) {
 async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
   const { baseURL, fullURL, endpointMode = "base_url", customHeaders = {}, bodyExtra = {}, apiKey, model, request } = summaryRequest;
   const isPdf = request.input.type === "pdf_base64";
+  const hasImages = requestInputImages(request.input).length > 0;
+  if (hasImages && summaryRequest.capabilities?.imageBase64 !== true) {
+    throw new Error("当前接口档案不支持图片输入");
+  }
   const useResponses = summaryRequest.protocol === "openai_responses" || isPdf;
   if (isPdf && summaryRequest.protocol !== "openai_responses") {
     throw new Error("当前兼容接口不支持 PDF base64 输入");
@@ -435,10 +439,7 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
     stream: request.stream
   } : {
     model,
-    messages: [
-      { role: "system", content: request.system },
-      { role: "user", content: `${request.prompt}\n\n${request.input.text}` }
-    ],
+    messages: openAIChatSummaryMessages(request),
     temperature: request.temperature,
     max_tokens: request.maxOutputTokens,
     stream: request.stream,
@@ -470,6 +471,20 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
 async function callAnthropic(summaryRequest, sourceHash) {
   const { baseURL, fullURL, endpointMode = "base_url", customHeaders = {}, bodyExtra = {}, apiKey, model, request } = summaryRequest;
   const content = [];
+  const images = requestInputImages(request.input);
+  if (images.length && summaryRequest.capabilities?.imageBase64 !== true) {
+    throw new Error("当前接口档案不支持图片输入");
+  }
+  for (const image of images) {
+    content.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: image.mimeType || "image/png",
+        data: image.base64 || ""
+      }
+    });
+  }
   if (request.input.type === "pdf_base64") {
     content.push({
       type: "document",

@@ -54,6 +54,8 @@ const REQUIRED_MARKERS = [
   ["content/bootstrap-provider.js", "extractOpenAIText", "bootstrap provider OpenAI extraction"],
   ["content/bootstrap-provider.js", "extractAnthropicStreamText", "bootstrap provider Anthropic stream parser"],
   ["content/bootstrap-provider.js", "jsonModeBodyDefaults", "bootstrap provider JSON mode defaults"],
+  ["content/bootstrap-provider.js", "openAIChatSummaryMessages", "bootstrap provider OpenAI Chat image request builder"],
+  ["content/bootstrap-provider.js", "requestInputImages", "bootstrap provider image attachment helper"],
   ["content/bootstrap-provider.js", "openAICompatibleBaseWithVersion", "bootstrap provider OpenAI-compatible versioned base URL helper"],
   ["content/bootstrap-provider.js", "usesVersionlessOpenAICompatibleBase", "bootstrap provider versionless OpenAI-compatible base URL helper"],
   ["content/bootstrap-provider.js", "anthropicAuthHeaderName", "bootstrap provider Anthropic-compatible auth header selection"],
