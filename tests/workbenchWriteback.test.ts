@@ -700,6 +700,62 @@ describe("workbench writeback helpers", () => {
     }, messages, "zh-CN", "system", requestInput, false)).toMatchObject({ temperature: 0.2 });
   });
 
+  it("passes image attachments into workbench provider request bodies", () => {
+    const messages = [
+      { role: "user", content: "请解释这张图" }
+    ];
+    const requestInput = {
+      type: "text",
+      source: "text_mode",
+      images: [
+        { name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=" }
+      ]
+    };
+
+    const chatBody = helpers.bodyForProfile({
+      protocol: "openai_chat",
+      model: "model-a",
+      capabilities: { streaming: true, imageBase64: true },
+      bodyExtra: {}
+    }, messages, "zh-CN", "system", requestInput, false);
+    expect(chatBody.messages[1].content).toEqual([
+      { type: "text", text: "请解释这张图" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } }
+    ]);
+
+    const responsesBody = helpers.bodyForProfile({
+      protocol: "openai_responses",
+      model: "model-a",
+      capabilities: { streaming: true, imageBase64: true },
+      bodyExtra: {}
+    }, messages, "zh-CN", "system", requestInput, false);
+    expect(responsesBody.input[0].content).toEqual([
+      { type: "input_text", text: "请解释这张图" },
+      { type: "input_image", image_url: "data:image/png;base64,aW1hZ2U=" }
+    ]);
+
+    const anthropicBody = helpers.bodyForProfile({
+      protocol: "anthropic_messages",
+      model: "model-a",
+      capabilities: { streaming: true, imageBase64: true },
+      bodyExtra: {}
+    }, messages, "zh-CN", "system", requestInput, false);
+    expect(anthropicBody.messages[0].content).toEqual([
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" }
+      },
+      { type: "text", text: "USER: 请解释这张图" }
+    ]);
+
+    expect(() => helpers.bodyForProfile({
+      protocol: "openai_chat",
+      model: "model-a",
+      capabilities: { streaming: true, imageBase64: false },
+      bodyExtra: {}
+    }, messages, "zh-CN", "system", requestInput, false)).toThrow("does not support image input");
+  });
+
   it("merges consecutive Anthropic workbench messages before sending", () => {
     const body = helpers.bodyForProfile({
       protocol: "anthropic_messages",
