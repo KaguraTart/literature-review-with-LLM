@@ -11,6 +11,7 @@ const DEFAULT_CASES = [
     apiKeyEnv: "OPENAI_API_KEY",
     modelEnv: "OPENAI_MODEL",
     baseURLEnv: "OPENAI_BASE_URL",
+    bodyExtraEnv: "OPENAI_BODY_EXTRA_JSON",
     requireBaseURL: false
   },
   {
@@ -21,6 +22,7 @@ const DEFAULT_CASES = [
     apiKeyEnv: "OPENAI_RESPONSES_COMPATIBLE_API_KEY",
     modelEnv: "OPENAI_RESPONSES_COMPATIBLE_MODEL",
     baseURLEnv: "OPENAI_RESPONSES_COMPATIBLE_BASE_URL",
+    bodyExtraEnv: "OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON",
     requireBaseURL: true,
     allowLocalNoAuth: true
   },
@@ -32,6 +34,7 @@ const DEFAULT_CASES = [
     apiKeyEnv: "ANTHROPIC_API_KEY",
     modelEnv: "ANTHROPIC_MODEL",
     baseURLEnv: "ANTHROPIC_BASE_URL",
+    bodyExtraEnv: "ANTHROPIC_BODY_EXTRA_JSON",
     requireBaseURL: false
   },
   {
@@ -42,6 +45,7 @@ const DEFAULT_CASES = [
     apiKeyEnv: "ANTHROPIC_COMPATIBLE_API_KEY",
     modelEnv: "ANTHROPIC_COMPATIBLE_MODEL",
     baseURLEnv: "ANTHROPIC_COMPATIBLE_BASE_URL",
+    bodyExtraEnv: "ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON",
     requireBaseURL: true,
     allowLocalNoAuth: true
   },
@@ -53,6 +57,7 @@ const DEFAULT_CASES = [
     apiKeyEnv: "OPENAI_COMPATIBLE_API_KEY",
     modelEnv: "OPENAI_COMPATIBLE_MODEL",
     baseURLEnv: "OPENAI_COMPATIBLE_BASE_URL",
+    bodyExtraEnv: "OPENAI_COMPATIBLE_BODY_EXTRA_JSON",
     requireBaseURL: true,
     allowLocalNoAuth: true
   }
@@ -108,24 +113,24 @@ export async function runProviderLive(options = {}, env = process.env) {
       continue;
     }
 
-    const smokeOptions = {
-      profile: entry.profile,
-      protocol: entry.protocol,
-      apiKey: env[entry.apiKeyEnv],
-      baseURL: env[entry.baseURLEnv] || "",
-      model: env[entry.modelEnv],
-      prompt: options.prompt || DEFAULT_PROMPT,
-      context: options.context || DEFAULT_CONTEXT,
-      timeoutMs: numberOption(options.timeoutMs, 30000),
-      maxOutputTokens: numberOption(options.maxOutputTokens, 64),
-      temperature: numberOption(options.temperature, 0),
-      image: Boolean(options.image),
-      pdf: Boolean(options.pdf),
-      stream: Boolean(options.stream),
-      dryRun: Boolean(options.dryRun)
-    };
-
     try {
+      const smokeOptions = {
+        profile: entry.profile,
+        protocol: entry.protocol,
+        apiKey: env[entry.apiKeyEnv],
+        baseURL: env[entry.baseURLEnv] || "",
+        model: env[entry.modelEnv],
+        prompt: options.prompt || DEFAULT_PROMPT,
+        context: options.context || DEFAULT_CONTEXT,
+        timeoutMs: numberOption(options.timeoutMs, 30000),
+        maxOutputTokens: numberOption(options.maxOutputTokens, 64),
+        temperature: numberOption(options.temperature, 0),
+        image: Boolean(options.image),
+        pdf: Boolean(options.pdf),
+        stream: Boolean(options.stream),
+        dryRun: Boolean(options.dryRun),
+        bodyExtra: bodyExtraForCase(entry, options, env)
+      };
       const report = options.models
         ? await runProviderModels(smokeOptions)
         : await runProviderSmoke(smokeOptions);
@@ -178,6 +183,7 @@ function parseArgs(args) {
     stream: false,
     dryRun: false,
     failOnSkip: false,
+    bodyExtra: {},
     json: false,
     help: false
   };
@@ -216,6 +222,9 @@ function parseArgs(args) {
       options.dryRun = true;
     } else if (key === "--fail-on-skip") {
       options.failOnSkip = true;
+    } else if (key === "--body-extra-json" && value) {
+      options.bodyExtra = parseJSONOption(value, "--body-extra-json");
+      index += 1;
     } else if (key === "--json") {
       options.json = true;
     } else {
@@ -281,7 +290,12 @@ function redactKnownSecrets(text, env) {
     "OPENAI_RESPONSES_COMPATIBLE_API_KEY",
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_COMPATIBLE_API_KEY",
-    "OPENAI_COMPATIBLE_API_KEY"
+    "OPENAI_COMPATIBLE_API_KEY",
+    "OPENAI_BODY_EXTRA_JSON",
+    "OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON",
+    "ANTHROPIC_BODY_EXTRA_JSON",
+    "ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON",
+    "OPENAI_COMPATIBLE_BODY_EXTRA_JSON"
   ]) {
     const value = String(env[key] || "");
     if (value.length >= 4) {
@@ -289,6 +303,27 @@ function redactKnownSecrets(text, env) {
     }
   }
   return output;
+}
+
+function bodyExtraForCase(entry, options, env) {
+  const globalExtra = options.bodyExtra || {};
+  const envExtra = entry.bodyExtraEnv && env[entry.bodyExtraEnv]
+    ? parseJSONOption(env[entry.bodyExtraEnv], entry.bodyExtraEnv)
+    : {};
+  return { ...globalExtra, ...envExtra };
+}
+
+function parseJSONOption(value, label) {
+  let parsed;
+  try {
+    parsed = JSON.parse(String(value || "{}"));
+  } catch (error) {
+    throw new Error(`${label} must be valid JSON: ${error?.message || String(error)}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object`);
+  }
+  return parsed;
 }
 
 function countResults(results) {
@@ -368,6 +403,7 @@ function usage() {
     "  --stream                 Verify streaming generation with text/event-stream responses",
     "  --dry-run                Print sanitized request shapes without calling providers",
     "  --fail-on-skip           Exit non-zero when any selected case is missing env config",
+    "  --body-extra-json JSON    Merge extra request-body fields for all selected generation cases",
     "  --json                   Print machine-readable JSON"
   ].join("\n") + "\n";
 }

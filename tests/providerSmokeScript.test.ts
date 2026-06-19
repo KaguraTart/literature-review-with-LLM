@@ -966,6 +966,55 @@ describe("provider smoke verifier", () => {
       expect(requests[0].body).toEqual({});
     });
   });
+
+  it("passes live body-extra settings from env and CLI into generation smoke checks", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive([
+        "--include", "openai-compatible",
+        "--stream",
+        "--body-extra-json", JSON.stringify({ metadata: { suite: "live-smoke" } }),
+        "--json"
+      ], scrubProviderEnv({
+        OPENAI_COMPATIBLE_API_KEY: "live-compatible-body-extra-secret",
+        OPENAI_COMPATIBLE_MODEL: "live-compatible-body-extra",
+        OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`,
+        OPENAI_COMPATIBLE_BODY_EXTRA_JSON: JSON.stringify({
+          response_format: { type: "json_object" },
+          omitFields: ["stream", "temperature", "max_tokens"]
+        })
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        stream: true,
+        counts: {
+          passed: 1,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results[0]).toMatchObject({
+        id: "openai-compatible",
+        status: "passed",
+        report: {
+          stream: false,
+          text: "OK live chat"
+        }
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0].body).toMatchObject({
+        model: "live-compatible-body-extra",
+        metadata: { suite: "live-smoke" },
+        response_format: { type: "json_object" }
+      });
+      expect(requests[0].body).not.toHaveProperty("stream");
+      expect(requests[0].body).not.toHaveProperty("temperature");
+      expect(requests[0].body).not.toHaveProperty("max_tokens");
+      expect(requests[0].body).not.toHaveProperty("omitFields");
+      expect(JSON.stringify(report)).not.toContain("live-compatible-body-extra-secret");
+    });
+  });
 });
 
 async function runSmoke(args: string[]) {
@@ -1003,6 +1052,11 @@ function scrubProviderEnv(overrides: NodeJS.ProcessEnv = {}) {
     OPENAI_COMPATIBLE_API_KEY: "",
     OPENAI_COMPATIBLE_MODEL: "",
     OPENAI_COMPATIBLE_BASE_URL: "",
+    OPENAI_BODY_EXTRA_JSON: "",
+    OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON: "",
+    ANTHROPIC_BODY_EXTRA_JSON: "",
+    ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON: "",
+    OPENAI_COMPATIBLE_BODY_EXTRA_JSON: "",
     ...overrides
   };
 }

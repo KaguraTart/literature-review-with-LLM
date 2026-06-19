@@ -192,6 +192,16 @@ ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=... npm run verify:provider:pdf:live -- --
 
 For router or local endpoints, set the matching `*_BASE_URL` variable and use `openai-compatible`, `openai-responses-compatible`, or `anthropic-compatible`. Raw PDF live checks skip OpenAI-compatible Chat profiles because those profiles use extracted text input.
 
+Live checks also accept request-body overrides. Use `--body-extra-json` for all selected cases, or per-case env vars such as `OPENAI_COMPATIBLE_BODY_EXTRA_JSON`, `OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON`, `ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON`, `OPENAI_BODY_EXTRA_JSON`, and `ANTHROPIC_BODY_EXTRA_JSON`.
+
+```bash
+OPENAI_COMPATIBLE_API_KEY=... \
+OPENAI_COMPATIBLE_MODEL=... \
+OPENAI_COMPATIBLE_BASE_URL=... \
+OPENAI_COMPATIBLE_BODY_EXTRA_JSON='{"omitFields":["temperature","n","max_tokens"]}' \
+npm run verify:provider:live -- --include openai-compatible
+```
+
 ## Release Packaging
 
 The packaged plugin is generated at:

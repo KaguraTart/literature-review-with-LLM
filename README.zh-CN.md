@@ -175,6 +175,16 @@ ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=... npm run verify:provider:pdf:live -- --
 
 第三方路由或本地接口请设置对应的 `*_BASE_URL`，并使用 `openai-compatible`、`openai-responses-compatible` 或 `anthropic-compatible`。Raw PDF live 检查会跳过 OpenAI-compatible Chat 档案，因为这类档案使用抽取文本输入。
 
+live 检查也支持请求体覆盖。`--body-extra-json` 会作用于本次选择的所有 case；也可以使用更细的环境变量，例如 `OPENAI_COMPATIBLE_BODY_EXTRA_JSON`、`OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON`、`ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON`、`OPENAI_BODY_EXTRA_JSON`、`ANTHROPIC_BODY_EXTRA_JSON`。
+
+```bash
+OPENAI_COMPATIBLE_API_KEY=... \
+OPENAI_COMPATIBLE_MODEL=... \
+OPENAI_COMPATIBLE_BASE_URL=... \
+OPENAI_COMPATIBLE_BODY_EXTRA_JSON='{"omitFields":["temperature","n","max_tokens"]}' \
+npm run verify:provider:live -- --include openai-compatible
+```
+
 构建产物位置：
 
 ```text
