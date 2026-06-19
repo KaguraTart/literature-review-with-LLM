@@ -4,6 +4,8 @@ export default {
   id: "zotero-markdown-summary@diantao.local",
   namespace: "zotero-markdown-summary",
   xpiName: "literature-review-with-llm",
+  updateURL: "https://github.com/{{owner}}/{{repo}}/releases/latest/download/update.json",
+  xpiDownloadLink: "https://github.com/{{owner}}/{{repo}}/releases/download/v{{version}}/{{xpiName}}.xpi",
   build: {
     assets: "addon/**/*.*",
     fluent: {

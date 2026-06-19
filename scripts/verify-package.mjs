@@ -96,6 +96,14 @@ if (!packageJson.includes("verify:zip")) {
   fail("Missing package zip verification npm script");
 }
 
+if (!packageJson.includes("build:update-manifest")) {
+  fail("Missing update manifest build npm script");
+}
+
+if (!packageJson.includes("verify:update-manifest")) {
+  fail("Missing update manifest verification npm script");
+}
+
 if (!packageJson.includes("readiness:check")) {
   fail("Missing project readiness npm script");
 }
@@ -153,6 +161,29 @@ const workbenchJs = unzipText("content/workbench.js");
 const workbenchCss = unzipText("content/workbench.css");
 const readerJs = unzipText("content/reader.js");
 const messagesJs = unzipText("content/messages.js");
+const manifestJson = unzipText("manifest.json");
+const packageMeta = JSON.parse(packageJson);
+const manifest = JSON.parse(manifestJson);
+
+if (manifest.name !== "Literature Review with LLM") {
+  fail(`Unexpected manifest name: ${manifest.name}`);
+}
+
+if (manifest.version !== packageMeta.version) {
+  fail(`Manifest version ${manifest.version} does not match package version ${packageMeta.version}`);
+}
+
+if (manifest.applications?.zotero?.id !== "zotero-markdown-summary@diantao.local") {
+  fail("Manifest missing stable Zotero addon id");
+}
+
+if (manifest.applications?.zotero?.update_url !== "https://github.com/KaguraTart/literature-review-with-LLM/releases/latest/download/update.json") {
+  fail("Manifest missing Zotero update URL");
+}
+
+if (!manifest.applications?.zotero?.strict_min_version || !manifest.applications?.zotero?.strict_max_version) {
+  fail("Manifest missing Zotero compatibility bounds");
+}
 
 const requiredMarkers = [
   [bootstrap, "zotero-markdown-summary-toolbar-button", "toolbar entry"],

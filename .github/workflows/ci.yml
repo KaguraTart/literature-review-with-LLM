@@ -35,10 +35,12 @@ jobs:
       - name: Run project checks
         run: npm run check
 
-      - name: Upload XPI artifact
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: literature-review-with-llm-xpi
-          path: build/literature-review-with-llm.xpi
+          name: literature-review-with-llm-release-artifacts
+          path: |
+            build/literature-review-with-llm.xpi
+            build/update.json
           if-no-files-found: error
           retention-days: 30

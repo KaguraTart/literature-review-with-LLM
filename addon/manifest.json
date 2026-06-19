@@ -6,6 +6,7 @@
   "applications": {
     "zotero": {
       "id": "zotero-markdown-summary@diantao.local",
+      "update_url": "https://github.com/KaguraTart/literature-review-with-LLM/releases/latest/download/update.json",
       "strict_min_version": "9.0",
       "strict_max_version": "9.*"
     }

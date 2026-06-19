@@ -158,7 +158,13 @@ npm run check
 build/literature-review-with-llm.xpi
 ```
 
-Release 中上传 XPI 产物，仓库本身不提交构建出的 XPI。
+Zotero 自动更新元数据位置：
+
+```text
+build/update.json
+```
+
+`addon/manifest.json` 会把 Zotero 指向稳定的 GitHub Releases `update.json` 地址。`update.json` 会记录当前版本的 XPI 下载地址、XPI `sha256` 校验值和 Zotero 兼容版本范围。发布时上传 `literature-review-with-llm.xpi` 和 `update.json` 两个产物，仓库本身不提交构建产物。
 
 ## 当前局限
 
@@ -178,7 +184,6 @@ Release 中上传 XPI 产物，仓库本身不提交构建出的 XPI。
 - 增强图片、PDF 图表、表格和实验结果的结构化抽取质量，加入本地 OCR/表格重建。
 - 加强候选论文排序、引用网络扩展和去重。
 - 补充更多厂商配置截图和教程。
-- 加入自动更新元数据工作流。
 - 增加 Zotero 侧边工作台 UI 测试。
 - 加入面向不同研究领域的提示模板包。
 - 增加论文阅读报告、开题笔记、综述草稿等导出模板。

@@ -25,6 +25,7 @@ const REQUIRED_FILES = [
   "scripts/local-agent-mcp.mjs",
   "scripts/local-agent-http-bridge.mjs",
   "scripts/local-agent-bridge-service.mjs",
+  "scripts/build-update-manifest.mjs",
   "scripts/verify-package.mjs",
   "scripts/verify-installed-zotero.mjs",
   "scripts/verify-zotero-runtime.mjs",
@@ -34,6 +35,7 @@ const REQUIRED_FILES = [
   "tests/providerCatalogConsistency.test.ts",
   "tests/bootstrapUiRuntime.test.ts",
   "tests/providerSmokeScript.test.ts",
+  "tests/updateManifest.test.ts",
   "tests/writebackSmokeScript.test.ts",
   "src/providerAdapters.ts",
   "src/skills.ts"
@@ -41,9 +43,11 @@ const REQUIRED_FILES = [
 
 const REQUIRED_PACKAGE_SCRIPTS = [
   "build",
+  "build:update-manifest",
   "test",
   "typecheck",
   "verify:zip",
+  "verify:update-manifest",
   "verify:package",
   "verify:installed",
   "verify:zotero-runtime",
@@ -121,6 +125,12 @@ const REQUIRED_XPI_ENTRIES = [
 ];
 
 const SOURCE_MARKERS = [
+  {
+    id: "release.update-manifest",
+    description: "XPI releases publish Zotero update metadata with stable update URL and hash verification",
+    files: ["addon/manifest.json", "scripts/build-update-manifest.mjs", "package.json", ".github/workflows/ci.yml"],
+    markers: ["update_url", "buildUpdateManifest", "verify:update-manifest", "build/update.json"]
+  },
   {
     id: "provider.endpoint-normalization",
     description: "OpenAI-compatible base URL normalization is available in runtime and settings surfaces",

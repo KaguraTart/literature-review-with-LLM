@@ -175,7 +175,13 @@ The packaged plugin is generated at:
 build/literature-review-with-llm.xpi
 ```
 
-The release asset is uploaded under GitHub Releases rather than committed to the repository.
+The Zotero update manifest is generated at:
+
+```text
+build/update.json
+```
+
+`addon/manifest.json` points Zotero to the stable GitHub Releases URL for `update.json`. The update manifest records the tagged XPI download URL, the current XPI `sha256` hash, and Zotero compatibility bounds. Both `literature-review-with-llm.xpi` and `update.json` are uploaded as release artifacts rather than committed to the repository.
 
 ## Current Limitations
 
@@ -195,7 +201,6 @@ The release asset is uploaded under GitHub Releases rather than committed to the
 - Improve structured extraction quality for screenshots, PDF figures, tables, and experimental results with local OCR/table reconstruction.
 - Add better candidate-paper ranking and citation-network expansion.
 - Add per-provider setup guides with screenshots.
-- Add automatic update metadata workflow for XPI releases.
 - Add stronger UI tests for the embedded Zotero side panel.
 - Add configurable prompt packs for different research domains.
 - Add export templates for thesis notes, review reports, and paper reading logs.
