@@ -137,6 +137,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     const bindings = {
       "zms-open-reader": () => this.openReader(),
       "zms-save-session": () => this.saveSession({ quiet: false }),
+      "zms-export-reading-log": () => this.exportReadingLog(),
       "zms-export-comparison-report": () => this.exportComparisonReport(),
       "zms-search-candidates": () => this.searchCandidates(),
       "zms-expand-citation-network": () => this.expandCandidateCitationNetwork(),
@@ -407,6 +408,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-attach-candidate-pdfs", this.t("attachCandidatePdfs"));
     setText("zms-reconcile-candidate-duplicates", this.t("reconcileCandidateDuplicates"));
     setText("zms-save-session", this.t("saveSession"));
+    setText("zms-export-reading-log", this.t("exportReadingLog"));
     setText("zms-export-comparison-report", this.t("exportComparisonReport"));
     setText("zms-open-reader", this.t("openReader"));
     setText("zms-writeback-title", this.t("writePreview"));
@@ -1343,6 +1345,24 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.setStatus(`${this.t("comparisonReportDone")}: ${reportPath}`);
     } catch (err) {
       this.setStatus(`${this.t("comparisonReportFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async exportReadingLog() {
+    try {
+      const now = new Date().toISOString();
+      const logPath = readingLogMarkdownPath(this.state.outputDir, this.state.item);
+      this.setStatus(this.t("readingLogExporting"));
+      await writeTextAtomic(logPath, renderReadingLogMarkdown(this.state.context || {}, {
+        item: this.state.item,
+        outputLanguage: this.state.outputLanguage,
+        generatedAt: now,
+        logPath,
+        contextSourceHash: this.state.contextSourceHash
+      }), `${logPath}.${Date.now()}.tmp`);
+      this.setStatus(`${this.t("readingLogDone")}: ${logPath}`);
+    } catch (err) {
+      this.setStatus(`${this.t("readingLogFailed")}: ${safeError(err)}`);
     }
   },
 
@@ -3064,6 +3084,194 @@ function comparisonSummaryText(contexts, uiLanguage) {
   if (!entries.length) return "";
   const label = uiLanguage === "zh-CN" ? "对比论文" : "Comparison papers";
   return `${label}: ${entries.slice(0, MAX_COMPARISON_PAPERS).join(" | ")}`;
+}
+
+function renderReadingLogMarkdown(context, options = {}) {
+  const labels = readingLogLabels(options.outputLanguage);
+  const metadata = context?.metadata || {};
+  const diagnostics = context?.diagnostics || {};
+  const generatedAt = options.generatedAt || new Date().toISOString();
+  const itemKey = options.item?.key || "";
+  const collectionKey = workbenchCollectionKey(options.item);
+  const dimensions = readingLogDimensions(labels);
+  const lines = [
+    "---",
+    "templateVersion: paper-reading-log-v1",
+    `generatedAt: ${generatedAt}`,
+    `collectionKey: ${yamlScalar(collectionKey)}`,
+    `itemKey: ${yamlScalar(itemKey)}`,
+    `contextSourceHash: ${yamlScalar(options.contextSourceHash || "")}`,
+    `logPath: ${yamlScalar(options.logPath || "")}`,
+    "---",
+    "",
+    `# ${labels.title}`,
+    "",
+    `- ${labels.paperTitle}: ${mdText(metadata.title || itemKey || "")}`,
+    `- ${labels.authors}: ${mdText(Array.isArray(metadata.authors) ? metadata.authors.join(", ") : "")}`,
+    `- ${labels.year}: ${mdText(metadata.year || "")}`,
+    `- DOI: ${mdText(metadata.doi || "")}`,
+    `- ${labels.generatedAt}: ${generatedAt}`,
+    `- ${labels.logFile}: ${mdText(options.logPath || "")}`,
+    "",
+    `## ${labels.contextQuality}`,
+    "",
+    `- ${labels.chunks}: ${Number(diagnostics.chunkCount) || 0}`,
+    `- ${labels.fulltextChars}: ${Number(diagnostics.fulltextChars) || 0}`,
+    `- ${labels.annotations}: ${Number(diagnostics.annotationCount) || 0}`,
+    `- ${labels.notesCount}: ${Number(diagnostics.noteCount) || 0}`,
+    `- ${labels.summaryChars}: ${Number(diagnostics.summaryChars) || 0}`,
+    ...(diagnostics.error ? [`- ${labels.error}: ${mdText(diagnostics.error)}`] : []),
+    "",
+    `## ${labels.checklist}`,
+    "",
+    `- [ ] ${labels.checkProblem}`,
+    `- [ ] ${labels.checkMethod}`,
+    `- [ ] ${labels.checkEvidence}`,
+    `- [ ] ${labels.checkLimits}`,
+    `- [ ] ${labels.checkReuse}`,
+    "",
+    `## ${labels.structuredNotes}`,
+    ""
+  ];
+  for (const dimension of dimensions) {
+    const evidence = readingLogEvidenceForDimension(context, dimension, 3);
+    lines.push(
+      `### ${dimension.label}`,
+      "",
+      `- ${labels.evidence}: ${evidence.length ? evidence.map((item) => `${item.label} ${truncateText(item.text, 220)}`).join("<br>") : labels.noEvidence}`,
+      `- ${labels.notes}: `,
+      `- ${labels.confidence}: `,
+      ""
+    );
+  }
+  lines.push(
+    `## ${labels.evidenceIndex}`,
+    ""
+  );
+  const overview = readingLogEvidenceForDimension(context, readingLogOverviewDimension(labels), 8);
+  if (overview.length) {
+    for (const item of overview) lines.push(`- ${item.label} ${truncateText(item.text, 360)}`);
+  } else {
+    lines.push(`- ${labels.noEvidence}`);
+  }
+  lines.push(
+    "",
+    `## ${labels.reusePlan}`,
+    "",
+    `- ${labels.reviewUse}: `,
+    `- ${labels.methodUse}: `,
+    `- ${labels.experimentUse}: `,
+    `- ${labels.followUp}: `,
+    ""
+  );
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+function readingLogEvidenceForDimension(context, dimension, limit = 3) {
+  return selectRelevantChunks(context?.chunks || [], dimension.query, limit)
+    .map((chunk) => ({
+      label: chunkEvidenceLabel(chunk),
+      text: chunk.text || ""
+    }))
+    .filter((item) => item.text);
+}
+
+function readingLogDimensions(labels) {
+  return [
+    { id: "problem", label: labels.researchProblem, query: "research question problem objective motivation gap 研究问题 研究目标 问题 动机 空白" },
+    { id: "method", label: labels.method, query: "method model algorithm framework architecture 方法 模型 算法 框架 结构" },
+    { id: "evidence", label: labels.evidenceAndResults, query: "experiment result metric dataset evaluation finding 实验 结果 指标 数据集 评估 发现" },
+    { id: "limitation", label: labels.limitations, query: "limitation weakness threat failure future 局限 不足 威胁 失败 未来" },
+    { id: "reuse", label: labels.reusableIdeas, query: "reuse implication insight contribution idea design 可复用 启发 贡献 思路 设计" }
+  ];
+}
+
+function readingLogOverviewDimension(labels) {
+  return {
+    id: "overview",
+    label: labels.evidenceIndex,
+    query: "summary abstract contribution method experiment result limitation 摘要 贡献 方法 实验 结果 局限"
+  };
+}
+
+function readingLogLabels(outputLanguage) {
+  const zh = /^zh/i.test(String(outputLanguage || ""));
+  if (zh) {
+    return {
+      title: "论文阅读日志",
+      paperTitle: "题名",
+      authors: "作者",
+      year: "年份",
+      generatedAt: "生成时间",
+      logFile: "日志文件",
+      contextQuality: "上下文质量",
+      chunks: "片段",
+      fulltextChars: "全文字符",
+      annotations: "注释",
+      notesCount: "笔记",
+      summaryChars: "已有摘要字符",
+      error: "错误",
+      checklist: "阅读核对清单",
+      checkProblem: "确认论文解决的问题、对象和适用场景。",
+      checkMethod: "记录核心方法、模型结构或算法流程。",
+      checkEvidence: "核对数据、实验指标、结果和证据标签。",
+      checkLimits: "标注局限、失败条件和不确定性。",
+      checkReuse: "提炼可写入综述、开题或方法复现的要点。",
+      structuredNotes: "结构化笔记",
+      researchProblem: "研究问题",
+      method: "方法/模型",
+      evidenceAndResults: "证据与结果",
+      limitations: "局限与不确定性",
+      reusableIdeas: "可复用思想",
+      evidence: "证据",
+      notes: "笔记",
+      confidence: "置信度",
+      noEvidence: "暂无可用证据片段，请人工补充或等待 Zotero 完成全文索引。",
+      evidenceIndex: "证据摘录索引",
+      reusePlan: "复用计划",
+      reviewUse: "综述写作用途",
+      methodUse: "方法复现/借鉴",
+      experimentUse: "实验对比用途",
+      followUp: "后续问题"
+    };
+  }
+  return {
+    title: "Paper Reading Log",
+    paperTitle: "Title",
+    authors: "Authors",
+    year: "Year",
+    generatedAt: "Generated at",
+    logFile: "Log file",
+    contextQuality: "Context Quality",
+    chunks: "chunks",
+    fulltextChars: "fulltext chars",
+    annotations: "annotations",
+    notesCount: "notes",
+    summaryChars: "existing summary chars",
+    error: "error",
+    checklist: "Reading Checklist",
+    checkProblem: "Confirm the research problem, object, and applicable scenario.",
+    checkMethod: "Record the core method, model structure, or algorithm flow.",
+    checkEvidence: "Check data, metrics, results, and evidence labels.",
+    checkLimits: "Mark limitations, failure conditions, and uncertainty.",
+    checkReuse: "Extract points reusable in a review, proposal, or reproduction plan.",
+    structuredNotes: "Structured Notes",
+    researchProblem: "Research Problem",
+    method: "Method / Model",
+    evidenceAndResults: "Evidence and Results",
+    limitations: "Limitations and Uncertainty",
+    reusableIdeas: "Reusable Ideas",
+    evidence: "Evidence",
+    notes: "Notes",
+    confidence: "Confidence",
+    noEvidence: "No evidence excerpts are available yet; add notes manually or wait for Zotero full-text indexing.",
+    evidenceIndex: "Evidence Excerpt Index",
+    reusePlan: "Reuse Plan",
+    reviewUse: "Review-writing use",
+    methodUse: "Method reuse",
+    experimentUse: "Experiment comparison use",
+    followUp: "Follow-up questions"
+  };
 }
 
 function renderComparisonReportMarkdown(context, options = {}) {
@@ -4820,6 +5028,12 @@ function importLedgerJsonlPath(outputDir, item) {
 function candidateReviewMarkdownPath(outputDir, item) {
   const collectionKey = workbenchCollectionKey(item);
   return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", "candidate-review.md");
+}
+
+function readingLogMarkdownPath(outputDir, item) {
+  const collectionKey = workbenchCollectionKey(item);
+  const itemKey = sanitizeFilename(item?.key || "paper");
+  return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", `reading-log-${itemKey}.md`);
 }
 
 function comparisonReportMarkdownPath(outputDir, item) {

@@ -207,6 +207,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     candidateStatusText: (records: any[], path: string, translate?: (key: string) => string) => string;
     candidateReviewMarkdownPath: (outputDir: string, item: any) => string;
     renderCandidateReviewMarkdown: (records: any[], options?: any) => string;
+    readingLogMarkdownPath: (outputDir: string, item: any) => string;
+    renderReadingLogMarkdown: (context: any, options?: any) => string;
     comparisonReportMarkdownPath: (outputDir: string, item: any) => string;
     renderComparisonReportMarkdown: (context: any, options?: any) => string;
     citationNetworkSeedsForWorkbench: (records: any[], item: any, limit?: number) => any[];
@@ -230,6 +232,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
       renderSessions: () => Promise<void>;
       setStatus: (message: string) => void;
       saveSession: () => Promise<void>;
+      exportReadingLog: () => Promise<void>;
       exportComparisonReport: () => Promise<void>;
       searchCandidates: () => Promise<void>;
       t: (key: string) => string;
@@ -1375,6 +1378,93 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reviewPath)).toContain("# Candidate Paper Review");
     expect(files.get(reviewPath)).toContain("**Candidate A** (2025)");
     expect(dom.elements.get("zms-status").textContent).toContain(`candidateReviewDone: ${reviewPath}`);
+  });
+
+  it("renders a paper reading log with context evidence labels", () => {
+    const loaded = loadWorkbenchHelpers();
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const item = {
+      key: "ITEM",
+      getCollections: () => [10]
+    };
+    const report = loaded.renderReadingLogMarkdown({
+      metadata: {
+        title: "Reading Log Paper",
+        authors: ["Ada One", "Bo Two"],
+        year: "2026",
+        doi: "10.1000/log"
+      },
+      chunks: [
+        {
+          chunkId: "summary-method",
+          sourceType: "summary",
+          locator: "summary:1",
+          sourceHash: "methodhash",
+          text: "The paper proposes a graph attention method and reports experiment results."
+        },
+        {
+          chunkId: "note-limit",
+          sourceType: "note",
+          locator: "note:1",
+          sourceHash: "limithash",
+          text: "Manual note: limitations include sparse scenario failures."
+        }
+      ],
+      diagnostics: { chunkCount: 2, fulltextChars: 1600, annotationCount: 1, noteCount: 1, summaryChars: 300 }
+    }, {
+      item,
+      outputLanguage: "zh-CN",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      logPath: "/tmp/out/collections/COL/writing/reading-log-ITEM.md",
+      contextSourceHash: "sourcehash"
+    });
+
+    expect(report).toContain("templateVersion: paper-reading-log-v1");
+    expect(report).toContain("# 论文阅读日志");
+    expect(report).toContain("- 题名: Reading Log Paper");
+    expect(report).toContain("## 阅读核对清单");
+    expect(report).toContain("### 方法/模型");
+    expect(report).toContain("[chunk:summary-method source=summary locator=summary:1 hash=methodhash]");
+    expect(report).toContain("[chunk:note-limit source=note locator=note:1 hash=limithash]");
+    expect(report).toContain("## 复用计划");
+  });
+
+  it("exports a paper reading log from the workbench context", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "ITEM",
+      getCollections: () => [10]
+    };
+    workbench.state.contextSourceHash = "sourcehash";
+    workbench.state.context = {
+      metadata: { title: "Reading Log Paper", authors: ["Ada One"], year: "2026", doi: "10.1000/log" },
+      chunks: [
+        {
+          chunkId: "summary-method",
+          sourceType: "summary",
+          locator: "summary:1",
+          sourceHash: "methodhash",
+          text: "The paper proposes a method and reports experiment results."
+        }
+      ],
+      diagnostics: { chunkCount: 1, fulltextChars: 900, annotationCount: 0, noteCount: 0, summaryChars: 100 }
+    };
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportReadingLog();
+
+    const logPath = "/tmp/out/collections/COL/writing/reading-log-ITEM.md";
+    expect(files.get(logPath)).toContain("# Paper Reading Log");
+    expect(files.get(logPath)).toContain("Reading Log Paper");
+    expect(files.get(logPath)).toContain("[chunk:summary-method source=summary locator=summary:1 hash=methodhash]");
+    expect(dom.elements.get("zms-status").textContent).toContain(`readingLogDone: ${logPath}`);
   });
 
   it("renders a literature matrix report with comparison evidence labels", () => {

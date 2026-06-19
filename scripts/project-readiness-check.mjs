@@ -306,6 +306,19 @@ const SOURCE_MARKERS = [
     ]
   },
   {
+    id: "reading-log.report",
+    description: "Workbench exports a reusable single-paper reading log with evidence labels and manual note fields",
+    files: ["addon/content/workbench.xhtml", "addon/content/workbench.js", "addon/content/messages.js", "tests/workbenchWriteback.test.ts"],
+    markers: [
+      "zms-export-reading-log",
+      "exportReadingLog",
+      "renderReadingLogMarkdown",
+      "readingLogMarkdownPath",
+      "templateVersion: paper-reading-log-v1",
+      "readingLogDone"
+    ]
+  },
+  {
     id: "collection.workspace",
     description: "Collection workspace artifacts, topic clustering, and summary insight extraction are wired",
     files: ["addon/bootstrap.js"],
