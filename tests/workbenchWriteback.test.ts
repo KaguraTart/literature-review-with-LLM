@@ -205,6 +205,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     renderImportLedgerJsonl: (entries: any[]) => string;
     candidateDecisionCounts: (records: any[]) => any;
     candidateStatusText: (records: any[], path: string, translate?: (key: string) => string) => string;
+    candidateReviewMarkdownPath: (outputDir: string, item: any) => string;
+    renderCandidateReviewMarkdown: (records: any[], options?: any) => string;
     citationNetworkSeedsForWorkbench: (records: any[], item: any, limit?: number) => any[];
     citationNetworkMetaText: (record: any) => string;
     applyCandidateDecisions: (records: any[], decisions: Record<string, string>, now: string) => any[];
@@ -1282,6 +1284,94 @@ describe("workbench writeback helpers", () => {
     ]);
     expect(helpers.renderImportLedgerJsonl(helpers.discoveredLedgerEntries([record], new Set())))
       .toContain("\"action\":\"discovered\"");
+  });
+
+  it("renders a candidate review Markdown report for manual screening", () => {
+    const report = helpers.renderCandidateReviewMarkdown([
+      {
+        candidateId: "doi:10.1000/a",
+        title: "Candidate A",
+        authors: ["Ada One", "Bo Two"],
+        year: 2025,
+        venue: "Journal A",
+        abstract: "A useful paper for the current review.",
+        sourceUrl: "https://doi.org/10.1000/a",
+        pdfUrl: "https://example.test/a.pdf",
+        decision: "include",
+        collectionKey: "COL",
+        ids: { doi: "10.1000/a", semanticScholarId: "S2-A" },
+        sources: ["semantic_scholar"],
+        priority: { tier: "high", score: 82, recommendedDecision: "include", reasons: ["PDF available", "citation-network relation"] },
+        networkOrigins: [{ direction: "citations", seedId: "S2-Seed", seedTitle: "Seed Paper" }],
+        quality: { dedupeStatus: "new", isAbstractOnly: false }
+      },
+      {
+        candidateId: "doi:10.1000/dup",
+        title: "Duplicate Candidate",
+        decision: "include",
+        ids: { doi: "10.1000/dup" },
+        sources: ["crossref"],
+        priority: { tier: "duplicate", score: 0, recommendedDecision: "exclude", reasons: ["duplicate candidate"] },
+        quality: { dedupeStatus: "duplicate", isAbstractOnly: false }
+      }
+    ], {
+      item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
+      outputLanguage: "zh-CN",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      candidatePath: "/tmp/out/collections/COL/sources/candidates.jsonl",
+      ledgerPath: "/tmp/out/collections/COL/sources/import-ledger.jsonl",
+      reviewPath: "/tmp/out/collections/COL/writing/candidate-review.md"
+    });
+
+    expect(report).toContain("templateVersion: candidate-review-v1");
+    expect(report).toContain("# 候选论文审阅报告");
+    expect(report).toContain("## 人工复核清单");
+    expect(report).toContain("### 纳入");
+    expect(report).toContain("**Candidate A** (2025)");
+    expect(report).toContain("优先级: high 82");
+    expect(report).toContain("引用网络来源: citations from Seed Paper");
+    expect(report).toContain("[PDF](https://example.test/a.pdf)");
+    expect(report).toContain("### 重复项");
+    expect(report).toContain("Duplicate Candidate");
+  });
+
+  it("exports a candidate review report from the workbench queue", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "ITEM",
+      getField: (field: string) => field === "title" ? "Current Paper" : "",
+      getCollections: () => [10]
+    };
+    workbench.state.candidates = [
+      {
+        candidateId: "doi:10.1000/a",
+        title: "Candidate A",
+        year: 2025,
+        decision: "include",
+        sourceUrl: "https://doi.org/10.1000/a",
+        ids: { doi: "10.1000/a" },
+        sources: ["semantic_scholar"],
+        priority: { tier: "high", score: 81, recommendedDecision: "include", reasons: ["stable DOI or arXiv identifier"] },
+        quality: { dedupeStatus: "new", isAbstractOnly: false }
+      }
+    ];
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportCandidateReview();
+
+    const candidatePath = "/tmp/out/collections/COL/sources/candidates.jsonl";
+    const reviewPath = "/tmp/out/collections/COL/writing/candidate-review.md";
+    expect(files.get(candidatePath)).toContain("\"candidateId\":\"doi:10.1000/a\"");
+    expect(files.get(reviewPath)).toContain("# Candidate Paper Review");
+    expect(files.get(reviewPath)).toContain("**Candidate A** (2025)");
+    expect(dom.elements.get("zms-status").textContent).toContain(`candidateReviewDone: ${reviewPath}`);
   });
 
   it("chooses citation-network seeds from the current item and high-value candidates", () => {

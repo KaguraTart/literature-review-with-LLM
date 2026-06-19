@@ -275,16 +275,19 @@ const SOURCE_MARKERS = [
   },
   {
     id: "candidate.actions",
-    description: "Workbench supports candidate search, citation-network expansion, import, PDF attachment, and duplicate reconciliation",
+    description: "Workbench supports candidate search, citation-network expansion, review export, import, PDF attachment, and duplicate reconciliation",
     files: ["addon/content/workbench.xhtml", "addon/content/workbench.js"],
     markers: [
       "zms-search-candidates",
       "zms-expand-citation-network",
+      "zms-export-candidate-review",
       "zms-import-candidates",
       "zms-attach-candidate-pdfs",
       "zms-reconcile-candidate-duplicates",
       "importIncludedCandidates",
       "expandCandidateCitationNetwork",
+      "exportCandidateReview",
+      "renderCandidateReviewMarkdown",
       "attachCandidatePdfs",
       "reconcileCandidateDuplicates"
     ]

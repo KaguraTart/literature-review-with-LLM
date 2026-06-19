@@ -141,6 +141,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-expand-citation-network": () => this.expandCandidateCitationNetwork(),
       "zms-load-candidates": () => this.loadCandidates(),
       "zms-save-candidates": () => this.saveCandidates(),
+      "zms-export-candidate-review": () => this.exportCandidateReview(),
       "zms-import-candidates": () => this.importIncludedCandidates(),
       "zms-attach-candidate-pdfs": () => this.attachCandidatePdfs(),
       "zms-reconcile-candidate-duplicates": () => this.reconcileCandidateDuplicates(),
@@ -400,6 +401,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-expand-citation-network", this.t("expandCitationNetwork"));
     setText("zms-load-candidates", this.t("loadCandidates"));
     setText("zms-save-candidates", this.t("saveCandidateDecisions"));
+    setText("zms-export-candidate-review", this.t("exportCandidateReview"));
     setText("zms-import-candidates", this.t("importCandidates"));
     setText("zms-attach-candidate-pdfs", this.t("attachCandidatePdfs"));
     setText("zms-reconcile-candidate-duplicates", this.t("reconcileCandidateDuplicates"));
@@ -826,6 +828,41 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.setStatus(`${this.t("candidateCitationNetworkDone")}: ${result.records.length}; seeds ${seeds.length}${errorSuffix}`);
     } catch (err) {
       this.setStatus(`${this.t("candidateCitationNetworkFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async exportCandidateReview() {
+    try {
+      const now = new Date().toISOString();
+      this.state.candidatePath = this.state.candidatePath || candidateJsonlPath(this.state.outputDir, this.state.item);
+      const loaded = this.state.candidates.length
+        ? this.state.candidates
+        : await loadCandidateRecords(this.state.candidatePath).catch(() => []);
+      const decisions = candidateDecisionMapFromDom();
+      const previousDecisions = candidatePreviousDecisionMap(loaded);
+      const candidates = applyCandidateDecisions(loaded, decisions, now);
+      if (!candidates.length) {
+        this.setStatus(this.t("candidateReviewNone"));
+        return;
+      }
+      const reviewPath = candidateReviewMarkdownPath(this.state.outputDir, this.state.item);
+      const ledgerPath = importLedgerJsonlPath(this.state.outputDir, this.state.item);
+      this.setStatus(this.t("candidateReviewExporting"));
+      await saveCandidateRecords(this.state.candidatePath, candidates);
+      await appendImportLedgerEntries(ledgerPath, decisionLedgerEntries(candidates, previousDecisions, decisions, now));
+      await writeTextAtomic(reviewPath, renderCandidateReviewMarkdown(candidates, {
+        item: this.state.item,
+        outputLanguage: this.state.outputLanguage,
+        generatedAt: now,
+        candidatePath: this.state.candidatePath,
+        ledgerPath,
+        reviewPath
+      }), `${reviewPath}.${Date.now()}.tmp`);
+      this.state.candidates = candidates;
+      this.renderCandidates();
+      this.setStatus(`${this.t("candidateReviewDone")}: ${reviewPath}`);
+    } catch (err) {
+      this.setStatus(`${this.t("candidateReviewFailed")}: ${safeError(err)}`);
     }
   },
 
@@ -4490,6 +4527,11 @@ function importLedgerJsonlPath(outputDir, item) {
   return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "sources", "import-ledger.jsonl");
 }
 
+function candidateReviewMarkdownPath(outputDir, item) {
+  const collectionKey = workbenchCollectionKey(item);
+  return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", "candidate-review.md");
+}
+
 function candidateSearchOptionsFromDom(item) {
   const query = document.getElementById("zms-candidate-query")?.value?.trim() || item?.getField?.("title") || item?.key || "";
   const limit = clampNumber(document.getElementById("zms-candidate-limit")?.value, 1, 50, 10);
@@ -4661,6 +4703,244 @@ function candidateStatusText(records, path, translate = (key) => key) {
     `${t("candidatePending")}: ${counts.user_pending}`
   ].join(" | ");
   return [summary, path].filter(Boolean).join("\n");
+}
+
+function renderCandidateReviewMarkdown(records, options = {}) {
+  const candidates = [...(records || [])];
+  const labels = candidateReviewLabels(options.outputLanguage);
+  const counts = candidateDecisionCounts(candidates);
+  const tierCounts = candidatePriorityTierCounts(candidates);
+  const collectionKey = workbenchCollectionKey(options.item);
+  const title = options.item?.getField?.("title") || options.item?.getDisplayTitle?.() || options.item?.key || collectionKey;
+  const generatedAt = options.generatedAt || new Date().toISOString();
+  const lines = [
+    "---",
+    "templateVersion: candidate-review-v1",
+    `generatedAt: ${generatedAt}`,
+    `collectionKey: ${yamlScalar(collectionKey)}`,
+    `candidateCount: ${candidates.length}`,
+    `candidateJsonl: ${yamlScalar(options.candidatePath || "")}`,
+    `importLedger: ${yamlScalar(options.ledgerPath || "")}`,
+    "---",
+    "",
+    `# ${labels.title}`,
+    "",
+    `- ${labels.paper}: ${mdText(title)}`,
+    `- ${labels.collection}: ${mdText(collectionKey)}`,
+    `- ${labels.generatedAt}: ${generatedAt}`,
+    `- ${labels.sourceFile}: ${mdText(options.candidatePath || "")}`,
+    `- ${labels.reviewFile}: ${mdText(options.reviewPath || "")}`,
+    "",
+    `## ${labels.summary}`,
+    "",
+    `- ${labels.total}: ${candidates.length}`,
+    `- ${labels.include}: ${counts.include || 0}`,
+    `- ${labels.toRead}: ${counts.to_read || 0}`,
+    `- ${labels.pending}: ${counts.user_pending || 0}`,
+    `- ${labels.exclude}: ${counts.exclude || 0}`,
+    `- ${labels.high}: ${tierCounts.high || 0}`,
+    `- ${labels.medium}: ${tierCounts.medium || 0}`,
+    `- ${labels.low}: ${tierCounts.low || 0}`,
+    `- ${labels.duplicate}: ${tierCounts.duplicate || 0}`,
+    "",
+    `## ${labels.checklist}`,
+    "",
+    `- [ ] ${labels.checkIdentifiers}`,
+    `- [ ] ${labels.checkFullText}`,
+    `- [ ] ${labels.checkDuplicates}`,
+    `- [ ] ${labels.checkRelevance}`,
+    `- [ ] ${labels.checkImport}`,
+    "",
+    `## ${labels.queue}`,
+    ""
+  ];
+  for (const group of candidateReviewGroups(candidates)) {
+    if (!group.records.length) continue;
+    lines.push(`### ${labels[group.labelKey] || group.labelKey}`, "");
+    group.records.forEach((record, index) => {
+      lines.push(...candidateReviewRecordLines(record, index + 1, labels), "");
+    });
+  }
+  lines.push(`## ${labels.notes}`, "", `- ${labels.notesPlaceholder}`, "");
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+function candidateReviewGroups(records) {
+  return [
+    { labelKey: "include", records: candidateReviewGroupRecords(records, (record) => normalizeCandidateDecision(record.decision) === "include" && record.quality?.dedupeStatus !== "duplicate") },
+    { labelKey: "toRead", records: candidateReviewGroupRecords(records, (record) => normalizeCandidateDecision(record.decision) === "to_read" && record.quality?.dedupeStatus !== "duplicate") },
+    { labelKey: "pending", records: candidateReviewGroupRecords(records, (record) => normalizeCandidateDecision(record.decision) === "user_pending" && record.quality?.dedupeStatus !== "duplicate") },
+    { labelKey: "exclude", records: candidateReviewGroupRecords(records, (record) => normalizeCandidateDecision(record.decision) === "exclude" && record.quality?.dedupeStatus !== "duplicate") },
+    { labelKey: "duplicate", records: candidateReviewGroupRecords(records, (record) => record.quality?.dedupeStatus === "duplicate" || record.priority?.tier === "duplicate") }
+  ];
+}
+
+function candidateReviewGroupRecords(records, predicate) {
+  return (records || [])
+    .filter(predicate)
+    .sort((left, right) => (right.priority?.score || 0) - (left.priority?.score || 0) || Number(right.year || 0) - Number(left.year || 0));
+}
+
+function candidateReviewRecordLines(record, index, labels) {
+  const ids = [
+    record.ids?.doi ? `DOI: ${record.ids.doi}` : "",
+    record.ids?.arxivId ? `arXiv: ${record.ids.arxivId}` : "",
+    record.ids?.semanticScholarId ? `Semantic Scholar: ${record.ids.semanticScholarId}` : ""
+  ].filter(Boolean).join("; ");
+  const status = [
+    `${labels.decision}: ${candidateDecisionLabel(record.decision, candidateReviewDecisionLabel(labels))}`,
+    record.priority ? `${labels.priority}: ${record.priority.tier || "unknown"} ${Number.isFinite(record.priority.score) ? record.priority.score : ""}`.trim() : "",
+    record.priority?.recommendedDecision ? `${labels.recommended}: ${candidateDecisionLabel(record.priority.recommendedDecision, candidateReviewDecisionLabel(labels))}` : "",
+    record.quality?.dedupeStatus ? `${labels.dedupe}: ${record.quality.dedupeStatus}` : "",
+    record.importStatus ? `${labels.importStatus}: ${record.importStatus}` : "",
+    record.pdfAttachmentStatus ? `${labels.pdfStatus}: ${record.pdfAttachmentStatus}` : ""
+  ].filter(Boolean).join(" | ");
+  const links = [
+    record.sourceUrl ? `[${labels.source}](${record.sourceUrl})` : "",
+    record.pdfUrl ? `[PDF](${record.pdfUrl})` : ""
+  ].filter(Boolean).join(" | ");
+  return [
+    `${index}. **${mdText(record.title || record.candidateId)}**${record.year ? ` (${record.year})` : ""}`,
+    `   - ${status}`,
+    ids ? `   - ${labels.identifiers}: ${mdText(ids)}` : "",
+    record.authors?.length ? `   - ${labels.authors}: ${mdText(record.authors.slice(0, 8).join(", "))}` : "",
+    record.venue ? `   - ${labels.venue}: ${mdText(record.venue)}` : "",
+    record.sources?.length ? `   - ${labels.sources}: ${mdText(record.sources.join(", "))}` : "",
+    record.priority?.reasons?.length ? `   - ${labels.reasons}: ${mdText(record.priority.reasons.join("; "))}` : "",
+    record.networkOrigins?.length ? `   - ${labels.network}: ${mdText(candidateReviewNetworkOrigins(record.networkOrigins))}` : "",
+    links ? `   - ${labels.links}: ${links}` : "",
+    record.abstract ? `   - ${labels.abstract}: ${mdText(truncateText(record.abstract, 500))}` : "",
+    `   - ${labels.notesLine}: `
+  ].filter(Boolean);
+}
+
+function candidatePriorityTierCounts(records) {
+  return (records || []).reduce((counts, record) => {
+    const tier = record?.priority?.tier || "none";
+    counts[tier] = (counts[tier] || 0) + 1;
+    return counts;
+  }, { high: 0, medium: 0, low: 0, duplicate: 0 });
+}
+
+function candidateReviewDecisionLabel(labels) {
+  return (key) => ({
+    candidateInclude: labels.include,
+    candidateExclude: labels.exclude,
+    candidateToRead: labels.toRead,
+    candidatePending: labels.pending
+  }[key] || key);
+}
+
+function candidateReviewNetworkOrigins(origins) {
+  return (origins || []).map((origin) => {
+    return [origin.direction, origin.seedTitle || origin.seedId].filter(Boolean).join(" from ");
+  }).join("; ");
+}
+
+function candidateReviewLabels(outputLanguage) {
+  const zh = /^zh/i.test(String(outputLanguage || ""));
+  if (zh) {
+    return {
+      title: "候选论文审阅报告",
+      paper: "当前论文",
+      collection: "Collection",
+      generatedAt: "生成时间",
+      sourceFile: "候选 JSONL",
+      reviewFile: "审阅报告",
+      summary: "统计摘要",
+      total: "候选总数",
+      include: "纳入",
+      toRead: "待读",
+      pending: "待确认",
+      exclude: "排除",
+      high: "高优先级",
+      medium: "中优先级",
+      low: "低优先级",
+      duplicate: "重复项",
+      checklist: "人工复核清单",
+      checkIdentifiers: "核对 DOI、arXiv、Semantic Scholar ID 是否对应同一篇论文。",
+      checkFullText: "优先确认是否有 PDF 或开放获取全文。",
+      checkDuplicates: "检查重复项和疑似重复项，避免重复导入 Zotero。",
+      checkRelevance: "判断与当前研究问题、方法或综述分类是否相关。",
+      checkImport: "只把确认纳入的条目导入 Zotero，并在必要时补全 PDF。",
+      queue: "审阅队列",
+      notes: "人工备注",
+      notesPlaceholder: "在这里记录纳入理由、排除理由、待读顺序或后续检索式。",
+      decision: "决策",
+      priority: "优先级",
+      recommended: "建议",
+      dedupe: "去重",
+      importStatus: "导入状态",
+      pdfStatus: "PDF 状态",
+      identifiers: "标识符",
+      authors: "作者",
+      venue: "期刊/会议",
+      sources: "来源",
+      reasons: "排序理由",
+      network: "引用网络来源",
+      links: "链接",
+      source: "来源页",
+      abstract: "摘要",
+      notesLine: "人工判断"
+    };
+  }
+  return {
+    title: "Candidate Paper Review",
+    paper: "Current paper",
+    collection: "Collection",
+    generatedAt: "Generated at",
+    sourceFile: "Candidate JSONL",
+    reviewFile: "Review file",
+    summary: "Summary",
+    total: "Total candidates",
+    include: "Include",
+    toRead: "To Read",
+    pending: "Pending",
+    exclude: "Exclude",
+    high: "High priority",
+    medium: "Medium priority",
+    low: "Low priority",
+    duplicate: "Duplicates",
+    checklist: "Manual Review Checklist",
+    checkIdentifiers: "Confirm DOI, arXiv, and Semantic Scholar IDs refer to the same paper.",
+    checkFullText: "Prefer papers with PDF or open-access full text.",
+    checkDuplicates: "Check duplicates and possible duplicates before importing into Zotero.",
+    checkRelevance: "Judge relevance to the current question, method, or review taxonomy.",
+    checkImport: "Import only confirmed items into Zotero and attach PDFs when needed.",
+    queue: "Review Queue",
+    notes: "Manual Notes",
+    notesPlaceholder: "Record inclusion reasons, exclusion reasons, reading order, or follow-up search queries here.",
+    decision: "Decision",
+    priority: "Priority",
+    recommended: "Recommended",
+    dedupe: "Dedupe",
+    importStatus: "Import status",
+    pdfStatus: "PDF status",
+    identifiers: "Identifiers",
+    authors: "Authors",
+    venue: "Venue",
+    sources: "Sources",
+    reasons: "Ranking reasons",
+    network: "Citation network",
+    links: "Links",
+    source: "Source",
+    abstract: "Abstract",
+    notesLine: "Manual judgment"
+  };
+}
+
+function mdText(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function yamlScalar(value) {
+  const text = String(value ?? "");
+  return JSON.stringify(text);
+}
+
+function truncateText(value, max = 500) {
+  const text = mdText(value);
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 function candidateDecisionCounts(records) {
