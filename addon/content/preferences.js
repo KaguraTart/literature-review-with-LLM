@@ -1412,6 +1412,19 @@ function providerDefaults(provider) {
       bodyExtra: {}
     };
   }
+  if (id === "openai_responses_compatible" || id === "openai-responses-compatible") {
+    return {
+      id: "openai-responses-compatible",
+      name: "OpenAI Compatible Responses",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1",
+      fullURL: "",
+      model: "",
+      capabilities: { ...commonCapabilities, pdfBase64: true },
+      bodyExtra: {}
+    };
+  }
   if (id === "gemini") {
     return {
       id: "gemini",
@@ -1725,7 +1738,7 @@ function providerDefaults(provider) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = providerDefaults(provider);
     return {
       id: defaults.id,
@@ -1771,6 +1784,7 @@ function normalizeDefaultProfileSelection(profiles) {
 function providerProfileCatalogKey(profile) {
   const id = String(profile?.id || "").trim();
   if (id === "openai_compatible") return "openai-compatible";
+  if (id === "openai_responses_compatible") return "openai-responses-compatible";
   if (id === "anthropic_compatible") return "anthropic-compatible";
   if (id === "azure_openai") return "azure-openai";
   if (id === "moonshot") return "kimi";
@@ -1791,6 +1805,8 @@ function isKnownProviderId(value) {
     "openai",
     "openai-compatible",
     "openai_compatible",
+    "openai-responses-compatible",
+    "openai_responses_compatible",
     "anthropic",
     "anthropic-compatible",
     "gemini",
@@ -1834,6 +1850,7 @@ function isKnownProviderBaseURL(value) {
   return [
     "https://api.minimaxi.com/v1",
     "https://api.openai.com/v1",
+    "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1",
     "https://api.anthropic.com",
     "https://api.anthropic.com/v1",
     "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -1988,6 +2005,7 @@ function providerFromProfile(profile) {
   if (id === "gemini") return "gemini";
   if (id === "azure-openai" || id === "azure_openai") return "azure_openai";
   if (id === "openai-compatible" || id === "openai_compatible") return "openai_compatible";
+  if (id === "openai-responses-compatible" || id === "openai_responses_compatible") return "openai_responses_compatible";
   if (id === "anthropic-compatible" || id === "anthropic_compatible") return "anthropic_compatible";
   if (id === "moonshot") return "kimi";
   if (id === "xai" || id === "groq" || id === "mistral" || id === "together" || id === "kimi" || id === "perplexity" || id === "deepseek" || id === "openrouter" || id === "dashscope" || id === "qwen" || id === "siliconflow" || id === "zhipu" || id === "volcengine" || id === "qianfan" || id === "hunyuan" || id === "ollama") return id;
@@ -2021,6 +2039,11 @@ function providerFromProfile(profile) {
   if (baseURL === "https://api.hunyuan.cloud.tencent.com/v1") return "hunyuan";
   if (baseURL === "http://localhost:11434/v1" || baseURL === "http://127.0.0.1:11434/v1") return "ollama";
   if (baseURL === "http://localhost:1234/v1" || baseURL === "http://127.0.0.1:1234/v1") return "lm_studio";
+  if (profile?.protocol === "openai_responses") {
+    return baseURL === "https://api.openai.com/v1" || baseURL === "https://api.openai.com/v1/responses"
+      ? "openai"
+      : "openai_responses_compatible";
+  }
   return providerFromProtocol(profile?.protocol);
 }
 

@@ -375,6 +375,8 @@ const requiredMarkers = [
   [prefs, '"id":"openai"', "default OpenAI profile"],
   [prefs, '"protocol":"openai_responses"', "OpenAI Responses protocol"],
   [prefs, '"id":"openai-compatible"', "default OpenAI-compatible chat profile"],
+  [prefs, '"id":"openai-responses-compatible"', "default OpenAI-compatible Responses profile"],
+  [prefs, '"baseURL":"https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1"', "OpenAI-compatible Responses base URL template"],
   [prefs, '"id":"anthropic"', "default Anthropic profile"],
   [prefs, '"id":"anthropic-compatible"', "default Anthropic-compatible messages profile"],
   [prefs, '"baseURL":"https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT"', "Anthropic-compatible base URL template"],

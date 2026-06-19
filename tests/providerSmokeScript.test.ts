@@ -202,10 +202,12 @@ describe("provider smoke verifier", () => {
     expect(report.results.map((result: any) => [result.profile, result.protocol, result.text])).toEqual([
       ["openai-compatible", "openai_chat", "OK chat"],
       ["openai", "openai_responses", "OK responses"],
+      ["openai-responses-compatible", "openai_responses", "OK responses"],
       ["anthropic", "anthropic_messages", "OK anthropic"]
     ]);
     expect(report.requests.map((request: any) => request.path)).toEqual([
       "/v1/chat/completions",
+      "/v1/responses",
       "/v1/responses",
       "/v1/messages"
     ]);
@@ -221,11 +223,14 @@ describe("provider smoke verifier", () => {
     expect(report.results.map((result: any) => [result.profile, result.protocol, result.modelCount, result.pages])).toEqual([
       ["openai-compatible", "openai_chat", 3, 2],
       ["openai", "openai_responses", 3, 2],
+      ["openai-responses-compatible", "openai_responses", 3, 2],
       ["anthropic", "anthropic_messages", 3, 2]
     ]);
     expect(report.results[0].modelIds).toEqual(["mock-model-a", "mock-model-b", "mock-model-c"]);
     expect(report.results[0].modelOptions.find((option: any) => option.id === "mock-model-c").label).toBe("Mock Model C");
     expect(report.requests.map((request: any) => request.path)).toEqual([
+      "/v1/models",
+      "/v1/models?after_id=mock-model-b",
       "/v1/models",
       "/v1/models?after_id=mock-model-b",
       "/v1/models",
@@ -242,8 +247,8 @@ describe("provider smoke verifier", () => {
     expect(report).toMatchObject({
       ok: true,
       catalog: true,
-      profileCount: 26,
-      checked: 25,
+      profileCount: 27,
+      checked: 26,
       skipped: 1
     });
     expect(report.results.find((result: any) => result.id === "local-agents")).toMatchObject({
@@ -255,6 +260,14 @@ describe("provider smoke verifier", () => {
       protocol: "openai_responses",
       endpoint: "https://api.openai.com/v1/responses",
       modelsEndpoint: "https://api.openai.com/v1/models",
+      authHeaderNames: ["authorization"],
+      bodyKeys: expect.arrayContaining(["input", "max_output_tokens"])
+    });
+    expect(report.results.find((result: any) => result.id === "openai-responses-compatible")).toMatchObject({
+      ok: true,
+      protocol: "openai_responses",
+      endpoint: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1/responses",
+      modelsEndpoint: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1/models",
       authHeaderNames: ["authorization"],
       bodyKeys: expect.arrayContaining(["input", "max_output_tokens"])
     });
@@ -334,18 +347,20 @@ describe("provider smoke verifier", () => {
       live: true,
       counts: {
         passed: 0,
-        skipped: 4,
+        skipped: 5,
         failed: 0
       }
     });
     expect(report.results.map((result: any) => [result.id, result.status])).toEqual([
       ["openai", "skipped"],
+      ["openai-responses-compatible", "skipped"],
       ["anthropic", "skipped"],
       ["anthropic-compatible", "skipped"],
       ["openai-compatible", "skipped"]
     ]);
-    expect(report.results[2].missing).toContain("ANTHROPIC_COMPATIBLE_BASE_URL");
-    expect(report.results[3].missing).toContain("OPENAI_COMPATIBLE_BASE_URL");
+    expect(report.results[1].missing).toContain("OPENAI_RESPONSES_COMPATIBLE_BASE_URL");
+    expect(report.results[3].missing).toContain("ANTHROPIC_COMPATIBLE_BASE_URL");
+    expect(report.results[4].missing).toContain("OPENAI_COMPATIBLE_BASE_URL");
   });
 
   it("skips live provider model-list checks without requiring model names", async () => {
@@ -357,12 +372,13 @@ describe("provider smoke verifier", () => {
       models: true,
       counts: {
         passed: 0,
-        skipped: 4,
+        skipped: 5,
         failed: 0
       }
     });
     expect(report.results.map((result: any) => [result.id, result.missing])).toEqual([
       ["openai", ["OPENAI_API_KEY"]],
+      ["openai-responses-compatible", ["OPENAI_RESPONSES_COMPATIBLE_API_KEY", "OPENAI_RESPONSES_COMPATIBLE_BASE_URL"]],
       ["anthropic", ["ANTHROPIC_API_KEY"]],
       ["anthropic-compatible", ["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_BASE_URL"]],
       ["openai-compatible", ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"]]
@@ -375,6 +391,9 @@ describe("provider smoke verifier", () => {
         OPENAI_API_KEY: "live-openai-secret",
         OPENAI_MODEL: "live-responses",
         OPENAI_BASE_URL: `${baseURL}/v1`,
+        OPENAI_RESPONSES_COMPATIBLE_API_KEY: "live-responses-compatible-secret",
+        OPENAI_RESPONSES_COMPATIBLE_MODEL: "live-responses-compatible",
+        OPENAI_RESPONSES_COMPATIBLE_BASE_URL: `${baseURL}/v1`,
         ANTHROPIC_API_KEY: "live-anthropic-secret",
         ANTHROPIC_MODEL: "live-anthropic",
         ANTHROPIC_BASE_URL: baseURL,
@@ -390,29 +409,33 @@ describe("provider smoke verifier", () => {
         ok: true,
         live: true,
         counts: {
-          passed: 4,
+          passed: 5,
           skipped: 0,
           failed: 0
         }
       });
       expect(report.results.map((result: any) => [result.id, result.report.text])).toEqual([
         ["openai", "OK live responses"],
+        ["openai-responses-compatible", "OK live responses"],
         ["anthropic", "OK live anthropic"],
         ["anthropic-compatible", "OK live anthropic"],
         ["openai-compatible", "OK live chat"]
       ]);
       expect(requests.map((request) => request.path)).toEqual([
         "/v1/responses",
+        "/v1/responses",
         "/v1/messages",
         "/v1/messages",
         "/v1/chat/completions"
       ]);
       expect(requests[0].authorization).toBe("Bearer live-openai-secret");
-      expect(requests[1].xApiKey).toBe("live-anthropic-secret");
-      expect(requests[2].authorization).toBe("Bearer live-anthropic-compatible-secret");
-      expect(requests[2].xApiKey).toBeUndefined();
-      expect(requests[3].authorization).toBe("Bearer live-compatible-secret");
+      expect(requests[1].authorization).toBe("Bearer live-responses-compatible-secret");
+      expect(requests[2].xApiKey).toBe("live-anthropic-secret");
+      expect(requests[3].authorization).toBe("Bearer live-anthropic-compatible-secret");
+      expect(requests[3].xApiKey).toBeUndefined();
+      expect(requests[4].authorization).toBe("Bearer live-compatible-secret");
       expect(JSON.stringify(report)).not.toContain("live-openai-secret");
+      expect(JSON.stringify(report)).not.toContain("live-responses-compatible-secret");
       expect(JSON.stringify(report)).not.toContain("live-anthropic-secret");
       expect(JSON.stringify(report)).not.toContain("live-anthropic-compatible-secret");
       expect(JSON.stringify(report)).not.toContain("live-compatible-secret");
@@ -424,6 +447,8 @@ describe("provider smoke verifier", () => {
       const report = await runLive(["--models", "--json"], scrubProviderEnv({
         OPENAI_API_KEY: "live-openai-models-secret",
         OPENAI_BASE_URL: `${baseURL}/v1`,
+        OPENAI_RESPONSES_COMPATIBLE_API_KEY: "live-responses-compatible-models-secret",
+        OPENAI_RESPONSES_COMPATIBLE_BASE_URL: `${baseURL}/v1`,
         ANTHROPIC_API_KEY: "live-anthropic-models-secret",
         ANTHROPIC_BASE_URL: baseURL,
         ANTHROPIC_COMPATIBLE_API_KEY: "live-anthropic-compatible-models-secret",
@@ -437,13 +462,14 @@ describe("provider smoke verifier", () => {
         live: true,
         models: true,
         counts: {
-          passed: 4,
+          passed: 5,
           skipped: 0,
           failed: 0
         }
       });
       expect(report.results.map((result: any) => [result.id, result.report.modelCount])).toEqual([
         ["openai", 2],
+        ["openai-responses-compatible", 2],
         ["anthropic", 2],
         ["anthropic-compatible", 2],
         ["openai-compatible", 2]
@@ -452,14 +478,17 @@ describe("provider smoke verifier", () => {
         "/v1/models",
         "/v1/models",
         "/v1/models",
+        "/v1/models",
         "/v1/models"
       ]);
       expect(requests[0].authorization).toBe("Bearer live-openai-models-secret");
-      expect(requests[1].xApiKey).toBe("live-anthropic-models-secret");
-      expect(requests[2].authorization).toBe("Bearer live-anthropic-compatible-models-secret");
-      expect(requests[2].xApiKey).toBeUndefined();
-      expect(requests[3].authorization).toBe("Bearer live-compatible-models-secret");
+      expect(requests[1].authorization).toBe("Bearer live-responses-compatible-models-secret");
+      expect(requests[2].xApiKey).toBe("live-anthropic-models-secret");
+      expect(requests[3].authorization).toBe("Bearer live-anthropic-compatible-models-secret");
+      expect(requests[3].xApiKey).toBeUndefined();
+      expect(requests[4].authorization).toBe("Bearer live-compatible-models-secret");
       expect(JSON.stringify(report)).not.toContain("live-openai-models-secret");
+      expect(JSON.stringify(report)).not.toContain("live-responses-compatible-models-secret");
       expect(JSON.stringify(report)).not.toContain("live-anthropic-models-secret");
       expect(JSON.stringify(report)).not.toContain("live-anthropic-compatible-models-secret");
       expect(JSON.stringify(report)).not.toContain("live-compatible-models-secret");
@@ -527,6 +556,68 @@ describe("provider smoke verifier", () => {
       expect(requests[0].body).toEqual({});
     });
   });
+
+  it("runs live OpenAI Responses-compatible checks against local endpoints without API credentials", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--include", "openai-responses-compatible", "--json"], scrubProviderEnv({
+        OPENAI_RESPONSES_COMPATIBLE_MODEL: "local-responses-compatible",
+        OPENAI_RESPONSES_COMPATIBLE_BASE_URL: `${baseURL}/v1`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        counts: {
+          passed: 1,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results[0]).toMatchObject({
+        id: "openai-responses-compatible",
+        status: "passed",
+        skipped: false
+      });
+      expect(report.results[0].report).toMatchObject({
+        protocol: "openai_responses",
+        text: "OK live responses"
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0].authorization).toBeUndefined();
+      expect(requests[0].body.model).toBe("local-responses-compatible");
+    });
+  });
+
+  it("runs live OpenAI Responses-compatible model-list checks against local endpoints without API credentials or model names", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--models", "--include", "openai-responses-compatible", "--json"], scrubProviderEnv({
+        OPENAI_RESPONSES_COMPATIBLE_BASE_URL: `${baseURL}/v1`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        models: true,
+        counts: {
+          passed: 1,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results[0]).toMatchObject({
+        id: "openai-responses-compatible",
+        status: "passed",
+        skipped: false
+      });
+      expect(report.results[0].report).toMatchObject({
+        protocol: "openai_responses",
+        modelCount: 2
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0].authorization).toBeUndefined();
+      expect(requests[0].body).toEqual({});
+    });
+  });
 });
 
 async function runSmoke(args: string[]) {
@@ -552,6 +643,9 @@ function scrubProviderEnv(overrides: NodeJS.ProcessEnv = {}) {
     OPENAI_API_KEY: "",
     OPENAI_MODEL: "",
     OPENAI_BASE_URL: "",
+    OPENAI_RESPONSES_COMPATIBLE_API_KEY: "",
+    OPENAI_RESPONSES_COMPATIBLE_MODEL: "",
+    OPENAI_RESPONSES_COMPATIBLE_BASE_URL: "",
     ANTHROPIC_API_KEY: "",
     ANTHROPIC_MODEL: "",
     ANTHROPIC_BASE_URL: "",

@@ -1388,7 +1388,7 @@ function hydrateProfile(profile) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = workbenchProviderDefaults(provider);
     return {
       id: defaults.id,
@@ -1434,6 +1434,7 @@ function normalizeDefaultProfileSelection(profiles) {
 function providerProfileCatalogKey(profile) {
   const id = String(profile?.id || "").trim();
   if (id === "openai_compatible") return "openai-compatible";
+  if (id === "openai_responses_compatible") return "openai-responses-compatible";
   if (id === "anthropic_compatible") return "anthropic-compatible";
   if (id === "azure_openai") return "azure-openai";
   if (id === "moonshot") return "kimi";
@@ -1511,6 +1512,9 @@ function workbenchProviderDefaults(provider) {
   const commonCapabilities = { text: true, pdfBase64: false, imageBase64: true, fileReference: false, streaming: true, embeddings: false, jsonMode: false, toolUse: false, modelList: true };
   if (id === "openai") {
     return { id: "openai", name: "OpenAI", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://api.openai.com/v1", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, bodyExtra: {} };
+  }
+  if (id === "openai_responses_compatible" || id === "openai-responses-compatible") {
+    return { id: "openai-responses-compatible", name: "OpenAI Compatible Responses", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, bodyExtra: {} };
   }
   if (id === "anthropic") {
     return { id: "anthropic", name: "Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.anthropic.com", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, bodyExtra: {} };
@@ -1593,6 +1597,7 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   if (id === "moonshot") return "kimi";
   if (id === "zai-anthropic" || id === "zai_anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") return "zai_anthropic";
   if (id === "anthropic-compatible" || id === "anthropic_compatible") return "anthropic_compatible";
+  if (id === "openai-responses-compatible" || id === "openai_responses_compatible") return "openai_responses_compatible";
   if (["xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "gemini"].includes(id)) return id;
   if (id === "glm" || id === "bigmodel") return "zhipu";
   if (id === "ark" || id === "doubao") return "volcengine";
@@ -1624,7 +1629,11 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   if (baseURL === "http://localhost:11434/v1" || baseURL === "http://127.0.0.1:11434/v1") return "ollama";
   if (baseURL === "http://localhost:1234/v1" || baseURL === "http://127.0.0.1:1234/v1") return "lm_studio";
   if (profile?.protocol === "anthropic_messages") return "anthropic";
-  if (profile?.protocol === "openai_responses") return "openai";
+  if (profile?.protocol === "openai_responses") {
+    return baseURL === "https://api.openai.com/v1" || baseURL === "https://api.openai.com/v1/responses"
+      ? "openai"
+      : "openai_responses_compatible";
+  }
   return "openai_compatible";
 }
 

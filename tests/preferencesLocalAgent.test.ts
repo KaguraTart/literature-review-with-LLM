@@ -674,6 +674,12 @@ describe("preferences local-agent config helpers", () => {
       baseURL: "https://api.openai.com/v1",
       capabilities: { streaming: true, pdfBase64: false, modelList: true }
     });
+    expect(helpers.providerDefaults("openai_responses_compatible")).toMatchObject({
+      id: "openai-responses-compatible",
+      protocol: "openai_responses",
+      baseURL: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1",
+      capabilities: { streaming: true, pdfBase64: true, modelList: true }
+    });
     expect(helpers.providerDefaults("anthropic")).toMatchObject({
       protocol: "anthropic_messages",
       capabilities: { streaming: true, pdfBase64: true }
@@ -815,6 +821,7 @@ describe("preferences local-agent config helpers", () => {
       "minimax",
       "openai",
       "openai-compatible",
+      "openai-responses-compatible",
       "anthropic",
       "anthropic-compatible",
       "gemini",
@@ -850,6 +857,12 @@ describe("preferences local-agent config helpers", () => {
       protocol: "openai_chat",
       endpointMode: "base_url",
       baseURL: "https://api.openai.com/v1",
+      bodyExtra: {}
+    });
+    expect(profiles.find((profile) => profile.id === "openai-responses-compatible")).toMatchObject({
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1",
       bodyExtra: {}
     });
     expect(profiles.find((profile) => profile.id === "anthropic")).toMatchObject({
@@ -1077,6 +1090,18 @@ describe("preferences local-agent config helpers", () => {
       bodyExtra: {}
     })).toBe("openai_compatible");
     expect(helpers.providerFromProfile({
+      id: "responses-router",
+      protocol: "openai_responses",
+      baseURL: "https://router.example/v1",
+      bodyExtra: {}
+    })).toBe("openai_responses_compatible");
+    expect(helpers.providerFromProfile({
+      id: "official-openai",
+      protocol: "openai_responses",
+      baseURL: "https://api.openai.com/v1",
+      bodyExtra: {}
+    })).toBe("openai");
+    expect(helpers.providerFromProfile({
       id: "minimax",
       protocol: "openai_chat",
       baseURL: "https://api.minimaxi.com/v1",
@@ -1289,6 +1314,7 @@ describe("preferences local-agent config helpers", () => {
       "minimax",
       "openai",
       "openai-compatible",
+      "openai-responses-compatible",
       "anthropic",
       "anthropic-compatible",
       "gemini",
@@ -1321,6 +1347,7 @@ describe("preferences local-agent config helpers", () => {
       "minimax",
       "openai",
       "openai-compatible",
+      "openai-responses-compatible",
       "anthropic",
       "anthropic-compatible",
       "gemini",

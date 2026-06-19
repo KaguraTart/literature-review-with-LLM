@@ -15,6 +15,7 @@ describe("default provider profiles", () => {
       "minimax",
       "openai",
       "openai-compatible",
+      "openai-responses-compatible",
       "anthropic",
       "anthropic-compatible",
       "gemini",
@@ -54,6 +55,12 @@ describe("default provider profiles", () => {
       endpointMode: "base_url",
       baseURL: "https://api.openai.com/v1",
       capabilities: { pdfBase64: false, streaming: true, modelList: true }
+    });
+    expect(profiles.find((profile: any) => profile.id === "openai-responses-compatible")).toMatchObject({
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1",
+      capabilities: { pdfBase64: true, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "anthropic")).toMatchObject({
       protocol: "anthropic_messages",

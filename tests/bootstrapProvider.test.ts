@@ -265,6 +265,11 @@ describe("bootstrap provider helpers", () => {
         }
       }
     });
+    expect(helpers.settingsProviderDefaults("openai_responses_compatible")).toMatchObject({
+      protocol: "openai_responses",
+      baseURL: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1",
+      capabilities: { pdfBase64: true, streaming: true, modelList: true }
+    });
     expect(helpers.settingsProviderFromProfile({
       id: "gemini",
       protocol: "openai_chat",
@@ -296,7 +301,7 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.settingsProviderFromProfile({
       protocol: "openai_responses",
       baseURL: "https://router.example/v1"
-    })).toBe("openai");
+    })).toBe("openai_responses_compatible");
     expect(helpers.settingsHasUsableAuth({
       apiKey: "",
       customHeaders: { Authorization: "Bearer routed-secret" },

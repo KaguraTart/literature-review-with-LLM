@@ -221,6 +221,7 @@ export async function runMockProviderSmoke(options = {}) {
     const cases = [
       { profile: "openai-compatible", baseURL: `${baseURL}/v1`, model: "mock-chat" },
       { profile: "openai", baseURL: `${baseURL}/v1`, model: "mock-responses" },
+      { profile: "openai-responses-compatible", baseURL: `${baseURL}/v1`, model: "mock-responses-compatible" },
       { profile: "anthropic", baseURL, model: "mock-anthropic" }
     ];
     const results = [];
@@ -271,6 +272,7 @@ export async function runMockProviderModels(options = {}) {
     const cases = [
       { profile: "openai-compatible", baseURL: `${baseURL}/v1` },
       { profile: "openai", baseURL: `${baseURL}/v1` },
+      { profile: "openai-responses-compatible", baseURL: `${baseURL}/v1` },
       { profile: "anthropic", baseURL }
     ];
     const results = [];
@@ -869,6 +871,7 @@ function usage() {
     "  npm run verify:provider -- --profile openai --api-key-env OPENAI_API_KEY --model MODEL",
     "  npm run verify:provider -- --profile anthropic --api-key-env ANTHROPIC_API_KEY --model MODEL",
     "  npm run verify:provider -- --profile openai-compatible --base-url http://127.0.0.1:8000/v1 --api-key test --model model",
+    "  npm run verify:provider -- --profile openai-responses-compatible --base-url http://127.0.0.1:8000/v1 --api-key test --model model",
     "  npm run verify:provider:catalog",
     "  npm run verify:provider:models:mock",
     "  npm run verify:provider:mock",

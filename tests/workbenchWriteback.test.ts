@@ -530,6 +530,8 @@ describe("workbench writeback helpers", () => {
       model: "custom-model"
     });
     expect(profiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([
+      "openai-compatible",
+      "openai-responses-compatible",
       "gemini",
       "azure-openai",
       "xai",

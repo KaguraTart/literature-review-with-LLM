@@ -36,6 +36,9 @@ function settingsProviderDefaults(provider) {
   if (id === "openai") {
     return { ...common, protocol: "openai_responses", baseURL: "https://api.openai.com/v1", capabilities: { ...commonCapabilities, pdfBase64: true } };
   }
+  if (id === "openai_responses_compatible" || id === "openai-responses-compatible") {
+    return { ...common, protocol: "openai_responses", baseURL: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1", capabilities: { ...commonCapabilities, pdfBase64: true } };
+  }
   if (id === "anthropic") {
     return { ...common, protocol: "anthropic_messages", baseURL: "https://api.anthropic.com", capabilities: { ...commonCapabilities, pdfBase64: true } };
   }
@@ -132,9 +135,10 @@ function settingsProviderDefaults(provider) {
 function settingsProviderFromProfile(profile) {
   if (profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent) return "local-agents";
   const id = String(profile?.id || "").trim();
-  if (["minimax", "openai", "anthropic", "anthropic-compatible", "anthropic_compatible", "openai-compatible", "openai_compatible", "gemini", "azure-openai", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "moonshot", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "zai-anthropic", "zai_anthropic", "z_ai_anthropic", "z-ai-anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "glm", "bigmodel", "volcengine", "ark", "doubao", "qianfan", "baidu", "hunyuan", "tencent", "ollama", "lm-studio", "lm_studio"].includes(id)) {
+  if (["minimax", "openai", "openai-responses-compatible", "openai_responses_compatible", "anthropic", "anthropic-compatible", "anthropic_compatible", "openai-compatible", "openai_compatible", "gemini", "azure-openai", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "moonshot", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "zai-anthropic", "zai_anthropic", "z_ai_anthropic", "z-ai-anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "glm", "bigmodel", "volcengine", "ark", "doubao", "qianfan", "baidu", "hunyuan", "tencent", "ollama", "lm-studio", "lm_studio"].includes(id)) {
     if (id === "azure-openai") return "azure_openai";
     if (id === "anthropic-compatible") return "anthropic_compatible";
+    if (id === "openai-responses-compatible") return "openai_responses_compatible";
     if (id === "moonshot") return "kimi";
     if (id === "glm" || id === "bigmodel") return "zhipu";
     if (id === "ark" || id === "doubao") return "volcengine";
@@ -167,7 +171,11 @@ function settingsProviderFromProfile(profile) {
   if (baseURL === "http://localhost:11434/v1" || baseURL === "http://127.0.0.1:11434/v1") return "ollama";
   if (baseURL === "http://localhost:1234/v1" || baseURL === "http://127.0.0.1:1234/v1") return "lm_studio";
   if (profile?.protocol === "anthropic_messages") return "anthropic";
-  if (profile?.protocol === "openai_responses") return "openai";
+  if (profile?.protocol === "openai_responses") {
+    return baseURL === "https://api.openai.com/v1" || baseURL === "https://api.openai.com/v1/responses"
+      ? "openai"
+      : "openai_responses_compatible";
+  }
   return "openai-compatible";
 }
 
