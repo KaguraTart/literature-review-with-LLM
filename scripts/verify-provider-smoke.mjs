@@ -168,6 +168,18 @@ export async function runProviderModels(options = {}) {
           error: providerErrorText(parsed, rawText)
         };
       }
+      const responseError = providerResponseErrorText(parsed);
+      if (responseError) {
+        return {
+          ok: false,
+          models: true,
+          status: response.status,
+          profile: profile.id,
+          protocol: profile.protocol,
+          endpoint: nextUrl,
+          error: responseError
+        };
+      }
       items.push(...modelListItemsFromResponse(parsed));
       nextUrl = nextModelListURL(nextUrl, parsed);
     }
@@ -910,10 +922,22 @@ function readRequestBody(request) {
 }
 
 function providerErrorText(parsed, rawText) {
+  const responseError = providerResponseErrorText(parsed);
+  if (responseError) return responseError;
   const error = parsed?.error || parsed;
   if (typeof error === "string") return redactSecret(error);
   const code = error?.code || error?.type || "";
   const message = error?.message || rawText || "";
+  return [code, redactSecret(message)].filter(Boolean).join(" - ");
+}
+
+function providerResponseErrorText(parsed) {
+  if (!parsed || typeof parsed !== "object") return "";
+  const error = parsed.error || (parsed.type === "error" ? parsed : null);
+  if (!error) return "";
+  if (typeof error === "string") return redactSecret(error);
+  const code = error.code || error.type || parsed.code || parsed.type || "";
+  const message = error.message || parsed.message || JSON.stringify(error);
   return [code, redactSecret(message)].filter(Boolean).join(" - ");
 }
 

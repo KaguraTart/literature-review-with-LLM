@@ -186,6 +186,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     normalizeBoolean: (value: any, fallback?: boolean) => boolean;
     headersForProfile: (profile: any) => Record<string, string>;
     requestModelWithRetry: (profile: any, messages: any[], outputLanguage: string, systemPrompt: string, requestInput: any, streamEnabled: boolean, signal?: AbortSignal) => Promise<any>;
+    workbenchFetchModelOptions: (request: { url: string; headers: Record<string, string> }) => Promise<Array<{ id: string; label: string }>>;
     readStream: (response: any, protocol: string, onDelta: (delta: string) => void) => Promise<string>;
     sessionFilenameFor: (sessionId: string) => string;
     sessionIdFromPath: (path: string) => string;
@@ -899,6 +900,25 @@ describe("workbench writeback helpers", () => {
 
     expect(() => helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({ content: [] })))
       .toThrow("No text returned from model");
+  });
+
+  it("fails workbench model listing when a 200 response contains a provider error", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    loaded.fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        error: {
+          code: "invalid_api_key",
+          message: "Bad key sk-test-secret"
+        }
+      })
+    });
+
+    await expect(loaded.workbenchFetchModelOptions({
+      url: "https://api.openai.com/v1/models",
+      headers: { authorization: "Bearer sk-test-secret" }
+    })).rejects.toThrow("Provider error: invalid_api_key - Bad key [redacted]");
   });
 
   it("validates remote profile credentials before sending provider requests", () => {

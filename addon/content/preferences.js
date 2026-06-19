@@ -1051,6 +1051,10 @@ async function fetchModelOptions(request) {
       throw new Error(providerErrorText(response.status, text));
     }
     const data = safeParseJSON(text);
+    const errorText = providerResponseErrorDetail(data);
+    if (errorText) {
+      throw new Error(`Provider error: ${redact(errorText)}`);
+    }
     items.push(...modelListItemsFromResponse(data));
     nextUrl = nextModelListURL(nextUrl, data);
   }

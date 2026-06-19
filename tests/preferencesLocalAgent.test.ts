@@ -1602,6 +1602,26 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).not.toContain("routed-secret");
   });
 
+  it("shows provider errors when a 200 model-list response contains an error body", async () => {
+    const { controller, elements } = loadPreferencesController({
+      fetchResponse: {
+        error: {
+          code: "invalid_api_key",
+          type: "authentication_error",
+          message: "Invalid API key sk-test-secret"
+        }
+      }
+    });
+
+    await controller.loadModels();
+
+    expect(elements.get("zms-status").value).toContain("Connection failed: Provider error");
+    expect(elements.get("zms-status").value).toContain("invalid_api_key");
+    expect(elements.get("zms-status").value).toContain("authentication_error");
+    expect(elements.get("zms-status").value).toContain("Invalid API key [redacted]");
+    expect(elements.get("zms-status").value).not.toContain("sk-test-secret");
+  });
+
   it("does not test a stale saved profile when edited profile JSON is invalid", async () => {
     const { controller, elements, fetchCalls } = loadPreferencesController({ initialModel: "model-a" });
     elements.get("zms-profileCustomHeaders").value = "{";

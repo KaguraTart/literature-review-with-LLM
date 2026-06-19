@@ -6572,6 +6572,10 @@ async function workbenchFetchModelOptions(request) {
       throw new Error(providerErrorText(response.status, text));
     }
     const data = safeParseJSON(text);
+    const errorText = streamErrorText(data);
+    if (errorText) {
+      throw new Error(`Provider error: ${redact(errorText)}`);
+    }
     items.push(...workbenchModelListItemsFromResponse(data));
     nextUrl = workbenchNextModelListURL(nextUrl, data);
   }
