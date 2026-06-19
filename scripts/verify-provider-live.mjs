@@ -81,6 +81,20 @@ export async function runProviderLive(options = {}, env = process.env) {
   const cases = selectedCases(options.include || "");
   const results = [];
   for (const entry of cases) {
+    const unsupported = unsupportedInputReason(entry, options);
+    if (unsupported) {
+      results.push({
+        id: entry.id,
+        label: entry.label,
+        status: "skipped",
+        ok: true,
+        skipped: true,
+        reason: unsupported,
+        missing: []
+      });
+      continue;
+    }
+
     const missing = missingRequirements(entry, env, { models: Boolean(options.models) });
     if (missing.length) {
       results.push({
@@ -105,6 +119,8 @@ export async function runProviderLive(options = {}, env = process.env) {
       timeoutMs: numberOption(options.timeoutMs, 30000),
       maxOutputTokens: numberOption(options.maxOutputTokens, 64),
       temperature: numberOption(options.temperature, 0),
+      image: Boolean(options.image),
+      pdf: Boolean(options.pdf),
       dryRun: Boolean(options.dryRun)
     };
 
@@ -138,6 +154,7 @@ export async function runProviderLive(options = {}, env = process.env) {
     ok,
     live: true,
     models: Boolean(options.models),
+    inputMode: liveInputMode(options),
     dryRun: Boolean(options.dryRun),
     failOnSkip: Boolean(options.failOnSkip),
     counts,
@@ -154,6 +171,8 @@ function parseArgs(args) {
     maxOutputTokens: 64,
     temperature: 0,
     models: false,
+    image: false,
+    pdf: false,
     dryRun: false,
     failOnSkip: false,
     json: false,
@@ -184,6 +203,10 @@ function parseArgs(args) {
       index += 1;
     } else if (key === "--models") {
       options.models = true;
+    } else if (key === "--image") {
+      options.image = true;
+    } else if (key === "--pdf") {
+      options.pdf = true;
     } else if (key === "--dry-run") {
       options.dryRun = true;
     } else if (key === "--fail-on-skip") {
@@ -194,7 +217,14 @@ function parseArgs(args) {
       throw new Error(`Unknown or incomplete argument: ${key}`);
     }
   }
+  validateLiveOptions(options);
   return options;
+}
+
+function validateLiveOptions(options) {
+  if (options.models && (options.image || options.pdf)) {
+    throw new Error("--image and --pdf verify generation inputs and cannot be combined with --models");
+  }
 }
 
 function selectedCases(include) {
@@ -219,6 +249,13 @@ function missingRequirements(entry, env, options = {}) {
   if (!options.models && !String(env[entry.modelEnv] || "").trim()) missing.push(entry.modelEnv);
   if (entry.requireBaseURL && !baseURL) missing.push(entry.baseURLEnv);
   return missing;
+}
+
+function unsupportedInputReason(entry, options = {}) {
+  if (options.pdf && entry.protocol === "openai_chat") {
+    return "OpenAI-compatible Chat profiles use extracted text input; choose a Responses or Anthropic profile for raw PDF input";
+  }
+  return "";
 }
 
 function isLocalEndpoint(url) {
@@ -264,19 +301,20 @@ function numberOption(value, fallback) {
 function formatReport(report) {
   const lines = [
     report.ok ? "Provider live verification completed" : "Provider live verification failed",
+    `input: ${report.inputMode || "text"}`,
     `passed: ${report.counts.passed}`,
     `skipped: ${report.counts.skipped}`,
     `failed: ${report.counts.failed}`
   ];
   for (const result of report.results || []) {
     if (result.status === "skipped") {
-      lines.push(`${result.id}: skipped (${result.missing.join(", ")})`);
+      lines.push(`${result.id}: skipped (${result.reason || result.missing.join(", ")})`);
     } else if (result.status === "failed") {
       lines.push(`${result.id}: failed (${result.error || result.report?.error || ""})`);
     } else {
       const suffix = report.models
         ? `${result.report?.protocol || ""}, ${result.report?.modelCount ?? 0} model(s)`
-        : result.report?.protocol || "";
+        : [result.report?.protocol || "", result.report?.inputMode || ""].filter(Boolean).join(", ");
       lines.push(`${result.id}: passed (${suffix})`);
     }
   }
@@ -305,6 +343,8 @@ function usage() {
     "  OPENAI_COMPATIBLE_API_KEY=... OPENAI_COMPATIBLE_BASE_URL=... npm run verify:provider:models:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_MODEL=... OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:models:live -- --include openai-compatible",
+    "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --image",
+    "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --pdf",
     "",
     "Options:",
     "  --include LIST           Comma-separated cases: openai, openai-responses-compatible, anthropic, anthropic-compatible, openai-compatible",
@@ -314,10 +354,19 @@ function usage() {
     "  --max-output-tokens N    Maximum output tokens",
     "  --temperature NUMBER     Sampling temperature",
     "  --models                 Verify model-list endpoints instead of text generation",
+    "  --image                  Include a tiny base64 PNG in generation checks",
+    "  --pdf                    Include a tiny base64 PDF in generation checks",
     "  --dry-run                Print sanitized request shapes without calling providers",
     "  --fail-on-skip           Exit non-zero when any selected case is missing env config",
     "  --json                   Print machine-readable JSON"
   ].join("\n") + "\n";
+}
+
+function liveInputMode(options) {
+  if (options.pdf && options.image) return "pdf+image";
+  if (options.pdf) return "pdf";
+  if (options.image) return "image";
+  return "text";
 }
 
 function isMainModule() {

@@ -257,7 +257,8 @@ function mockSmokeCases(options, baseURL) {
     return [
       { profile: "openai", baseURL: `${baseURL}/v1`, model: "mock-responses" },
       { profile: "openai-responses-compatible", baseURL: `${baseURL}/v1`, model: "mock-responses-compatible" },
-      { profile: "anthropic", baseURL, model: "mock-anthropic" }
+      { profile: "anthropic", baseURL, model: "mock-anthropic" },
+      { profile: "anthropic-compatible", baseURL, model: "mock-anthropic-compatible" }
     ];
   }
   return [
@@ -477,6 +478,9 @@ function buildProfile(options, requirements = {}) {
       ...(options.bodyExtra || {})
     }
   };
+  if (options.pdf && profile.protocol !== "openai_chat") {
+    profile.capabilities.pdfBase64 = true;
+  }
   if (profile.bodyExtra?.localAgent) {
     throw new Error("Local Agents profiles use the local-agent service checks, not provider smoke verification");
   }

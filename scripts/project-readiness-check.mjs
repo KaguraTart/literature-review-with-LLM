@@ -227,9 +227,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "provider.live-script",
-    description: "Provider live verification can skip missing env config and run configured OpenAI, OpenAI-compatible, OpenAI Responses-compatible, and Anthropic checks",
+    description: "Provider live verification can skip missing env config and run configured OpenAI, OpenAI-compatible, OpenAI Responses-compatible, Anthropic, image, and PDF checks",
     files: ["scripts/verify-provider-live.mjs", "package.json", "tests/providerSmokeScript.test.ts"],
-    markers: ["runProviderLive", "OPENAI_API_KEY", "OPENAI_RESPONSES_COMPATIBLE_BASE_URL", "ANTHROPIC_API_KEY", "OPENAI_COMPATIBLE_BASE_URL", "allowLocalNoAuth", "isLocalEndpoint", "failOnSkip", "verify:provider:live", "verify:provider:models:live", "runProviderModels"]
+    markers: ["runProviderLive", "OPENAI_API_KEY", "OPENAI_RESPONSES_COMPATIBLE_BASE_URL", "ANTHROPIC_API_KEY", "OPENAI_COMPATIBLE_BASE_URL", "allowLocalNoAuth", "isLocalEndpoint", "failOnSkip", "verify:provider:live", "verify:provider:image:live", "verify:provider:pdf:live", "verify:provider:models:live", "runProviderModels", "unsupportedInputReason"]
   },
   {
     id: "provider.model-list-pagination",

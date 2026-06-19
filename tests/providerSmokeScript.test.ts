@@ -248,16 +248,19 @@ describe("provider smoke verifier", () => {
     expect(report.results.map((result: any) => [result.profile, result.protocol, result.contentTypes])).toEqual([
       ["openai", "openai_responses", ["input_file", "input_text"]],
       ["openai-responses-compatible", "openai_responses", ["input_file", "input_text"]],
-      ["anthropic", "anthropic_messages", ["document", "text"]]
+      ["anthropic", "anthropic_messages", ["document", "text"]],
+      ["anthropic-compatible", "anthropic_messages", ["document", "text"]]
     ]);
     expect(report.requests.map((request: any) => request.path)).toEqual([
       "/v1/responses",
       "/v1/responses",
+      "/v1/messages",
       "/v1/messages"
     ]);
     expect(report.requests.map((request: any) => request.contentTypes)).toEqual([
       ["input_file", "input_text"],
       ["input_file", "input_text"],
+      ["document", "text"],
       ["document", "text"]
     ]);
     expect(JSON.stringify(report)).not.toContain("mock-secret");
@@ -488,6 +491,125 @@ describe("provider smoke verifier", () => {
       expect(JSON.stringify(report)).not.toContain("live-anthropic-secret");
       expect(JSON.stringify(report)).not.toContain("live-anthropic-compatible-secret");
       expect(JSON.stringify(report)).not.toContain("live-compatible-secret");
+    });
+  });
+
+  it("runs live provider image checks against mock endpoints", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--image", "--json"], scrubProviderEnv({
+        OPENAI_API_KEY: "live-openai-image-secret",
+        OPENAI_MODEL: "live-responses-image",
+        OPENAI_BASE_URL: `${baseURL}/v1`,
+        OPENAI_RESPONSES_COMPATIBLE_API_KEY: "live-responses-compatible-image-secret",
+        OPENAI_RESPONSES_COMPATIBLE_MODEL: "live-responses-compatible-image",
+        OPENAI_RESPONSES_COMPATIBLE_BASE_URL: `${baseURL}/v1`,
+        ANTHROPIC_API_KEY: "live-anthropic-image-secret",
+        ANTHROPIC_MODEL: "live-anthropic-image",
+        ANTHROPIC_BASE_URL: baseURL,
+        ANTHROPIC_COMPATIBLE_API_KEY: "live-anthropic-compatible-image-secret",
+        ANTHROPIC_COMPATIBLE_MODEL: "live-anthropic-compatible-image",
+        ANTHROPIC_COMPATIBLE_BASE_URL: baseURL,
+        OPENAI_COMPATIBLE_API_KEY: "live-compatible-image-secret",
+        OPENAI_COMPATIBLE_MODEL: "live-compatible-image",
+        OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        inputMode: "image",
+        counts: {
+          passed: 5,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results.map((result: any) => [result.id, result.report.inputMode, result.report.contentTypes])).toEqual([
+        ["openai", "image", ["input_text", "input_text", "input_image"]],
+        ["openai-responses-compatible", "image", ["input_text", "input_text", "input_image"]],
+        ["anthropic", "image", ["image", "text"]],
+        ["anthropic-compatible", "image", ["image", "text"]],
+        ["openai-compatible", "image", ["text", "image_url"]]
+      ]);
+      expect(requests.map((request) => request.path)).toEqual([
+        "/v1/responses",
+        "/v1/responses",
+        "/v1/messages",
+        "/v1/messages",
+        "/v1/chat/completions"
+      ]);
+      expect(JSON.stringify(report)).not.toContain("live-openai-image-secret");
+      expect(JSON.stringify(report)).not.toContain("live-anthropic-image-secret");
+    });
+  });
+
+  it("runs live provider PDF checks against raw-document protocols and skips OpenAI Chat", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--pdf", "--json"], scrubProviderEnv({
+        OPENAI_API_KEY: "live-openai-pdf-secret",
+        OPENAI_MODEL: "live-responses-pdf",
+        OPENAI_BASE_URL: `${baseURL}/v1`,
+        OPENAI_RESPONSES_COMPATIBLE_API_KEY: "live-responses-compatible-pdf-secret",
+        OPENAI_RESPONSES_COMPATIBLE_MODEL: "live-responses-compatible-pdf",
+        OPENAI_RESPONSES_COMPATIBLE_BASE_URL: `${baseURL}/v1`,
+        ANTHROPIC_API_KEY: "live-anthropic-pdf-secret",
+        ANTHROPIC_MODEL: "live-anthropic-pdf",
+        ANTHROPIC_BASE_URL: baseURL,
+        ANTHROPIC_COMPATIBLE_API_KEY: "live-anthropic-compatible-pdf-secret",
+        ANTHROPIC_COMPATIBLE_MODEL: "live-anthropic-compatible-pdf",
+        ANTHROPIC_COMPATIBLE_BASE_URL: baseURL,
+        OPENAI_COMPATIBLE_API_KEY: "live-compatible-pdf-secret",
+        OPENAI_COMPATIBLE_MODEL: "live-compatible-pdf",
+        OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        inputMode: "pdf",
+        counts: {
+          passed: 4,
+          skipped: 1,
+          failed: 0
+        }
+      });
+      expect(report.results.map((result: any) => [result.id, result.status])).toEqual([
+        ["openai", "passed"],
+        ["openai-responses-compatible", "passed"],
+        ["anthropic", "passed"],
+        ["anthropic-compatible", "passed"],
+        ["openai-compatible", "skipped"]
+      ]);
+      expect(report.results.at(-1).reason).toContain("OpenAI-compatible Chat profiles use extracted text input");
+      expect(report.results.slice(0, 4).map((result: any) => [result.id, result.report.inputMode, result.report.contentTypes])).toEqual([
+        ["openai", "pdf", ["input_file", "input_text"]],
+        ["openai-responses-compatible", "pdf", ["input_file", "input_text"]],
+        ["anthropic", "pdf", ["document", "text"]],
+        ["anthropic-compatible", "pdf", ["document", "text"]]
+      ]);
+      expect(requests.map((request) => request.path)).toEqual([
+        "/v1/responses",
+        "/v1/responses",
+        "/v1/messages",
+        "/v1/messages"
+      ]);
+      expect(JSON.stringify(report)).not.toContain("live-openai-pdf-secret");
+      expect(JSON.stringify(report)).not.toContain("live-anthropic-pdf-secret");
+    });
+  });
+
+  it("rejects live model-list checks with generation input flags", async () => {
+    await expect(execFileAsync(process.execPath, [
+      "scripts/verify-provider-live.mjs",
+      "--models",
+      "--image",
+      "--json"
+    ], {
+      cwd: process.cwd(),
+      env: scrubProviderEnv(),
+      maxBuffer: 1024 * 1024
+    })).rejects.toMatchObject({
+      stderr: expect.stringContaining("--image and --pdf verify generation inputs")
     });
   });
 

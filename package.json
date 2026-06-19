@@ -27,6 +27,8 @@
     "verify:provider:models": "node scripts/verify-provider-smoke.mjs --models",
     "verify:provider:models:mock": "node scripts/verify-provider-smoke.mjs --models --mock",
     "verify:provider:live": "node scripts/verify-provider-live.mjs",
+    "verify:provider:image:live": "node scripts/verify-provider-live.mjs --image",
+    "verify:provider:pdf:live": "node scripts/verify-provider-live.mjs --pdf",
     "verify:provider:models:live": "node scripts/verify-provider-live.mjs --models",
     "verify:writeback": "node scripts/verify-writeback-smoke.mjs",
     "readiness:check": "node scripts/project-readiness-check.mjs --require-xpi",

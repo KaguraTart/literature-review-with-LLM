@@ -175,6 +175,19 @@ npm run check
 
 The full check runs tests, type checking, provider text/image/PDF mock checks, provider catalog checks, writeback smoke tests, package verification, readiness checks, and whitespace validation.
 
+Optional live provider checks use your own API credentials:
+
+```bash
+OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai
+OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:image:live -- --include openai
+OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:pdf:live -- --include openai
+ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=... npm run verify:provider:live -- --include anthropic
+ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=... npm run verify:provider:image:live -- --include anthropic
+ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=... npm run verify:provider:pdf:live -- --include anthropic
+```
+
+For router or local endpoints, set the matching `*_BASE_URL` variable and use `openai-compatible`, `openai-responses-compatible`, or `anthropic-compatible`. Raw PDF live checks skip OpenAI-compatible Chat profiles because those profiles use extracted text input.
+
 ## Release Packaging
 
 The packaged plugin is generated at:
