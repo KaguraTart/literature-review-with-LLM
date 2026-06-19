@@ -972,12 +972,17 @@ describe("provider smoke verifier", () => {
       const report = await runLive([
         "--include", "openai-compatible",
         "--stream",
+        "--header", "x-global=from-cli",
         "--body-extra-json", JSON.stringify({ metadata: { suite: "live-smoke" } }),
         "--json"
       ], scrubProviderEnv({
         OPENAI_COMPATIBLE_API_KEY: "live-compatible-body-extra-secret",
         OPENAI_COMPATIBLE_MODEL: "live-compatible-body-extra",
         OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`,
+        OPENAI_COMPATIBLE_HEADERS_JSON: JSON.stringify({
+          Authorization: "Bearer compatible-header-secret",
+          "x-router": "paper-router"
+        }),
         OPENAI_COMPATIBLE_BODY_EXTRA_JSON: JSON.stringify({
           response_format: { type: "json_object" },
           omitFields: ["stream", "temperature", "max_tokens"]
@@ -1012,8 +1017,48 @@ describe("provider smoke verifier", () => {
       expect(requests[0].body).not.toHaveProperty("temperature");
       expect(requests[0].body).not.toHaveProperty("max_tokens");
       expect(requests[0].body).not.toHaveProperty("omitFields");
+      expect(requests[0].authorization).toBe("Bearer compatible-header-secret");
+      expect(requests[0].xRouter).toBe("paper-router");
+      expect(requests[0].xGlobal).toBe("from-cli");
       expect(JSON.stringify(report)).not.toContain("live-compatible-body-extra-secret");
+      expect(JSON.stringify(report)).not.toContain("compatible-header-secret");
     });
+  });
+
+  it("uses live custom auth headers to satisfy remote credential requirements", async () => {
+    const report = await runLive([
+      "--include", "openai-compatible",
+      "--dry-run",
+      "--json"
+    ], scrubProviderEnv({
+      OPENAI_COMPATIBLE_MODEL: "remote-compatible",
+      OPENAI_COMPATIBLE_BASE_URL: "https://router.example/v1",
+      OPENAI_COMPATIBLE_HEADERS_JSON: JSON.stringify({
+        Authorization: "Bearer remote-header-secret",
+        "x-router": "paper-router"
+      })
+    }));
+
+    expect(report).toMatchObject({
+      ok: true,
+      live: true,
+      dryRun: true,
+      counts: {
+        passed: 1,
+        skipped: 0,
+        failed: 0
+      }
+    });
+    expect(report.results[0]).toMatchObject({
+      id: "openai-compatible",
+      status: "passed",
+      report: {
+        dryRun: true,
+        endpoint: "https://router.example/v1/chat/completions"
+      }
+    });
+    expect(report.results[0].report.request.headerNames).toEqual(expect.arrayContaining(["Authorization", "content-type", "x-router"]));
+    expect(JSON.stringify(report)).not.toContain("remote-header-secret");
   });
 });
 
@@ -1052,6 +1097,11 @@ function scrubProviderEnv(overrides: NodeJS.ProcessEnv = {}) {
     OPENAI_COMPATIBLE_API_KEY: "",
     OPENAI_COMPATIBLE_MODEL: "",
     OPENAI_COMPATIBLE_BASE_URL: "",
+    OPENAI_HEADERS_JSON: "",
+    OPENAI_RESPONSES_COMPATIBLE_HEADERS_JSON: "",
+    ANTHROPIC_HEADERS_JSON: "",
+    ANTHROPIC_COMPATIBLE_HEADERS_JSON: "",
+    OPENAI_COMPATIBLE_HEADERS_JSON: "",
     OPENAI_BODY_EXTRA_JSON: "",
     OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON: "",
     ANTHROPIC_BODY_EXTRA_JSON: "",
@@ -1104,6 +1154,8 @@ async function withLiveMockProvider(
       path,
       authorization: request.headers.authorization,
       xApiKey: request.headers["x-api-key"],
+      xRouter: request.headers["x-router"],
+      xGlobal: request.headers["x-global"],
       body
     });
     if (body?.stream === true) {

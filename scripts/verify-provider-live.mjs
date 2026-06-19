@@ -11,6 +11,7 @@ const DEFAULT_CASES = [
     apiKeyEnv: "OPENAI_API_KEY",
     modelEnv: "OPENAI_MODEL",
     baseURLEnv: "OPENAI_BASE_URL",
+    headersEnv: "OPENAI_HEADERS_JSON",
     bodyExtraEnv: "OPENAI_BODY_EXTRA_JSON",
     requireBaseURL: false
   },
@@ -22,6 +23,7 @@ const DEFAULT_CASES = [
     apiKeyEnv: "OPENAI_RESPONSES_COMPATIBLE_API_KEY",
     modelEnv: "OPENAI_RESPONSES_COMPATIBLE_MODEL",
     baseURLEnv: "OPENAI_RESPONSES_COMPATIBLE_BASE_URL",
+    headersEnv: "OPENAI_RESPONSES_COMPATIBLE_HEADERS_JSON",
     bodyExtraEnv: "OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON",
     requireBaseURL: true,
     allowLocalNoAuth: true
@@ -34,6 +36,7 @@ const DEFAULT_CASES = [
     apiKeyEnv: "ANTHROPIC_API_KEY",
     modelEnv: "ANTHROPIC_MODEL",
     baseURLEnv: "ANTHROPIC_BASE_URL",
+    headersEnv: "ANTHROPIC_HEADERS_JSON",
     bodyExtraEnv: "ANTHROPIC_BODY_EXTRA_JSON",
     requireBaseURL: false
   },
@@ -45,6 +48,7 @@ const DEFAULT_CASES = [
     apiKeyEnv: "ANTHROPIC_COMPATIBLE_API_KEY",
     modelEnv: "ANTHROPIC_COMPATIBLE_MODEL",
     baseURLEnv: "ANTHROPIC_COMPATIBLE_BASE_URL",
+    headersEnv: "ANTHROPIC_COMPATIBLE_HEADERS_JSON",
     bodyExtraEnv: "ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON",
     requireBaseURL: true,
     allowLocalNoAuth: true
@@ -57,6 +61,7 @@ const DEFAULT_CASES = [
     apiKeyEnv: "OPENAI_COMPATIBLE_API_KEY",
     modelEnv: "OPENAI_COMPATIBLE_MODEL",
     baseURLEnv: "OPENAI_COMPATIBLE_BASE_URL",
+    headersEnv: "OPENAI_COMPATIBLE_HEADERS_JSON",
     bodyExtraEnv: "OPENAI_COMPATIBLE_BODY_EXTRA_JSON",
     requireBaseURL: true,
     allowLocalNoAuth: true
@@ -100,26 +105,27 @@ export async function runProviderLive(options = {}, env = process.env) {
       continue;
     }
 
-    const missing = missingRequirements(entry, env, { models: Boolean(options.models) });
-    if (missing.length) {
-      results.push({
-        id: entry.id,
-        label: entry.label,
-        status: "skipped",
-        ok: true,
-        skipped: true,
-        missing
-      });
-      continue;
-    }
-
     try {
+      const customHeaders = customHeadersForCase(entry, options, env);
+      const missing = missingRequirements(entry, env, { models: Boolean(options.models), customHeaders });
+      if (missing.length) {
+        results.push({
+          id: entry.id,
+          label: entry.label,
+          status: "skipped",
+          ok: true,
+          skipped: true,
+          missing
+        });
+        continue;
+      }
       const smokeOptions = {
         profile: entry.profile,
         protocol: entry.protocol,
         apiKey: env[entry.apiKeyEnv],
         baseURL: env[entry.baseURLEnv] || "",
         model: env[entry.modelEnv],
+        customHeaders,
         prompt: options.prompt || DEFAULT_PROMPT,
         context: options.context || DEFAULT_CONTEXT,
         timeoutMs: numberOption(options.timeoutMs, 30000),
@@ -183,6 +189,7 @@ function parseArgs(args) {
     stream: false,
     dryRun: false,
     failOnSkip: false,
+    customHeaders: {},
     bodyExtra: {},
     json: false,
     help: false
@@ -222,6 +229,10 @@ function parseArgs(args) {
       options.dryRun = true;
     } else if (key === "--fail-on-skip") {
       options.failOnSkip = true;
+    } else if (key === "--header" && value) {
+      const [name, headerValue] = splitAssignment(value, "--header");
+      options.customHeaders[name] = headerValue;
+      index += 1;
     } else if (key === "--body-extra-json" && value) {
       options.bodyExtra = parseJSONOption(value, "--body-extra-json");
       index += 1;
@@ -262,7 +273,8 @@ function missingRequirements(entry, env, options = {}) {
   const missing = [];
   const baseURL = String(env[entry.baseURLEnv] || "").trim();
   const localNoAuth = entry.allowLocalNoAuth && isLocalEndpoint(baseURL);
-  if (!localNoAuth && !String(env[entry.apiKeyEnv] || "").trim()) missing.push(entry.apiKeyEnv);
+  const customAuth = hasAuthHeader(options.customHeaders || {});
+  if (!localNoAuth && !String(env[entry.apiKeyEnv] || "").trim() && !customAuth) missing.push(entry.apiKeyEnv);
   if (!options.models && !String(env[entry.modelEnv] || "").trim()) missing.push(entry.modelEnv);
   if (entry.requireBaseURL && !baseURL) missing.push(entry.baseURLEnv);
   return missing;
@@ -291,6 +303,11 @@ function redactKnownSecrets(text, env) {
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_COMPATIBLE_API_KEY",
     "OPENAI_COMPATIBLE_API_KEY",
+    "OPENAI_HEADERS_JSON",
+    "OPENAI_RESPONSES_COMPATIBLE_HEADERS_JSON",
+    "ANTHROPIC_HEADERS_JSON",
+    "ANTHROPIC_COMPATIBLE_HEADERS_JSON",
+    "OPENAI_COMPATIBLE_HEADERS_JSON",
     "OPENAI_BODY_EXTRA_JSON",
     "OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON",
     "ANTHROPIC_BODY_EXTRA_JSON",
@@ -298,11 +315,47 @@ function redactKnownSecrets(text, env) {
     "OPENAI_COMPATIBLE_BODY_EXTRA_JSON"
   ]) {
     const value = String(env[key] || "");
-    if (value.length >= 4) {
-      output = output.split(value).join("[redacted]");
+    for (const secret of redactionCandidates(value, key.includes("HEADERS_JSON"))) {
+      output = output.split(secret).join("[redacted]");
     }
   }
   return output;
+}
+
+function redactionCandidates(value, includeJSONLeaves = false) {
+  const raw = String(value || "");
+  const candidates = [];
+  if (raw.length >= 4) candidates.push(raw);
+  if (includeJSONLeaves) {
+    try {
+      collectStringLeaves(JSON.parse(raw), candidates);
+    } catch (_err) {
+      // Non-JSON env values are handled by the raw string candidate above.
+    }
+  }
+  return [...new Set(candidates.filter((item) => String(item || "").length >= 4))];
+}
+
+function collectStringLeaves(value, target) {
+  if (typeof value === "string") {
+    target.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectStringLeaves(item, target);
+    return;
+  }
+  if (value && typeof value === "object") {
+    for (const item of Object.values(value)) collectStringLeaves(item, target);
+  }
+}
+
+function customHeadersForCase(entry, options, env) {
+  const globalHeaders = options.customHeaders || {};
+  const envHeaders = entry.headersEnv && env[entry.headersEnv]
+    ? normalizeStringMap(parseJSONOption(env[entry.headersEnv], entry.headersEnv), entry.headersEnv)
+    : {};
+  return { ...globalHeaders, ...envHeaders };
 }
 
 function bodyExtraForCase(entry, options, env) {
@@ -324,6 +377,29 @@ function parseJSONOption(value, label) {
     throw new Error(`${label} must be a JSON object`);
   }
   return parsed;
+}
+
+function normalizeStringMap(value, label) {
+  const result = {};
+  for (const [key, item] of Object.entries(value || {})) {
+    const name = String(key || "").trim();
+    if (!name) throw new Error(`${label} contains an empty key`);
+    result[name] = String(item ?? "");
+  }
+  return result;
+}
+
+function splitAssignment(value, label) {
+  const raw = String(value || "");
+  const index = raw.indexOf("=");
+  if (index <= 0) throw new Error(`${label} must use name=value`);
+  return [raw.slice(0, index), raw.slice(index + 1)];
+}
+
+function hasAuthHeader(headers) {
+  return Object.entries(headers || {}).some(([key, value]) =>
+    ["authorization", "api-key", "x-api-key"].includes(String(key).toLowerCase()) && String(value || "").trim()
+  );
 }
 
 function countResults(results) {
@@ -403,6 +479,7 @@ function usage() {
     "  --stream                 Verify streaming generation with text/event-stream responses",
     "  --dry-run                Print sanitized request shapes without calling providers",
     "  --fail-on-skip           Exit non-zero when any selected case is missing env config",
+    "  --header name=value       Add or override a request header for all selected cases",
     "  --body-extra-json JSON    Merge extra request-body fields for all selected generation cases",
     "  --json                   Print machine-readable JSON"
   ].join("\n") + "\n";
