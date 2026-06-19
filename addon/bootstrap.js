@@ -321,6 +321,7 @@ async function batchGenerateItems(items, force, collectionContext) {
   const indexMessage = papersIndexPath ? `; papers.json: ${papersIndexPath}` : "";
   const matrixMessage = collectionArtifacts?.methodMatrixPath ? `; method-matrix: ${collectionArtifacts.methodMatrixPath}` : "";
   const clusterMessage = collectionArtifacts?.topicClustersPath ? `; topic-clusters: ${collectionArtifacts.topicClustersPath}` : "";
+  const synthesisMessage = collectionArtifacts?.synthesisClaimsPath ? `; synthesis-claims: ${collectionArtifacts.synthesisClaimsPath}` : "";
   const draftMessage = collectionArtifacts?.reviewDraftPath ? `; review-draft: ${collectionArtifacts.reviewDraftPath}` : "";
   const reviewReportMessage = collectionArtifacts?.reviewReportPath ? `; formal-report: ${collectionArtifacts.reviewReportPath}` : "";
   const reportMessage = batchReportPath ? `; ${t("batchReport")}: ${batchReportPath}` : "";
@@ -329,7 +330,7 @@ async function batchGenerateItems(items, force, collectionContext) {
   if (skippedNoPdf > 0) extraParts.push(`${t("batchSkippedNoPdf")}: ${skippedNoPdf}`);
   if (skippedExisting > 0) extraParts.push(`${t("batchSkippedExisting")}: ${skippedExisting}`);
   const skippedSuffix = extraParts.length ? ` (${extraParts.join("; ")})` : "";
-  showProgress(`${t("batchDone")}: ${generated}; ${t("batchSkipped")}: ${skipped}${skippedSuffix}; ${t("batchFailed")}: ${failed}${indexMessage}${matrixMessage}${clusterMessage}${draftMessage}${reviewReportMessage}${reportMessage}`);
+  showProgress(`${t("batchDone")}: ${generated}; ${t("batchSkipped")}: ${skipped}${skippedSuffix}; ${t("batchFailed")}: ${failed}${indexMessage}${matrixMessage}${clusterMessage}${synthesisMessage}${draftMessage}${reviewReportMessage}${reportMessage}`);
 }
 
 async function generateForItem(item, settings, force) {
@@ -878,6 +879,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
   const methodMatrixPath = artifacts.methodMatrixPath;
   const gapMatrixPath = artifacts.gapMatrixPath;
   const topicClustersPath = artifacts.topicClustersPath;
+  const synthesisClaimsPath = artifacts.synthesisClaimsPath;
   const researchQuestionCardsPath = artifacts.researchQuestionCardsPath;
   const reviewDraftPath = artifacts.reviewDraftPath;
   const reviewReportPath = artifacts.reviewReportPath;
@@ -886,6 +888,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
   await writeText(methodMatrixPath, renderMethodMatrix(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(gapMatrixPath, renderResearchGapMatrix(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(topicClustersPath, renderTopicClusters(collectionContext, results, outputLanguage, summaryInsights));
+  await writeText(synthesisClaimsPath, renderSynthesisClaimsMatrix(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(researchQuestionCardsPath, renderResearchQuestionCards(collectionContext, results, outputLanguage));
   await writeText(reviewDraftPath, renderManualReviewDraft(collectionContext, results, outputLanguage));
   await writeText(reviewReportPath, renderFormalReviewReport(collectionContext, results, outputLanguage, summaryInsights));
@@ -897,6 +900,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
     methodMatrixPath,
     gapMatrixPath,
     topicClustersPath,
+    synthesisClaimsPath,
     researchQuestionCardsPath,
     reviewDraftPath,
     reviewReportPath,
@@ -920,6 +924,7 @@ function collectionWorkspaceArtifactPaths(dirs, outputLanguage) {
     methodMatrixPath: PathUtils.join(dirs.knowledge, `method-matrix.${language}.md`),
     gapMatrixPath: PathUtils.join(dirs.knowledge, `research-gaps.${language}.md`),
     topicClustersPath: PathUtils.join(dirs.knowledge, `topic-clusters.${language}.md`),
+    synthesisClaimsPath: PathUtils.join(dirs.knowledge, `synthesis-claims.${language}.md`),
     researchQuestionCardsPath: PathUtils.join(dirs.knowledge, `research-question-cards.${language}.md`),
     reviewDraftPath: PathUtils.join(dirs.writing, `manual-review-draft.${language}.md`),
     reviewReportPath: PathUtils.join(dirs.writing, `formal-review-report.${language}.md`),
@@ -1167,6 +1172,33 @@ function renderTopicClusters(collectionContext, results, outputLanguage = "zh-CN
   ].join("\n");
 }
 
+function renderSynthesisClaimsMatrix(collectionContext, results, outputLanguage = "zh-CN", summaryInsights = new Map()) {
+  const labels = collectionTemplateLabels(outputLanguage);
+  const entries = synthesisClaimEntries(results, summaryInsights, labels);
+  const rows = entries.map((entry) => [
+    escapeMarkdownTable(entry.cluster),
+    escapeMarkdownTable(entry.claim),
+    escapeMarkdownTable(entry.supportingPapers.join("; ") || labels.noSummary),
+    escapeMarkdownTable(entry.evidence.join("; ") || labels.pendingSummaryPath),
+    escapeMarkdownTable(entry.gaps.join("; ") || labels.gapMatrixPendingEvidence),
+    escapeMarkdownTable(entry.validations.join("; ") || labels.gapMatrixPendingValidation)
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |";
+  return [
+    `# ${collectionContext.name || collectionContext.key} ${labels.synthesisClaims}`,
+    "",
+    labels.synthesisClaimsNote,
+    "",
+    `| ${labels.clusterColumn} | ${labels.claimColumn} | ${labels.supportingPapersColumn} | ${labels.evidenceColumn} | ${labels.counterGapColumn} | ${labels.validationColumn} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    rows,
+    "",
+    `## ${labels.claimRiskChecklist}`,
+    "",
+    labels.claimRiskChecklistItems,
+    ""
+  ].join("\n");
+}
+
 function topicClusterEntries(results, summaryInsights = new Map(), labels = collectionTemplateLabels("zh-CN")) {
   const definitions = topicClusterDefinitions(labels);
   const clusters = new Map();
@@ -1178,6 +1210,24 @@ function topicClusterEntries(results, summaryInsights = new Map(), labels = coll
     clusters.get(definition.id).items.push({ item, insight });
   }
   return Array.from(clusters.values()).sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label));
+}
+
+function synthesisClaimEntries(results, summaryInsights = new Map(), labels = collectionTemplateLabels("zh-CN")) {
+  return topicClusterEntries(results, summaryInsights, labels).map((cluster) => {
+    const methods = uniqueInsightLines(cluster.items.map(({ insight }) => insight.method).filter(Boolean)).slice(0, 3);
+    const gaps = uniqueInsightLines(cluster.items.flatMap(({ insight }) => insightValues(insight.limitations, insight.missingEvidence))).slice(0, 3);
+    const validations = uniqueInsightLines(cluster.items.flatMap(({ insight }) => insightValues(insight.validationNeeds, insight.rejectConditions))).slice(0, 3);
+    const supportingPapers = cluster.items.map(({ item }) => `${item.title || item.itemKey} (${item.year || "n.d."})`).slice(0, 8);
+    const evidence = uniqueInsightLines(cluster.items.flatMap(({ item, insight }) => insightValues(insight.evidence, item.summaryPath))).slice(0, 6);
+    return {
+      cluster: cluster.label,
+      claim: labels.synthesisClaimText(cluster.label, methods.join("; ") || labels.pendingInsight, gaps[0] || labels.gapMatrixPendingEvidence),
+      supportingPapers,
+      evidence,
+      gaps,
+      validations
+    };
+  });
 }
 
 function topicClusterDefinitions(labels) {
@@ -1288,6 +1338,7 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
   const stats = batchStats(results);
   const generatedItems = batchReportItems(results).filter((item) => item.status === "generated" || item.status === "skipped_existing");
   const clusters = topicClusterEntries(results, summaryInsights, labels);
+  const synthesisClaims = synthesisClaimEntries(results, summaryInsights, labels);
   const methodSignals = uniqueInsightLines(generatedItems.map((item) => summaryInsights.get(item.itemKey)?.method).filter(Boolean)).slice(0, 6);
   const dataSignals = uniqueInsightLines(generatedItems.flatMap((item) => {
     const insight = summaryInsights.get(item.itemKey) || {};
@@ -1326,6 +1377,10 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     `## ${labels.reportTopicSynthesis}`,
     "",
     reportClusterSections(clusters, labels),
+    "",
+    `## ${labels.reportSynthesisClaims}`,
+    "",
+    reportSynthesisClaims(synthesisClaims, labels),
     "",
     `## ${labels.reportResearchGaps}`,
     "",
@@ -1382,6 +1437,19 @@ function reportClusterSections(clusters, labels) {
   }).join("\n\n");
 }
 
+function reportSynthesisClaims(entries, labels) {
+  if (!entries.length) return `- ${labels.noSummary}`;
+  return entries.slice(0, 8).map((entry) => [
+    `### ${entry.cluster}`,
+    "",
+    `- ${labels.claimColumn}: ${entry.claim}`,
+    `- ${labels.supportingPapersColumn}: ${entry.supportingPapers.join("; ") || labels.noSummary}`,
+    `- ${labels.evidenceColumn}: ${entry.evidence.join("; ") || labels.pendingSummaryPath}`,
+    `- ${labels.counterGapColumn}: ${entry.gaps.join("; ") || labels.gapMatrixPendingEvidence}`,
+    `- ${labels.validationColumn}: ${entry.validations.join("; ") || labels.gapMatrixPendingValidation}`
+  ].join("\n")).join("\n\n");
+}
+
 function reportBulletList(items, fallback) {
   const values = uniqueInsightLines((items || []).filter(Boolean)).slice(0, 10);
   return values.length ? values.map((item) => `- ${item}`).join("\n") : `- ${fallback}`;
@@ -1410,6 +1478,8 @@ function collectionTemplateLabels(outputLanguage) {
       methodMatrixNote: "Use this matrix to manually consolidate methods, data, metrics, and limitations after single-paper summaries are available.",
       topicClusters: "Topic Clusters",
       topicClustersNote: "Heuristic collection-level clusters built from titles and extracted summary signals. Treat them as a review starting point, not final taxonomy.",
+      synthesisClaims: "Synthesis Claims Matrix",
+      synthesisClaimsNote: "Draft cross-paper claims from topic clusters and single-paper summaries. Use this as a controlled claim ledger before writing prose.",
       gapMatrix: "Research Gap Matrix",
       gapMatrixNote: "Use this matrix to consolidate limitations, missing evidence, and validation needs before moving claims into writing.",
       gapMatrixPendingLimitation: "Pending limitation extraction",
@@ -1419,12 +1489,25 @@ function collectionTemplateLabels(outputLanguage) {
       pendingRejectCondition: "Pending falsification condition",
       paperColumn: "Paper",
       yearColumn: "Year",
+      clusterColumn: "Cluster",
+      claimColumn: "Draft Claim",
+      supportingPapersColumn: "Supporting Papers",
+      evidenceColumn: "Evidence Sources",
+      counterGapColumn: "Counter-evidence / Gap",
       methodSignalColumn: "Method Signal",
       gapSignalColumn: "Gap / Validation Signal",
       limitationColumn: "Observed Limitation",
       missingEvidenceColumn: "Missing Evidence",
       validationColumn: "Validation Need",
       summaryColumn: "Summary",
+      synthesisClaimText: (cluster, methods, gap) => `${cluster}: current summaries suggest ${methods}; the main unresolved gap is ${gap}.`,
+      claimRiskChecklist: "Claim Risk Checklist",
+      claimRiskChecklistItems: [
+        "- [ ] Verify that every draft claim has at least two supporting papers or mark it as single-paper evidence.",
+        "- [ ] Separate missing evidence from actual negative evidence.",
+        "- [ ] Check whether methods, datasets, scenarios, and metrics are comparable before merging claims.",
+        "- [ ] Move only verified claims into the formal review report or manuscript draft."
+      ].join("\n"),
       clusterSynthesis: "Synthesis",
       clusterWritingEntry: "Writing entry",
       clusterSynthesisText: (methods, gaps) => `Method signals: ${methods}. Evidence gaps: ${gaps}.`,
@@ -1488,6 +1571,7 @@ function collectionTemplateLabels(outputLanguage) {
       reportMethodTaxonomy: "Method Taxonomy",
       reportDataAndEvidence: "Data, Scenario, and Metric Evidence",
       reportTopicSynthesis: "Topic-level Synthesis",
+      reportSynthesisClaims: "Evidence-backed Synthesis Claims",
       reportResearchGaps: "Research Gaps and Validation Needs",
       reportDraftOutline: "Review Draft Outline",
       reportRiskChecklist: "Risk Checklist",
@@ -1513,6 +1597,8 @@ function collectionTemplateLabels(outputLanguage) {
       methodMatrixNote: "単一論文の要約が揃った後、手法、データ、評価指標、限界を手動で統合するためのマトリクスです。",
       topicClusters: "トピッククラスタ",
       topicClustersNote: "タイトルと単一論文要約から抽出した手がかりに基づくヒューリスティックな collection レベルのクラスタです。最終分類ではなくレビューの出発点として扱ってください。",
+      synthesisClaims: "統合主張マトリクス",
+      synthesisClaimsNote: "トピッククラスタと単一論文要約から横断的な主張の草案を作ります。本文を書く前の管理された主張台帳として使ってください。",
       gapMatrix: "研究ギャップマトリクス",
       gapMatrixNote: "執筆に入る前に、限界、不足している証拠、検証ニーズを整理するためのマトリクスです。",
       gapMatrixPendingLimitation: "限界の抽出待ち",
@@ -1522,12 +1608,25 @@ function collectionTemplateLabels(outputLanguage) {
       pendingRejectCondition: "棄却条件の抽出待ち",
       paperColumn: "論文",
       yearColumn: "年",
+      clusterColumn: "クラスタ",
+      claimColumn: "主張草案",
+      supportingPapersColumn: "支持する論文",
+      evidenceColumn: "証拠ソース",
+      counterGapColumn: "反証・ギャップ",
       methodSignalColumn: "手法の手がかり",
       gapSignalColumn: "ギャップ・検証の手がかり",
       limitationColumn: "観察された限界",
       missingEvidenceColumn: "不足している証拠",
       validationColumn: "検証ニーズ",
       summaryColumn: "要約",
+      synthesisClaimText: (cluster, methods, gap) => `${cluster}: 現在の要約は ${methods} を示すが、主な未解決ギャップは ${gap} である。`,
+      claimRiskChecklist: "主張リスクチェックリスト",
+      claimRiskChecklistItems: [
+        "- [ ] 各主張草案が少なくとも 2 本の支持論文を持つか、単一論文の証拠として明示する。",
+        "- [ ] 不足している証拠と実際の否定的証拠を分ける。",
+        "- [ ] 手法、データセット、シナリオ、指標を統合前に比較可能か確認する。",
+        "- [ ] 検証済みの主張だけを正式レビュー報告書または原稿草稿へ移す。"
+      ].join("\n"),
       clusterSynthesis: "統合メモ",
       clusterWritingEntry: "執筆入口",
       clusterSynthesisText: (methods, gaps) => `手法の手がかり: ${methods}。証拠ギャップ: ${gaps}。`,
@@ -1591,6 +1690,7 @@ function collectionTemplateLabels(outputLanguage) {
       reportMethodTaxonomy: "手法分類",
       reportDataAndEvidence: "データ・シナリオ・指標の証拠",
       reportTopicSynthesis: "トピック別統合",
+      reportSynthesisClaims: "証拠に基づく統合主張",
       reportResearchGaps: "研究ギャップと検証ニーズ",
       reportDraftOutline: "レビュー草稿アウトライン",
       reportRiskChecklist: "リスク確認リスト",
@@ -1615,6 +1715,8 @@ function collectionTemplateLabels(outputLanguage) {
     methodMatrixNote: "此矩阵用于在单篇总结完成后手动汇总方法、数据、指标和局限。",
     topicClusters: "主题聚类",
     topicClustersNote: "基于标题和单篇总结抽取线索生成的启发式集合级聚类，用作综述起点，不等同于最终分类。",
+    synthesisClaims: "综合主张矩阵",
+    synthesisClaimsNote: "基于主题聚类和单篇总结形成跨论文主张草稿，用作正式写作前的受控主张台账。",
     gapMatrix: "研究空白矩阵",
     gapMatrixNote: "此矩阵用于在进入写作前整理局限、缺失证据和验证需求。",
     gapMatrixPendingLimitation: "待抽取局限",
@@ -1624,12 +1726,25 @@ function collectionTemplateLabels(outputLanguage) {
     pendingRejectCondition: "待抽取推翻条件",
     paperColumn: "论文",
     yearColumn: "年份",
+    clusterColumn: "主题",
+    claimColumn: "主张草稿",
+    supportingPapersColumn: "支持论文",
+    evidenceColumn: "证据来源",
+    counterGapColumn: "反证/缺口",
     methodSignalColumn: "方法线索",
     gapSignalColumn: "空白/验证线索",
     limitationColumn: "已观察局限",
     missingEvidenceColumn: "缺失证据",
     validationColumn: "验证需求",
     summaryColumn: "总结",
+    synthesisClaimText: (cluster, methods, gap) => `围绕“${cluster}”，当前总结显示 ${methods}；主要未解决缺口是 ${gap}。`,
+    claimRiskChecklist: "主张风险检查清单",
+    claimRiskChecklistItems: [
+      "- [ ] 检查每条主张草稿是否至少有两篇支持论文；否则标记为单篇证据。",
+      "- [ ] 区分缺失证据和真正的反向证据。",
+      "- [ ] 合并结论前检查方法、数据集、场景和指标是否可比较。",
+      "- [ ] 只把已核验主张迁移到正式综述报告或论文草稿。"
+    ].join("\n"),
     clusterSynthesis: "综合线索",
     clusterWritingEntry: "写作入口",
     clusterSynthesisText: (methods, gaps) => `方法线索：${methods}。证据空白：${gaps}。`,
@@ -1693,6 +1808,7 @@ function collectionTemplateLabels(outputLanguage) {
     reportMethodTaxonomy: "方法分类",
     reportDataAndEvidence: "数据、场景与指标证据",
     reportTopicSynthesis: "主题级综合",
+    reportSynthesisClaims: "有证据支持的综合主张",
     reportResearchGaps: "研究空白与验证需求",
     reportDraftOutline: "综述正文大纲",
     reportRiskChecklist: "风险核查清单",

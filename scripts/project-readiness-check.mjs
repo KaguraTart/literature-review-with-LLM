@@ -355,9 +355,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "collection.workspace",
-    description: "Collection workspace artifacts, topic clustering, and summary insight extraction are wired",
+    description: "Collection workspace artifacts, topic clustering, synthesis claims, and summary insight extraction are wired",
     files: ["addon/bootstrap.js"],
-    markers: ["writeCollectionWorkspace", "loadBatchSummaryInsights", "extractSummaryInsights", "renderMethodMatrix", "renderResearchGapMatrix", "renderTopicClusters", "renderFormalReviewReport", "formal-review-report", "topicClusterEntries"]
+    markers: ["writeCollectionWorkspace", "loadBatchSummaryInsights", "extractSummaryInsights", "renderMethodMatrix", "renderResearchGapMatrix", "renderTopicClusters", "renderSynthesisClaimsMatrix", "renderFormalReviewReport", "formal-review-report", "synthesis-claims", "topicClusterEntries", "synthesisClaimEntries"]
   },
   {
     id: "markdown.writeback",
