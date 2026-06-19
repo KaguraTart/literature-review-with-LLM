@@ -1204,6 +1204,41 @@ describe("workbench writeback helpers", () => {
     expect(deltas).toEqual(["tail"]);
   });
 
+  it("parses standard SSE event records in workbench streams", async () => {
+    const response = {
+      body: streamFromText([
+        "event: response.output_text.delta",
+        "data: {",
+        "data: \"type\":\"response.output_text.delta\",",
+        "data: \"delta\":\"split\"",
+        "data: }",
+        "",
+        "event: response.output_text.delta",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\" stream\"}",
+        ""
+      ].join("\n"))
+    };
+    const deltas: string[] = [];
+    const text = await helpers.readStream(response, "openai_responses", (delta) => deltas.push(delta));
+
+    expect(text).toBe("split stream");
+    expect(deltas).toEqual(["split", " stream"]);
+  });
+
+  it("keeps newline-only workbench streams compatible", async () => {
+    const response = {
+      body: streamFromText([
+        "data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}",
+        "data: {\"choices\":[{\"delta\":{\"content\":\" second\"}}]}"
+      ].join("\n"))
+    };
+    const deltas: string[] = [];
+    const text = await helpers.readStream(response, "openai_chat", (delta) => deltas.push(delta));
+
+    expect(text).toBe("first second");
+    expect(deltas).toEqual(["first", " second"]);
+  });
+
   it("does not duplicate OpenAI Responses done snapshots in workbench streams", async () => {
     const response = {
       body: streamFromText([

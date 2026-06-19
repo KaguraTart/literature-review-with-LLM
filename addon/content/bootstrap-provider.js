@@ -131,15 +131,15 @@ function jsonModeBodyDefaults(profile) {
 
 function extractOpenAIMessageContent(content) {
   if (!content) return "";
-  if (typeof content === "string") return content.trim();
+  if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.map((part) => extractOpenAIMessageContent(part)).filter(Boolean).join("\n").trim();
+    return content.map((part) => extractOpenAIMessageContent(part)).filter(Boolean).join("\n");
   }
   if (typeof content === "object") {
     if (isOpenAIReasoningPart(content)) return "";
-    if (typeof content?.text === "string") return content.text.trim();
-    if (typeof content?.output_text === "string") return content.output_text.trim();
-    if (typeof content?.content === "string") return content.content.trim();
+    if (typeof content?.text === "string") return content.text;
+    if (typeof content?.output_text === "string") return content.output_text;
+    if (typeof content?.content === "string") return content.content;
     if (Array.isArray(content?.content)) return extractOpenAIMessageContent(content.content);
     if (Array.isArray(content?.output)) return extractOpenAIContentArray(content.output);
   }
@@ -148,7 +148,7 @@ function extractOpenAIMessageContent(content) {
 
 function extractOpenAIContentArray(value) {
   if (!Array.isArray(value)) return "";
-  return value.map((part) => extractOpenAIMessageContent(part)).filter(Boolean).join("\n").trim();
+  return value.map((part) => extractOpenAIMessageContent(part)).filter(Boolean).join("\n");
 }
 
 function extractOpenAIEventContainer(value) {

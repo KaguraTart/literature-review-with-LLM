@@ -826,6 +826,71 @@ describe("bootstrap provider helpers", () => {
     expect(result.markdown).toBe("streamed");
   });
 
+  it("parses standard SSE event records in the bootstrap provider path", async () => {
+    const { helpers } = loadBootstrapProviderHelpers({
+      __streamText: [
+        "event: response.output_text.delta",
+        "data: {",
+        "data: \"type\":\"response.output_text.delta\",",
+        "data: \"delta\":\"split\"",
+        "data: }",
+        "",
+        "event: response.output_text.delta",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\" stream\"}",
+        ""
+      ].join("\n")
+    });
+    const result = await helpers.callOpenAICompatible({
+      provider: "openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: true
+      }
+    }, "hash", true);
+
+    expect(result.markdown).toBe("split stream");
+  });
+
+  it("keeps newline-only bootstrap streams compatible", async () => {
+    const { helpers } = loadBootstrapProviderHelpers({
+      __streamText: [
+        "data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}",
+        "data: {\"choices\":[{\"delta\":{\"content\":\" second\"}}]}"
+      ].join("\n")
+    });
+    const result = await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.example.com/v1",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: true
+      }
+    }, "hash", false);
+
+    expect(result.markdown).toBe("first second");
+  });
+
   it("uses Chat Completions without MiniMax extras for OpenAI-compatible bootstrap profiles", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       choices: [{ message: { content: "chat summary" } }]

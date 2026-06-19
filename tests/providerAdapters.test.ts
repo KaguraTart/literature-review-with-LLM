@@ -643,6 +643,30 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"claude\"}}")).toBe("claude");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"ok\\\"\"}}")).toBe("{\"ok\"");
     expect(parseStreamChunk("openai_chat", "data: not-json")).toBe("");
+    expect(parseStreamChunk("openai_chat", [
+      "event: message",
+      "data: {",
+      "data: \"choices\":[{\"delta\":{\"content\":\"split chat\"}}]",
+      "data: }"
+    ].join("\n"))).toBe("split chat");
+    expect(parseStreamChunk("openai_responses", [
+      "event: response.output_text.delta",
+      "data: {",
+      "data: \"type\":\"response.output_text.delta\",",
+      "data: \"delta\":\"split responses\"",
+      "data: }"
+    ].join("\n"))).toBe("split responses");
+    expect(parseStreamChunk("anthropic_messages", [
+      "event: content_block_delta",
+      "data: {",
+      "data: \"type\":\"content_block_delta\",",
+      "data: \"delta\":{\"type\":\"text_delta\",\"text\":\"split anthropic\"}",
+      "data: }"
+    ].join("\n"))).toBe("split anthropic");
+    expect(parseStreamChunk("openai_chat", [
+      "data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}",
+      "data: {\"choices\":[{\"delta\":{\"content\":\" second\"}}]}"
+    ].join("\n"))).toBe("first second");
     expect(redact("Authorization: Bearer sk-test-secret")).toContain("[redacted]");
     const redacted = redact("Groq gsk_test-secret xAI xai-test-secret Perplexity pplx-test-secret MiniMax ms-test-secret Gemini AIzaSyA1234567890abcdefghijklmnop");
     expect(redacted).not.toContain("gsk_test-secret");

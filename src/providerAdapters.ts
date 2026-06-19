@@ -142,9 +142,10 @@ export function extractResponseText(protocol: ProviderProtocol, data: unknown): 
 }
 
 export function parseStreamChunk(protocol: ProviderProtocol, rawLine: string): string {
-  const line = rawLine.trim();
-  if (!line.startsWith("data:")) return "";
-  const payload = line.slice(5).trim();
+  return streamPayloads(rawLine).map((payload) => parseStreamPayload(protocol, payload)).filter(Boolean).join("");
+}
+
+function parseStreamPayload(protocol: ProviderProtocol, payload: string): string {
   if (!payload || payload === "[DONE]") return "";
   const data = safeParseJSON(payload) as any;
   if (!data) return "";
@@ -180,6 +181,31 @@ export function parseStreamChunk(protocol: ProviderProtocol, rawLine: string): s
     || extractOutputContent(data?.output)
     || (typeof data?.delta === "string" ? data.delta : "")
     || "";
+}
+
+function streamPayloads(rawRecord: string): string[] {
+  const record = String(rawRecord || "");
+  const dataLines = record
+    .split(/\r?\n/)
+    .map((line) => sseFieldValue(line, "data"))
+    .filter((value): value is string => value !== undefined);
+  if (!dataLines.length) {
+    const line = record.trim();
+    if (!line.startsWith("data:")) return [];
+    return [line.slice(5).trim()].filter(Boolean);
+  }
+  const joined = dataLines.join("\n").trim();
+  if (!joined) return [];
+  if (dataLines.length === 1 || joined === "[DONE]" || safeParseJSON(joined)) return [joined];
+  return dataLines.map((line) => line.trim()).filter(Boolean);
+}
+
+function sseFieldValue(line: string, field: string): string | undefined {
+  const text = String(line || "");
+  const index = text.indexOf(":");
+  if (index < 0 || text.slice(0, index).trim() !== field) return undefined;
+  const value = text.slice(index + 1);
+  return value.startsWith(" ") ? value.slice(1) : value;
 }
 
 export function redact(value: unknown): string {

@@ -664,8 +664,14 @@ async function readProviderStream(response, protocol) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let recordLines = [];
   let text = "";
   let usage;
+  const consumeRecord = (record) => {
+    const parsed = parseProviderStreamLine(protocol, record);
+    if (parsed.usage) usage ||= parsed.usage;
+    if (parsed.text && (!parsed.snapshot || !text)) text += parsed.text;
+  };
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -673,14 +679,26 @@ async function readProviderStream(response, protocol) {
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() || "";
     for (const line of lines) {
-      const parsed = parseProviderStreamLine(protocol, line);
-      if (parsed.usage) usage ||= parsed.usage;
-      if (parsed.text && (!parsed.snapshot || !text)) text += parsed.text;
+      if (isBlankStreamLine(line)) {
+        if (recordLines.length) consumeRecord(recordLines.join("\n"));
+        recordLines = [];
+        continue;
+      }
+      if (shouldStartNewStreamRecord(recordLines, line)) {
+        consumeRecord(recordLines.join("\n"));
+        recordLines = [];
+      }
+      recordLines.push(line);
     }
   }
-  const tail = parseProviderStreamLine(protocol, buffer);
-  if (tail.usage) usage ||= tail.usage;
-  if (tail.text && (!tail.snapshot || !text)) text += tail.text;
+  if (buffer) {
+    if (shouldStartNewStreamRecord(recordLines, buffer)) {
+      consumeRecord(recordLines.join("\n"));
+      recordLines = [];
+    }
+    recordLines.push(buffer);
+  }
+  if (recordLines.length) consumeRecord(recordLines.join("\n"));
   if (protocol === "anthropic_messages") {
     return { content: [{ type: "text", text }], usage };
   }
@@ -688,9 +706,21 @@ async function readProviderStream(response, protocol) {
 }
 
 function parseProviderStreamLine(protocol, line) {
-  const trimmed = String(line || "").trim();
-  if (!trimmed.startsWith("data:")) return { text: "" };
-  const payload = trimmed.slice(5).trim();
+  const payloads = streamPayloads(line);
+  if (!payloads.length) return { text: "" };
+  let text = "";
+  let usage;
+  let snapshot = false;
+  for (const payload of payloads) {
+    const parsed = parseProviderStreamPayload(protocol, payload);
+    if (parsed.usage) usage ||= parsed.usage;
+    if (parsed.snapshot) snapshot = true;
+    if (parsed.text && (!parsed.snapshot || !text)) text += parsed.text;
+  }
+  return { text, snapshot, usage };
+}
+
+function parseProviderStreamPayload(protocol, payload) {
   if (!payload || payload === "[DONE]") return { text: "" };
   const chunk = safeParseJSON(payload);
   if (!chunk) return { text: "" };
@@ -701,6 +731,39 @@ function parseProviderStreamLine(protocol, line) {
     snapshot: isProviderStreamSnapshot(protocol, chunk),
     usage: streamUsage(chunk)
   };
+}
+
+function streamPayloads(record) {
+  const dataLines = String(record || "")
+    .split(/\r?\n/)
+    .map((line) => sseFieldValue(line, "data"))
+    .filter((value) => value !== undefined);
+  if (!dataLines.length) return [];
+  const joined = dataLines.join("\n").trim();
+  if (!joined) return [];
+  if (dataLines.length === 1 || joined === "[DONE]" || safeParseJSON(joined)) return [joined];
+  return dataLines.map((line) => String(line || "").trim()).filter(Boolean);
+}
+
+function sseFieldValue(line, field) {
+  const text = String(line || "");
+  const index = text.indexOf(":");
+  if (index < 0 || text.slice(0, index).trim() !== field) return undefined;
+  const value = text.slice(index + 1);
+  return value.startsWith(" ") ? value.slice(1) : value;
+}
+
+function shouldStartNewStreamRecord(recordLines, nextLine) {
+  if (!recordLines.length || !isStreamFieldLine(nextLine)) return false;
+  return streamPayloads(recordLines.join("\n")).some((payload) => payload === "[DONE]" || !!safeParseJSON(payload));
+}
+
+function isBlankStreamLine(line) {
+  return !String(line || "").trim();
+}
+
+function isStreamFieldLine(line) {
+  return /^(?:data|event|id|retry):/i.test(String(line || "").trim());
 }
 
 function renderMarkdown(item, pdf, settings, result) {

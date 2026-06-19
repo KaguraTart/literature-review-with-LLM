@@ -4670,7 +4670,15 @@ async function readStream(response, protocol, onDelta) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let recordLines = [];
   let text = "";
+  const consumeRecord = (record) => {
+    const parsed = parseStreamDelta(protocol, record);
+    if (parsed.text && (!parsed.snapshot || !text)) {
+      text += parsed.text;
+      onDelta(parsed.text);
+    }
+  };
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -4678,18 +4686,26 @@ async function readStream(response, protocol, onDelta) {
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() || "";
     for (const line of lines) {
-      const parsed = parseStreamDelta(protocol, line);
-      if (parsed.text && (!parsed.snapshot || !text)) {
-        text += parsed.text;
-        onDelta(parsed.text);
+      if (isBlankStreamLine(line)) {
+        if (recordLines.length) consumeRecord(recordLines.join("\n"));
+        recordLines = [];
+        continue;
       }
+      if (shouldStartNewStreamRecord(recordLines, line)) {
+        consumeRecord(recordLines.join("\n"));
+        recordLines = [];
+      }
+      recordLines.push(line);
     }
   }
-  const tail = parseStreamDelta(protocol, buffer);
-  if (tail.text && (!tail.snapshot || !text)) {
-    text += tail.text;
-    onDelta(tail.text);
+  if (buffer) {
+    if (shouldStartNewStreamRecord(recordLines, buffer)) {
+      consumeRecord(recordLines.join("\n"));
+      recordLines = [];
+    }
+    recordLines.push(buffer);
   }
+  if (recordLines.length) consumeRecord(recordLines.join("\n"));
   return text;
 }
 
@@ -4719,9 +4735,19 @@ function streamTextFromData(protocol, data) {
 }
 
 function parseStreamDelta(protocol, rawLine) {
-  const line = rawLine.trim();
-  if (!line.startsWith("data:")) return { text: "", snapshot: false };
-  const payload = line.slice(5).trim();
+  const payloads = streamPayloads(rawLine);
+  if (!payloads.length) return { text: "", snapshot: false };
+  let text = "";
+  let snapshot = false;
+  for (const payload of payloads) {
+    const parsed = parseStreamPayload(protocol, payload);
+    if (parsed.snapshot) snapshot = true;
+    if (parsed.text && (!parsed.snapshot || !text)) text += parsed.text;
+  }
+  return { text, snapshot };
+}
+
+function parseStreamPayload(protocol, payload) {
   if (!payload || payload === "[DONE]") return { text: "", snapshot: false };
   const data = safeParseJSON(payload);
   const errorText = streamErrorText(data);
@@ -4730,6 +4756,39 @@ function parseStreamDelta(protocol, rawLine) {
     text: streamTextFromData(protocol, data),
     snapshot: isStreamSnapshot(protocol, data)
   };
+}
+
+function streamPayloads(record) {
+  const dataLines = String(record || "")
+    .split(/\r?\n/)
+    .map((line) => sseFieldValue(line, "data"))
+    .filter((value) => value !== undefined);
+  if (!dataLines.length) return [];
+  const joined = dataLines.join("\n").trim();
+  if (!joined) return [];
+  if (dataLines.length === 1 || joined === "[DONE]" || safeParseJSON(joined)) return [joined];
+  return dataLines.map((line) => String(line || "").trim()).filter(Boolean);
+}
+
+function sseFieldValue(line, field) {
+  const text = String(line || "");
+  const index = text.indexOf(":");
+  if (index < 0 || text.slice(0, index).trim() !== field) return undefined;
+  const value = text.slice(index + 1);
+  return value.startsWith(" ") ? value.slice(1) : value;
+}
+
+function shouldStartNewStreamRecord(recordLines, nextLine) {
+  if (!recordLines.length || !isStreamFieldLine(nextLine)) return false;
+  return streamPayloads(recordLines.join("\n")).some((payload) => payload === "[DONE]" || !!safeParseJSON(payload));
+}
+
+function isBlankStreamLine(line) {
+  return !String(line || "").trim();
+}
+
+function isStreamFieldLine(line) {
+  return /^(?:data|event|id|retry):/i.test(String(line || "").trim());
 }
 
 function streamErrorText(data) {
