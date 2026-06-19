@@ -1903,7 +1903,11 @@ function hashString(value) {
 }
 
 function redact(value) {
-  return String(value).replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]").replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g, "Bearer [redacted]").slice(0, 800);
+  return String(value)
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+    .replace(/\b(?:sk|ak|xai|gsk|pplx|ms|rk)[-_][A-Za-z0-9._-]+/gi, "[redacted]")
+    .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, "[redacted]")
+    .slice(0, 800);
 }
 
 function providerErrorText(status, text) {

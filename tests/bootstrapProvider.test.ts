@@ -491,7 +491,7 @@ describe("bootstrap provider helpers", () => {
       error: {
         code: "rate_limit_exceeded",
         type: "rate_limit_error",
-        message: "Too many requests for sk-test-secret with Authorization: Bearer routed-secret"
+        message: "Too many requests for sk-test-secret with Authorization: Bearer routed-secret and xai-test-secret"
       }
     }));
 
@@ -502,6 +502,7 @@ describe("bootstrap provider helpers", () => {
     expect(formatted).toContain("Bearer [redacted]");
     expect(formatted).not.toContain("sk-test-secret");
     expect(formatted).not.toContain("routed-secret");
+    expect(formatted).not.toContain("xai-test-secret");
   });
 
   it("recognizes regular item menu contexts", () => {

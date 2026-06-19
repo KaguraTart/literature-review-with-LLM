@@ -3039,7 +3039,7 @@ describe("workbench writeback helpers", () => {
       error: {
         code: "invalid_api_key",
         type: "invalid_request_error",
-        message: "Invalid API key sk-test-secret. Authorization: Bearer abc123"
+        message: "Invalid API key sk-test-secret. Authorization: Bearer abc123. Perplexity pplx-test-secret"
       }
     }));
 
@@ -3050,6 +3050,7 @@ describe("workbench writeback helpers", () => {
     expect(formatted).toContain("Bearer [redacted]");
     expect(formatted).not.toContain("sk-test-secret");
     expect(formatted).not.toContain("Bearer abc123");
+    expect(formatted).not.toContain("pplx-test-secret");
   });
 
   it("does not retry non-retryable provider HTTP errors in the workbench request path", async () => {

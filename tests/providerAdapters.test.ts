@@ -606,6 +606,12 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"ok\\\"\"}}")).toBe("{\"ok\"");
     expect(parseStreamChunk("openai_chat", "data: not-json")).toBe("");
     expect(redact("Authorization: Bearer sk-test-secret")).toContain("[redacted]");
+    const redacted = redact("Groq gsk_test-secret xAI xai-test-secret Perplexity pplx-test-secret MiniMax ms-test-secret Gemini AIzaSyA1234567890abcdefghijklmnop");
+    expect(redacted).not.toContain("gsk_test-secret");
+    expect(redacted).not.toContain("xai-test-secret");
+    expect(redacted).not.toContain("pplx-test-secret");
+    expect(redacted).not.toContain("ms-test-secret");
+    expect(redacted).not.toContain("AIzaSyA1234567890abcdefghijklmnop");
   });
 
   it("throws redacted provider errors from stream error events", () => {

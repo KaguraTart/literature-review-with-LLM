@@ -661,7 +661,7 @@ describe("preferences local-agent config helpers", () => {
       error: {
         code: "invalid_api_key",
         type: "invalid_request_error",
-        message: "Invalid API key sk-test-secret with Authorization: Bearer routed-secret"
+        message: "Invalid API key sk-test-secret with Authorization: Bearer routed-secret and gsk_test-secret"
       }
     }));
 
@@ -672,6 +672,7 @@ describe("preferences local-agent config helpers", () => {
     expect(formatted).toContain("Bearer [redacted]");
     expect(formatted).not.toContain("sk-test-secret");
     expect(formatted).not.toContain("routed-secret");
+    expect(formatted).not.toContain("gsk_test-secret");
     expect(helpers.localAgentErrorText(200, JSON.stringify({
       error: { code: "tool_failed", message: "Tool failed with Bearer local-secret" }
     }))).toBe("tool_failed - Tool failed with Bearer [redacted]");

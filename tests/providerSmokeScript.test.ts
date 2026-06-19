@@ -435,11 +435,12 @@ describe("provider smoke verifier", () => {
       expect(error?.stdout).toContain("invalid_api_key");
       expect(error?.stdout).toContain("Bad key [redacted]");
       expect(error?.stdout).not.toContain("sk-test-secret");
+      expect(error?.stdout).not.toContain("gsk_test-secret");
     }, {
       responseBody: {
         error: {
           code: "invalid_api_key",
-          message: "Bad key sk-test-secret"
+          message: "Bad key sk-test-secret and gsk_test-secret"
         }
       }
     });
