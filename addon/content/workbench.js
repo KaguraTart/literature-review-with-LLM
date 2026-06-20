@@ -6290,6 +6290,26 @@ async function readStream(response, protocol, onDelta) {
   return text;
 }
 
+const PROVIDER_RESPONSE_WRAPPER_KEYS = ["data", "result", "payload", "response", "message", "body", "completion"];
+const MODEL_TEXT_CONTAINER_KEYS = [
+  "content",
+  "output",
+  "parts",
+  "message",
+  "delta",
+  "part",
+  "item",
+  "response",
+  "result",
+  "payload",
+  "data",
+  "body",
+  "candidate",
+  "candidates",
+  "content_block",
+  "completion"
+];
+
 function streamTextFromData(protocol, data, depth = 0) {
   if (!data) return "";
   const errorText = streamErrorText(data);
@@ -6298,7 +6318,12 @@ function streamTextFromData(protocol, data, depth = 0) {
     if (data?.type === "content_block_delta") {
       return data?.delta?.text || data?.delta?.partial_json || "";
     }
-    return data?.delta?.text || data?.content_block?.text || wrappedStreamTextFromData(protocol, data, depth);
+    return data?.delta?.text
+      || data?.delta?.partial_json
+      || data?.content_block?.text
+      || modelTextFromValue(data?.content)
+      || modelTextFromValue(data?.message)
+      || wrappedStreamTextFromData(protocol, data, depth);
   }
   if (typeof data?.choices?.[0]?.delta === "string") return data.choices[0].delta;
   const deltaContent = modelTextFromValue(data?.choices?.[0]?.delta?.content);
@@ -6319,7 +6344,7 @@ function streamTextFromData(protocol, data, depth = 0) {
 
 function wrappedStreamTextFromData(protocol, data, depth) {
   if (depth >= 2 || !data || typeof data !== "object") return "";
-  for (const key of ["data", "result", "payload", "response"]) {
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object") continue;
     const text = streamTextFromData(protocol, value, depth + 1);
@@ -6400,7 +6425,7 @@ function streamErrorText(data) {
 function providerUsageFromResponse(data, depth = 0) {
   if (!data || typeof data !== "object" || depth > 3) return null;
   const direct = normalizeProviderUsage(data.usage || data.token_usage || data.tokenUsage || data.usage_metadata);
-  const nested = ["response", "message", "result", "payload", "data"]
+  const nested = PROVIDER_RESPONSE_WRAPPER_KEYS
     .map((key) => providerUsageFromResponse(data?.[key], depth + 1))
     .filter(Boolean)
     .reduce((merged, usage) => mergeProviderUsage(merged, usage), null);
@@ -6639,19 +6664,24 @@ function usesVersionlessOpenAICompatibleBase(baseURL) {
     || /^https:\/\/models\.github\.ai\/inference$/i.test(normalized);
 }
 
-function modelTextFromValue(value) {
-  if (!value) return "";
+function modelTextFromValue(value, depth = 0) {
+  if (!value || depth > 5) return "";
   if (typeof value === "string") return value;
   if (Array.isArray(value)) {
-    return value.map((item) => modelTextFromValue(item)).filter(Boolean).join("\n");
+    return value.map((item) => modelTextFromValue(item, depth + 1)).filter(Boolean).join("\n");
   }
   if (typeof value === "object") {
     if (isReasoningModelPart(value)) return "";
     if (typeof value.text === "string") return value.text;
     if (typeof value.output_text === "string") return value.output_text;
     if (typeof value.content === "string") return value.content;
-    if (Array.isArray(value.content)) return modelTextFromValue(value.content);
-    if (Array.isArray(value.output)) return modelTextFromValue(value.output);
+    if (typeof value.completion === "string") return value.completion;
+    for (const key of MODEL_TEXT_CONTAINER_KEYS) {
+      const nested = value?.[key];
+      if (!nested || nested === value) continue;
+      const text = modelTextFromValue(nested, depth + 1);
+      if (text) return text;
+    }
   }
   return "";
 }
@@ -6672,29 +6702,22 @@ function openAITextFromResponse(data, depth = 0) {
     || data?.choices?.[0]?.delta?.text
     || modelTextFromValue(data?.output)
     || modelTextFromValue(data?.content)
+    || modelTextFromValue(data?.candidates)
     || modelTextFromStreamContainer(data)
     || wrappedProviderTextFromResponse("openai", data, depth);
 }
 
 function anthropicTextFromResponse(data, depth = 0) {
-  const content = data?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part?.type === "text" && typeof part?.text === "string") return part.text;
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-  return typeof data?.text === "string" ? data.text : wrappedProviderTextFromResponse("anthropic", data, depth);
+  return modelTextFromValue(data?.content)
+    || modelTextFromValue(data?.message)
+    || modelTextFromValue(data?.body)
+    || modelTextFromValue(data?.candidates)
+    || (typeof data?.text === "string" ? data.text : wrappedProviderTextFromResponse("anthropic", data, depth));
 }
 
 function wrappedProviderTextFromResponse(protocol, data, depth) {
   if (depth >= 2 || !data || typeof data !== "object") return "";
-  for (const key of ["data", "result", "payload", "response"]) {
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object") continue;
     const text = protocol === "anthropic"
@@ -6714,10 +6737,11 @@ function isStreamSnapshot(protocol, value, depth = 0) {
     || type === "response.completed"
     || !!value?.part
     || !!value?.item
+    || !!value?.message
     || !!value?.response;
   if (direct) return true;
   if (depth >= 2 || !value || typeof value !== "object") return false;
-  return ["data", "result", "payload"].some((key) => {
+  return PROVIDER_RESPONSE_WRAPPER_KEYS.some((key) => {
     const wrapped = value?.[key];
     return !!wrapped && typeof wrapped === "object" && isStreamSnapshot(protocol, wrapped, depth + 1);
   });
@@ -6725,7 +6749,7 @@ function isStreamSnapshot(protocol, value, depth = 0) {
 
 function isReasoningModelPart(value) {
   const type = String(value?.type || "");
-  return type.includes("reasoning") || type === "thinking";
+  return type.includes("reasoning") || type.includes("thinking");
 }
 
 async function ensureSummaryFile(item, pdf, outputDir, options = {}) {

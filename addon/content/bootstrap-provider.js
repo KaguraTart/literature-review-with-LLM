@@ -1,3 +1,23 @@
+const PROVIDER_RESPONSE_WRAPPER_KEYS = ["data", "result", "payload", "response", "message", "body", "completion"];
+const MODEL_TEXT_CONTAINER_KEYS = [
+  "content",
+  "output",
+  "parts",
+  "message",
+  "delta",
+  "part",
+  "item",
+  "response",
+  "result",
+  "payload",
+  "data",
+  "body",
+  "candidate",
+  "candidates",
+  "content_block",
+  "completion"
+];
+
 function streamErrorText(data) {
   const error = data?.error || (data?.type === "error" ? data : null);
   if (!error) return "";
@@ -11,7 +31,7 @@ function streamUsage(chunk, depth = 0) {
   const usage = chunk?.usage || chunk?.message?.usage || chunk?.delta?.usage;
   if (usage) return usage;
   if (depth >= 2 || !chunk || typeof chunk !== "object") return undefined;
-  for (const key of ["data", "result", "payload", "response"]) {
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = chunk?.[key];
     if (!value || typeof value !== "object") continue;
     const wrappedUsage = streamUsage(value, depth + 1);
@@ -45,6 +65,7 @@ function extractOpenAITextValue(data, depth = 0) {
     || data?.choices?.[0]?.delta?.text
     || extractOpenAIContentArray(data?.output)
     || extractOpenAIMessageContent(data?.content)
+    || extractOpenAIMessageContent(data?.candidates)
     || extractOpenAIEventContainer(data)
     || extractWrappedResponseContent("openai", data, depth);
 }
@@ -83,13 +104,16 @@ function extractAnthropicStreamText(chunk, depth = 0) {
     if (typeof chunk?.delta?.partial_json === "string") return chunk.delta.partial_json;
   }
   if (typeof chunk?.delta?.text === "string") return chunk.delta.text;
+  if (typeof chunk?.delta?.partial_json === "string") return chunk.delta.partial_json;
   if (typeof chunk?.content_block?.text === "string") return chunk.content_block.text;
+  const contentText = extractOpenAIMessageContent(chunk?.content) || extractOpenAIMessageContent(chunk?.message);
+  if (contentText) return contentText;
   return extractWrappedStreamText("anthropic", chunk, depth);
 }
 
 function extractWrappedStreamText(protocol, chunk, depth) {
   if (depth >= 2 || !chunk || typeof chunk !== "object") return "";
-  for (const key of ["data", "result", "payload", "response"]) {
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = chunk?.[key];
     if (!value || typeof value !== "object") continue;
     const text = protocol === "anthropic"
@@ -172,19 +196,24 @@ function jsonModeBodyDefaults(profile) {
   return { response_format: { type: "json_object" } };
 }
 
-function extractOpenAIMessageContent(content) {
-  if (!content) return "";
+function extractOpenAIMessageContent(content, depth = 0) {
+  if (!content || depth > 5) return "";
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.map((part) => extractOpenAIMessageContent(part)).filter(Boolean).join("\n");
+    return content.map((part) => extractOpenAIMessageContent(part, depth + 1)).filter(Boolean).join("\n");
   }
   if (typeof content === "object") {
     if (isOpenAIReasoningPart(content)) return "";
     if (typeof content?.text === "string") return content.text;
     if (typeof content?.output_text === "string") return content.output_text;
     if (typeof content?.content === "string") return content.content;
-    if (Array.isArray(content?.content)) return extractOpenAIMessageContent(content.content);
-    if (Array.isArray(content?.output)) return extractOpenAIContentArray(content.output);
+    if (typeof content?.completion === "string") return content.completion;
+    for (const key of MODEL_TEXT_CONTAINER_KEYS) {
+      const nested = content?.[key];
+      if (!nested || nested === content) continue;
+      const text = extractOpenAIMessageContent(nested, depth + 1);
+      if (text) return text;
+    }
   }
   return "";
 }
@@ -210,10 +239,11 @@ function isOpenAIStreamSnapshot(value, depth = 0) {
     || type === "response.completed"
     || !!value?.part
     || !!value?.item
+    || !!value?.message
     || !!value?.response;
   if (direct) return true;
   if (depth >= 2 || !value || typeof value !== "object") return false;
-  return ["data", "result", "payload"].some((key) => {
+  return PROVIDER_RESPONSE_WRAPPER_KEYS.some((key) => {
     const wrapped = value?.[key];
     return !!wrapped && typeof wrapped === "object" && isOpenAIStreamSnapshot(wrapped, depth + 1);
   });
@@ -221,7 +251,7 @@ function isOpenAIStreamSnapshot(value, depth = 0) {
 
 function isOpenAIReasoningPart(value) {
   const type = String(value?.type || "");
-  return type.includes("reasoning") || type === "thinking";
+  return type.includes("reasoning") || type.includes("thinking");
 }
 
 function safeParseJSON(text) {
@@ -241,24 +271,16 @@ function extractAnthropicText(data) {
 }
 
 function extractAnthropicContent(data, depth = 0) {
-  const content = data?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part?.type === "text" && typeof part?.text === "string") return part.text;
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-  return typeof data?.text === "string" ? data.text : extractWrappedResponseContent("anthropic", data, depth);
+  return extractOpenAIMessageContent(data?.content)
+    || extractOpenAIMessageContent(data?.message)
+    || extractOpenAIMessageContent(data?.body)
+    || extractOpenAIMessageContent(data?.candidates)
+    || (typeof data?.text === "string" ? data.text : extractWrappedResponseContent("anthropic", data, depth));
 }
 
 function extractWrappedResponseContent(protocol, data, depth) {
   if (depth >= 2 || !data || typeof data !== "object") return "";
-  for (const key of ["data", "result", "payload", "response"]) {
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object") continue;
     const text = protocol === "anthropic"

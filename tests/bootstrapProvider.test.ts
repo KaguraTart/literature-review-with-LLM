@@ -2118,12 +2118,21 @@ describe("bootstrap provider helpers", () => {
     })).toBe("message text");
     expect(helpers.extractOpenAIStreamText({ data: { choices: [{ delta: { content: "wrapped chat" } }] } })).toBe("wrapped chat");
     expect(helpers.extractOpenAIStreamText({ result: { type: "response.output_text.delta", delta: "wrapped responses" } })).toBe("wrapped responses");
+    expect(helpers.extractOpenAIStreamText({ body: { type: "response.output_text.delta", delta: "wrapped body" } })).toBe("wrapped body");
+    expect(helpers.extractOpenAIStreamText({ completion: { choices: [{ delta: { content: "wrapped completion" } }] } })).toBe("wrapped completion");
     expect(helpers.extractAnthropicStreamText({
       payload: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped anthropic" } }
     })).toBe("wrapped anthropic");
+    expect(helpers.extractAnthropicStreamText({
+      message: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped message" } }
+    })).toBe("wrapped message");
     expect(helpers.isProviderStreamSnapshot("openai_responses", {
       data: { type: "response.completed", response: { output_text: "snapshot" } }
     })).toBe(true);
+    expect(helpers.isProviderStreamSnapshot("openai_responses", {
+      body: { type: "response.completed", response: { output_text: "snapshot" } }
+    })).toBe(true);
     expect(helpers.streamUsage({ data: { usage: { total_tokens: 9 } } })).toEqual({ total_tokens: 9 });
+    expect(helpers.streamUsage({ body: { usage: { total_tokens: 10 } } })).toEqual({ total_tokens: 10 });
   });
 });

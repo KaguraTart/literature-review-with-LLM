@@ -163,9 +163,18 @@ describe("workbench session helpers", () => {
     expect(helpers.extractResponseText("openai_responses", {
       result: { output_text: "wrapped responses text" }
     })).toBe("wrapped responses text");
+    expect(helpers.extractResponseText("openai_chat", {
+      body: { message: { content: [{ type: "output_text", text: "wrapped body message" }] } }
+    })).toBe("wrapped body message");
+    expect(helpers.extractResponseText("openai_chat", {
+      candidates: [{ content: { parts: [{ text: "candidate part text" }] } }]
+    })).toBe("candidate part text");
     expect(helpers.extractResponseText("anthropic_messages", {
       data: { content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "wrapped anthropic text" }] }
     })).toBe("wrapped anthropic text");
+    expect(helpers.extractResponseText("anthropic_messages", {
+      payload: { message: { content: [{ type: "redacted_thinking", text: "hidden" }, { type: "text", text: "anthropic message text" }] } }
+    })).toBe("anthropic message text");
   });
 
   it("normalizes wrapped provider usage in the workbench", () => {
@@ -199,9 +208,15 @@ describe("workbench session helpers", () => {
     expect(helpers.streamTextFromData("openai_responses", {
       result: { type: "response.output_text.delta", delta: "wrapped responses" }
     })).toBe("wrapped responses");
+    expect(helpers.streamTextFromData("openai_responses", {
+      body: { type: "response.output_text.delta", delta: "wrapped body" }
+    })).toBe("wrapped body");
     expect(helpers.streamTextFromData("anthropic_messages", {
       payload: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped anthropic" } }
     })).toBe("wrapped anthropic");
+    expect(helpers.streamTextFromData("anthropic_messages", {
+      message: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped message" } }
+    })).toBe("wrapped message");
     expect(helpers.isStreamSnapshot("openai_responses", {
       data: { type: "response.completed", response: { output_text: "snapshot" } }
     })).toBe(true);

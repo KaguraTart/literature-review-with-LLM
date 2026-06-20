@@ -803,7 +803,10 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"ok\\\"\"}}")).toBe("{\"ok\"");
     expect(parseStreamChunk("openai_chat", "data: {\"data\":{\"choices\":[{\"delta\":{\"content\":\"wrapped chat\"}}]}}")).toBe("wrapped chat");
     expect(parseStreamChunk("openai_responses", "data: {\"result\":{\"type\":\"response.output_text.delta\",\"delta\":\"wrapped responses\"}}")).toBe("wrapped responses");
+    expect(parseStreamChunk("openai_responses", "data: {\"body\":{\"type\":\"response.output_text.delta\",\"delta\":\"wrapped body\"}}")).toBe("wrapped body");
+    expect(parseStreamChunk("openai_chat", "data: {\"completion\":{\"choices\":[{\"delta\":{\"content\":\"wrapped completion\"}}]}}")).toBe("wrapped completion");
     expect(parseStreamChunk("anthropic_messages", "data: {\"payload\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"wrapped anthropic\"}}}")).toBe("wrapped anthropic");
+    expect(parseStreamChunk("anthropic_messages", "data: {\"message\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"wrapped message\"}}}")).toBe("wrapped message");
     expect(parseStreamChunk("openai_chat", "data: not-json")).toBe("");
     expect(parseStreamChunk("openai_chat", [
       "event: message",
@@ -947,6 +950,12 @@ describe("provider adapters", () => {
       result: { output: [{ content: [{ type: "output_text", text: "wrapped result text" }] }] }
     } as any)).toBe("wrapped result text");
     expect(extractResponseText("openai_chat", {
+      body: { message: { content: [{ type: "output_text", text: "wrapped body message" }] } }
+    } as any)).toBe("wrapped body message");
+    expect(extractResponseText("openai_chat", {
+      candidates: [{ content: { parts: [{ text: "candidate part text" }] } }]
+    } as any)).toBe("candidate part text");
+    expect(extractResponseText("openai_chat", {
       choices: [{ message: { content: "<think data-source=\"router\">hidden chain</think>\n\nvisible text\n\n<think>late hidden" } }]
     } as any)).toBe("visible text");
     expect(extractResponseText("anthropic_messages", {
@@ -955,5 +964,8 @@ describe("provider adapters", () => {
     expect(extractResponseText("anthropic_messages", {
       data: { content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "wrapped anthropic text" }] }
     } as any)).toBe("wrapped anthropic text");
+    expect(extractResponseText("anthropic_messages", {
+      payload: { message: { content: [{ type: "redacted_thinking", text: "hidden" }, { type: "text", text: "anthropic message text" }] } }
+    } as any)).toBe("anthropic message text");
   });
 });

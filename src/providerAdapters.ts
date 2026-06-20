@@ -52,6 +52,26 @@ export interface ProviderUsage {
   reasoningTokens?: number;
 }
 
+const PROVIDER_RESPONSE_WRAPPER_KEYS = ["data", "result", "payload", "response", "message", "body", "completion"] as const;
+const MODEL_TEXT_CONTAINER_KEYS = [
+  "content",
+  "output",
+  "parts",
+  "message",
+  "delta",
+  "part",
+  "item",
+  "response",
+  "result",
+  "payload",
+  "data",
+  "body",
+  "candidate",
+  "candidates",
+  "content_block",
+  "completion"
+] as const;
+
 type OpenAIResponsesInputItem = {
   role: "user" | "assistant";
   content: Array<Record<string, unknown>>;
@@ -204,7 +224,7 @@ function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, dept
 
 function extractWrappedStreamContent(protocol: ProviderProtocol, data: any, depth: number): string {
   if (depth >= 2 || !data || typeof data !== "object") return "";
-  for (const key of ["data", "result", "payload", "response"]) {
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object") continue;
     const text = streamTextFromParsedPayload(protocol, value, depth + 1);
@@ -296,28 +316,33 @@ function openaiChatMessages(request: ModelRequest): Array<Record<string, unknown
   return messages;
 }
 
-function extractMessageContent(content: unknown): string {
+function extractMessageContent(content: unknown, depth = 0): string {
   const record = content as Record<string, unknown> | null;
-  if (!content) return "";
+  if (!content || depth > 5) return "";
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.map((item: any) => extractMessageContent(item)).filter(Boolean).join("\n");
+    return content.map((item: any) => extractMessageContent(item, depth + 1)).filter(Boolean).join("\n");
   }
   if (record && typeof record === "object") {
     if (isReasoningContent(record)) return "";
     if (typeof record.text === "string") return record.text;
     if (typeof record.output_text === "string") return record.output_text;
     if (typeof record.content === "string") return record.content;
-    if (Array.isArray(record.content)) return extractMessageContent(record.content);
-    if (Array.isArray(record.output)) return extractOutputContent(record.output);
+    if (typeof record.completion === "string") return record.completion;
+    for (const key of MODEL_TEXT_CONTAINER_KEYS) {
+      const value = record[key];
+      if (!value || value === content) continue;
+      const text = extractMessageContent(value, depth + 1);
+      if (text) return text;
+    }
   }
   return "";
 }
 
-function extractOutputContent(output: unknown): string {
+function extractOutputContent(output: unknown, depth = 0): string {
   if (!Array.isArray(output)) return "";
   return output
-    .map((item: any) => extractMessageContent(item))
+    .map((item: any) => extractMessageContent(item, depth + 1))
     .filter((text: unknown) => typeof text === "string" && text)
     .join("\n");
 }
@@ -338,24 +363,17 @@ function extractOpenAIResponseContent(data: any, depth = 0): string {
     || data?.choices?.[0]?.delta?.text
     || extractOutputContent(data?.output)
     || extractMessageContent(data?.content)
+    || extractMessageContent(data?.candidates)
     || extractOpenAIEventContainer(data)
     || extractWrappedResponseContent("openai", data, depth);
 }
 
 function extractAnthropicContent(data: any): string {
-  const content = data?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part: any) => {
-        if (typeof part === "string") return part;
-        if (part?.type === "text" && typeof part?.text === "string") return part.text;
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-  return typeof data?.text === "string" ? data.text : "";
+  return extractMessageContent(data?.content)
+    || extractMessageContent(data?.message)
+    || extractMessageContent(data?.body)
+    || extractMessageContent(data?.candidates)
+    || (typeof data?.text === "string" ? data.text : "");
 }
 
 function extractAnthropicResponseContent(data: any, depth = 0): string {
@@ -364,7 +382,7 @@ function extractAnthropicResponseContent(data: any, depth = 0): string {
 
 function extractWrappedResponseContent(protocol: "openai" | "anthropic", data: any, depth: number): string {
   if (depth >= 2 || !data || typeof data !== "object") return "";
-  for (const key of ["data", "result", "payload", "response"]) {
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object") continue;
     const text = protocol === "anthropic"
@@ -377,7 +395,7 @@ function extractWrappedResponseContent(protocol: "openai" | "anthropic", data: a
 
 function isReasoningContent(record: Record<string, unknown>): boolean {
   const type = String(record.type || "");
-  return type.includes("reasoning") || type === "thinking";
+  return type.includes("reasoning") || type.includes("thinking");
 }
 
 function stripThink(value: unknown): string {

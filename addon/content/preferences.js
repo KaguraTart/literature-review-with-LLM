@@ -1517,6 +1517,26 @@ function providerTextFromResponse(protocol, data) {
   return openAITextFromResponse(data);
 }
 
+const PREFERENCES_PROVIDER_RESPONSE_WRAPPER_KEYS = ["data", "result", "payload", "response", "message", "body", "completion"];
+const PREFERENCES_MODEL_TEXT_CONTAINER_KEYS = [
+  "content",
+  "output",
+  "parts",
+  "message",
+  "delta",
+  "part",
+  "item",
+  "response",
+  "result",
+  "payload",
+  "data",
+  "body",
+  "candidate",
+  "candidates",
+  "content_block",
+  "completion"
+];
+
 function openAITextFromResponse(data, depth = 0) {
   return data?.output_text
     || modelTextFromValue(data?.choices?.[0]?.message?.content)
@@ -1526,6 +1546,7 @@ function openAITextFromResponse(data, depth = 0) {
     || openAIEventDeltaText(data)
     || modelTextFromValue(data?.output)
     || modelTextFromValue(data?.content)
+    || modelTextFromValue(data?.candidates)
     || modelTextFromValue(data?.part)
     || modelTextFromValue(data?.item)
     || modelTextFromValue(data?.message)
@@ -1541,19 +1562,11 @@ function anthropicTextFromResponse(data, depth = 0) {
   }
   if (typeof data?.delta?.text === "string") return data.delta.text;
   if (typeof data?.content_block?.text === "string") return data.content_block.text;
-  const content = data?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part?.type === "text" && typeof part.text === "string") return part.text;
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-  return typeof data?.text === "string" ? data.text : wrappedProviderTextFromResponse("anthropic", data, depth);
+  return modelTextFromValue(data?.content)
+    || modelTextFromValue(data?.message)
+    || modelTextFromValue(data?.body)
+    || modelTextFromValue(data?.candidates)
+    || (typeof data?.text === "string" ? data.text : wrappedProviderTextFromResponse("anthropic", data, depth));
 }
 
 function openAIEventDeltaText(data) {
@@ -1566,7 +1579,7 @@ function openAIEventDeltaText(data) {
 
 function wrappedProviderTextFromResponse(protocol, data, depth) {
   if (depth >= 2 || !data || typeof data !== "object") return "";
-  for (const key of ["data", "result", "payload", "response"]) {
+  for (const key of PREFERENCES_PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object") continue;
     const text = protocol === "anthropic"
@@ -1577,24 +1590,29 @@ function wrappedProviderTextFromResponse(protocol, data, depth) {
   return "";
 }
 
-function modelTextFromValue(value) {
-  if (!value) return "";
+function modelTextFromValue(value, depth = 0) {
+  if (!value || depth > 5) return "";
   if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.map((part) => modelTextFromValue(part)).filter(Boolean).join("\n");
+  if (Array.isArray(value)) return value.map((part) => modelTextFromValue(part, depth + 1)).filter(Boolean).join("\n");
   if (typeof value === "object") {
     if (isReasoningModelPart(value)) return "";
     if (typeof value.text === "string") return value.text;
     if (typeof value.output_text === "string") return value.output_text;
     if (typeof value.content === "string") return value.content;
-    if (Array.isArray(value.content)) return modelTextFromValue(value.content);
-    if (Array.isArray(value.output)) return modelTextFromValue(value.output);
+    if (typeof value.completion === "string") return value.completion;
+    for (const key of PREFERENCES_MODEL_TEXT_CONTAINER_KEYS) {
+      const nested = value?.[key];
+      if (!nested || nested === value) continue;
+      const text = modelTextFromValue(nested, depth + 1);
+      if (text) return text;
+    }
   }
   return "";
 }
 
 function isReasoningModelPart(value) {
   const type = String(value?.type || "");
-  return type.includes("reasoning") || type === "thinking";
+  return type.includes("reasoning") || type.includes("thinking");
 }
 
 function localAgentErrorText(status, text) {

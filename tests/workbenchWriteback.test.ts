@@ -1610,9 +1610,18 @@ describe("workbench writeback helpers", () => {
     expect(helpers.extractResponseText("openai_responses", {
       response: { output_text: "wrapped response text" }
     })).toBe("wrapped response text");
+    expect(helpers.extractResponseText("openai_chat", {
+      body: { message: { content: [{ type: "output_text", text: "wrapped body message" }] } }
+    })).toBe("wrapped body message");
+    expect(helpers.extractResponseText("openai_chat", {
+      candidates: [{ content: { parts: [{ text: "candidate part text" }] } }]
+    })).toBe("candidate part text");
     expect(helpers.extractResponseText("anthropic_messages", {
       content: "compatible anthropic text"
     })).toBe("compatible anthropic text");
+    expect(helpers.extractResponseText("anthropic_messages", {
+      payload: { message: { content: [{ type: "redacted_thinking", text: "hidden" }, { type: "text", text: "anthropic message text" }] } }
+    })).toBe("anthropic message text");
   });
 
   it("normalizes session file paths for item-key scoped JSONL history", () => {
