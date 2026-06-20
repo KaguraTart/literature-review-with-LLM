@@ -32,8 +32,18 @@ const SAFE_INHERITED_ENV_KEYS = [
   "LOCAL_AGENT_OPENCODE_SPAWN_CWD",
   "LOCAL_AGENT_TESSERACT_BIN",
   "LOCAL_AGENT_TESSERACT_LANG",
+  "LOCAL_AGENT_PDFTOTEXT_BIN",
   "LOCAL_AGENT_MCP_MAX_TIMEOUT_SECONDS",
   "LOCAL_AGENT_HTTP_TIMEOUT_MS"
+];
+const REQUIRED_MCP_TOOL_NAMES = [
+  "ask_gemini",
+  "ask_claude",
+  "ask_opencode",
+  "ask_all_agents",
+  "check_local_agents",
+  "ocr_image",
+  "extract_pdf_pages"
 ];
 
 const command = process.argv[2] || "status";
@@ -220,6 +230,7 @@ async function checkService(options) {
     }, options)), options.checkAgents)
     : skippedLocalAgentCheck(options.checkAgents);
   const toolNames = toolsList?.result?.tools?.map((tool) => tool.name).filter(Boolean) || [];
+  const missingTools = REQUIRED_MCP_TOOL_NAMES.filter((name) => !toolNames.includes(name));
   const summary = {
     endpoint,
     mode: options.checkDeep ? "deep" : "quick",
@@ -231,8 +242,9 @@ async function checkService(options) {
       protocolVersion: initialize?.result?.protocolVersion || ""
     },
     tools: {
-      ok: !toolsList.error && toolNames.includes("check_local_agents"),
-      error: toolsList?.error?.message || "",
+      ok: !toolsList.error && missingTools.length === 0,
+      error: toolsList?.error?.message || (missingTools.length ? `Missing MCP tools: ${missingTools.join(", ")}` : ""),
+      missing: missingTools,
       names: toolNames
     },
     localAgents: localAgentSummary
@@ -352,7 +364,7 @@ function assertBridgeScript(path) {
 function assertMcpScript(path) {
   if (!existsSync(path)) throw new Error(`Missing MCP script: ${path}`);
   const text = readFileSync(path, "utf8");
-  if (!text.includes("local-agent-mcp") || !text.includes("ask_gemini")) {
+  if (!text.includes("local-agent-mcp") || !text.includes("ask_gemini") || !text.includes("extract_pdf_pages")) {
     throw new Error(`Unexpected MCP script: ${path}`);
   }
 }

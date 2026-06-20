@@ -23,7 +23,8 @@ const REQUIRED_LOCAL_AGENT_TOOL_NAMES = [
   "ask_claude",
   "ask_opencode",
   "ask_all_agents",
-  "check_local_agents"
+  "check_local_agents",
+  "extract_pdf_pages"
 ];
 const MODEL_LIST_MAX_PAGES = 5;
 
@@ -2494,7 +2495,8 @@ function providerDefaults(provider) {
           "ask-opencode": { tool: "ask_opencode" },
           "ask-all-agents": { tool: "ask_all_agents" },
           "ask-gemini-claude": { tool: "ask_all_agents", args: { agents: ["gemini", "claude"] } },
-          "check-local-agents": { tool: "check_local_agents", args: { timeoutSeconds: 30 } }
+          "check-local-agents": { tool: "check_local_agents", args: { timeoutSeconds: 30 } },
+          "extract-pdf-pages": { tool: "extract_pdf_pages" }
         }
       }
     };

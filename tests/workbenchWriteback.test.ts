@@ -1057,7 +1057,7 @@ describe("workbench writeback helpers", () => {
   it("retries workbench provider requests without unsupported advanced optional fields", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: Array<{ url: string; body: any }> = [];
-    loaded.fetch = async (url: string, init: any) => {
+    (loaded as any).fetch = async (url: string, init: any) => {
       fetchCalls.push({ url, body: JSON.parse(init.body) });
       if (fetchCalls.length === 1) {
         return {
@@ -2179,6 +2179,84 @@ describe("workbench writeback helpers", () => {
       locator: expect.stringContaining("pdf-page-text:")
     });
     expect(enriched[0].review.fullTextEvidence[0].locator).toContain("page:3");
+  });
+
+  it("uses local bridge PDF page extraction before falling back to unpaged attachment text", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    (loaded as any).fetch = async (url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ url, body });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  engine: "pdftotext",
+                  pageCount: 2,
+                  pages: [
+                    { page: 2, pageLabel: "2", text: "The proposed method uses graph attention to model route conflicts." },
+                    { page: 6, pageLabel: "6", text: "Experiments evaluate benchmark scenarios with delay and throughput metrics." }
+                  ]
+                })
+              }
+            ]
+          }
+        })
+      };
+    };
+    loaded.__zoteroItems.set(62, {
+      id: 62,
+      key: "ITEM62",
+      getAttachments: () => [63]
+    });
+    loaded.__zoteroItems.set(63, {
+      id: 63,
+      key: "PDF63",
+      attachmentContentType: "application/pdf",
+      attachmentText: "Unpaged fallback method text should not determine the locator.",
+      getFilePathAsync: async () => "/tmp/candidate.pdf",
+      getField: (field: string) => field === "title" ? "candidate.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/bridge-pages",
+        title: "Bridge Page Candidate",
+        decision: "include",
+        zoteroItemID: 62,
+        zoteroItemKey: "ITEM62",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].url).toBe("http://127.0.0.1:3333/mcp");
+    expect(fetchCalls[0].body).toMatchObject({
+      method: "tools/call",
+      params: {
+        name: "extract_pdf_pages",
+        arguments: {
+          filePath: "/tmp/candidate.pdf",
+          name: "candidate.pdf"
+        }
+      }
+    });
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      sourceType: "pdf-page-text",
+      page: 2,
+      pageLabel: "2",
+      locator: expect.stringContaining("pdf-page-text:")
+    });
+    expect(enriched[0].review.fullTextEvidence[0].locator).toContain("page:2");
+    expect(enriched[0].review.fullTextEvidence[0].locator).not.toContain("indexed-text:");
   });
 
   it("uses standalone indexed-text page markers as candidate evidence locators", () => {

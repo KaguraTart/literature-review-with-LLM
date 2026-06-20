@@ -265,7 +265,8 @@ describe("bootstrap provider helpers", () => {
           "ask-opencode": { tool: "ask_opencode" },
           "ask-all-agents": { tool: "ask_all_agents" },
           "ask-gemini-claude": { tool: "ask_all_agents", args: { agents: ["gemini", "claude"] } },
-          "check-local-agents": { tool: "check_local_agents", args: { timeoutSeconds: 30 } }
+          "check-local-agents": { tool: "check_local_agents", args: { timeoutSeconds: 30 } },
+          "extract-pdf-pages": { tool: "extract_pdf_pages" }
         }
       }
     });

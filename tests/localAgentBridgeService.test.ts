@@ -302,7 +302,9 @@ function responseForPayload(payload: any, toolText?: string) {
           { name: "ask_claude" },
           { name: "ask_opencode" },
           { name: "ask_all_agents" },
-          { name: "check_local_agents" }
+          { name: "check_local_agents" },
+          { name: "ocr_image" },
+          { name: "extract_pdf_pages" }
         ]
       }
     };

@@ -45,7 +45,8 @@ describe("local agent stdio MCP runtime", () => {
         "ask_opencode",
         "ask_all_agents",
         "check_local_agents",
-        "ocr_image"
+        "ocr_image",
+        "extract_pdf_pages"
       ]);
       expect(tools.find((tool: any) => tool.name === "check_local_agents").inputSchema).toMatchObject({
         type: "object",
@@ -67,6 +68,12 @@ describe("local agent stdio MCP runtime", () => {
         }
       });
       expect(tools.find((tool: any) => tool.name === "ocr_image").inputSchema.properties.imageBase64).toMatchObject({
+        type: "string"
+      });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.filePath).toMatchObject({
+        type: "string"
+      });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.pdfBase64).toMatchObject({
         type: "string"
       });
     } finally {
@@ -104,6 +111,60 @@ describe("local agent stdio MCP runtime", () => {
           language: "eng",
           mimeType: "image/png",
           text: "Axis Delay 12 ms"
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("extracts page-level PDF text through the configured pdftotext CLI", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(
+        dir,
+        "pdftotext",
+        "The proposed method uses graph attention.\fExperiments evaluate delay metrics."
+      );
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 9,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF fake").toString("base64"),
+              name: "candidate.pdf",
+              timeoutSeconds: 5
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "pdftotext",
+          name: "candidate.pdf",
+          pageCount: 2,
+          pages: [
+            {
+              page: 1,
+              pageLabel: "1",
+              text: "The proposed method uses graph attention."
+            },
+            {
+              page: 2,
+              pageLabel: "2",
+              text: "Experiments evaluate delay metrics."
+            }
+          ]
         });
       } finally {
         runtime.stop();

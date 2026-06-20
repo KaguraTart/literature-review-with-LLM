@@ -223,7 +223,8 @@ describe("default provider profiles", () => {
           "ask-opencode": { tool: "ask_opencode" },
           "ask-all-agents": { tool: "ask_all_agents" },
           "ask-gemini-claude": { tool: "ask_all_agents", args: { agents: ["gemini", "claude"] } },
-          "check-local-agents": { tool: "check_local_agents" }
+          "check-local-agents": { tool: "check_local_agents" },
+          "extract-pdf-pages": { tool: "extract_pdf_pages" }
         }
       }
     });

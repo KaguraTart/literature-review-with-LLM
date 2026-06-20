@@ -51,7 +51,8 @@ const LOCAL_AGENT_SKILLS = {
   "ask-opencode": "ask_opencode",
   "ask-all-agents": "ask_all_agents",
   "ask-gemini-claude": "ask_all_agents",
-  "check-local-agents": "check_local_agents"
+  "check-local-agents": "check_local_agents",
+  "extract-pdf-pages": "extract_pdf_pages"
 };
 const LOCAL_AGENT_TOOL_NAMES = new Set(Object.values(LOCAL_AGENT_SKILLS));
 const LOCAL_AGENT_AGGREGATE_SKILLS = ["ask-all-agents", "ask-gemini-claude", "check-local-agents"];
@@ -2227,7 +2228,7 @@ function workbenchProviderDefaults(provider) {
     return { id: "lm-studio", name: "LM Studio", protocol: "openai_chat", endpointMode: "base_url", baseURL: "http://127.0.0.1:1234/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
   }
   if (id === "local_agents" || id === "local-agents") {
-    return { id: "local-agents", name: "Local Agents", protocol: "openai_chat", endpointMode: "base_url", baseURL: "http://127.0.0.1:3333/v1", model: "", capabilities: { ...commonCapabilities, imageBase64: false, streaming: false, modelList: false }, bodyExtra: { localAgent: { endpoint: "http://127.0.0.1:3333/mcp", payloadMode: "jsonrpc", timeoutSeconds: 180, "ask-gemini": { tool: "ask_gemini" }, "ask-claude": { tool: "ask_claude" }, "ask-opencode": { tool: "ask_opencode" }, "ask-all-agents": { tool: "ask_all_agents" }, "ask-gemini-claude": { tool: "ask_all_agents", args: { agents: ["gemini", "claude"] } }, "check-local-agents": { tool: "check_local_agents", args: { timeoutSeconds: 30 } } } } };
+    return { id: "local-agents", name: "Local Agents", protocol: "openai_chat", endpointMode: "base_url", baseURL: "http://127.0.0.1:3333/v1", model: "", capabilities: { ...commonCapabilities, imageBase64: false, streaming: false, modelList: false }, bodyExtra: { localAgent: { endpoint: "http://127.0.0.1:3333/mcp", payloadMode: "jsonrpc", timeoutSeconds: 180, "ask-gemini": { tool: "ask_gemini" }, "ask-claude": { tool: "ask_claude" }, "ask-opencode": { tool: "ask_opencode" }, "ask-all-agents": { tool: "ask_all_agents" }, "ask-gemini-claude": { tool: "ask_all_agents", args: { agents: ["gemini", "claude"] } }, "check-local-agents": { tool: "check_local_agents", args: { timeoutSeconds: 30 } }, "extract-pdf-pages": { tool: "extract_pdf_pages" } } } };
   }
   return { id: "openai-compatible", name: "OpenAI Compatible Chat", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.openai.com/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
 }
@@ -8868,7 +8869,66 @@ async function candidatePdfEvidenceSource(pdf, record = {}) {
       // Keep the indexed-text fallback below.
     }
   }
+  const bridgePages = await candidatePdfTextPagesFromLocalBridge(pdf, record);
+  if (bridgePages.length) return { sourceType: "pdf-page-text", pages: bridgePages };
   return String((await pdf?.attachmentText) || "").trim();
+}
+
+async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
+  if (!pdf || typeof fetch !== "function") return [];
+  const filePath = await candidatePdfFilePath(pdf);
+  if (!filePath) return [];
+  const endpoint = candidatePdfTextBridgeEndpoint(record);
+  if (!endpoint) return [];
+  const [signal, clearPdfTextTimeout] = typeof setTimeout === "function"
+    ? createAbortController(null, 50000)
+    : [undefined, () => {}];
+  try {
+    const payload = await assertLocalAgentRequestOk({
+      url: endpoint,
+      signal,
+      headers: { "content-type": "application/json" },
+      body: {
+        jsonrpc: "2.0",
+        id: `workbench-pdf-pages-${Date.now()}`,
+        method: "tools/call",
+        params: {
+          name: "extract_pdf_pages",
+          arguments: {
+            filePath,
+            name: attachmentDisplayName(pdf) || "paper.pdf",
+            timeoutSeconds: 45
+          }
+        }
+      }
+    });
+    const result = localOcrResultFromPayload(payload);
+    return normalizePdfTextPagesForEvidence(result?.pages || result);
+  } catch (_err) {
+    return [];
+  } finally {
+    clearPdfTextTimeout();
+  }
+}
+
+async function candidatePdfFilePath(pdf) {
+  try {
+    const path = await attachmentFilePath(pdf);
+    if (path) return path;
+  } catch (_err) {
+    // Keep the fallback path checks below.
+  }
+  return String(pdf?.path || pdf?.filePath || pdf?.attachmentPath || "").trim();
+}
+
+function candidatePdfTextBridgeEndpoint(record = {}) {
+  const explicit = record?.review?.localAgentEndpoint || record?.localAgentEndpoint || record?.pdfTextEndpoint || "";
+  if (explicit) return normalizeLocalAgentEndpoint(explicit);
+  try {
+    return normalizeLocalAgentEndpoint(pref("localOcrEndpoint") || "http://127.0.0.1:3333/mcp");
+  } catch (_err) {
+    return normalizeLocalAgentEndpoint("http://127.0.0.1:3333/mcp");
+  }
 }
 
 function indexedTextForEvidence(text) {

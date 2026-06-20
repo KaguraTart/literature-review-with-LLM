@@ -2239,7 +2239,8 @@ describe("preferences local-agent config helpers", () => {
               { name: "ask_claude" },
               { name: "ask_opencode" },
               { name: "ask_all_agents" },
-              { name: "check_local_agents" }
+              { name: "check_local_agents" },
+              { name: "extract_pdf_pages" }
             ]
           }
         }
@@ -2305,5 +2306,6 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toContain("ask_opencode");
     expect(elements.get("zms-status").value).toContain("ask_all_agents");
     expect(elements.get("zms-status").value).toContain("check_local_agents");
+    expect(elements.get("zms-status").value).toContain("extract_pdf_pages");
   });
 });

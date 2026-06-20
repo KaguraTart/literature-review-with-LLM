@@ -282,9 +282,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "local-agents.bridge",
-    description: "Gemini, Claude, opencode, all-agent, OCR, and health-check MCP tools are exposed by the local bridge",
+    description: "Gemini, Claude, opencode, all-agent, OCR, PDF page extraction, and health-check MCP tools are exposed by the local bridge",
     files: ["scripts/local-agent-mcp.mjs"],
-    markers: ["ask_gemini", "ask_claude", "ask_opencode", "ask_all_agents", "ocr_image", "check_local_agents", "selectedAgentEntries", "allAgentCallArgs", "allAgentTimeoutSeconds", "LOCAL_AGENT_TESSERACT_BIN", "LOCAL_AGENT_TESSERACT_LANG"]
+    markers: ["ask_gemini", "ask_claude", "ask_opencode", "ask_all_agents", "ocr_image", "extract_pdf_pages", "check_local_agents", "selectedAgentEntries", "allAgentCallArgs", "allAgentTimeoutSeconds", "LOCAL_AGENT_TESSERACT_BIN", "LOCAL_AGENT_TESSERACT_LANG", "LOCAL_AGENT_PDFTOTEXT_BIN"]
   },
   {
     id: "local-agents.ocr-workbench",
@@ -318,9 +318,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "local-agents.service-diagnostics",
-    description: "Local-agent service diagnostics can check selected agents independently",
+    description: "Local-agent service diagnostics can check selected agents independently and verify the required MCP tool registry",
     files: ["scripts/local-agent-bridge-service.mjs"],
-    markers: ["--agents", "parseAgents", "selectedAgentIds", "localAgentCheckArguments"]
+    markers: ["--agents", "parseAgents", "selectedAgentIds", "localAgentCheckArguments", "REQUIRED_MCP_TOOL_NAMES", "Missing MCP tools", "LOCAL_AGENT_PDFTOTEXT_BIN"]
   },
   {
     id: "candidate.sources",
@@ -360,6 +360,7 @@ const SOURCE_MARKERS = [
       "candidateFullTextEvidenceSnippets",
       "candidateFullTextEvidenceDisplayText",
       "candidatePdfEvidenceSource",
+      "candidatePdfTextPagesFromLocalBridge",
       "indexedTextForEvidence",
       "normalizePdfTextPagesForEvidence",
       "indexedPageMarker",
@@ -809,7 +810,8 @@ function addProfileChecks(checks) {
     ["ask-opencode", "ask_opencode"],
     ["ask-all-agents", "ask_all_agents"],
     ["ask-gemini-claude", "ask_all_agents"],
-    ["check-local-agents", "check_local_agents"]
+    ["check-local-agents", "check_local_agents"],
+    ["extract-pdf-pages", "extract_pdf_pages"]
   ]) {
     checks.push(check(
       `profiles.local-agents.skill.${skillId}`,

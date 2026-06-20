@@ -40,6 +40,8 @@ if (!existsSync("scripts/project-readiness-check.mjs")) {
 }
 
 const packageJson = readFileSync("package.json", "utf8");
+const localAgentMcpSource = readFileSync("scripts/local-agent-mcp.mjs", "utf8");
+const localAgentBridgeServiceSource = readFileSync("scripts/local-agent-bridge-service.mjs", "utf8");
 const providerAdaptersSource = readFileSync("src/providerAdapters.ts", "utf8");
 const providerSmokeSource = readFileSync("scripts/verify-provider-smoke.mjs", "utf8");
 if (!packageJson.includes("local-agent:service:install")) {
@@ -568,6 +570,7 @@ const requiredMarkers = [
   [workbenchJs, "candidateFullTextEvidenceSnippets", "candidate full-text evidence extraction"],
   [workbenchJs, "candidateFullTextEvidenceDisplayText", "candidate full-text evidence context display"],
   [workbenchJs, "candidatePdfEvidenceSource", "candidate PDF page-text source selection"],
+  [workbenchJs, "candidatePdfTextPagesFromLocalBridge", "candidate local bridge PDF page extraction"],
   [workbenchJs, "indexedTextForEvidence", "candidate indexed-text page splitting"],
   [workbenchJs, "normalizePdfTextPagesForEvidence", "candidate page-level PDF text normalization"],
   [workbenchJs, "indexedPageMarker", "candidate indexed-text page marker parsing"],
@@ -680,7 +683,13 @@ const requiredMarkers = [
   [prefs, '"ask-opencode":{"tool":"ask_opencode"}', "default opencode local-agent skill mapping"],
   [prefs, '"ask-all-agents":{"tool":"ask_all_agents"}', "default all-agents local-agent skill mapping"],
   [prefs, '"ask-gemini-claude":{"tool":"ask_all_agents","args":{"agents":["gemini","claude"]}}', "default Gemini and Claude local-agent skill mapping"],
-  [prefs, '"check-local-agents":{"tool":"check_local_agents","args":{"timeoutSeconds":30}}', "bounded local agents health check"]
+  [prefs, '"check-local-agents":{"tool":"check_local_agents","args":{"timeoutSeconds":30}}', "bounded local agents health check"],
+  [prefs, '"extract-pdf-pages":{"tool":"extract_pdf_pages"}', "default local PDF extraction tool mapping"],
+  [localAgentMcpSource, "extract_pdf_pages", "local PDF page extraction MCP tool"],
+  [localAgentMcpSource, "LOCAL_AGENT_PDFTOTEXT_BIN", "local PDF text extraction binary override"],
+  [localAgentMcpSource, "pdfPageEntriesFromText", "local PDF page text parser"],
+  [localAgentBridgeServiceSource, "REQUIRED_MCP_TOOL_NAMES", "local bridge service required tool check"],
+  [localAgentBridgeServiceSource, "LOCAL_AGENT_PDFTOTEXT_BIN", "local bridge service PDF text env passthrough"]
 ];
 
 for (const [text, marker, description] of requiredMarkers) {

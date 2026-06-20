@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { cwd as currentDirectory } from "node:process";
 import { TextDecoder } from "node:util";
 
@@ -19,6 +19,7 @@ const OPENCODE_BIN = process.env.LOCAL_AGENT_OPENCODE_BIN || "/opt/homebrew/bin/
 const BREW_BIN = process.env.LOCAL_AGENT_BREW_BIN || "/opt/homebrew/bin/brew";
 const TESSERACT_BIN = process.env.LOCAL_AGENT_TESSERACT_BIN || "/opt/homebrew/bin/tesseract";
 const TESSERACT_LANG = process.env.LOCAL_AGENT_TESSERACT_LANG || "eng";
+const PDFTOTEXT_BIN = process.env.LOCAL_AGENT_PDFTOTEXT_BIN || "/opt/homebrew/bin/pdftotext";
 const CHILD_ENV_KEYS = [
   "PATH",
   "HOME",
@@ -52,6 +53,7 @@ const CHILD_ENV_KEYS = [
   "LOCAL_AGENT_OPENCODE_SPAWN_CWD",
   "LOCAL_AGENT_TESSERACT_BIN",
   "LOCAL_AGENT_TESSERACT_LANG",
+  "LOCAL_AGENT_PDFTOTEXT_BIN",
   "LOCAL_AGENT_MCP_MAX_TIMEOUT_SECONDS"
 ];
 
@@ -85,6 +87,11 @@ const tools = [
     name: "ocr_image",
     description: "Run local OCR on a base64 image using the local OCR CLI and return recognized text.",
     inputSchema: ocrImageSchema()
+  },
+  {
+    name: "extract_pdf_pages",
+    description: "Extract page-level text from a local PDF using pdftotext and return JSON page entries.",
+    inputSchema: pdfPagesSchema()
   }
 ];
 
@@ -191,6 +198,37 @@ function ocrImageSchema() {
   };
 }
 
+function pdfPagesSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      filePath: {
+        type: "string",
+        description: "Local PDF file path."
+      },
+      pdfBase64: {
+        type: "string",
+        description: "Base64-encoded PDF bytes without a data URL prefix."
+      },
+      pdf: {
+        type: "object",
+        description: "Alternative PDF object with path, filePath, base64, data, and name fields.",
+        additionalProperties: true
+      },
+      name: {
+        type: "string",
+        description: "Optional PDF filename."
+      },
+      timeoutSeconds: {
+        type: "number",
+        description: "Timeout in seconds. Defaults to 45 and is capped at 180."
+      }
+    },
+    required: []
+  };
+}
+
 function readMessages() {
   let buffer = Buffer.concat(inputChunks);
   inputChunks.length = 0;
@@ -283,6 +321,7 @@ async function route(method, params) {
 async function callTool(name, args) {
   if (name === "check_local_agents") return checkLocalAgents(args);
   if (name === "ocr_image") return ocrImage(args);
+  if (name === "extract_pdf_pages") return extractPdfPages(args);
 
   const prompt = String(args.prompt ?? "").trim();
   if (!prompt) throw new Error("prompt is required");
@@ -331,6 +370,37 @@ async function ocrImage(args = {}) {
   }
 }
 
+async function extractPdfPages(args = {}) {
+  const pdf = args.pdf && typeof args.pdf === "object" && !Array.isArray(args.pdf) ? args.pdf : {};
+  const filePath = String(args.filePath || pdf.filePath || pdf.path || "").trim();
+  const pdfBase64 = String(args.pdfBase64 || pdf.base64 || pdf.data || "").replace(/^data:[^;]+;base64,/, "").trim();
+  if (!filePath && !pdfBase64) throw new Error("filePath or pdfBase64 is required");
+
+  let dir = "";
+  let sourcePath = filePath;
+  try {
+    if (!sourcePath) {
+      dir = await mkdtemp(join(tmpdir(), "zms-pdf-text-"));
+      sourcePath = join(dir, "input.pdf");
+      await writeFile(sourcePath, Buffer.from(pdfBase64, "base64"));
+    }
+    const output = await runCommand(PDFTOTEXT_BIN, ["-layout", sourcePath, "-"], {
+      cwd: dir || currentDirectory(),
+      timeoutSeconds: pdfTextTimeoutSeconds(args.timeoutSeconds),
+      requireOutput: false
+    });
+    const pages = pdfPageEntriesFromText(output === "(empty response)" ? "" : output);
+    return JSON.stringify({
+      engine: "pdftotext",
+      name: String(args.name || pdf.name || (filePath ? basename(filePath) : "input.pdf")),
+      pageCount: pages.length,
+      pages
+    });
+  } finally {
+    if (dir) await rm(dir, { recursive: true, force: true });
+  }
+}
+
 function imageExtensionForMimeType(mimeType) {
   const normalized = String(mimeType || "").toLowerCase();
   if (normalized.includes("jpeg") || normalized.includes("jpg")) return "jpg";
@@ -344,6 +414,32 @@ function ocrTimeoutSeconds(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 30;
   return Math.min(Math.max(Math.round(parsed), 5), 120);
+}
+
+function pdfTextTimeoutSeconds(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 45;
+  return Math.min(Math.max(Math.round(parsed), 5), 180);
+}
+
+function pdfPageEntriesFromText(text) {
+  return String(text || "")
+    .split(/\f+/)
+    .map((pageText, index) => ({
+      page: index + 1,
+      pageLabel: String(index + 1),
+      text: cleanPdfPageText(pageText)
+    }))
+    .filter((entry) => entry.text);
+}
+
+function cleanPdfPageText(pageText) {
+  return String(pageText || "")
+    .replace(/\u001b\[[0-9;]*m/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/[ \t]+$/g, ""))
+    .join("\n")
+    .trim();
 }
 
 async function settleAgentCalls(selected, args) {

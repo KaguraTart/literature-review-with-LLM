@@ -20,7 +20,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - **Bring-your-own-key**: the plugin is free and open source; remote model providers require your own API keys.
 - **Local agent consultation**: optionally ask local Gemini, Claude, and opencode command-line tools for independent reading suggestions through the local bridge.
 - **Research workflow utilities**: includes skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation checks, and candidate-paper discovery.
-- **Candidate-paper review queue**: arXiv / Crossref / Semantic Scholar / Unpaywall results are deduplicated, ranked with explainable priority signals, expanded through configurable bounded Semantic Scholar references/citations policies, reviewed with saved manual notes, structured full-text screening stages, exclusion reasons, and a screening board, optionally updated from high-confidence recommendations, exported as a Markdown review report with source-evidence snippets, hit context, short hashes, Zotero annotation page labels when matched, page-level PDF text locators when available, ranked indexed-text evidence that avoids table-of-contents noise, and best-effort indexed page hints from form-feed or standalone page markers, saved as JSONL, and imported only after manual review.
+- **Candidate-paper review queue**: arXiv / Crossref / Semantic Scholar / Unpaywall results are deduplicated, ranked with explainable priority signals, expanded through configurable bounded Semantic Scholar references/citations policies, reviewed with saved manual notes, structured full-text screening stages, exclusion reasons, and a screening board, optionally updated from high-confidence recommendations, exported as a Markdown review report with source-evidence snippets, hit context, short hashes, Zotero annotation page labels when matched, page-level PDF text locators from Zotero page text or the local `pdftotext` bridge when available, ranked indexed-text evidence that avoids table-of-contents noise, and best-effort indexed page hints from form-feed or standalone page markers, saved as JSONL, and imported only after manual review.
 - **Research-domain prompt packs**: choose general reading, AI/ML systems, transportation and urban airspace, biomedicine, social science/policy, or literature-review writing packs. The selected pack is applied in both the paper chat workbench and direct summary generation.
 
 ## Features
@@ -102,7 +102,7 @@ Provider notes:
 - GitHub Models uses `https://models.github.ai/inference` without an added `/v1` segment and includes the required GitHub API headers; use a PAT with Models access as the API key.
 - Fireworks AI, Cerebras, NVIDIA NIM, and SambaNova are available as named OpenAI-compatible presets. SambaNova also includes Responses and Anthropic-compatible presets.
 - MiniMax is the default preset in the current package, but you should still confirm the model and API key in preferences.
-- Local Agents route through a local HTTP bridge instead of directly calling remote model APIs. The same bridge also exposes the optional `ocr_image` tool used by the workbench's local OCR switch.
+- Local Agents route through a local HTTP bridge instead of directly calling remote model APIs. The same bridge also exposes `ocr_image` for optional local OCR and `extract_pdf_pages` for best-effort local PDF page text extraction.
 
 API keys are stored in Zotero preferences on your local machine. Do not commit `.env` files or local preference exports.
 
@@ -140,11 +140,12 @@ http://127.0.0.1:3333/mcp
 
 The CLI tools themselves must be installed and authenticated separately on the machine. The plugin does not manage vendor logins for those tools.
 
-Optional local OCR:
+Optional local OCR and PDF page extraction:
 
 - The bridge exposes an `ocr_image` tool. The default engine command is `/opt/homebrew/bin/tesseract`, and the default OCR language is `eng`.
 - Override the OCR command with `LOCAL_AGENT_TESSERACT_BIN=/path/to/tesseract` and the default service language with `LOCAL_AGENT_TESSERACT_LANG=eng+chi_sim` before starting the service. The workbench settings drawer also exposes the local OCR endpoint, tool name, and per-request language. Chinese OCR requires the matching local Tesseract language data.
 - In the workbench settings drawer, enable `Local OCR` for image questions. OCR failures are recorded in the local session metadata and do not block the remote model request.
+- The same bridge exposes `extract_pdf_pages` for best-effort page-level text extraction from local PDF files. The default command is `/opt/homebrew/bin/pdftotext`; override it with `LOCAL_AGENT_PDFTOTEXT_BIN=/path/to/pdftotext` before starting the service.
 
 ## Workbench Usage
 
@@ -263,7 +264,7 @@ build/update.json
 - Single-turn image attachments and the `Figure/Table Extractor` skill are supported, including optional reviewable local OCR metadata, a structured visual OCR / table-reconstruction output contract, a reusable Markdown export, JSON/CSV sidecars parsed from reconstructed Markdown tables, and low-confidence chart-data drafts extracted from tables/OCR/text. Chart, table, and handwritten-note understanding still depends on the selected model and local OCR language data; direct pixel-level chart-image data reconstruction is not implemented yet.
 - Formula rendering is lightweight. It supports common inline/display math patterns, but it is not a full TeX engine.
 - Paper reading logs and formal review drafts are structured Markdown scaffolds with evidence excerpts and manual fields; they still need human editing before becoming polished long-form review reports.
-- Candidate-paper search now has explainable ranking, duplicate reconciliation, configurable bounded citation-network expansion, saved manual review notes, structured full-text screening stages, exclusion reasons, high-confidence recommendation application, a screening board, an evidence-chain follow-up queue, source-evidence snippets, Zotero indexed full-text evidence snippets with hit context, matched annotation page labels, page-level PDF text locators when a page-text source is available, indexed-text locators, repeated page-header/footer cleanup, simple line-break dehyphenation, table-of-contents/reference noise downranking, best-effort page hints when indexed text preserves form-feed page breaks or standalone page markers such as `Page 12`, and short hashes for imported candidates with attached PDFs, plus a Markdown candidate-review report. Direct page extraction from raw unannotated PDF bytes still needs more work.
+- Candidate-paper search now has explainable ranking, duplicate reconciliation, configurable bounded citation-network expansion, saved manual review notes, structured full-text screening stages, exclusion reasons, high-confidence recommendation application, a screening board, an evidence-chain follow-up queue, source-evidence snippets, Zotero indexed full-text evidence snippets with hit context, matched annotation page labels, page-level PDF text locators from existing page text or the local `pdftotext` bridge, indexed-text locators, repeated page-header/footer cleanup, simple line-break dehyphenation, table-of-contents/reference noise downranking, best-effort page hints when indexed text preserves form-feed page breaks or standalone page markers such as `Page 12`, and short hashes for imported candidates with attached PDFs, plus a Markdown candidate-review report. Bridge-based page extraction depends on a local file path and `pdftotext`; scanned PDFs and no-bridge raw-byte extraction still need more work.
 - The workbench UI is still being refined; some controls and settings are intentionally compact but may need more usability work.
 - Raw PDF input depends on provider capability. Many providers still use extracted Zotero text instead.
 - Local-agent calls depend on local CLI tools and their own authentication state.
@@ -274,7 +275,7 @@ build/update.json
 
 - Improve cross-collection clustering and continue polishing the global synthesis map, recurring-gap board, collection-level synthesis claims, synthesis roadmaps, and report generation.
 - Add pixel-level chart-image data reconstruction on top of the current prompt-level visual OCR contract, editable local OCR metadata, JSON/CSV table sidecar export, and reviewable chart-data drafts for screenshots, PDF figures, tables, and experimental results.
-- Add direct page extraction from raw unannotated PDF bytes on top of the current screening stages, exclusion reasons, screening board, evidence-chain queue, source-evidence snippets, page-level PDF text source locators, Zotero indexed full-text snippets with ranked hit context, repeated page-header/footer cleanup, table-of-contents/reference noise downranking, simple dehyphenation, matched annotation page labels, best-effort form-feed/page-marker hints, locators and hashes, and configurable citation-network policies.
+- Harden PDF page extraction beyond the current Zotero page text and local `pdftotext` bridge path, especially scanned PDFs, missing local file paths, richer OCR fallback, and no-bridge raw-byte extraction.
 - Add more per-provider screenshots and tutorial examples beyond the in-app setup guide.
 - Continue adding deeper domain-specific writing formats beyond the current prompt-pack-specific proposal-note and journal/report-outline checklists.
 
