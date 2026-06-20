@@ -6939,7 +6939,10 @@ function candidateReviewFullTextEvidence(record) {
         locator: mdText(item.locator || ""),
         sourceHash: normalizeEvidenceHash(item.sourceHash || item.hash || ""),
         attachmentKey: mdText(item.attachmentKey || ""),
-        page: candidateEvidencePage(item.page)
+        page: candidateEvidencePage(item.page),
+        pageLabel: mdText(item.pageLabel || item.annotationPageLabel || ""),
+        annotationKey: mdText(item.annotationKey || ""),
+        annotationType: mdText(item.annotationType || "")
       };
     })
     .filter(Boolean)
@@ -7009,6 +7012,13 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
   for (const topic of topics) {
     const hit = candidateSnippetForPattern(indexed, topic.pattern, used, topic.id);
     if (!hit) continue;
+    const annotation = candidatePdfAnnotationForHit(pdf, hit);
+    const locatedHit = {
+      ...hit,
+      pageLabel: annotation?.pageLabel || "",
+      annotationKey: annotation?.key || "",
+      annotationType: annotation?.type || ""
+    };
     rows.push({
       topic: topic.id,
       label: candidateSourceEvidenceLabel(record, `fulltext-${topic.id}`),
@@ -7016,10 +7026,13 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
       quote: hit.quote,
       contextBefore: hit.contextBefore,
       contextAfter: hit.contextAfter,
-      locator: candidateFullTextLocator(hit),
+      locator: candidateFullTextLocator(locatedHit),
       sourceHash: hit.sourceHash,
       attachmentKey: pdf?.key || record.pdfAttachmentKey || "",
-      page: hit.page
+      page: hit.page,
+      pageLabel: locatedHit.pageLabel,
+      annotationKey: locatedHit.annotationKey,
+      annotationType: locatedHit.annotationType
     });
   }
   if (!rows.length) {
@@ -7037,6 +7050,13 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
         pageEnd: Math.min(indexed.pages[0]?.text?.length || fallback.length, fallback.length),
         sourceHash: shortEvidenceHash(fallback)
       };
+      const annotation = candidatePdfAnnotationForHit(pdf, hit);
+      const locatedHit = {
+        ...hit,
+        pageLabel: annotation?.pageLabel || "",
+        annotationKey: annotation?.key || "",
+        annotationType: annotation?.type || ""
+      };
       rows.push({
         topic: "snippet",
         label: candidateSourceEvidenceLabel(record, "fulltext-snippet"),
@@ -7044,10 +7064,13 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
         quote: hit.quote,
         contextBefore: hit.contextBefore,
         contextAfter: hit.contextAfter,
-        locator: candidateFullTextLocator(hit),
+        locator: candidateFullTextLocator(locatedHit),
         sourceHash: hit.sourceHash,
         attachmentKey: pdf?.key || record.pdfAttachmentKey || "",
-        page: hit.page
+        page: hit.page,
+        pageLabel: locatedHit.pageLabel,
+        annotationKey: locatedHit.annotationKey,
+        annotationType: locatedHit.annotationType
       });
     }
   }
@@ -7135,12 +7158,81 @@ function candidateFullTextLocator(hit) {
   if (page && Number.isFinite(hit?.pageStart) && Number.isFinite(hit?.pageEnd)) {
     parts.push(`page-span:${Math.max(0, Math.floor(hit.pageStart))}-${Math.max(0, Math.floor(hit.pageEnd))}`);
   }
+  const pageLabel = mdText(hit?.pageLabel || hit?.annotationPageLabel || "");
+  if (pageLabel) parts.push(`page-label:${candidateLocatorValue(pageLabel)}`);
+  const annotationKey = mdText(hit?.annotationKey || "");
+  if (annotationKey) parts.push(`annotation:${candidateLocatorValue(annotationKey)}`);
   return parts.join("; ");
 }
 
 function candidateEvidencePage(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : undefined;
+}
+
+function candidatePdfAnnotationForHit(pdf, hit) {
+  const annotations = candidatePdfAnnotationsForEvidence(pdf);
+  if (!annotations.length) return null;
+  const target = normalizeEvidenceMatchText([hit?.quote, hit?.text].filter(Boolean).join(" "));
+  if (!target) return null;
+  let best = null;
+  for (const annotation of annotations) {
+    const score = evidenceOverlapScore(target, annotation.matchText);
+    if (score < 0.42) continue;
+    if (!best || score > best.score) best = { ...annotation, score };
+  }
+  return best;
+}
+
+function candidatePdfAnnotationsForEvidence(pdf) {
+  try {
+    const annotations = typeof pdf?.getAnnotations === "function" ? pdf.getAnnotations() : [];
+    if (!Array.isArray(annotations)) return [];
+    return annotations
+      .map((annotation) => {
+        const text = mdText(annotation?.annotationText || annotation?.annotationComment || "");
+        const pageLabel = mdText(annotation?.annotationPageLabel || annotation?.pageLabel || "");
+        if (!text || !pageLabel) return null;
+        return {
+          key: mdText(annotation?.key || annotation?.annotationKey || ""),
+          type: mdText(annotation?.annotationType || ""),
+          pageLabel,
+          text,
+          matchText: normalizeEvidenceMatchText(text)
+        };
+      })
+      .filter(Boolean);
+  } catch (_err) {
+    return [];
+  }
+}
+
+function normalizeEvidenceMatchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function evidenceOverlapScore(left, right) {
+  const leftTokens = evidenceMatchTokens(left);
+  const rightTokens = evidenceMatchTokens(right);
+  if (!leftTokens.length || !rightTokens.length) return 0;
+  const rightSet = new Set(rightTokens);
+  const overlap = leftTokens.filter((token) => rightSet.has(token)).length;
+  return overlap / Math.min(leftTokens.length, rightTokens.length);
+}
+
+function evidenceMatchTokens(value) {
+  return normalizeEvidenceMatchText(value)
+    .split(" ")
+    .filter((token) => token.length > 2)
+    .slice(0, 80);
+}
+
+function candidateLocatorValue(value) {
+  return String(value || "").replace(/[;\n\r]+/g, " ").replace(/\s+/g, "-").slice(0, 80);
 }
 
 function shortEvidenceHash(value) {

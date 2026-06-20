@@ -1777,7 +1777,15 @@ describe("workbench writeback helpers", () => {
         "Experiments evaluate benchmark scenarios with delay, conflict, and throughput metrics.",
         "Limitations include synthetic traffic assumptions and missing weather robustness checks.",
         "The main contribution is an evidence-backed workflow for reusable candidate screening."
-      ].join(" ")
+      ].join(" "),
+      getAnnotations: () => [
+        {
+          key: "ANN43",
+          annotationType: "highlight",
+          annotationPageLabel: "7",
+          annotationText: "The proposed method uses graph attention to model route conflicts and scheduler state."
+        }
+      ]
     });
 
     const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
@@ -1803,7 +1811,7 @@ describe("workbench writeback helpers", () => {
     ]);
     expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
       topic: "method",
-      locator: expect.stringMatching(/^indexed-text:\d+-\d+$/),
+      locator: expect.stringContaining("indexed-text:"),
       sourceHash: expect.stringMatching(/^[a-f0-9]{8,12}$/),
       attachmentKey: "PDF43"
     });
@@ -1820,8 +1828,13 @@ describe("workbench writeback helpers", () => {
     expect(rows[0].snippet).toContain("Context after:");
     expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
       quote: expect.stringContaining("proposed method uses graph attention"),
-      contextAfter: expect.stringContaining("Experiments evaluate")
+      contextAfter: expect.stringContaining("Experiments evaluate"),
+      pageLabel: "7",
+      annotationKey: "ANN43",
+      annotationType: "highlight"
     });
+    expect(rows[0].locator).toContain("page-label:7");
+    expect(rows[0].locator).toContain("annotation:ANN43");
   });
 
   it("adds best-effort page hints for candidate evidence extracted from paged indexed text", () => {
