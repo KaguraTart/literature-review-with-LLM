@@ -166,12 +166,19 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
     fetch: async (url: string, init: any) => {
       const responseIndex = fetchCalls.length;
       fetchCalls.push({ url, init });
-      const payload = options.fetchResponses
+      const rawPayload = options.fetchResponses
         ? options.fetchResponses[Math.min(responseIndex, options.fetchResponses.length - 1)]
         : options.fetchResponse || { data: [] };
+      const payload = rawPayload && typeof rawPayload === "object" && "__fetchBody" in rawPayload
+        ? rawPayload.__fetchBody
+        : rawPayload;
       return {
-        ok: options.fetchOk ?? true,
-        status: options.fetchStatus ?? 200,
+        ok: rawPayload && typeof rawPayload === "object" && "__fetchOk" in rawPayload
+          ? rawPayload.__fetchOk
+          : options.fetchOk ?? true,
+        status: rawPayload && typeof rawPayload === "object" && "__fetchStatus" in rawPayload
+          ? rawPayload.__fetchStatus
+          : options.fetchStatus ?? 200,
         text: async () => JSON.stringify(payload)
       };
     },
@@ -1970,6 +1977,84 @@ describe("preferences local-agent config helpers", () => {
 
     expect(fetchCalls).toHaveLength(1);
     expect(fetchCalls[0].url).toBe("https://api.openai.com/v1/responses");
+    expect(elements.get("zms-status").value).toBe("Connection OK");
+  });
+
+  it("retries settings connection tests after stripping unsupported Responses fields", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      initialModel: "model-a",
+      fetchResponses: [
+        {
+          __fetchOk: false,
+          __fetchStatus: 400,
+          __fetchBody: {
+            error: {
+              message: "Unsupported parameters: text.format, max_output_tokens, stream"
+            }
+          }
+        },
+        { output_text: "pong" }
+      ]
+    });
+    elements.get("zms-cap-jsonMode").checked = true;
+
+    await controller.testConnection();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(JSON.parse(fetchCalls[0].init.body)).toMatchObject({
+      text: { format: { type: "json_object" } },
+      max_output_tokens: 32,
+      stream: false
+    });
+    const retriedBody = JSON.parse(fetchCalls[1].init.body);
+    expect(retriedBody).not.toHaveProperty("text");
+    expect(retriedBody).not.toHaveProperty("max_output_tokens");
+    expect(retriedBody).not.toHaveProperty("stream");
+    expect(elements.get("zms-status").value).toBe("Connection OK");
+  });
+
+  it("retries settings connection tests after stripping unsupported Anthropic fields", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      initialModel: "claude-compatible",
+      fetchResponses: [
+        {
+          __fetchOk: false,
+          __fetchStatus: 422,
+          __fetchBody: {
+            error: {
+              message: "Unsupported parameters: stream, system prompt, metadata, top_p"
+            }
+          }
+        },
+        { content: [{ type: "text", text: "pong" }] }
+      ]
+    });
+    elements.get("zms-provider").value = "anthropic_compatible";
+    elements.get("zms-activeProfileId").value = "anthropic-compatible";
+    elements.get("zms-profileName").value = "Anthropic Compatible";
+    elements.get("zms-profileProtocol").value = "anthropic_messages";
+    elements.get("zms-baseURL").value = "https://router.example";
+    elements.get("zms-profileBodyExtra").value = JSON.stringify({
+      metadata: { source: "settings" },
+      top_p: 0.4
+    });
+
+    await controller.testConnection();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].url).toBe("https://router.example/v1/messages");
+    expect(JSON.parse(fetchCalls[0].init.body)).toMatchObject({
+      system: expect.stringContaining("connection test endpoint"),
+      stream: false,
+      metadata: { source: "settings" },
+      top_p: 0.4
+    });
+    const retriedBody = JSON.parse(fetchCalls[1].init.body);
+    expect(retriedBody).not.toHaveProperty("system");
+    expect(retriedBody).not.toHaveProperty("stream");
+    expect(retriedBody).not.toHaveProperty("metadata");
+    expect(retriedBody).not.toHaveProperty("top_p");
+    expect(retriedBody).toMatchObject({ max_tokens: 32 });
     expect(elements.get("zms-status").value).toBe("Connection OK");
   });
 

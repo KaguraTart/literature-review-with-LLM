@@ -431,8 +431,7 @@ var ZoteroMarkdownSummaryPrefs = {
     try {
       this.setStatus(this.t("testing"));
       const request = connectionTestRequestForProfile(profile);
-      const response = await fetch(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(request.body) });
-      const text = await response.text();
+      const { response, text } = await runProviderConnectionTest(profile, request);
       if (!response.ok) {
         this.setStatus(`${this.t("testFailed")}: ${providerErrorText(response.status, text)}`);
         return;
@@ -1146,6 +1145,25 @@ function connectionTestRequestForProfile(profile) {
   };
 }
 
+async function runProviderConnectionTest(profile, request) {
+  let body = request.body;
+  const usedFallbackFields = [];
+  let lastResponse = null;
+  let lastText = "";
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const response = await fetch(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(body) });
+    const text = await response.text();
+    lastResponse = response;
+    lastText = text;
+    if (response.ok) return { response, text };
+    const fallbackFields = providerCompatibilityFallbackFields(profile?.protocol, body, response.status, text, usedFallbackFields);
+    if (!fallbackFields.length) return { response, text };
+    usedFallbackFields.push(...fallbackFields);
+    body = omitProviderRequestBodyFields(body, fallbackFields);
+  }
+  return { response: lastResponse, text: lastText };
+}
+
 function modelListRequestForProfile(profile) {
   const url = modelsEndpointForProfile(profile);
   if (!url) return null;
@@ -1822,6 +1840,73 @@ function openAIChatTokenLimit(profile, maxTokens) {
 
 function openAIChatOptionalDefaults(profile, defaults) {
   return openAIChatTokenLimitField(profile) === "max_completion_tokens" ? {} : defaults;
+}
+
+function providerCompatibilityFallbackFields(protocol, body, status, text, usedFallback = false) {
+  if (usedFallback === true || !["openai_chat", "openai_responses", "anthropic_messages"].includes(protocol) || ![400, 422].includes(Number(status))) return [];
+  const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
+  const detail = String(text || "").toLowerCase();
+  const fields = [];
+  if (body?.stream_options !== undefined && /stream_options|stream options|stream option/.test(detail)) {
+    fields.push("stream_options");
+  }
+  if (body?.stream !== undefined && /\bstream\b|streaming/.test(detail)) {
+    fields.push("stream");
+    if (body?.stream_options !== undefined) fields.push("stream_options");
+  }
+  if (body?.temperature !== undefined && /temperature/.test(detail)) {
+    fields.push("temperature");
+  }
+  if (body?.n !== undefined && /(?:^|[^a-z0-9_])n(?:[^a-z0-9_]|$)|number of completions|multiple completions/.test(detail)) {
+    fields.push("n");
+  }
+  if (body?.response_format !== undefined && /response_format|response format/.test(detail)) {
+    fields.push("response_format");
+  }
+  if (body?.max_completion_tokens !== undefined && /max_completion_tokens|max completion tokens|max completion token/.test(detail)) {
+    fields.push("max_completion_tokens");
+  }
+  if (body?.max_tokens !== undefined && /max_tokens|max tokens|max token/.test(detail)) {
+    fields.push("max_tokens");
+  }
+  if (body?.text !== undefined && /text\.format|text format|(?:^|[^a-z0-9_])text(?:[^a-z0-9_]|$)|json mode|json_schema|json schema/.test(detail)) {
+    fields.push("text");
+  }
+  if (body?.max_output_tokens !== undefined && /max_output_tokens|max output tokens|max output token/.test(detail)) {
+    fields.push("max_output_tokens");
+  }
+  if (body?.system !== undefined && /(?:^|[^a-z0-9_])system(?:[^a-z0-9_]|$)|system prompt|system field/.test(detail)) {
+    fields.push("system");
+  }
+  if (body?.metadata !== undefined && /metadata/.test(detail)) {
+    fields.push("metadata");
+  }
+  if (body?.thinking !== undefined && /thinking|reasoning/.test(detail)) {
+    fields.push("thinking");
+  }
+  if (body?.top_p !== undefined && /top_p|top p/.test(detail)) {
+    fields.push("top_p");
+  }
+  if (body?.top_k !== undefined && /top_k|top k/.test(detail)) {
+    fields.push("top_k");
+  }
+  if (body?.stop_sequences !== undefined && /stop_sequences|stop sequences|stop sequence/.test(detail)) {
+    fields.push("stop_sequences");
+  }
+  if (body?.tools !== undefined && /(?:^|[^a-z0-9_])tools?(?:[^a-z0-9_]|$)/.test(detail)) {
+    fields.push("tools");
+  }
+  if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
+    fields.push("tool_choice");
+  }
+  return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
+}
+
+function omitProviderRequestBodyFields(body, fields) {
+  if (!fields.length) return body;
+  const next = { ...body };
+  for (const field of fields) delete next[field];
+  return next;
 }
 
 function openAIChatTokenLimitField(profile) {
