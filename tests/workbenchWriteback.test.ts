@@ -219,6 +219,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     candidateReviewLabels: (outputLanguage: string) => any;
     candidateReviewScreeningRows: (records: any[], labels: any) => Array<{ metric: string; count: number; action: string }>;
     candidateReviewEvidenceRows: (records: any[], labels: any) => Array<{ title: string; state: string; gap: string; check: string; source: string }>;
+    candidateReviewSourceEvidenceRows: (records: any[], labels: any) => Array<{ title: string; label: string; type: string; snippet: string; followUp: string }>;
     reviewDraftMarkdownPath: (outputDir: string, item: any) => string;
     renderReviewDraftMarkdown: (context: any, options?: any) => string;
     proposalNoteMarkdownPath: (outputDir: string, item: any) => string;
@@ -1693,6 +1694,54 @@ describe("workbench writeback helpers", () => {
     });
   });
 
+  it("builds candidate source-evidence snippets with stable labels", () => {
+    const labels = helpers.candidateReviewLabels("en-US");
+    const rows = helpers.candidateReviewSourceEvidenceRows([
+      {
+        candidateId: "doi:10.1000/source",
+        title: "Source Evidence Candidate",
+        year: 2026,
+        abstract: "This paper studies an evidence-backed method and reports evaluation metrics.",
+        sourceUrl: "https://doi.org/10.1000/source",
+        pdfUrl: "https://example.test/source.pdf",
+        ids: { doi: "10.1000/source", semanticScholarId: "S2-SOURCE" },
+        sources: ["semantic_scholar", "crossref"],
+        networkOrigins: [{ direction: "citations", seedId: "S2-Seed", seedTitle: "Seed Paper", hop: 2 }],
+        decision: "include",
+        priority: { tier: "high", score: 91, recommendedDecision: "include" },
+        quality: { dedupeStatus: "new", isAbstractOnly: false }
+      },
+      {
+        candidateId: "doi:10.1000/dup",
+        title: "Duplicate Candidate",
+        decision: "include",
+        abstract: "Duplicate abstract should not become a source snippet.",
+        priority: { tier: "duplicate", score: 0, recommendedDecision: "exclude" },
+        quality: { dedupeStatus: "duplicate", isAbstractOnly: false }
+      }
+    ], labels);
+
+    expect(rows.map((row) => row.label)).toEqual([
+      "[candidate:doi:10.1000:source:abstract]",
+      "[candidate:doi:10.1000:source:pdf]",
+      "[candidate:doi:10.1000:source:network]",
+      "[candidate:doi:10.1000:source:source]",
+      "[candidate:doi:10.1000:source:identifier]"
+    ]);
+    expect(rows[0]).toMatchObject({
+      type: "Abstract",
+      snippet: "This paper studies an evidence-backed method and reports evaluation metrics.",
+      followUp: "Check full text to confirm whether the abstract covers question, method, experiments, and limitations."
+    });
+    expect(rows[1]).toMatchObject({
+      type: "PDF",
+      snippet: "https://example.test/source.pdf"
+    });
+    expect(rows[2].snippet).toContain("citations from Seed Paper from hop 2");
+    expect(rows[3].snippet).toContain("semantic_scholar, crossref; https://doi.org/10.1000/source");
+    expect(rows[4].snippet).toContain("DOI: 10.1000/source; Semantic Scholar: S2-SOURCE");
+  });
+
   it("persists candidate review notes with decisions and can clear old notes", () => {
     const records = [
       {
@@ -2003,6 +2052,12 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("| 候选论文 | 证据状态 | 证据缺口 | 建议核验 | 可用来源 |");
     expect(report).toContain("Abstract Only Candidate (2024)");
     expect(report).toContain("需要全文后才能判断证据强度");
+    expect(report).toContain("## 来源证据摘录");
+    expect(report).toContain("| 候选论文 | 证据标签 | 类型 | 摘录 | 下一步核验 |");
+    expect(report).toContain("[candidate:doi:10.1000:a:abstract]");
+    expect(report).toContain("[candidate:doi:10.1000:a:pdf]");
+    expect(report).toContain("[candidate:doi:10.1000:a:network]");
+    expect(report).toContain("对照全文确认研究问题、方法、实验和局限是否被摘要充分覆盖。");
     expect(report).toContain("## 人工复核清单");
     expect(report).toContain("## 筛选协议");
     expect(report).toContain("纳入标准");
@@ -2060,6 +2115,7 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reviewPath)).toContain("## Screening Board");
     expect(files.get(reviewPath)).toContain("| Review state | Count | Suggested handling |");
     expect(files.get(reviewPath)).toContain("## Evidence-chain Follow-up");
+    expect(files.get(reviewPath)).toContain("## Source Evidence Snippets");
     expect(files.get(reviewPath)).toContain("## Screening Protocol");
     expect(files.get(reviewPath)).toContain("## Decision Action Queue");
     expect(files.get(reviewPath)).toContain("| Candidate paper | Decision | Recommended | Priority | Next action |");

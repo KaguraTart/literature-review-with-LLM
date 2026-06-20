@@ -6563,6 +6563,10 @@ function renderCandidateReviewMarkdown(records, options = {}) {
     "",
     ...candidateReviewEvidenceChainQueue(candidates, labels),
     "",
+    `## ${labels.sourceEvidence}`,
+    "",
+    ...candidateReviewSourceEvidenceSnippets(candidates, labels),
+    "",
     `## ${labels.checklist}`,
     "",
     `- [ ] ${labels.checkIdentifiers}`,
@@ -6747,6 +6751,96 @@ function candidateReviewEvidenceSource(record, labels) {
 
 function candidateHasFullText(record) {
   return !!record?.pdfUrl || record?.pdfAttachmentStatus === "attached_pdf";
+}
+
+function candidateReviewSourceEvidenceSnippets(records, labels) {
+  const rows = candidateReviewSourceEvidenceRows(records, labels);
+  if (!rows.length) return [`- ${labels.sourceEvidenceNone}`];
+  return [
+    `| ${labels.paperColumn} | ${labels.sourceEvidenceLabel} | ${labels.sourceEvidenceType} | ${labels.sourceEvidenceSnippet} | ${labels.sourceEvidenceFollowUp} |`,
+    "| --- | --- | --- | --- | --- |",
+    ...rows.map((row) => `| ${mdTableCell(row.title)} | ${mdTableCell(row.label)} | ${mdTableCell(row.type)} | ${mdTableCell(row.snippet)} | ${mdTableCell(row.followUp)} |`)
+  ];
+}
+
+function candidateReviewSourceEvidenceRows(records, labels) {
+  const rows = [];
+  for (const record of candidateReviewGroupRecords(records, candidateHasSourceEvidence)) {
+    rows.push(...candidateSourceEvidenceForRecord(record, labels));
+    if (rows.length >= 30) break;
+  }
+  return rows.slice(0, 30);
+}
+
+function candidateHasSourceEvidence(record) {
+  if (record?.quality?.dedupeStatus === "duplicate" || record?.priority?.tier === "duplicate") return false;
+  return !!candidateReviewAbstract(record)
+    || !!record?.pdfUrl
+    || record?.pdfAttachmentStatus === "attached_pdf"
+    || !!record?.sourceUrl
+    || !!record?.networkOrigins?.length
+    || !!record?.ids?.doi
+    || !!record?.ids?.arxivId
+    || !!record?.ids?.semanticScholarId;
+}
+
+function candidateSourceEvidenceForRecord(record, labels) {
+  const title = `${record.title || record.candidateId}${record.year ? ` (${record.year})` : ""}`;
+  const rows = [];
+  const abstract = candidateReviewAbstract(record);
+  if (abstract) {
+    rows.push(candidateSourceEvidenceRow(record, title, "abstract", labels.sourceEvidenceTypeAbstract, truncateText(abstract, 260), labels.sourceEvidenceFollowAbstract));
+  }
+  if (record?.pdfUrl || record?.pdfAttachmentStatus === "attached_pdf") {
+    const pdfParts = [
+      record.pdfAttachmentStatus === "attached_pdf" ? labels.evidenceSourceAttachedPdf : "",
+      record.pdfUrl ? record.pdfUrl : ""
+    ].filter(Boolean).join("; ");
+    rows.push(candidateSourceEvidenceRow(record, title, "pdf", labels.sourceEvidenceTypePdf, pdfParts, labels.sourceEvidenceFollowPdf));
+  }
+  if (record?.networkOrigins?.length) {
+    rows.push(candidateSourceEvidenceRow(record, title, "network", labels.sourceEvidenceTypeNetwork, candidateReviewNetworkOrigins(record.networkOrigins), labels.sourceEvidenceFollowNetwork));
+  }
+  if (record?.sourceUrl || record?.sources?.length) {
+    const sourceParts = [
+      record.sources?.length ? record.sources.join(", ") : "",
+      record.sourceUrl || ""
+    ].filter(Boolean).join("; ");
+    rows.push(candidateSourceEvidenceRow(record, title, "source", labels.sourceEvidenceTypeSource, sourceParts, labels.sourceEvidenceFollowSource));
+  }
+  const ids = candidateSourceEvidenceIdentifiers(record);
+  if (ids) {
+    rows.push(candidateSourceEvidenceRow(record, title, "identifier", labels.sourceEvidenceTypeIdentifier, ids, labels.sourceEvidenceFollowIdentifier));
+  }
+  return rows;
+}
+
+function candidateSourceEvidenceRow(record, title, type, typeLabel, snippet, followUp) {
+  return {
+    title,
+    label: candidateSourceEvidenceLabel(record, type),
+    type: typeLabel,
+    snippet,
+    followUp
+  };
+}
+
+function candidateSourceEvidenceLabel(record, type) {
+  const raw = String(record?.candidateId || record?.ids?.doi || record?.title || "candidate");
+  const id = raw.toLowerCase().replace(/[\\/]+/g, ":").replace(/[^a-z0-9._:-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "candidate";
+  return `[candidate:${id}:${type}]`;
+}
+
+function candidateReviewAbstract(record) {
+  return mdText(record?.abstract || record?.abstractNote || record?.summary || "");
+}
+
+function candidateSourceEvidenceIdentifiers(record) {
+  return [
+    record?.ids?.doi ? `DOI: ${record.ids.doi}` : "",
+    record?.ids?.arxivId ? `arXiv: ${record.ids.arxivId}` : "",
+    record?.ids?.semanticScholarId ? `Semantic Scholar: ${record.ids.semanticScholarId}` : ""
+  ].filter(Boolean).join("; ");
 }
 
 function candidateRecommendationMismatch(record) {
@@ -6942,6 +7036,22 @@ function candidateReviewLabels(outputLanguage) {
       evidenceSourceNetwork: "引用网络",
       evidenceSourceCatalog: "检索来源",
       evidenceSourceUnknown: "未知",
+      sourceEvidence: "来源证据摘录",
+      sourceEvidenceNone: "暂无可摘录的候选来源证据；请先检索候选论文或补充摘要、PDF、来源页和引用网络信息。",
+      sourceEvidenceLabel: "证据标签",
+      sourceEvidenceType: "类型",
+      sourceEvidenceSnippet: "摘录",
+      sourceEvidenceFollowUp: "下一步核验",
+      sourceEvidenceTypeAbstract: "摘要",
+      sourceEvidenceTypePdf: "PDF",
+      sourceEvidenceTypeNetwork: "引用网络",
+      sourceEvidenceTypeSource: "来源页",
+      sourceEvidenceTypeIdentifier: "标识符",
+      sourceEvidenceFollowAbstract: "对照全文确认研究问题、方法、实验和局限是否被摘要充分覆盖。",
+      sourceEvidenceFollowPdf: "打开 PDF 或已附加文件，摘录方法、实验指标和关键结论位置。",
+      sourceEvidenceFollowNetwork: "回到种子论文上下文核对引用或被引关系是否真的支撑相关性。",
+      sourceEvidenceFollowSource: "打开来源页核对元数据、开放获取状态和版本。",
+      sourceEvidenceFollowIdentifier: "用稳定标识符去重，并与 Zotero 已有条目核对。",
       checklist: "人工复核清单",
       checkIdentifiers: "核对 DOI、arXiv、Semantic Scholar ID 是否对应同一篇论文。",
       checkFullText: "优先确认是否有 PDF 或开放获取全文。",
@@ -7072,6 +7182,22 @@ function candidateReviewLabels(outputLanguage) {
     evidenceSourceNetwork: "Citation network",
     evidenceSourceCatalog: "Search source",
     evidenceSourceUnknown: "Unknown",
+    sourceEvidence: "Source Evidence Snippets",
+    sourceEvidenceNone: "No candidate source evidence is available yet; search candidates or add abstracts, PDFs, source pages, and citation-network metadata first.",
+    sourceEvidenceLabel: "Evidence label",
+    sourceEvidenceType: "Type",
+    sourceEvidenceSnippet: "Snippet",
+    sourceEvidenceFollowUp: "Next check",
+    sourceEvidenceTypeAbstract: "Abstract",
+    sourceEvidenceTypePdf: "PDF",
+    sourceEvidenceTypeNetwork: "Citation network",
+    sourceEvidenceTypeSource: "Source page",
+    sourceEvidenceTypeIdentifier: "Identifier",
+    sourceEvidenceFollowAbstract: "Check full text to confirm whether the abstract covers question, method, experiments, and limitations.",
+    sourceEvidenceFollowPdf: "Open the PDF or attached file and extract method, metric, and key-finding locations.",
+    sourceEvidenceFollowNetwork: "Return to seed-paper context and verify whether the citation relation actually supports relevance.",
+    sourceEvidenceFollowSource: "Open the source page and verify metadata, open-access status, and version.",
+    sourceEvidenceFollowIdentifier: "Use stable identifiers for deduplication and compare against existing Zotero items.",
     checklist: "Manual Review Checklist",
     checkIdentifiers: "Confirm DOI, arXiv, and Semantic Scholar IDs refer to the same paper.",
     checkFullText: "Prefer papers with PDF or open-access full text.",
