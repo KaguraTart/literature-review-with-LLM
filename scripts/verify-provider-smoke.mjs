@@ -396,6 +396,7 @@ function parseArgs(args) {
     maxPages: 5,
     customHeaders: {},
     bodyExtra: {},
+    capabilities: {},
     models: false,
     image: false,
     pdf: false,
@@ -461,6 +462,9 @@ function parseArgs(args) {
     } else if (key === "--body-extra-json" && value) {
       options.bodyExtra = parseJSONOption(value, "--body-extra-json");
       index += 1;
+    } else if (key === "--capabilities-json" && value) {
+      options.capabilities = parseJSONOption(value, "--capabilities-json");
+      index += 1;
     } else if (key === "--dry-run") {
       options.dryRun = true;
     } else if (key === "--models") {
@@ -525,7 +529,8 @@ function buildProfile(options, requirements = {}) {
     model: options.model || defaults.model || "",
     capabilities: {
       ...defaultCapabilities,
-      ...(defaults.capabilities || {})
+      ...(defaults.capabilities || {}),
+      ...(options.capabilities || {})
     },
     customHeaders: {
       ...(defaults.customHeaders || {}),
@@ -1359,6 +1364,7 @@ function usage() {
     "  --max-pages NUMBER        Maximum model-list pages to follow",
     "  --header name=value       Add or override a request header",
     "  --body-extra-json JSON    Merge extra provider body fields; omitFields removes top-level body fields",
+    "  --capabilities-json JSON  Override profile capabilities for this verification run",
     "  --models                 Verify model-list endpoint instead of text generation",
     "  --image                  Include a tiny base64 PNG in the generation request",
     "  --pdf                    Include a tiny base64 PDF in the generation request",

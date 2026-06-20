@@ -209,6 +209,14 @@ ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=... npm run verify:provider:pdf:live -- --
 
 For router or local endpoints, set the matching `*_BASE_URL` variable and use `openai-compatible`, `openai-responses-compatible`, or `anthropic-compatible`. Raw PDF live checks skip OpenAI-compatible Chat profiles because those profiles use extracted text input.
 
+If your configured route supports an input capability that is disabled in the built-in default profile, pass a per-case capability override. For example, an Anthropic-compatible route that accepts PDF documents can be checked with:
+
+```bash
+ANTHROPIC_COMPATIBLE_CAPABILITIES_JSON='{"pdfBase64":true}' npm run verify:provider:pdf:live -- --include anthropic-compatible
+```
+
+The same override can be passed globally with `--capabilities-json '{"pdfBase64":true}'` for ad-hoc checks.
+
 Named provider live checks use provider-specific environment variables:
 
 ```bash

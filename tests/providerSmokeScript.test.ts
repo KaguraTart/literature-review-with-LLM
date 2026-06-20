@@ -698,6 +698,34 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("allows explicit smoke capability overrides for compatible raw-PDF routes", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "anthropic-compatible",
+        "--base-url", baseURL,
+        "--api-key", "capability-secret",
+        "--model", "mock-anthropic-compatible",
+        "--pdf",
+        "--capabilities-json", JSON.stringify({ pdfBase64: true }),
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "anthropic_messages",
+        inputMode: "pdf",
+        text: "OK anthropic capability"
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        path: "/v1/messages",
+        authorization: "Bearer capability-secret"
+      });
+      expect(requests[0].body.messages[0].content.map((part: any) => part.type)).toEqual(["document", "text"]);
+      expect(JSON.stringify(report)).not.toContain("capability-secret");
+    }, { responseBody: { content: [{ type: "text", text: "OK anthropic capability" }] } });
+  });
+
   it("runs built-in mock model-list checks across provider protocols", async () => {
     const report = await runSmoke(["--mock", "--models", "--json"]);
 
@@ -1109,10 +1137,11 @@ describe("provider smoke verifier", () => {
       pdfCommand: "",
       modelListCommand: "npm run verify:provider:models:live -- --include openai-compatible"
     });
-    expect(openaiCompatible.optionalEnv).toEqual(["OPENAI_COMPATIBLE_HEADERS_JSON", "OPENAI_COMPATIBLE_BODY_EXTRA_JSON"]);
+    expect(openaiCompatible.optionalEnv).toEqual(["OPENAI_COMPATIBLE_HEADERS_JSON", "OPENAI_COMPATIBLE_BODY_EXTRA_JSON", "OPENAI_COMPATIBLE_CAPABILITIES_JSON"]);
     expect(openaiCompatible.optionalEnvValues).toEqual({
       OPENAI_COMPATIBLE_HEADERS_JSON: "{}",
-      OPENAI_COMPATIBLE_BODY_EXTRA_JSON: "{}"
+      OPENAI_COMPATIBLE_BODY_EXTRA_JSON: "{}",
+      OPENAI_COMPATIBLE_CAPABILITIES_JSON: "{}"
     });
     const anthropicCompatible = report.cases.find((entry: any) => entry.id === "anthropic-compatible");
     expect(anthropicCompatible.requiredEnv).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_MODEL", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
@@ -1131,14 +1160,14 @@ describe("provider smoke verifier", () => {
       OLLAMA_BASE_URL: "http://localhost:11434/v1"
     });
     expect(ollama.modelListRequiredEnv).toEqual(["OLLAMA_BASE_URL"]);
-    expect(ollama.optionalEnv).toEqual(["OLLAMA_API_KEY", "OLLAMA_HEADERS_JSON", "OLLAMA_BODY_EXTRA_JSON"]);
+    expect(ollama.optionalEnv).toEqual(["OLLAMA_API_KEY", "OLLAMA_HEADERS_JSON", "OLLAMA_BODY_EXTRA_JSON", "OLLAMA_CAPABILITIES_JSON"]);
     expect(ollama.generationCommand).toBe("npm run verify:provider:live -- --include ollama");
     expect(ollama.imageCommand).toBe("npm run verify:provider:image:live -- --include ollama");
     expect(ollama.pdfCommand).toBe("");
     const lmStudio = report.cases.find((entry: any) => entry.id === "lm-studio");
     expect(lmStudio.requiredEnv).toEqual(["LM_STUDIO_MODEL", "LM_STUDIO_BASE_URL"]);
     expect(lmStudio.modelListRequiredEnv).toEqual(["LM_STUDIO_BASE_URL"]);
-    expect(lmStudio.optionalEnv).toEqual(["LM_STUDIO_API_KEY", "LM_STUDIO_HEADERS_JSON", "LM_STUDIO_BODY_EXTRA_JSON"]);
+    expect(lmStudio.optionalEnv).toEqual(["LM_STUDIO_API_KEY", "LM_STUDIO_HEADERS_JSON", "LM_STUDIO_BODY_EXTRA_JSON", "LM_STUDIO_CAPABILITIES_JSON"]);
 
     const { stdout } = await execFileAsync(process.execPath, [
       "scripts/verify-provider-live.mjs",
@@ -1153,6 +1182,7 @@ describe("provider smoke verifier", () => {
     expect(stdout).toContain("ANTHROPIC_COMPATIBLE_API_KEY=...");
     expect(stdout).toContain("ANTHROPIC_COMPATIBLE_BASE_URL=https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT");
     expect(stdout).toContain("# ANTHROPIC_COMPATIBLE_HEADERS_JSON={}");
+    expect(stdout).toContain("# ANTHROPIC_COMPATIBLE_CAPABILITIES_JSON={}");
     expect(stdout).toContain("npm run verify:provider:live -- --include anthropic-compatible");
     expect(stdout).toContain("# Image input check");
     expect(stdout).toContain("npm run verify:provider:image:live -- --include anthropic-compatible");
@@ -1474,6 +1504,43 @@ describe("provider smoke verifier", () => {
       ]);
       expect(JSON.stringify(report)).not.toContain("live-openai-pdf-secret");
       expect(JSON.stringify(report)).not.toContain("live-anthropic-pdf-secret");
+    });
+  });
+
+  it("runs live raw-PDF checks with per-case capability overrides", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--include", "anthropic-compatible", "--pdf", "--json"], scrubProviderEnv({
+        ANTHROPIC_COMPATIBLE_API_KEY: "live-anthropic-compatible-pdf-secret",
+        ANTHROPIC_COMPATIBLE_MODEL: "live-anthropic-compatible-pdf",
+        ANTHROPIC_COMPATIBLE_BASE_URL: baseURL,
+        ANTHROPIC_COMPATIBLE_CAPABILITIES_JSON: JSON.stringify({ pdfBase64: true })
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        inputMode: "pdf",
+        counts: {
+          passed: 1,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results[0]).toMatchObject({
+        id: "anthropic-compatible",
+        status: "passed",
+        report: {
+          protocol: "anthropic_messages",
+          inputMode: "pdf",
+          contentTypes: ["document", "text"]
+        }
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        path: "/v1/messages",
+        authorization: "Bearer live-anthropic-compatible-pdf-secret"
+      });
+      expect(JSON.stringify(report)).not.toContain("live-anthropic-compatible-pdf-secret");
     });
   });
 

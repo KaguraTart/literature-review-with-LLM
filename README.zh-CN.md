@@ -190,6 +190,14 @@ ANTHROPIC_API_KEY=... ANTHROPIC_MODEL=... npm run verify:provider:pdf:live -- --
 
 第三方路由或本地接口请设置对应的 `*_BASE_URL`，并使用 `openai-compatible`、`openai-responses-compatible` 或 `anthropic-compatible`。Raw PDF live 检查会跳过 OpenAI-compatible Chat 档案，因为这类档案使用抽取文本输入。
 
+如果你配置的路由支持某项输入能力，但内置默认档案没有打开，可以用每个 case 对应的能力覆盖变量。例如某个 Anthropic-compatible 路由支持 PDF document 输入，可以这样检查：
+
+```bash
+ANTHROPIC_COMPATIBLE_CAPABILITIES_JSON='{"pdfBase64":true}' npm run verify:provider:pdf:live -- --include anthropic-compatible
+```
+
+临时检查也可以用全局参数：`--capabilities-json '{"pdfBase64":true}'`。
+
 命名厂商的 live 检查使用各自的环境变量：
 
 ```bash

@@ -470,7 +470,8 @@ export async function runProviderLive(options = {}, env = process.env) {
   const cases = selectedCases(options.include || "");
   const results = [];
   for (const entry of cases) {
-    const unsupported = unsupportedInputReason(entry, options);
+    const capabilities = capabilitiesForCase(entry, options, effectiveEnv);
+    const unsupported = unsupportedInputReason(entry, options, capabilities);
     if (unsupported) {
       results.push({
         id: entry.id,
@@ -514,6 +515,7 @@ export async function runProviderLive(options = {}, env = process.env) {
         pdf: Boolean(options.pdf),
         stream: Boolean(options.stream),
         dryRun: Boolean(options.dryRun),
+        capabilities,
         bodyExtra: bodyExtraForCase(entry, options, effectiveEnv)
       };
       const report = options.models
@@ -571,6 +573,7 @@ function parseArgs(args) {
     failOnSkip: false,
     customHeaders: {},
     bodyExtra: {},
+    capabilities: {},
     envFile: "",
     json: false,
     list: false,
@@ -623,6 +626,9 @@ function parseArgs(args) {
     } else if (key === "--body-extra-json" && value) {
       options.bodyExtra = parseJSONOption(value, "--body-extra-json");
       index += 1;
+    } else if (key === "--capabilities-json" && value) {
+      options.capabilities = parseJSONOption(value, "--capabilities-json");
+      index += 1;
     } else if (key === "--env-file" && value) {
       options.envFile = value;
       index += 1;
@@ -651,6 +657,7 @@ export function providerLiveCaseCatalog(include = "") {
       baseURLEnv: entry.baseURLEnv,
       headersEnv: entry.headersEnv,
       bodyExtraEnv: entry.bodyExtraEnv,
+      capabilitiesEnv: capabilitiesEnvForCase(entry),
       requireBaseURL: Boolean(entry.requireBaseURL),
       allowLocalNoAuth: Boolean(entry.allowLocalNoAuth),
       apiKeyOptional: Boolean(entry.apiKeyOptional),
@@ -673,11 +680,13 @@ export function providerLiveEnvTemplate(include = "") {
 function providerEnvTemplateForCase(entry) {
   const requiredEnv = caseGenerationRequiredEnv(entry);
   const modelListRequiredEnv = caseModelListRequiredEnv(entry);
+  const capabilitiesEnv = capabilitiesEnvForCase(entry);
   const optionalEnv = [
     ...(entry.apiKeyOptional && entry.apiKeyEnv ? [entry.apiKeyEnv] : []),
     ...(entry.requireBaseURL ? [] : [entry.baseURLEnv]),
     entry.headersEnv,
-    entry.bodyExtraEnv
+    entry.bodyExtraEnv,
+    capabilitiesEnv
   ].filter(Boolean);
   return {
     id: entry.id,
@@ -715,17 +724,20 @@ function envTemplateValueForCase(entry, name) {
   if (!name) return "...";
   if (name === entry.modelEnv) return defaultModelForCase(entry) || "...";
   if (name === entry.baseURLEnv) return defaultBaseURLForCase(entry) || "...";
+  if (name === capabilitiesEnvForCase(entry)) return "{}";
   if (name === entry.headersEnv || name === entry.bodyExtraEnv) return "{}";
   return "...";
 }
 
-function caseSupportsImageInput(entry) {
-  return runProfileDefault(entry.profile)?.capabilities?.imageBase64 === true;
+function caseSupportsImageInput(entry, capabilities = null) {
+  const effective = capabilities || runProfileDefault(entry.profile)?.capabilities || {};
+  return effective?.imageBase64 === true;
 }
 
-function caseSupportsPdfInput(entry) {
+function caseSupportsPdfInput(entry, capabilities = null) {
   const profile = runProfileDefault(entry.profile);
-  return profile?.capabilities?.pdfBase64 === true && entry.protocol !== "openai_chat";
+  const effective = capabilities || profile?.capabilities || {};
+  return effective?.pdfBase64 === true && entry.protocol !== "openai_chat";
 }
 
 function caseGenerationRequiredEnv(entry) {
@@ -819,14 +831,14 @@ function missingRequirements(entry, env, options = {}) {
   return missing;
 }
 
-function unsupportedInputReason(entry, options = {}) {
+function unsupportedInputReason(entry, options = {}, capabilities = null) {
   if (options.models && entry.modelList === false) {
     return "Model-list checks are not supported for this provider profile";
   }
-  if (options.image && !caseSupportsImageInput(entry)) {
+  if (options.image && !caseSupportsImageInput(entry, capabilities)) {
     return "Image checks are not supported for this provider profile";
   }
-  if (options.pdf && !caseSupportsPdfInput(entry)) {
+  if (options.pdf && !caseSupportsPdfInput(entry, capabilities)) {
     if (entry.protocol === "openai_chat") {
       return "OpenAI-compatible Chat profiles use extracted text input; choose a Responses or Anthropic profile for raw PDF input";
     }
@@ -940,6 +952,19 @@ function bodyExtraForCase(entry, options, env) {
     ? parseJSONOption(env[entry.bodyExtraEnv], entry.bodyExtraEnv)
     : {};
   return { ...globalExtra, ...envExtra };
+}
+
+function capabilitiesForCase(entry, options, env) {
+  const defaults = runProfileDefault(entry.profile)?.capabilities || {};
+  const envName = capabilitiesEnvForCase(entry);
+  const envCapabilities = envName && env[envName]
+    ? parseJSONOption(env[envName], envName)
+    : {};
+  return { ...defaults, ...(options.capabilities || {}), ...envCapabilities };
+}
+
+function capabilitiesEnvForCase(entry) {
+  return `${String(entry.id || "").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_CAPABILITIES_JSON`;
 }
 
 function parseJSONOption(value, label) {
@@ -1132,6 +1157,7 @@ function usage() {
     "  --fail-on-skip           Exit non-zero when any selected case is missing env config",
     "  --header name=value       Add or override a request header for all selected cases",
     "  --body-extra-json JSON    Merge extra request-body fields for all selected generation cases",
+    "  --capabilities-json JSON  Override profile capabilities for all selected checks",
     "  --env-file PATH           Load KEY=value lines from a local env file; shell env values take precedence",
     "  --json                   Print machine-readable JSON"
   ].join("\n") + "\n";
