@@ -282,9 +282,15 @@ const SOURCE_MARKERS = [
   },
   {
     id: "local-agents.bridge",
-    description: "Gemini, Claude, opencode, all-agent, and health-check MCP tools are exposed by the local bridge",
+    description: "Gemini, Claude, opencode, all-agent, OCR, and health-check MCP tools are exposed by the local bridge",
     files: ["scripts/local-agent-mcp.mjs"],
-    markers: ["ask_gemini", "ask_claude", "ask_opencode", "ask_all_agents", "check_local_agents", "selectedAgentEntries", "allAgentCallArgs", "allAgentTimeoutSeconds"]
+    markers: ["ask_gemini", "ask_claude", "ask_opencode", "ask_all_agents", "ocr_image", "check_local_agents", "selectedAgentEntries", "allAgentCallArgs", "allAgentTimeoutSeconds", "LOCAL_AGENT_TESSERACT_BIN"]
+  },
+  {
+    id: "local-agents.ocr-workbench",
+    description: "Workbench can optionally run local OCR on image attachments through the local-agent bridge and store the result as metadata",
+    files: ["addon/prefs.js", "addon/content/workbench.xhtml", "addon/content/workbench.js", "addon/content/messages.js", "tests/workbenchWriteback.test.ts", "tests/localAgentMcpRuntime.test.ts", "README.md", "README.zh-CN.md"],
+    markers: ["localOcrEnabled", "zms-local-ocr-input", "localOcrForImage", "imageMessageMetadataForSend", "localOcrRunning", "ocr_image", "stores optional local OCR metadata", "Local OCR", "本地 OCR"]
   },
   {
     id: "local-agents.aggregate-failure",
@@ -576,6 +582,7 @@ const SOURCE_MARKERS = [
       "Reconstructed Data Table",
       "visualExtractionReportJsonPath",
       "renderVisualExtractionReportCsv",
+      "visualExtractionLocalOcrMetadata",
       "项目、数值/文本、单位、来源、置信度、备注",
       "Interpretation And Evidence Map",
       "视觉 OCR 文本",

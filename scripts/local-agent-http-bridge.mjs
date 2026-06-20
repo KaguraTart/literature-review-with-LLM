@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3333;
 const DEFAULT_MCP_COMMAND = `${homedir()}/.local/bin/local-agent-mcp.mjs`;
-const MAX_BODY_BYTES = 2 * 1024 * 1024;
+const MAX_BODY_BYTES = 12 * 1024 * 1024;
 
 const options = parseArgs(process.argv.slice(2));
 

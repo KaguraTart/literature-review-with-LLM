@@ -87,6 +87,9 @@ var ZoteroMarkdownSummaryWorkbench = {
     promptPackId: "general",
     inputMode: "text",
     stream: true,
+    localOcrEnabled: false,
+    localOcrEndpoint: "http://127.0.0.1:3333/mcp",
+    localOcrTool: "ocr_image",
     summaryVersion: "1",
     uiLanguage: "en-US",
     systemPrompt: "",
@@ -193,6 +196,11 @@ var ZoteroMarkdownSummaryWorkbench = {
         handler();
       });
       if (element.dataset) element.dataset.zmsBound = "1";
+    }
+    const localOcrInput = document.getElementById("zms-local-ocr-input");
+    if (localOcrInput && localOcrInput.dataset?.zmsLocalOcrBound !== "1") {
+      localOcrInput.addEventListener("change", () => this.syncLocalOcrPreference());
+      if (localOcrInput.dataset) localOcrInput.dataset.zmsLocalOcrBound = "1";
     }
     const input = document.getElementById("zms-input");
     if (input && input.dataset?.zmsShortcutBound !== "1") {
@@ -389,6 +397,9 @@ var ZoteroMarkdownSummaryWorkbench = {
     this.state.promptPackId = normalizePromptPackId(pref("promptPackId"));
     this.state.inputMode = normalizeInputMode(pref("inputMode"));
     this.state.stream = normalizeBoolean(pref("stream"), true);
+    this.state.localOcrEnabled = normalizeBoolean(pref("localOcrEnabled"), false);
+    this.state.localOcrEndpoint = String(pref("localOcrEndpoint") || "http://127.0.0.1:3333/mcp");
+    this.state.localOcrTool = String(pref("localOcrTool") || "ocr_image");
     this.state.summaryVersion = String(pref("summaryVersion") || "1");
     this.state.uiLanguage = resolveUiLanguage(pref("uiLanguage"), runtimeLocale());
     this.state.systemPrompt = pref("systemPrompt") || "";
@@ -420,6 +431,9 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-profile-api-key-label", this.t("apiKey"));
     setText("zms-profile-model-label", this.t("model"));
     setText("zms-profile-image-text", this.t("imageInput"));
+    setText("zms-local-ocr-text", this.t("localOcr"));
+    const localOcrInput = document.getElementById("zms-local-ocr-input");
+    if (localOcrInput) localOcrInput.setAttribute("title", this.t("localOcrTitle"));
     setText("zms-prompt-pack-label", this.t("promptPack"));
     setText("zms-paper-heading", this.t("paper"));
     setText("zms-profile-label", this.t("provider"));
@@ -533,6 +547,8 @@ var ZoteroMarkdownSummaryWorkbench = {
     setInputValue("zms-profile-model", profile.model || "");
     const imageInput = document.getElementById("zms-profile-image-input");
     if (imageInput) imageInput.checked = profile?.capabilities?.imageBase64 === true;
+    const localOcrInput = document.getElementById("zms-local-ocr-input");
+    if (localOcrInput) localOcrInput.checked = this.state.localOcrEnabled === true;
   },
 
   profileFromSettingsPanel() {
@@ -571,9 +587,19 @@ var ZoteroMarkdownSummaryWorkbench = {
     setPref("baseURL", profile.baseURL || "");
     setPref("apiKey", profile.apiKey || "");
     setPref("model", profile.model || "");
+    this.syncLocalOcrPreference();
     this.renderProfiles();
     if (options.status !== false) this.setStatus(this.t("saved"));
     return profile;
+  },
+
+  syncLocalOcrPreference(options = {}) {
+    const localOcrInput = document.getElementById("zms-local-ocr-input");
+    if (!localOcrInput) return this.state.localOcrEnabled === true;
+    const enabled = localOcrInput.checked === true;
+    this.state.localOcrEnabled = enabled;
+    if (options.persist !== false) setPref("localOcrEnabled", enabled);
+    return enabled;
   },
 
   async testProfileSettings() {
@@ -1264,22 +1290,28 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.setStatus(this.t("imageUnsupported"));
       return;
     }
-    const messageProfile = profileMessageMetadata(this.state.profile);
-    const userMessage = makeMessage("user", displayContent, { skillId, images: images.map(imageMessageMetadata), ...messageProfile });
-    this.state.messages.push(userMessage);
-    this.appendMessageElement(userMessage);
-    input.value = "";
-    this.state.pendingImages = [];
-    this.renderImageAttachments();
-    const assistantMessage = makeMessage("assistant", "", { skillId, ...messageProfile });
-    this.state.messages.push(assistantMessage);
-    const assistantBody = this.appendMessageElement(assistantMessage);
-    this.setStatus(this.t("thinking"));
     this.state.requestInFlight = true;
     this.state.lastProviderUsage = null;
+    this.state.abortController = new AbortController();
     this.updateComposerState();
+    let assistantMessage = null;
+    let assistantBody = null;
     try {
-      this.state.abortController = new AbortController();
+      const localOcrEnabled = this.syncLocalOcrPreference({ persist: false });
+      const imageMetadata = images.length && localOcrEnabled
+        ? await this.imageMessageMetadataForSend(images)
+        : images.map(imageMessageMetadata);
+      const messageProfile = profileMessageMetadata(this.state.profile);
+      const userMessage = makeMessage("user", displayContent, { skillId, images: imageMetadata, ...messageProfile });
+      this.state.messages.push(userMessage);
+      this.appendMessageElement(userMessage);
+      input.value = "";
+      this.state.pendingImages = [];
+      this.renderImageAttachments();
+      assistantMessage = makeMessage("assistant", "", { skillId, ...messageProfile });
+      this.state.messages.push(assistantMessage);
+      assistantBody = this.appendMessageElement(assistantMessage);
+      this.setStatus(this.t("thinking"));
       const answer = await this.callModel(content, skillId, (delta) => {
         assistantMessage.content += delta;
         renderMessageContent(assistantBody, assistantMessage);
@@ -1297,9 +1329,12 @@ var ZoteroMarkdownSummaryWorkbench = {
       await this.saveSession();
       this.setStatus(this.t("ready"));
     } catch (err) {
-      assistantMessage.content = safeError(err);
-      renderMessageContent(assistantBody, assistantMessage);
-      this.setStatus(safeError(err));
+      const errorText = safeError(err);
+      if (assistantMessage && assistantBody) {
+        assistantMessage.content = errorText;
+        renderMessageContent(assistantBody, assistantMessage);
+      }
+      this.setStatus(errorText);
     } finally {
       this.state.abortController = null;
       this.state.requestInFlight = false;
@@ -1321,6 +1356,20 @@ var ZoteroMarkdownSummaryWorkbench = {
     }
     document.getElementById("zms-input").value = previousUser.content || "";
     await this.send();
+  },
+
+  async imageMessageMetadataForSend(images) {
+    if (!images.length) return [];
+    this.setStatus(this.t("localOcrRunning"));
+    const results = [];
+    for (const image of images) {
+      results.push(await localOcrForImage(image, {
+        endpoint: this.state.localOcrEndpoint,
+        tool: this.state.localOcrTool,
+        signal: this.state.abortController?.signal
+      }));
+    }
+    return images.map((image, index) => imageMessageMetadata(image, results[index]));
   },
 
   async callModel(userText, skillId, onDelta, images = []) {
@@ -3402,7 +3451,7 @@ function baseLocalAgentConfigForProfile(profile) {
 }
 
 async function assertLocalAgentRequestOk(request) {
-  const response = await fetch(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(request.body) });
+  const response = await fetch(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(request.body), signal: request.signal });
   const text = await response.text();
   const data = safeParseJSON(text);
   if (!response.ok || data?.error) throw new Error(localAgentErrorText(response.status, text));
@@ -5183,7 +5232,8 @@ function visualExtractionReportData(payload, options = {}) {
     images: images.map((image) => ({
       name: mdText(image.name || "image"),
       mimeType: mdText(image.mimeType || ""),
-      size: Number(image.size) || 0
+      size: Number(image.size) || 0,
+      localOcr: visualExtractionLocalOcrMetadata(image.localOcr)
     })),
     sections,
     tables,
@@ -5201,9 +5251,9 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
   const reconstructedRows = visualExtractionStructuredRows(tables);
   const imageInventory = images.length
     ? [
-      `| ${labels.imageName} | ${labels.imageType} | ${labels.imageSize} |`,
-      "| --- | --- | --- |",
-      ...images.map((image) => `| ${markdownTableCell(image.name || "image")} | ${markdownTableCell(image.mimeType || "")} | ${Number(image.size) || 0} |`)
+      `| ${labels.imageName} | ${labels.imageType} | ${labels.imageSize} | ${labels.localOcr} |`,
+      "| --- | --- | --- | --- |",
+      ...images.map((image) => `| ${markdownTableCell(image.name || "image")} | ${markdownTableCell(image.mimeType || "")} | ${Number(image.size) || 0} | ${markdownTableCell(visualExtractionLocalOcrSummary(image.localOcr, labels))} |`)
     ].join("\n")
     : `- ${labels.noImages}`;
   const lines = [
@@ -5355,6 +5405,31 @@ function visualExtractionSectionTable(sections, labels) {
   ].join("\n");
 }
 
+function visualExtractionLocalOcrMetadata(localOcr) {
+  if (!localOcr || typeof localOcr !== "object" || Array.isArray(localOcr)) return null;
+  const status = mdText(localOcr.status || "");
+  if (!status) return null;
+  return {
+    status,
+    engine: mdText(localOcr.engine || ""),
+    language: mdText(localOcr.language || ""),
+    tool: mdText(localOcr.tool || ""),
+    text: truncateText(mdText(localOcr.text || ""), 4000),
+    error: truncateText(mdText(localOcr.error || ""), 500)
+  };
+}
+
+function visualExtractionLocalOcrSummary(localOcr, labels) {
+  if (!localOcr?.status) return labels.localOcrNotRun;
+  if (localOcr.status === "ok") {
+    const text = truncateText(localOcr.text || "", 120);
+    return text ? `${labels.localOcrOk}: ${text}` : labels.localOcrOk;
+  }
+  if (localOcr.status === "empty") return labels.localOcrEmpty;
+  if (localOcr.status === "failed") return [labels.localOcrFailed, localOcr.error].filter(Boolean).join(": ");
+  return localOcr.status;
+}
+
 function visualExtractionTables(answer) {
   const tables = [];
   const lines = String(answer || "").split(/\r?\n/);
@@ -5499,6 +5574,11 @@ function visualExtractionReportLabels(outputLanguage) {
       imageName: "图片",
       imageType: "类型",
       imageSize: "字节",
+      localOcr: "本地 OCR",
+      localOcrNotRun: "未运行",
+      localOcrOk: "已识别",
+      localOcrEmpty: "无文本",
+      localOcrFailed: "失败",
       noImages: "本次导出未记录图片附件；请核对原会话。",
       sectionIndex: "结构化解析索引",
       section: "章节",
@@ -5538,6 +5618,11 @@ function visualExtractionReportLabels(outputLanguage) {
     imageName: "Image",
     imageType: "Type",
     imageSize: "Bytes",
+    localOcr: "Local OCR",
+    localOcrNotRun: "not run",
+    localOcrOk: "recognized",
+    localOcrEmpty: "no text",
+    localOcrFailed: "failed",
     noImages: "No image attachment metadata was recorded for this export; check the original session.",
     sectionIndex: "Structured Extraction Index",
     section: "Section",
@@ -6032,12 +6117,74 @@ function normalizedImageAttachments(images) {
     }));
 }
 
-function imageMessageMetadata(image) {
-  return {
+function imageMessageMetadata(image, localOcr = null) {
+  const metadata = {
     name: image?.name || "image.png",
     mimeType: image?.mimeType || "image/png",
     size: Number(image?.size) || 0
   };
+  if (localOcr?.status) metadata.localOcr = localOcr;
+  return metadata;
+}
+
+async function localOcrForImage(image, options = {}) {
+  if (typeof fetch !== "function") return null;
+  const tool = String(options.tool || "ocr_image").trim() || "ocr_image";
+  const endpoint = normalizeLocalAgentEndpoint(options.endpoint || "http://127.0.0.1:3333/mcp");
+  try {
+    const payload = await assertLocalAgentRequestOk({
+      url: endpoint,
+      signal: options.signal,
+      headers: { "content-type": "application/json" },
+      body: {
+        jsonrpc: "2.0",
+        id: `workbench-local-ocr-${Date.now()}`,
+        method: "tools/call",
+        params: {
+          name: tool,
+          arguments: {
+            image: {
+              name: image?.name || "image.png",
+              mimeType: image?.mimeType || "image/png",
+              base64: image?.base64 || ""
+            },
+            timeoutSeconds: 30
+          }
+        }
+      }
+    });
+    const result = localOcrResultFromPayload(payload);
+    const text = mdText(result.text || "");
+    if (!text) {
+      return {
+        status: "empty",
+        tool,
+        engine: mdText(result.engine || ""),
+        language: mdText(result.language || "")
+      };
+    }
+    return {
+      status: "ok",
+      tool,
+      engine: mdText(result.engine || "local-ocr"),
+      language: mdText(result.language || ""),
+      text: truncateText(text, 4000)
+    };
+  } catch (err) {
+    return {
+      status: "failed",
+      tool,
+      error: truncateText(safeError(err), 240)
+    };
+  }
+}
+
+function localOcrResultFromPayload(payload) {
+  const content = Array.isArray(payload?.result?.content) ? payload.result.content : [];
+  const text = content.map((part) => typeof part === "string" ? part : part?.text || "").filter(Boolean).join("\n").trim();
+  const parsed = safeParseJSON(text);
+  if (parsed && typeof parsed === "object") return parsed;
+  return { text };
 }
 
 function endpointForProfile(profile) {

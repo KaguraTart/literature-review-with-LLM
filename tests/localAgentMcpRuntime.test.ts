@@ -44,7 +44,8 @@ describe("local agent stdio MCP runtime", () => {
         "ask_claude",
         "ask_opencode",
         "ask_all_agents",
-        "check_local_agents"
+        "check_local_agents",
+        "ocr_image"
       ]);
       expect(tools.find((tool: any) => tool.name === "check_local_agents").inputSchema).toMatchObject({
         type: "object",
@@ -65,8 +66,51 @@ describe("local agent stdio MCP runtime", () => {
           enum: ["gemini", "claude", "opencode"]
         }
       });
+      expect(tools.find((tool: any) => tool.name === "ocr_image").inputSchema.properties.imageBase64).toMatchObject({
+        type: "string"
+      });
     } finally {
       runtime.stop();
+    }
+  });
+
+  it("runs local OCR through the configured image OCR CLI", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const tesseractBin = fakeBin(dir, "tesseract", "Axis Delay 12 ms");
+      const runtime = startRuntime({
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 8,
+          method: "tools/call",
+          params: {
+            name: "ocr_image",
+            arguments: {
+              imageBase64: Buffer.from("fake image").toString("base64"),
+              mimeType: "image/png",
+              language: "eng",
+              timeoutSeconds: 5
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          language: "eng",
+          mimeType: "image/png",
+          text: "Axis Delay 12 ms"
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

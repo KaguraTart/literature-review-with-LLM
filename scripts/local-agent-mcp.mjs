@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { cwd as currentDirectory } from "node:process";
 import { TextDecoder } from "node:util";
 
@@ -15,6 +17,7 @@ const GEMINI_BIN = process.env.LOCAL_AGENT_GEMINI_BIN || "/opt/homebrew/bin/gemi
 const CLAUDE_BIN = process.env.LOCAL_AGENT_CLAUDE_BIN || `${homedir()}/.local/bin/claude`;
 const OPENCODE_BIN = process.env.LOCAL_AGENT_OPENCODE_BIN || "/opt/homebrew/bin/opencode";
 const BREW_BIN = process.env.LOCAL_AGENT_BREW_BIN || "/opt/homebrew/bin/brew";
+const TESSERACT_BIN = process.env.LOCAL_AGENT_TESSERACT_BIN || "/opt/homebrew/bin/tesseract";
 const CHILD_ENV_KEYS = [
   "PATH",
   "HOME",
@@ -46,6 +49,7 @@ const CHILD_ENV_KEYS = [
   "LOCAL_AGENT_GEMINI_MODEL",
   "LOCAL_AGENT_OPENCODE_MODEL",
   "LOCAL_AGENT_OPENCODE_SPAWN_CWD",
+  "LOCAL_AGENT_TESSERACT_BIN",
   "LOCAL_AGENT_MCP_MAX_TIMEOUT_SECONDS"
 ];
 
@@ -74,6 +78,11 @@ const tools = [
     name: "check_local_agents",
     description: "Check whether the local Gemini, Claude, and opencode CLIs are reachable from this session.",
     inputSchema: healthCheckSchema()
+  },
+  {
+    name: "ocr_image",
+    description: "Run local OCR on a base64 image using the local OCR CLI and return recognized text.",
+    inputSchema: ocrImageSchema()
   }
 ];
 
@@ -139,6 +148,41 @@ function healthCheckSchema() {
           type: "string",
           enum: ["gemini", "claude", "opencode"]
         }
+      }
+    },
+    required: []
+  };
+}
+
+function ocrImageSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      imageBase64: {
+        type: "string",
+        description: "Base64-encoded image bytes without a data URL prefix."
+      },
+      image: {
+        type: "object",
+        description: "Alternative image object with base64, mimeType, and name fields.",
+        additionalProperties: true
+      },
+      mimeType: {
+        type: "string",
+        description: "Image MIME type, for example image/png."
+      },
+      name: {
+        type: "string",
+        description: "Optional image filename."
+      },
+      language: {
+        type: "string",
+        description: "Tesseract language list, for example eng or eng+chi_sim."
+      },
+      timeoutSeconds: {
+        type: "number",
+        description: "Timeout in seconds. Defaults to 30 and is capped at 120."
       }
     },
     required: []
@@ -236,6 +280,7 @@ async function route(method, params) {
 
 async function callTool(name, args) {
   if (name === "check_local_agents") return checkLocalAgents(args);
+  if (name === "ocr_image") return ocrImage(args);
 
   const prompt = String(args.prompt ?? "").trim();
   if (!prompt) throw new Error("prompt is required");
@@ -254,6 +299,49 @@ async function callTool(name, args) {
     return selected.map((agent, index) => renderSettled(agent.label, settled[index])).join("\n\n");
   }
   throw new Error(`Unknown tool: ${name}`);
+}
+
+async function ocrImage(args = {}) {
+  const image = args.image && typeof args.image === "object" && !Array.isArray(args.image) ? args.image : {};
+  const imageBase64 = String(args.imageBase64 || image.base64 || image.data || "").replace(/^data:[^;]+;base64,/, "").trim();
+  if (!imageBase64) throw new Error("imageBase64 is required");
+  const mimeType = String(args.mimeType || image.mimeType || image.type || "image/png").trim();
+  const language = String(args.language || "eng+chi_sim").replace(/[^A-Za-z0-9_+.-]+/g, "").slice(0, 80) || "eng";
+  const ext = imageExtensionForMimeType(mimeType);
+  const dir = await mkdtemp(join(tmpdir(), "zms-ocr-"));
+  const imagePath = join(dir, `input.${ext}`);
+  try {
+    await writeFile(imagePath, Buffer.from(imageBase64, "base64"));
+    const text = await runCommand(TESSERACT_BIN, [imagePath, "stdout", "-l", language], {
+      cwd: dir,
+      timeoutSeconds: ocrTimeoutSeconds(args.timeoutSeconds),
+      requireOutput: false
+    });
+    return JSON.stringify({
+      engine: "tesseract",
+      language,
+      mimeType,
+      name: String(args.name || image.name || ""),
+      text: cleanOutput(text)
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+function imageExtensionForMimeType(mimeType) {
+  const normalized = String(mimeType || "").toLowerCase();
+  if (normalized.includes("jpeg") || normalized.includes("jpg")) return "jpg";
+  if (normalized.includes("webp")) return "webp";
+  if (normalized.includes("gif")) return "gif";
+  if (normalized.includes("tiff")) return "tif";
+  return "png";
+}
+
+function ocrTimeoutSeconds(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 30;
+  return Math.min(Math.max(Math.round(parsed), 5), 120);
 }
 
 async function settleAgentCalls(selected, args) {

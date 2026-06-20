@@ -2841,7 +2841,12 @@ describe("workbench writeback helpers", () => {
           role: "user",
           skillId: "figure-table-extractor",
           content: "Analyze this image",
-          images: [{ name: "figure.png", mimeType: "image/png", size: 1234 }]
+          images: [{
+            name: "figure.png",
+            mimeType: "image/png",
+            size: 1234,
+            localOcr: { status: "ok", engine: "tesseract", language: "eng", text: "Axis Delay 12 ms" }
+          }]
         },
         {
           id: "assistant-1",
@@ -2873,6 +2878,7 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain('templateVersion: "visual-extraction-report-v2"');
     expect(report).toContain("# Figure/Table Extraction Report");
     expect(report).toContain("| figure.png | image/png | 1234 |");
+    expect(report).toContain("recognized: Axis Delay 12 ms");
     expect(report).toContain("## Structured Extraction Index");
     expect(report).toContain("Visual OCR Text");
     expect(report).toContain("## Reconstructed Tables / Data");
@@ -4185,6 +4191,71 @@ describe("workbench writeback helpers", () => {
       { name: "figure.png", mimeType: "image/png", size: 5 }
     ]);
     expect(workbench.state.pendingImages).toEqual([]);
+  });
+
+  it("stores optional local OCR metadata on image messages without sending it to the remote model", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-input": "",
+      "zms-skill": ""
+    });
+    (loaded as any).document = dom;
+    (loaded as any).fetch = async (_url: string, options: any) => {
+      const body = JSON.parse(options.body);
+      expect(body.params.name).toBe("ocr_image");
+      expect(body.params.arguments.image.base64).toBe("aW1hZ2U=");
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          result: {
+            content: [
+              { type: "text", text: JSON.stringify({ engine: "tesseract", language: "eng+chi_sim", text: "Axis Delay 12 ms" }) }
+            ]
+          }
+        })
+      };
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.state.item = { key: "ITEM" };
+    workbench.state.profile = {
+      ...providerProfile(),
+      capabilities: { ...providerProfile().capabilities, imageBase64: true }
+    };
+    workbench.state.messages = [];
+    workbench.state.pendingImages = [
+      { id: "img-1", name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=", size: 5 }
+    ];
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.uiLanguage = "en-US";
+    const localOcrInput = dom.getElementById("zms-local-ocr-input") as HTMLInputElement;
+    localOcrInput.checked = true;
+    workbench.state.localOcrEnabled = true;
+    workbench.t = (key: string) => key;
+    workbench.saveSession = async () => undefined;
+    let capturedImages: any[] = [];
+    workbench.callModel = async (_content: string, _skillId: string, _onDelta: (delta: string) => void, images: any[]) => {
+      capturedImages = images;
+      return "answer";
+    };
+
+    await workbench.send();
+
+    expect(capturedImages).toEqual([
+      { id: "img-1", name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=", size: 5 }
+    ]);
+    expect(workbench.state.messages[0].images[0]).toMatchObject({
+      name: "figure.png",
+      mimeType: "image/png",
+      size: 5,
+      localOcr: {
+        status: "ok",
+        tool: "ocr_image",
+        engine: "tesseract",
+        language: "eng+chi_sim",
+        text: "Axis Delay 12 ms"
+      }
+    });
   });
 
   it("prevents overlapping send requests from replacing the active abort controller", async () => {
