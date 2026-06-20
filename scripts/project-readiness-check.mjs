@@ -284,7 +284,7 @@ const SOURCE_MARKERS = [
     id: "local-agents.bridge",
     description: "Gemini, Claude, opencode, all-agent, OCR, and health-check MCP tools are exposed by the local bridge",
     files: ["scripts/local-agent-mcp.mjs"],
-    markers: ["ask_gemini", "ask_claude", "ask_opencode", "ask_all_agents", "ocr_image", "check_local_agents", "selectedAgentEntries", "allAgentCallArgs", "allAgentTimeoutSeconds", "LOCAL_AGENT_TESSERACT_BIN"]
+    markers: ["ask_gemini", "ask_claude", "ask_opencode", "ask_all_agents", "ocr_image", "check_local_agents", "selectedAgentEntries", "allAgentCallArgs", "allAgentTimeoutSeconds", "LOCAL_AGENT_TESSERACT_BIN", "LOCAL_AGENT_TESSERACT_LANG"]
   },
   {
     id: "local-agents.ocr-workbench",

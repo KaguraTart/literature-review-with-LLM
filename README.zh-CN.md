@@ -141,8 +141,8 @@ http://127.0.0.1:3333/mcp
 
 可选本地 OCR：
 
-- bridge 暴露 `ocr_image` 工具，默认 OCR 命令是 `/opt/homebrew/bin/tesseract`。
-- 启动服务前可用 `LOCAL_AGENT_TESSERACT_BIN=/path/to/tesseract` 覆盖 OCR 命令。
+- bridge 暴露 `ocr_image` 工具，默认 OCR 命令是 `/opt/homebrew/bin/tesseract`，默认 OCR 语言是 `eng`。
+- 启动服务前可用 `LOCAL_AGENT_TESSERACT_BIN=/path/to/tesseract` 覆盖 OCR 命令，用 `LOCAL_AGENT_TESSERACT_LANG=eng+chi_sim` 覆盖语言；中文 OCR 需要本机已安装对应 Tesseract 语言包。
 - 在工作台设置面板启用 `Local OCR` 后，图片提问会先尝试记录本地 OCR 文本；OCR 失败只会写入本机会话元数据，不会阻断远程模型请求。
 
 ## 开发

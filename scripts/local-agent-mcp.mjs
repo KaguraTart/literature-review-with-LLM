@@ -18,6 +18,7 @@ const CLAUDE_BIN = process.env.LOCAL_AGENT_CLAUDE_BIN || `${homedir()}/.local/bi
 const OPENCODE_BIN = process.env.LOCAL_AGENT_OPENCODE_BIN || "/opt/homebrew/bin/opencode";
 const BREW_BIN = process.env.LOCAL_AGENT_BREW_BIN || "/opt/homebrew/bin/brew";
 const TESSERACT_BIN = process.env.LOCAL_AGENT_TESSERACT_BIN || "/opt/homebrew/bin/tesseract";
+const TESSERACT_LANG = process.env.LOCAL_AGENT_TESSERACT_LANG || "eng";
 const CHILD_ENV_KEYS = [
   "PATH",
   "HOME",
@@ -50,6 +51,7 @@ const CHILD_ENV_KEYS = [
   "LOCAL_AGENT_OPENCODE_MODEL",
   "LOCAL_AGENT_OPENCODE_SPAWN_CWD",
   "LOCAL_AGENT_TESSERACT_BIN",
+  "LOCAL_AGENT_TESSERACT_LANG",
   "LOCAL_AGENT_MCP_MAX_TIMEOUT_SECONDS"
 ];
 
@@ -306,7 +308,7 @@ async function ocrImage(args = {}) {
   const imageBase64 = String(args.imageBase64 || image.base64 || image.data || "").replace(/^data:[^;]+;base64,/, "").trim();
   if (!imageBase64) throw new Error("imageBase64 is required");
   const mimeType = String(args.mimeType || image.mimeType || image.type || "image/png").trim();
-  const language = String(args.language || "eng+chi_sim").replace(/[^A-Za-z0-9_+.-]+/g, "").slice(0, 80) || "eng";
+  const language = String(args.language || TESSERACT_LANG).replace(/[^A-Za-z0-9_+.-]+/g, "").slice(0, 80) || "eng";
   const ext = imageExtensionForMimeType(mimeType);
   const dir = await mkdtemp(join(tmpdir(), "zms-ocr-"));
   const imagePath = join(dir, `input.${ext}`);

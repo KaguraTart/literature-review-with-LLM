@@ -142,8 +142,8 @@ The CLI tools themselves must be installed and authenticated separately on the m
 
 Optional local OCR:
 
-- The bridge exposes an `ocr_image` tool. The default engine command is `/opt/homebrew/bin/tesseract`.
-- Override the OCR command with `LOCAL_AGENT_TESSERACT_BIN=/path/to/tesseract` before starting the service.
+- The bridge exposes an `ocr_image` tool. The default engine command is `/opt/homebrew/bin/tesseract`, and the default OCR language is `eng`.
+- Override the OCR command with `LOCAL_AGENT_TESSERACT_BIN=/path/to/tesseract` and the language with `LOCAL_AGENT_TESSERACT_LANG=eng+chi_sim` before starting the service. Chinese OCR requires the matching local Tesseract language data.
 - In the workbench settings drawer, enable `Local OCR` for image questions. OCR failures are recorded in the local session metadata and do not block the remote model request.
 
 ## Workbench Usage

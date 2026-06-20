@@ -92,7 +92,6 @@ describe("local agent stdio MCP runtime", () => {
             arguments: {
               imageBase64: Buffer.from("fake image").toString("base64"),
               mimeType: "image/png",
-              language: "eng",
               timeoutSeconds: 5
             }
           }
