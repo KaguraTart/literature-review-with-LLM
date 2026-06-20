@@ -2428,12 +2428,38 @@ function renderProviderDiagnosticsMarkdown(profile, options = {}) {
     verify.envTemplateCommand || labels.notConfigured,
     `\`\`\``,
     "",
+    `### ${labels.envFileCheck}`,
+    "",
+    `\`\`\`bash`,
+    verify.envFileCommand || labels.notConfigured,
+    `\`\`\``,
+    "",
+    `### ${labels.directLiveCheck}`,
+    "",
     `\`\`\`bash`,
     verify.liveCommand || labels.notConfigured,
     `\`\`\``,
     "",
+    ...(canUseImageInput(profile) ? [
+      `### ${labels.imageLiveCheck}`,
+      "",
+      `\`\`\`bash`,
+      verify.envFileImageCommand || verify.imageCommand || labels.notConfigured,
+      `\`\`\``,
+      ""
+    ] : []),
+    ...(canUsePdfBase64Input(profile) ? [
+      `### ${labels.pdfLiveCheck}`,
+      "",
+      `\`\`\`bash`,
+      verify.envFilePdfCommand || verify.pdfCommand || labels.notConfigured,
+      `\`\`\``,
+      ""
+    ] : []),
+    `### ${labels.modelListLiveCheck}`,
+    "",
     `\`\`\`bash`,
-    verify.modelsCommand || labels.notConfigured,
+    verify.envFileModelsCommand || verify.modelsCommand || labels.notConfigured,
     `\`\`\``,
     "",
     `## ${labels.statusSnapshot}`,
@@ -2500,6 +2526,11 @@ function providerDiagnosticsLabels(outputLanguage) {
       previewPdf: "原始 PDF",
       liveChecks: "终端 live 检查",
       envTemplate: "可复制环境变量模板",
+      envFileCheck: ".env.local live 检查",
+      directLiveCheck: "直接 live 检查",
+      imageLiveCheck: "图片 live 检查",
+      pdfLiveCheck: "PDF live 检查",
+      modelListLiveCheck: "模型列表 live 检查",
       statusSnapshot: "当前状态快照",
       troubleshooting: "排查清单",
       checkModel: "确认模型名称真实存在，必要时先点击 Load models。",
@@ -2563,6 +2594,11 @@ function providerDiagnosticsLabels(outputLanguage) {
     previewPdf: "raw PDF",
     liveChecks: "Terminal Live Checks",
     envTemplate: "Copyable Env Template",
+    envFileCheck: ".env.local Live Check",
+    directLiveCheck: "Direct Live Check",
+    imageLiveCheck: "Image Live Check",
+    pdfLiveCheck: "PDF Live Check",
+    modelListLiveCheck: "Model-list Live Check",
     statusSnapshot: "Current Status Snapshot",
     troubleshooting: "Troubleshooting Checklist",
     checkModel: "Confirm the model name exists. Use Load models first when available.",
@@ -2722,8 +2758,14 @@ function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProvid
     return {
       include: "local-agents",
       envTemplateCommand: "npm run local-agent:service:doctor",
+      envFileCommand: "npm run local-agent:service:check",
       liveCommand: "npm run local-agent:service:check",
-      modelsCommand: "npm run local-agent:service:doctor"
+      imageCommand: "",
+      pdfCommand: "",
+      modelsCommand: "npm run local-agent:service:doctor",
+      envFileImageCommand: "",
+      envFilePdfCommand: "",
+      envFileModelsCommand: "npm run local-agent:service:doctor"
     };
   }
   const entry = providerLiveVerifyCaseForWorkbench(profile, provider);
@@ -2739,8 +2781,14 @@ function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProvid
   return {
     ...entry,
     envTemplateCommand: `npm run verify:provider:live -- --env-template --include ${entry.include}`,
+    envFileCommand: `npm run verify:provider:live -- --include ${entry.include} --env-file .env.local`,
     liveCommand: `${livePrefix ? `${livePrefix} ` : ""}npm run verify:provider:live -- --include ${entry.include}`,
-    modelsCommand: `${modelPrefix ? `${modelPrefix} ` : ""}npm run verify:provider:models:live -- --include ${entry.include}`
+    imageCommand: canUseImageInput(profile) ? `${livePrefix ? `${livePrefix} ` : ""}npm run verify:provider:image:live -- --include ${entry.include}` : "",
+    pdfCommand: canUsePdfBase64Input(profile) ? `${livePrefix ? `${livePrefix} ` : ""}npm run verify:provider:pdf:live -- --include ${entry.include}` : "",
+    modelsCommand: `${modelPrefix ? `${modelPrefix} ` : ""}npm run verify:provider:models:live -- --include ${entry.include}`,
+    envFileImageCommand: canUseImageInput(profile) ? `npm run verify:provider:image:live -- --include ${entry.include} --env-file .env.local` : "",
+    envFilePdfCommand: canUsePdfBase64Input(profile) ? `npm run verify:provider:pdf:live -- --include ${entry.include} --env-file .env.local` : "",
+    envFileModelsCommand: `npm run verify:provider:models:live -- --include ${entry.include} --env-file .env.local`
   };
 }
 
@@ -8638,7 +8686,7 @@ function renderSessionAsMarkdown(messages, t, compactionSummary) {
     const role = message?.role;
     if (role !== "user" && role !== "assistant") continue;
     const header = role === "user" ? "**You**" : "**Assistant**";
-    const text = String(message?.content || "").trim();
+    const text = role === "assistant" ? answerTextForMessage(message) : String(message?.content || "").trim();
     if (!text) continue;
     lines.push(`### ${header}`, "", text, "");
     const usageText = role === "assistant" ? providerUsageText(message?.usage) : "";

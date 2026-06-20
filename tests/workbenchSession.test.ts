@@ -99,6 +99,21 @@ describe("workbench session helpers", () => {
     expect(md).toContain("_Usage: input 10, output 5, total 15_");
   });
 
+  it("omits folded think blocks from exported session Markdown", () => {
+    const t = (k: string) => k;
+    const md = helpers.renderSessionAsMarkdown(
+      [
+        { role: "user", content: "Summarize this paper." },
+        { role: "assistant", content: "<think>private notes</think>\n\n## Result\n\nVisible answer." }
+      ],
+      t
+    );
+    expect(md).toContain("## Result");
+    expect(md).toContain("Visible answer.");
+    expect(md).not.toContain("<think>");
+    expect(md).not.toContain("private notes");
+  });
+
   it("skips compaction marker and empty messages when rendering", () => {
     const t = (k: string) => k;
     const md = helpers.renderSessionAsMarkdown(

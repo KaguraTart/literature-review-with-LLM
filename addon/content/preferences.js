@@ -874,6 +874,7 @@ function providerSetupGuide(profile, language = "en-US") {
       `模型列表：${modelList || "当前档案不支持自动加载模型列表"}`,
       `保存后测试：点击“测试连接”；失败信息会隐藏完整 API Key。`,
       `复制环境变量模板：${verify.envTemplateCommand}`,
+      `.env.local live 检查：${verify.envFileCommand}`,
       `终端 live 检查：${verify.liveCommand}`,
       `图片 live 检查：${verify.imageCommand || "当前档案不支持图片输入"}`,
       `PDF live 检查：${verify.pdfCommand || "当前档案使用 Zotero 文本抽取"}`,
@@ -891,6 +892,7 @@ function providerSetupGuide(profile, language = "en-US") {
     `Model list: ${modelList || "not available for this profile"}`,
     "After saving: click Test connection. Failure messages hide full API keys.",
     `Copy env template: ${verify.envTemplateCommand}`,
+    `Env-file live check: ${verify.envFileCommand}`,
     `Terminal live check: ${verify.liveCommand}`,
     `Image live check: ${verify.imageCommand || "not supported by this profile"}`,
     `PDF live check: ${verify.pdfCommand || "uses Zotero extracted text"}`,
@@ -952,7 +954,22 @@ function providerLiveVerifyGuide(profile, provider = providerFromProfile(profile
   const modelPrefix = modelAssignments.join(" ");
   const modelsCommand = `${modelPrefix ? `${modelPrefix} ` : ""}npm run verify:provider:models:live -- --include ${entry.include}`;
   const envTemplateCommand = `npm run verify:provider:live -- --env-template --include ${entry.include}`;
-  return { ...entry, liveCommand, imageCommand, pdfCommand, modelsCommand, envTemplateCommand };
+  const envFileCommand = `npm run verify:provider:live -- --include ${entry.include} --env-file .env.local`;
+  const envFileImageCommand = canUseImageInput(profile) ? `npm run verify:provider:image:live -- --include ${entry.include} --env-file .env.local` : "";
+  const envFilePdfCommand = canUsePdfBase64Input(profile) ? `npm run verify:provider:pdf:live -- --include ${entry.include} --env-file .env.local` : "";
+  const envFileModelsCommand = `npm run verify:provider:models:live -- --include ${entry.include} --env-file .env.local`;
+  return {
+    ...entry,
+    liveCommand,
+    imageCommand,
+    pdfCommand,
+    modelsCommand,
+    envTemplateCommand,
+    envFileCommand,
+    envFileImageCommand,
+    envFilePdfCommand,
+    envFileModelsCommand
+  };
 }
 
 function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)) {
