@@ -11,8 +11,10 @@ import {
   extractResponseText,
   headersFor,
   modelsEndpointFor,
+  omitProviderRequestBodyFields,
   parseStreamChunk,
-  parseStreamUsage
+  parseStreamUsage,
+  providerCompatibilityFallbackFields
 } from "../src/providerAdapters.ts";
 
 const DEFAULT_PROMPT = "Reply with OK only.";
@@ -57,8 +59,8 @@ export async function runProviderSmoke(options = {}) {
   };
   const endpoint = endpointFor(request);
   const headers = headersFor(profile);
-  const body = bodyFor(request);
-  const responseStream = body.stream === true;
+  let body = bodyFor(request);
+  let responseStream = body.stream === true;
   if (options.dryRun) {
     return {
       ok: true,
@@ -76,14 +78,30 @@ export async function runProviderSmoke(options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(endpoint, {
+    let response = await fetch(endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
       signal: controller.signal
     });
     const rawText = await response.text();
-    const parsed = responseStream ? null : parseResponseBody(rawText);
+    let responseText = rawText;
+    let parsed = responseStream ? null : parseResponseBody(responseText);
+    if (!response.ok) {
+      const fields = providerCompatibilityFallbackFields(profile.protocol, body, response.status, responseText);
+      if (fields.length) {
+        body = omitProviderRequestBodyFields(body, fields);
+        responseStream = body.stream === true;
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: controller.signal
+        });
+        responseText = await response.text();
+        parsed = responseStream ? null : parseResponseBody(responseText);
+      }
+    }
     if (!response.ok) {
       return {
         ok: false,
@@ -91,10 +109,10 @@ export async function runProviderSmoke(options = {}) {
         profile: profile.id,
         protocol: profile.protocol,
         endpoint,
-        error: providerErrorText(parsed, rawText)
+        error: providerErrorText(parsed, responseText)
       };
     }
-    const text = responseStream ? streamTextFromBody(profile.protocol, rawText) : extractResponseText(profile.protocol, parsed);
+    const text = responseStream ? streamTextFromBody(profile.protocol, responseText) : extractResponseText(profile.protocol, parsed);
     return {
       ok: true,
       status: response.status,

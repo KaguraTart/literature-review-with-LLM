@@ -625,15 +625,25 @@ function normalizeLocalAgentTool(value) {
 
 async function requestJSON(url, headers, body, stream, protocol = "openai_chat") {
   let lastError;
+  let requestBody = body;
+  let requestStream = stream;
+  let usedCompatibilityFallback = false;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const response = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify(body)
+        body: JSON.stringify(requestBody)
       });
       if (!response.ok) {
         const text = await response.text();
+        const fallbackFields = providerCompatibilityFallbackFields(protocol, requestBody, response.status, text, usedCompatibilityFallback);
+        if (fallbackFields.length && attempt < 3) {
+          requestBody = omitProviderRequestBodyFields(requestBody, fallbackFields);
+          requestStream = requestBody.stream === true;
+          usedCompatibilityFallback = true;
+          continue;
+        }
         const error = providerHTTPError(response.status, text);
         if (error.retryableProviderError && attempt < 3) {
           await Zotero.Promise.delay(500 * 2 ** attempt);
@@ -641,7 +651,7 @@ async function requestJSON(url, headers, body, stream, protocol = "openai_chat")
         }
         throw error;
       }
-      if (stream && response.body) {
+      if (requestStream && response.body) {
         return await readProviderStream(response, protocol);
       }
       return await response.json();

@@ -997,6 +997,52 @@ describe("bootstrap provider helpers", () => {
     });
   });
 
+  it("falls back when bootstrap OpenAI Chat endpoints reject stream options", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 400,
+          error: { message: "Unrecognized request argument supplied: stream_options" }
+        },
+        {
+          __streamLines: [
+            "data: {\"choices\":[{\"delta\":{\"content\":\"fallback summary\"}}]}",
+            "data: [DONE]"
+          ]
+        }
+      ]
+    });
+
+    const result = await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: true
+      }
+    }, "hash", false);
+
+    expect(result.markdown).toBe("fallback summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true }
+    });
+    expect(fetchCalls[1].body).toMatchObject({ stream: true });
+    expect(fetchCalls[1].body).not.toHaveProperty("stream_options");
+  });
+
   it("respects bootstrap OpenAI Chat stream option overrides", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       choices: [{ message: { content: "chat summary" } }]

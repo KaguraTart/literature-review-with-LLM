@@ -770,6 +770,32 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
   return rest;
 }
 
+export function providerCompatibilityFallbackFields(protocol: string, body: Record<string, unknown>, status: number, text: string, usedFallback = false): string[] {
+  if (usedFallback || protocol !== "openai_chat" || ![400, 422].includes(Number(status))) return [];
+  const detail = String(text || "").toLowerCase();
+  const fields: string[] = [];
+  if (body?.stream_options !== undefined && /stream_options|stream options|stream option/.test(detail)) {
+    fields.push("stream_options");
+  }
+  if (body?.stream === true && /\bstream\b|streaming/.test(detail)) {
+    fields.push("stream", "stream_options");
+  }
+  if (body?.temperature !== undefined && /temperature/.test(detail)) {
+    fields.push("temperature");
+  }
+  if (body?.n !== undefined && /(?:^|[^a-z0-9_])n(?:[^a-z0-9_]|$)|number of completions|multiple completions/.test(detail)) {
+    fields.push("n");
+  }
+  return Array.from(new Set(fields));
+}
+
+export function omitProviderRequestBodyFields(body: Record<string, unknown>, fields: string[]): Record<string, unknown> {
+  if (!fields.length) return body;
+  const next = { ...body };
+  for (const field of fields) delete next[field];
+  return next;
+}
+
 function omitProviderBodyFields(body: Record<string, unknown>, bodyExtra: Record<string, unknown> | undefined): Record<string, unknown> {
   const fields = providerBodyOmitFields(bodyExtra);
   if (!fields.size) return body;

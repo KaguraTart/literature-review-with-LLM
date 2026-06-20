@@ -419,6 +419,32 @@ function openAIChatOptionalDefaults(profile, defaults) {
   return openAIChatTokenLimitField(profile) === "max_completion_tokens" ? {} : defaults;
 }
 
+function providerCompatibilityFallbackFields(protocol, body, status, text, usedFallback = false) {
+  if (usedFallback || protocol !== "openai_chat" || ![400, 422].includes(Number(status))) return [];
+  const detail = String(text || "").toLowerCase();
+  const fields = [];
+  if (body?.stream_options !== undefined && /stream_options|stream options|stream option/.test(detail)) {
+    fields.push("stream_options");
+  }
+  if (body?.stream === true && /\bstream\b|streaming/.test(detail)) {
+    fields.push("stream", "stream_options");
+  }
+  if (body?.temperature !== undefined && /temperature/.test(detail)) {
+    fields.push("temperature");
+  }
+  if (body?.n !== undefined && /(?:^|[^a-z0-9_])n(?:[^a-z0-9_]|$)|number of completions|multiple completions/.test(detail)) {
+    fields.push("n");
+  }
+  return Array.from(new Set(fields));
+}
+
+function omitProviderRequestBodyFields(body, fields) {
+  if (!fields.length) return body;
+  const next = { ...body };
+  for (const field of fields) delete next[field];
+  return next;
+}
+
 function openAIChatTokenLimitField(profile) {
   const extra = providerBodyExtra(profile?.bodyExtra);
   const explicit = normalizeOpenAIChatTokenLimitField(

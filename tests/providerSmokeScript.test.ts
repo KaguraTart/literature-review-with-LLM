@@ -107,6 +107,43 @@ describe("provider smoke verifier", () => {
     }, { responseBody: { choices: [{ message: { content: "OK stripped" } }] } });
   });
 
+  it("falls back when an OpenAI-compatible smoke endpoint rejects stream_options", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-chat",
+        "--stream",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_chat",
+        stream: true,
+        text: "OK fallback"
+      });
+      expect(requests).toHaveLength(2);
+      expect(requests[0].body).toMatchObject({
+        stream: true,
+        stream_options: { include_usage: true }
+      });
+      expect(requests[1].body).toMatchObject({ stream: true });
+      expect(requests[1].body).not.toHaveProperty("stream_options");
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.body?.stream_options) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: { message: "Unrecognized request argument supplied: stream_options" } }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end("data: {\"choices\":[{\"delta\":{\"content\":\"OK fallback\"}}]}\n\ndata: [DONE]\n\n");
+      }
+    });
+  });
+
   it("rejects non-object provider body-extra JSON", async () => {
     await expect(execFileAsync(process.execPath, [
       "scripts/verify-provider-smoke.mjs",
@@ -1257,19 +1294,24 @@ function scrubProviderEnv(overrides: NodeJS.ProcessEnv = {}) {
 
 async function withMockProvider(
   run: (baseURL: string, requests: any[]) => Promise<void>,
-  options: { responseBody?: any; status?: number } = {}
+  options: { responseBody?: any; status?: number; handler?: (requestData: any, response: any) => void } = {}
 ) {
   const requests: any[] = [];
   const server = createServer(async (request, response) => {
     const bodyText = await readRequestBody(request);
-    requests.push({
+    const requestData = {
       method: request.method,
       path: new URL(request.url || "/", "http://127.0.0.1").pathname,
       authorization: request.headers.authorization,
       xApiKey: request.headers["x-api-key"],
       anthropicVersion: request.headers["anthropic-version"],
       body: bodyText ? JSON.parse(bodyText) : {}
-    });
+    };
+    requests.push(requestData);
+    if (options.handler) {
+      options.handler(requestData, response);
+      return;
+    }
     response.writeHead(options.status || 200, { "content-type": "application/json" });
     response.end(JSON.stringify(options.responseBody || { choices: [{ message: { content: "OK" } }] }));
   });

@@ -6,8 +6,10 @@ import {
   extractProviderUsage,
   headersFor,
   modelsEndpointFor,
+  omitProviderRequestBodyFields,
   parseStreamChunk,
   parseStreamUsage,
+  providerCompatibilityFallbackFields,
   providerBodyExtra,
   redact,
   extractResponseText,
@@ -318,6 +320,34 @@ describe("provider adapters", () => {
     });
     expect(explicitLegacyBody).toMatchObject({ max_tokens: 8192 });
     expect(explicitLegacyBody).not.toHaveProperty("max_completion_tokens");
+  });
+
+  it("detects unsupported OpenAI Chat optional fields for compatibility fallback", () => {
+    const body = {
+      model: "router-model",
+      messages: [],
+      stream: true,
+      stream_options: { include_usage: true },
+      temperature: 0.4,
+      n: 1
+    };
+    const fields = providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      400,
+      JSON.stringify({ error: { message: "stream_options, temperature, and n are unsupported" } })
+    );
+    expect(fields).toEqual(["stream_options", "temperature", "n"]);
+    expect(omitProviderRequestBodyFields(body, fields)).toEqual({
+      model: "router-model",
+      messages: [],
+      stream: true
+    });
+    expect(providerCompatibilityFallbackFields("openai_chat", body, 422, "stream is not supported"))
+      .toEqual(["stream", "stream_options"]);
+    expect(providerCompatibilityFallbackFields("openai_responses", body, 400, "stream_options")).toEqual([]);
+    expect(providerCompatibilityFallbackFields("openai_chat", body, 401, "stream_options")).toEqual([]);
+    expect(providerCompatibilityFallbackFields("openai_chat", body, 400, "stream_options", true)).toEqual([]);
   });
 
   it("attaches image inputs for supported provider protocols", () => {
