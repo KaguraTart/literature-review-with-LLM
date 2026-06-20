@@ -1049,7 +1049,7 @@ function connectionTestRequestForProfile(profile) {
   return {
     url: endpointForProfile(profile),
     headers: headersForProfile(profile),
-    body: withProviderBodyDefaults(profile, body)
+    body: profile?.protocol === "openai_chat" ? withOpenAIChatBodyDefaults(profile, body) : withProviderBodyDefaults(profile, body)
   };
 }
 
@@ -1356,9 +1356,56 @@ function extractProviderConnectionText(protocol, text) {
   if (errorText) throw new Error(`Provider error: ${redact(errorText)}`);
   const value = data
     ? providerTextFromResponse(protocol, data)
-    : String(text || "").trim();
+    : providerTextFromStreamText(protocol, text) || String(text || "").trim();
   if (!String(value || "").trim()) throw new Error("No text returned from model");
   return String(value).trim();
+}
+
+function providerTextFromStreamText(protocol, text) {
+  const payloads = streamPayloadsFromText(text);
+  if (!payloads.length) return "";
+  return payloads
+    .map((payload) => {
+      const data = safeParseJSON(payload);
+      if (!data) return payload.trim();
+      const errorText = providerResponseErrorDetail(data);
+      if (errorText) throw new Error(`Provider error: ${redact(errorText)}`);
+      return providerTextFromResponse(protocol, data);
+    })
+    .filter(Boolean)
+    .join("");
+}
+
+function streamPayloadsFromText(text) {
+  const payloads = [];
+  let buffer = [];
+  for (const rawLine of String(text || "").split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    if (!line.trim()) {
+      if (buffer.length) {
+        pushStreamPayload(payloads, buffer);
+        buffer = [];
+      }
+      continue;
+    }
+    if (!line.startsWith("data:")) continue;
+    const value = line.slice(5).trimStart();
+    if (value === "[DONE]") {
+      if (buffer.length) {
+        pushStreamPayload(payloads, buffer);
+        buffer = [];
+      }
+      continue;
+    }
+    buffer.push(value);
+  }
+  if (buffer.length) pushStreamPayload(payloads, buffer);
+  return payloads;
+}
+
+function pushStreamPayload(payloads, buffer) {
+  const payload = buffer.join("\n").trim();
+  if (payload) payloads.push(payload);
 }
 
 function providerResponseErrorDetail(data) {
@@ -1383,6 +1430,7 @@ function openAITextFromResponse(data, depth = 0) {
     || modelTextFromValue(data?.choices?.[0]?.delta?.content)
     || data?.choices?.[0]?.text
     || data?.choices?.[0]?.delta?.text
+    || openAIEventDeltaText(data)
     || modelTextFromValue(data?.output)
     || modelTextFromValue(data?.content)
     || modelTextFromValue(data?.part)
@@ -1394,6 +1442,12 @@ function openAITextFromResponse(data, depth = 0) {
 }
 
 function anthropicTextFromResponse(data, depth = 0) {
+  if (data?.type === "content_block_delta") {
+    if (typeof data?.delta?.text === "string") return data.delta.text;
+    if (typeof data?.delta?.partial_json === "string") return data.delta.partial_json;
+  }
+  if (typeof data?.delta?.text === "string") return data.delta.text;
+  if (typeof data?.content_block?.text === "string") return data.content_block.text;
   const content = data?.content;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -1407,6 +1461,14 @@ function anthropicTextFromResponse(data, depth = 0) {
       .join("\n");
   }
   return typeof data?.text === "string" ? data.text : wrappedProviderTextFromResponse("anthropic", data, depth);
+}
+
+function openAIEventDeltaText(data) {
+  const type = String(data?.type || "");
+  if ((type === "response.output_text.delta" || type === "response.text.delta") && typeof data?.delta === "string") return data.delta;
+  if (typeof data?.delta?.text === "string") return data.delta.text;
+  if (typeof data?.delta?.content === "string") return data.delta.content;
+  return "";
 }
 
 function wrappedProviderTextFromResponse(protocol, data, depth) {
@@ -1567,9 +1629,13 @@ function connectionTestBodyForProfile(profile) {
       { role: "user", content: "ping" }
     ],
     ...openAIChatTokenLimit(profile, 32),
-    stream: false,
+    stream: shouldProfileStream(profile),
     n: 1
   };
+}
+
+function shouldProfileStream(profile) {
+  return profile?.capabilities?.streaming === true;
 }
 
 function providerBodyExtra(bodyExtra) {
@@ -1652,6 +1718,18 @@ function modelPrefersCompletionTokenLimit(model) {
 
 function withProviderBodyDefaults(profile, body) {
   return omitProviderBodyFields({ ...body, ...jsonModeBodyDefaults(profile), ...providerBodyExtra(profile.bodyExtra) }, profile.bodyExtra);
+}
+
+function withOpenAIChatBodyDefaults(profile, body) {
+  const merged = withProviderBodyDefaults(profile, body);
+  if (merged.stream === true && merged.stream_options === undefined && !providerBodyOmitFields(profile?.bodyExtra).has("stream_options")) {
+    merged.stream_options = openAIChatStreamOptions();
+  }
+  return merged;
+}
+
+function openAIChatStreamOptions() {
+  return { include_usage: true };
 }
 
 function jsonModeBodyDefaults(profile) {

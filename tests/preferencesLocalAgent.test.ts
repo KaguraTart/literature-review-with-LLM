@@ -331,11 +331,35 @@ describe("preferences local-agent config helpers", () => {
         { role: "user", content: "ping" }
       ],
       max_tokens: 32,
-      stream: false,
+      stream: true,
+      stream_options: { include_usage: true },
       n: 1
     });
     expect(request.body).not.toHaveProperty("extra_body");
     expect(modelList?.url).toBe("https://api.openai.com/v1/models");
+
+    const nonStreamingRequest = helpers.connectionTestRequestForProfile({
+      ...profile,
+      capabilities: { ...profile.capabilities, streaming: false }
+    });
+    expect(nonStreamingRequest.body).toMatchObject({ stream: false });
+    expect(nonStreamingRequest.body).not.toHaveProperty("stream_options");
+
+    const streamOptionOverride = helpers.connectionTestRequestForProfile({
+      ...profile,
+      bodyExtra: { stream_options: { include_usage: false } }
+    });
+    expect(streamOptionOverride.body).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: false }
+    });
+
+    const streamOptionOmitted = helpers.connectionTestRequestForProfile({
+      ...profile,
+      bodyExtra: { omitFields: ["stream_options"] }
+    });
+    expect(streamOptionOmitted.body).toMatchObject({ stream: true });
+    expect(streamOptionOmitted.body).not.toHaveProperty("stream_options");
 
     const reasoningRequest = helpers.connectionTestRequestForProfile({
       ...profile,
@@ -1745,6 +1769,26 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({
       data: { content: [{ type: "text", text: "wrapped anthropic ok" }] }
     }))).toBe("wrapped anthropic ok");
+    expect(helpers.extractProviderConnectionText("openai_chat", [
+      "data: {\"choices\":[{\"delta\":{\"content\":\"stream \"}}]}",
+      "",
+      "data: {\"choices\":[{\"delta\":{\"content\":\"chat\"}}]}",
+      "data: [DONE]"
+    ].join("\n"))).toBe("stream chat");
+    expect(helpers.extractProviderConnectionText("openai_responses", [
+      "data: {\"type\":\"response.output_text.delta\",\"delta\":\"stream \"}",
+      "",
+      "data: {\"type\":\"response.output_text.delta\",\"delta\":\"responses\"}",
+      "data: [DONE]"
+    ].join("\n"))).toBe("stream responses");
+    expect(helpers.extractProviderConnectionText("anthropic_messages", [
+      "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"stream \"}}",
+      "",
+      "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"anthropic\"}}"
+    ].join("\n"))).toBe("stream anthropic");
+    expect(() => helpers.extractProviderConnectionText("openai_chat", [
+      "data: {\"type\":\"error\",\"error\":{\"code\":\"rate_limit\",\"message\":\"Too many requests for sk-test-secret\"}}"
+    ].join("\n"))).toThrow("Too many requests for [redacted]");
   });
 
   it("shows parsed provider errors when model listing fails", async () => {

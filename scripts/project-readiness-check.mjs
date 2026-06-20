@@ -156,7 +156,7 @@ const SOURCE_MARKERS = [
   {
     id: "provider.protocols",
     description: "OpenAI chat, OpenAI Responses, Anthropic Messages, JSON mode, Chat token limits, and streamed usage options are present",
-    files: ["src/providerAdapters.ts", "addon/content/bootstrap-provider.js", "addon/content/workbench.js"],
+    files: ["src/providerAdapters.ts", "addon/content/bootstrap-provider.js", "addon/content/preferences.js", "addon/content/workbench.js"],
     markers: ["openai_responses", "anthropic_messages", "jsonModeBodyDefaults", "openAIChatTokenLimit", "openAIChatStreamOptions"]
   },
   {
@@ -235,7 +235,7 @@ const SOURCE_MARKERS = [
     id: "provider.settings-connection-response",
     description: "Settings connection tests use generation-compatible request bodies, require parseable model text, and surface 200-level provider errors",
     files: ["addon/content/preferences.js", "addon/content/workbench.js", "tests/preferencesLocalAgent.test.ts", "tests/workbenchWriteback.test.ts"],
-    markers: ["extractProviderConnectionText", "connectionTestBodyForProfile", "Provider error", "No text returned from model", "input_text", "builds workbench settings connection tests with generation-compatible request bodies", "marks settings connection tests OK only after extracting model text", "fails settings connection tests when a 200 response still contains a provider error"]
+    markers: ["extractProviderConnectionText", "providerTextFromStreamText", "connectionTestBodyForProfile", "Provider error", "No text returned from model", "input_text", "stream_options", "builds workbench settings connection tests with generation-compatible request bodies", "marks settings connection tests OK only after extracting model text", "fails settings connection tests when a 200 response still contains a provider error"]
   },
   {
     id: "provider.settings-guide",
