@@ -7404,8 +7404,18 @@ async function requestModelWithRetry(profile, messages, outputLanguage, systemPr
         }
         throw error;
       }
-      response.zmsRequestedStream = body.stream === true;
-      return response;
+      const okInspection = await inspectOkProviderResponseForFallback(response, requestProfile, body, usedCompatibilityFallbackFields, requestStreamEnabled);
+      if (okInspection.fallback && attempt < 3) {
+        requestProfile = okInspection.fallback.profile;
+        requestStreamEnabled = okInspection.fallback.streamEnabled;
+        usedCompatibilityFallbackFields = okInspection.fallback.usedFields;
+        continue;
+      }
+      if (okInspection.fallback) {
+        throw new Error(providerErrorText(response.status, okInspection.text || ""));
+      }
+      okInspection.response.zmsRequestedStream = okInspection.requestedStream;
+      return okInspection.response;
     } catch (err) {
       if (err?.name === "AbortError") throw err;
       if (err?.retryableProviderError === false) throw err;
@@ -7420,7 +7430,8 @@ async function requestModelWithRetry(profile, messages, outputLanguage, systemPr
 }
 
 function providerCompatibilityFallback(profile, body, status, text, usedFallback, streamEnabled) {
-  if (!["openai_chat", "openai_responses", "anthropic_messages"].includes(profile?.protocol) || ![400, 422].includes(Number(status))) return null;
+  if (!["openai_chat", "openai_responses", "anthropic_messages"].includes(profile?.protocol)) return null;
+  if (!providerFallbackEligibleStatus(body, status, text)) return null;
   const fields = providerUnsupportedOptionalFields(body, text, usedFallback);
   if (!fields.length) return null;
   const nextUsedFields = Array.from(new Set([...(Array.isArray(usedFallback) ? usedFallback : []), ...fields]));
@@ -7432,6 +7443,68 @@ function providerCompatibilityFallback(profile, body, status, text, usedFallback
     streamEnabled: fields.includes("stream") ? false : streamEnabled,
     usedFields: nextUsedFields
   };
+}
+
+async function inspectOkProviderResponseForFallback(response, profile, body, usedFallback, streamEnabled) {
+  const requestedStream = body?.stream === true;
+  if (!shouldInspectOkProviderResponse(response, requestedStream)) {
+    return { response, requestedStream };
+  }
+  const text = await response.text();
+  const fallback = providerCompatibilityFallback(profile, body, response.status, text, usedFallback, streamEnabled);
+  if (fallback) return { fallback, text };
+  return { response: responseFromText(response, text), requestedStream: false };
+}
+
+function shouldInspectOkProviderResponse(response, requestedStream) {
+  if (typeof response?.text !== "function") return false;
+  if (!requestedStream) return true;
+  const contentType = responseHeaderValue(response, "content-type").toLowerCase();
+  if (!response.body) return true;
+  return /json|problem\+json|text\/plain/.test(contentType);
+}
+
+function responseHeaderValue(response, name) {
+  const headers = response?.headers;
+  if (!headers) return "";
+  if (typeof headers.get === "function") return String(headers.get(name) || "");
+  const normalized = String(name || "").toLowerCase();
+  const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === normalized);
+  return entry ? String(entry[1] || "") : "";
+}
+
+function responseFromText(response, text) {
+  if (typeof Response === "function") {
+    return new Response(text, {
+      status: response.status,
+      statusText: response.statusText || "",
+      headers: response.headers
+    });
+  }
+  return {
+    ok: response.ok,
+    status: response.status,
+    statusText: response.statusText || "",
+    headers: response.headers,
+    body: null,
+    text: async () => text,
+    json: async () => JSON.parse(text)
+  };
+}
+
+function providerFallbackEligibleStatus(body, status, text) {
+  const numericStatus = Number(status);
+  if (numericStatus === 400 || numericStatus === 422) return true;
+  if (numericStatus !== 200) return false;
+  return providerOkResponseLooksLikeFallbackError(body, text);
+}
+
+function providerOkResponseLooksLikeFallbackError(body, text) {
+  const parsed = safeParseJSON(text);
+  if (!parsed) return false;
+  if (streamErrorText(parsed)) return true;
+  if (!providerStructuredUnsupportedFields(body, text).length) return false;
+  return /unsupported|unrecognized|not supported|unknown (?:field|parameter|argument)|extra_forbidden|not permitted|invalid|forbidden/.test(String(text || "").toLowerCase());
 }
 
 function providerUnsupportedOptionalFields(body, text, usedFallback = []) {

@@ -1270,6 +1270,58 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("stream");
   });
 
+  it("retries workbench provider requests when a 200 response wraps an unsupported-parameter error", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    (loaded as any).fetch = async (url: string, init: any) => {
+      fetchCalls.push({ url, body: JSON.parse(init.body) });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { "content-type": "application/json" },
+          text: async () => JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "Unsupported parameter: max_output_tokens",
+              param: "max_output_tokens"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { "content-type": "application/json" },
+        text: async () => JSON.stringify({ output_text: "pong" })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry(
+      {
+        id: "responses-router",
+        protocol: "openai_responses",
+        endpointMode: "base_url",
+        baseURL: "https://router.example/v1",
+        apiKey: "sk-test-secret",
+        model: "responses-model",
+        capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: false },
+        bodyExtra: {}
+      },
+      [{ role: "user", content: "ping" }],
+      "en-US",
+      "system",
+      { type: "text", text: "paper text" },
+      false
+    );
+
+    expect(response.ok).toBe(true);
+    expect(await response.json()).toMatchObject({ output_text: "pong" });
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toHaveProperty("max_output_tokens");
+    expect(fetchCalls[1].body).not.toHaveProperty("max_output_tokens");
+  });
+
   it("loads wrapped model-list pages in the workbench", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: string[] = [];

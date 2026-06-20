@@ -86,10 +86,9 @@ export async function runProviderSmoke(options = {}) {
       body: JSON.stringify(body),
       signal: controller.signal
     });
-    const rawText = await response.text();
-    let responseText = rawText;
-    let parsed = responseStream ? null : parseResponseBody(responseText);
-    while (!response.ok) {
+    let responseText = await response.text();
+    let parsed = parseResponseBody(responseText);
+    while (providerSmokeResponseNeedsFallback(profile.protocol, response, body, responseText, parsed)) {
       const fields = providerCompatibilityFallbackFields(profile.protocol, body, response.status, responseText, usedCompatibilityFallbackFields);
       if (fields.length) {
         body = omitProviderRequestBodyFields(body, fields, usedCompatibilityFallbackFields);
@@ -102,7 +101,7 @@ export async function runProviderSmoke(options = {}) {
           signal: controller.signal
         });
         responseText = await response.text();
-        parsed = responseStream ? null : parseResponseBody(responseText);
+        parsed = parseResponseBody(responseText);
         continue;
       }
       break;
@@ -117,6 +116,17 @@ export async function runProviderSmoke(options = {}) {
         error: providerErrorText(parsed, responseText)
       };
     }
+    const responseError = providerResponseErrorText(parsed);
+    if (responseError) {
+      return {
+        ok: false,
+        status: response.status,
+        profile: profile.id,
+        protocol: profile.protocol,
+        endpoint,
+        error: responseError
+      };
+    }
     const text = responseStream ? streamTextFromBody(profile.protocol, responseText) : extractResponseText(profile.protocol, parsed);
     return {
       ok: true,
@@ -129,7 +139,7 @@ export async function runProviderSmoke(options = {}) {
       inputMode: smokeInputMode(options),
       contentTypes: requestContentTypes(body),
       text,
-      usage: responseStream ? streamUsageFromBody(rawText) : extractProviderUsage(parsed)
+      usage: responseStream ? streamUsageFromBody(responseText) : extractProviderUsage(parsed)
     };
   } finally {
     clearTimeout(timer);
@@ -1140,6 +1150,13 @@ function readRequestBody(request) {
     request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     request.on("error", reject);
   });
+}
+
+function providerSmokeResponseNeedsFallback(protocol, response, body, responseText, parsed) {
+  if (!response?.ok) return true;
+  if (Number(response?.status) !== 200) return false;
+  if (!providerResponseErrorText(parsed)) return false;
+  return providerCompatibilityFallbackFields(protocol, body, 200, responseText).length > 0;
 }
 
 function providerErrorText(parsed, rawText) {

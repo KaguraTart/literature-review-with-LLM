@@ -229,6 +229,46 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("falls back when a smoke endpoint wraps an unsupported-parameter error in a 200 response", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-responses-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-responses",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_responses",
+        stream: false,
+        text: "OK wrapped fallback"
+      });
+      expect(requests).toHaveLength(2);
+      expect(requests[0].body).toMatchObject({
+        max_output_tokens: 64
+      });
+      expect(requests[1].body).not.toHaveProperty("max_output_tokens");
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.body?.max_output_tokens) {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "Unsupported parameter: max_output_tokens",
+              param: "max_output_tokens"
+            }
+          }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ output_text: "OK wrapped fallback" }));
+      }
+    });
+  });
+
   it("falls back across multiple OpenAI Responses-compatible smoke optional-field errors", async () => {
     await withMockProvider(async (baseURL, requests) => {
       const report = await runSmoke([

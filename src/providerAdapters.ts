@@ -922,7 +922,7 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
 }
 
 export function providerCompatibilityFallbackFields(protocol: string, body: Record<string, unknown>, status: number, text: string, usedFallback: boolean | string[] = false): string[] {
-  if (usedFallback === true || !["openai_chat", "openai_responses", "anthropic_messages"].includes(protocol) || ![400, 422].includes(Number(status))) return [];
+  if (usedFallback === true || !["openai_chat", "openai_responses", "anthropic_messages"].includes(protocol) || !providerFallbackEligibleStatus(body, status, text)) return [];
   const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
   const detail = String(text || "").toLowerCase();
   const fields: string[] = providerStructuredUnsupportedFields(body, text);
@@ -1012,6 +1012,21 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
     fields.push("tool_choice");
   }
   return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
+}
+
+function providerFallbackEligibleStatus(body: Record<string, unknown>, status: number, text: string): boolean {
+  const numericStatus = Number(status);
+  if (numericStatus === 400 || numericStatus === 422) return true;
+  if (numericStatus !== 200) return false;
+  return providerOkResponseLooksLikeFallbackError(body, text);
+}
+
+function providerOkResponseLooksLikeFallbackError(body: Record<string, unknown>, text: string): boolean {
+  const parsed = safeParseJSON(text);
+  if (!parsed) return false;
+  if (streamErrorText(parsed)) return true;
+  if (!providerStructuredUnsupportedFields(body, text).length) return false;
+  return /unsupported|unrecognized|not supported|unknown (?:field|parameter|argument)|extra_forbidden|not permitted|invalid|forbidden/.test(String(text || "").toLowerCase());
 }
 
 const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
