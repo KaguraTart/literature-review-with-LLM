@@ -76,6 +76,12 @@ describe("local agent stdio MCP runtime", () => {
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.pdfBase64).toMatchObject({
         type: "string"
       });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrFallback).toMatchObject({
+        type: "boolean"
+      });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.maxOcrPages).toMatchObject({
+        type: "number"
+      });
     } finally {
       runtime.stop();
     }
@@ -163,6 +169,65 @@ describe("local agent stdio MCP runtime", () => {
               page: 2,
               pageLabel: "2",
               text: "Experiments evaluate delay metrics."
+            }
+          ]
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to local OCR for scanned PDFs when enabled", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", "");
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 2);
+      const tesseractBin = fakeBin(dir, "tesseract", "OCR method text from scanned page.");
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 10,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF scanned fake").toString("base64"),
+              name: "scanned.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              maxOcrPages: 2,
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "scanned.pdf",
+          pageCount: 2,
+          ocrFallbackUsed: true,
+          textPageCount: 0,
+          pages: [
+            {
+              page: 1,
+              pageLabel: "1",
+              text: "OCR method text from scanned page."
+            },
+            {
+              page: 2,
+              pageLabel: "2",
+              text: "OCR method text from scanned page."
             }
           ]
         });
@@ -528,6 +593,23 @@ function fakeBin(dir: string, name: string, output: string, code = 0) {
       ? `process.stdout.write(${JSON.stringify(output)});`
       : `process.stderr.write(${JSON.stringify(output)});`,
     `process.exit(${code});`,
+    ""
+  ].join("\n"));
+  chmodSync(path, 0o755);
+  return path;
+}
+
+function fakePdfToPpmBin(dir: string, name: string, pageCount: number) {
+  const path = join(dir, name);
+  writeFileSync(path, [
+    "#!/usr/bin/env node",
+    "const fs = require('node:fs');",
+    "const args = process.argv.slice(2);",
+    "const prefix = args[args.length - 1];",
+    `const pageCount = ${pageCount};`,
+    "for (let page = 1; page <= pageCount; page += 1) {",
+    "  fs.writeFileSync(`${prefix}-${page}.png`, `fake page ${page}`);",
+    "}",
     ""
   ].join("\n"));
   chmodSync(path, 0o755);

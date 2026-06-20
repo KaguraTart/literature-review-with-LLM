@@ -687,9 +687,13 @@ const requiredMarkers = [
   [prefs, '"extract-pdf-pages":{"tool":"extract_pdf_pages"}', "default local PDF extraction tool mapping"],
   [localAgentMcpSource, "extract_pdf_pages", "local PDF page extraction MCP tool"],
   [localAgentMcpSource, "LOCAL_AGENT_PDFTOTEXT_BIN", "local PDF text extraction binary override"],
+  [localAgentMcpSource, "LOCAL_AGENT_PDFTOPPM_BIN", "local PDF page render binary override"],
   [localAgentMcpSource, "pdfPageEntriesFromText", "local PDF page text parser"],
+  [localAgentMcpSource, "shouldRunPdfOcrFallback", "local PDF OCR fallback gate"],
+  [localAgentMcpSource, "extractPdfOcrPages", "local scanned PDF OCR fallback"],
   [localAgentBridgeServiceSource, "REQUIRED_MCP_TOOL_NAMES", "local bridge service required tool check"],
-  [localAgentBridgeServiceSource, "LOCAL_AGENT_PDFTOTEXT_BIN", "local bridge service PDF text env passthrough"]
+  [localAgentBridgeServiceSource, "LOCAL_AGENT_PDFTOTEXT_BIN", "local bridge service PDF text env passthrough"],
+  [localAgentBridgeServiceSource, "LOCAL_AGENT_PDFTOPPM_BIN", "local bridge service PDF render env passthrough"]
 ];
 
 for (const [text, marker, description] of requiredMarkers) {

@@ -2245,7 +2245,10 @@ describe("workbench writeback helpers", () => {
         name: "extract_pdf_pages",
         arguments: {
           filePath: "/tmp/candidate.pdf",
-          name: "candidate.pdf"
+          name: "candidate.pdf",
+          ocrFallback: true,
+          maxOcrPages: 3,
+          minTextChars: 40
         }
       }
     });

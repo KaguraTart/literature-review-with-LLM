@@ -8897,7 +8897,10 @@ async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
           arguments: {
             filePath,
             name: attachmentDisplayName(pdf) || "paper.pdf",
-            timeoutSeconds: 45
+            timeoutSeconds: 50,
+            ocrFallback: true,
+            maxOcrPages: 3,
+            minTextChars: 40
           }
         }
       }

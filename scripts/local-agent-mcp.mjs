@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { cwd as currentDirectory } from "node:process";
@@ -20,6 +20,7 @@ const BREW_BIN = process.env.LOCAL_AGENT_BREW_BIN || "/opt/homebrew/bin/brew";
 const TESSERACT_BIN = process.env.LOCAL_AGENT_TESSERACT_BIN || "/opt/homebrew/bin/tesseract";
 const TESSERACT_LANG = process.env.LOCAL_AGENT_TESSERACT_LANG || "eng";
 const PDFTOTEXT_BIN = process.env.LOCAL_AGENT_PDFTOTEXT_BIN || "/opt/homebrew/bin/pdftotext";
+const PDFTOPPM_BIN = process.env.LOCAL_AGENT_PDFTOPPM_BIN || "/opt/homebrew/bin/pdftoppm";
 const CHILD_ENV_KEYS = [
   "PATH",
   "HOME",
@@ -54,6 +55,7 @@ const CHILD_ENV_KEYS = [
   "LOCAL_AGENT_TESSERACT_BIN",
   "LOCAL_AGENT_TESSERACT_LANG",
   "LOCAL_AGENT_PDFTOTEXT_BIN",
+  "LOCAL_AGENT_PDFTOPPM_BIN",
   "LOCAL_AGENT_MCP_MAX_TIMEOUT_SECONDS"
 ];
 
@@ -223,6 +225,22 @@ function pdfPagesSchema() {
       timeoutSeconds: {
         type: "number",
         description: "Timeout in seconds. Defaults to 45 and is capped at 180."
+      },
+      ocrFallback: {
+        type: "boolean",
+        description: "When true, render and OCR the first PDF pages if pdftotext returns little or no text."
+      },
+      ocrLanguage: {
+        type: "string",
+        description: "Tesseract language list for OCR fallback, for example eng or eng+chi_sim."
+      },
+      maxOcrPages: {
+        type: "number",
+        description: "Maximum number of pages to OCR during fallback. Defaults to 3 and is capped at 12."
+      },
+      minTextChars: {
+        type: "number",
+        description: "Minimum extracted character count before OCR fallback is skipped. Defaults to 40."
       }
     },
     required: []
@@ -378,27 +396,89 @@ async function extractPdfPages(args = {}) {
 
   let dir = "";
   let sourcePath = filePath;
+  let textError = null;
   try {
     if (!sourcePath) {
       dir = await mkdtemp(join(tmpdir(), "zms-pdf-text-"));
       sourcePath = join(dir, "input.pdf");
       await writeFile(sourcePath, Buffer.from(pdfBase64, "base64"));
     }
-    const output = await runCommand(PDFTOTEXT_BIN, ["-layout", sourcePath, "-"], {
-      cwd: dir || currentDirectory(),
-      timeoutSeconds: pdfTextTimeoutSeconds(args.timeoutSeconds),
-      requireOutput: false
-    });
-    const pages = pdfPageEntriesFromText(output === "(empty response)" ? "" : output);
-    return JSON.stringify({
-      engine: "pdftotext",
-      name: String(args.name || pdf.name || (filePath ? basename(filePath) : "input.pdf")),
-      pageCount: pages.length,
-      pages
-    });
+    let pages = [];
+    try {
+      const output = await runCommand(PDFTOTEXT_BIN, ["-layout", sourcePath, "-"], {
+        cwd: dir || currentDirectory(),
+        timeoutSeconds: pdfTextTimeoutSeconds(args.timeoutSeconds),
+        requireOutput: false
+      });
+      pages = pdfPageEntriesFromText(output === "(empty response)" ? "" : output);
+    } catch (error) {
+      textError = error;
+      if (!pdfOcrFallbackEnabled(args)) throw error;
+    }
+    if (shouldRunPdfOcrFallback(args, pages)) {
+      const ocrPages = await extractPdfOcrPages(sourcePath, args);
+      if (ocrPages.length) {
+        return JSON.stringify(pdfPagesResult(args, pdf, filePath, "tesseract", ocrPages, {
+          ocrFallbackUsed: true,
+          textPageCount: pages.length,
+          textError: textError ? cleanPdfPageText(textError.message || String(textError)).slice(0, 500) : ""
+        }));
+      }
+    }
+    if (textError) throw textError;
+    return JSON.stringify(pdfPagesResult(args, pdf, filePath, "pdftotext", pages, {
+      ocrFallbackUsed: shouldRunPdfOcrFallback(args, pages),
+      textPageCount: pages.length
+    }));
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true });
   }
+}
+
+async function extractPdfOcrPages(sourcePath, args = {}) {
+  const renderDir = await mkdtemp(join(tmpdir(), "zms-pdf-ocr-"));
+  const prefix = join(renderDir, "page");
+  const maxPages = pdfOcrMaxPages(args.maxOcrPages);
+  const language = pdfOcrLanguage(args.ocrLanguage || args.language);
+  try {
+    await runCommand(PDFTOPPM_BIN, ["-png", "-r", "200", "-f", "1", "-l", String(maxPages), sourcePath, prefix], {
+      cwd: renderDir,
+      timeoutSeconds: pdfRenderTimeoutSeconds(args.timeoutSeconds),
+      requireOutput: false
+    });
+    const rendered = await pdfRenderedImagePaths(renderDir);
+    const pages = [];
+    const pageTimeout = pdfOcrPageTimeoutSeconds(args.timeoutSeconds, maxPages);
+    for (const imagePath of rendered.slice(0, maxPages)) {
+      const page = pdfRenderedImagePage(imagePath) || (pages.length + 1);
+      const text = await runCommand(TESSERACT_BIN, [imagePath, "stdout", "-l", language], {
+        cwd: renderDir,
+        timeoutSeconds: pageTimeout,
+        requireOutput: false
+      });
+      const cleaned = cleanPdfPageText(text === "(empty response)" ? "" : text);
+      if (cleaned) {
+        pages.push({
+          page,
+          pageLabel: String(page),
+          text: cleaned
+        });
+      }
+    }
+    return pages;
+  } finally {
+    await rm(renderDir, { recursive: true, force: true });
+  }
+}
+
+function pdfPagesResult(args, pdf, filePath, engine, pages, extra = {}) {
+  return {
+    engine,
+    name: String(args.name || pdf.name || (filePath ? basename(filePath) : "input.pdf")),
+    pageCount: pages.length,
+    pages,
+    ...extra
+  };
 }
 
 function imageExtensionForMimeType(mimeType) {
@@ -420,6 +500,58 @@ function pdfTextTimeoutSeconds(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 45;
   return Math.min(Math.max(Math.round(parsed), 5), 180);
+}
+
+function pdfRenderTimeoutSeconds(value) {
+  return Math.min(pdfTextTimeoutSeconds(value), 60);
+}
+
+function pdfOcrPageTimeoutSeconds(value, maxPages) {
+  const total = pdfTextTimeoutSeconds(value);
+  const pages = Math.max(1, Number(maxPages) || 1);
+  return Math.min(Math.max(Math.floor(total / pages), 5), 60);
+}
+
+function pdfOcrFallbackEnabled(args = {}) {
+  return args.ocrFallback === true || args.ocrFallback === "true" || args.ocrFallback === 1;
+}
+
+function shouldRunPdfOcrFallback(args = {}, pages = []) {
+  if (!pdfOcrFallbackEnabled(args)) return false;
+  return pdfPagesTotalTextLength(pages) < pdfOcrFallbackMinChars(args.minTextChars);
+}
+
+function pdfOcrFallbackMinChars(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 40;
+  return Math.min(Math.round(parsed), 1000);
+}
+
+function pdfOcrMaxPages(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 3;
+  return Math.min(Math.max(Math.round(parsed), 1), 12);
+}
+
+function pdfOcrLanguage(value) {
+  return String(value || TESSERACT_LANG).replace(/[^A-Za-z0-9_+.-]+/g, "").slice(0, 80) || "eng";
+}
+
+function pdfPagesTotalTextLength(pages = []) {
+  return (pages || []).reduce((total, page) => total + String(page?.text || "").trim().length, 0);
+}
+
+async function pdfRenderedImagePaths(renderDir) {
+  const files = await readdir(renderDir);
+  return files
+    .filter((file) => /\.(?:png|jpe?g|tiff?)$/i.test(file))
+    .map((file) => join(renderDir, file))
+    .sort((left, right) => pdfRenderedImagePage(left) - pdfRenderedImagePage(right));
+}
+
+function pdfRenderedImagePage(path) {
+  const match = String(path || "").match(/-(\d+)\.[^.]+$/);
+  return match ? Number(match[1]) : 0;
 }
 
 function pdfPageEntriesFromText(text) {
