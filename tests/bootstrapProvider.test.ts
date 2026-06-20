@@ -1043,6 +1043,49 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("stream_options");
   });
 
+  it("falls back when bootstrap OpenAI Chat endpoints reject JSON and token fields", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 400,
+          error: { message: "response_format and max_completion_tokens are not supported" }
+        },
+        {
+          choices: [{ message: { content: "fallback summary" } }]
+        }
+      ]
+    });
+
+    const result = await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "o3-mini",
+      capabilities: { streaming: true, jsonMode: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(result.markdown).toBe("fallback summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({
+      response_format: { type: "json_object" },
+      max_completion_tokens: 1024
+    });
+    expect(fetchCalls[1].body).not.toHaveProperty("response_format");
+    expect(fetchCalls[1].body).not.toHaveProperty("max_completion_tokens");
+  });
+
   it("respects bootstrap OpenAI Chat stream option overrides", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       choices: [{ message: { content: "chat summary" } }]

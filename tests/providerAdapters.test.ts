@@ -329,20 +329,27 @@ describe("provider adapters", () => {
       stream: true,
       stream_options: { include_usage: true },
       temperature: 0.4,
-      n: 1
+      n: 1,
+      response_format: { type: "json_object" },
+      max_completion_tokens: 1024
     };
     const fields = providerCompatibilityFallbackFields(
       "openai_chat",
       body,
       400,
-      JSON.stringify({ error: { message: "stream_options, temperature, and n are unsupported" } })
+      JSON.stringify({ error: { message: "stream_options, temperature, n, response_format, and max_completion_tokens are unsupported" } })
     );
-    expect(fields).toEqual(["stream_options", "temperature", "n"]);
+    expect(fields).toEqual(["stream_options", "temperature", "n", "response_format", "max_completion_tokens"]);
     expect(omitProviderRequestBodyFields(body, fields)).toEqual({
       model: "router-model",
       messages: [],
       stream: true
     });
+    expect(providerCompatibilityFallbackFields("openai_chat", {
+      model: "router-model",
+      messages: [],
+      max_tokens: 1024
+    }, 400, "Unknown field: max_tokens")).toEqual(["max_tokens"]);
     expect(providerCompatibilityFallbackFields("openai_chat", body, 422, "stream is not supported"))
       .toEqual(["stream", "stream_options"]);
     expect(providerCompatibilityFallbackFields("openai_responses", body, 400, "stream_options")).toEqual([]);

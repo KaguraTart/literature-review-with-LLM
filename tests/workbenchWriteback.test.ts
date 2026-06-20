@@ -4575,6 +4575,50 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("stream_options");
   });
 
+  it("downgrades unsupported OpenAI Chat JSON and token fields in the workbench request path", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "response_format and max_completion_tokens are not supported"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "ok" } }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      protocol: "openai_chat",
+      model: "o3-mini",
+      capabilities: { ...providerProfile().capabilities, jsonMode: true }
+    }, [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "text", text: "context" }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({
+      response_format: { type: "json_object" },
+      max_completion_tokens: 8192
+    });
+    expect(fetchCalls[1].body).not.toHaveProperty("response_format");
+    expect(fetchCalls[1].body).not.toHaveProperty("max_completion_tokens");
+  });
+
   it("falls back to non-streaming when an OpenAI Chat route rejects streaming", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: any[] = [];

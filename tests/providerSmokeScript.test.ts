@@ -144,6 +144,43 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("falls back when an OpenAI-compatible smoke endpoint rejects JSON and token fields", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-chat",
+        "--body-extra-json", JSON.stringify({ response_format: { type: "json_object" } }),
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_chat",
+        stream: false,
+        text: "OK fallback"
+      });
+      expect(requests).toHaveLength(2);
+      expect(requests[0].body).toMatchObject({
+        response_format: { type: "json_object" },
+        max_tokens: 64
+      });
+      expect(requests[1].body).not.toHaveProperty("response_format");
+      expect(requests[1].body).not.toHaveProperty("max_tokens");
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.body?.response_format || requestData.body?.max_tokens) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: { message: "response_format and max_tokens are unsupported" } }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ choices: [{ message: { content: "OK fallback" } }] }));
+      }
+    });
+  });
+
   it("rejects non-object provider body-extra JSON", async () => {
     await expect(execFileAsync(process.execPath, [
       "scripts/verify-provider-smoke.mjs",

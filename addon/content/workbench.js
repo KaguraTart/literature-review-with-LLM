@@ -6226,6 +6226,15 @@ function providerUnsupportedOptionalFields(body, text) {
   if (body?.n !== undefined && /(?:^|[^a-z0-9_])n(?:[^a-z0-9_]|$)|number of completions|multiple completions/.test(detail)) {
     fields.push("n");
   }
+  if (body?.response_format !== undefined && /response_format|response format/.test(detail)) {
+    fields.push("response_format");
+  }
+  if (body?.max_completion_tokens !== undefined && /max_completion_tokens|max completion tokens|max completion token/.test(detail)) {
+    fields.push("max_completion_tokens");
+  }
+  if (body?.max_tokens !== undefined && /max_tokens|max tokens|max token/.test(detail)) {
+    fields.push("max_tokens");
+  }
   return Array.from(new Set(fields));
 }
 
