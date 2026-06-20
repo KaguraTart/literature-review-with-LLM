@@ -1967,6 +1967,20 @@ describe("workbench writeback helpers", () => {
     expect(deltas).toEqual(["visible", " tail"]);
   });
 
+  it("extracts candidate-part stream text used by Gemini-style compatible routes", async () => {
+    const response = {
+      body: streamFromText([
+        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"type\":\"thinking\",\"text\":\"hidden\"},{\"text\":\"candidate\"}]}}]}",
+        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" stream\"}]}}]}"
+      ].join("\n"))
+    };
+    const deltas: string[] = [];
+    const text = await helpers.readStream(response, "openai_chat", (delta) => deltas.push(delta));
+
+    expect(text).toBe("candidate stream");
+    expect(deltas).toEqual(["candidate", " stream"]);
+  });
+
   it("ignores Anthropic thinking stream events in the workbench", async () => {
     const response = {
       body: streamFromText([

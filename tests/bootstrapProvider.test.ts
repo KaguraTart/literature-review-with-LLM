@@ -2688,6 +2688,9 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.extractOpenAIStreamText({
       choices: [{ message: { content: [{ type: "output_text", text: "message text" }] } }]
     })).toBe("message text");
+    expect(helpers.extractOpenAIStreamText({
+      candidates: [{ content: { parts: [{ type: "thinking", text: "hidden" }, { text: "candidate stream" }] } }]
+    })).toBe("candidate stream");
     expect(helpers.extractOpenAIStreamText({ data: { choices: [{ delta: { content: "wrapped chat" } }] } })).toBe("wrapped chat");
     expect(helpers.extractOpenAIStreamText({ result: { type: "response.output_text.delta", delta: "wrapped responses" } })).toBe("wrapped responses");
     expect(helpers.extractOpenAIStreamText({ body: { type: "response.output_text.delta", delta: "wrapped body" } })).toBe("wrapped body");

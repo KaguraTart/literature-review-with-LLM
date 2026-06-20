@@ -159,6 +159,8 @@ function extractOpenAIStreamText(chunk, depth = 0) {
   }
   const directContent = extractOpenAIMessageContent(chunk.content);
   if (directContent) return directContent;
+  const candidateContent = extractOpenAIMessageContent(chunk.candidates);
+  if (candidateContent) return candidateContent;
   const outputText = extractOpenAIContentArray(chunk.output);
   if (outputText) return outputText;
   const eventText = extractOpenAIEventContainer(chunk);

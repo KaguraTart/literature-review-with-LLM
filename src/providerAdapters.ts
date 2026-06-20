@@ -213,6 +213,8 @@ function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, dept
   }
   const directContent = extractMessageContent(data?.content);
   if (directContent) return directContent;
+  const candidateContent = extractMessageContent(data?.candidates);
+  if (candidateContent) return candidateContent;
   const eventContent = extractOpenAIEventContainer(data);
   if (eventContent) return eventContent;
   return extractOutputContent(data?.output)

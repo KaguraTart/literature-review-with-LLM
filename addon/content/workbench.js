@@ -7805,6 +7805,8 @@ function streamTextFromData(protocol, data, depth = 0) {
   }
   const directContent = modelTextFromValue(data?.content);
   if (directContent) return directContent;
+  const candidateContent = modelTextFromValue(data?.candidates);
+  if (candidateContent) return candidateContent;
   const eventText = modelTextFromStreamContainer(data);
   if (eventText) return eventText;
   return modelTextFromValue(data?.output) || (typeof data?.delta === "string" ? data.delta : "") || wrappedStreamTextFromData(protocol, data, depth);
