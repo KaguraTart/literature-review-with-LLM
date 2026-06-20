@@ -92,7 +92,7 @@ export async function runProviderSmoke(options = {}) {
     while (!response.ok) {
       const fields = providerCompatibilityFallbackFields(profile.protocol, body, response.status, responseText, usedCompatibilityFallbackFields);
       if (fields.length) {
-        body = omitProviderRequestBodyFields(body, fields);
+        body = omitProviderRequestBodyFields(body, fields, usedCompatibilityFallbackFields);
         usedCompatibilityFallbackFields.push(...fields);
         responseStream = body.stream === true;
         response = await fetch(endpoint, {

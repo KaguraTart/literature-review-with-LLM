@@ -2053,6 +2053,38 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toBe("Connection OK");
   });
 
+  it("retries settings OpenAI Chat tests with the alternate token limit field first", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      initialModel: "o3-mini",
+      fetchResponses: [
+        {
+          __fetchOk: false,
+          __fetchStatus: 400,
+          __fetchBody: {
+            error: { message: "Unsupported parameter: max_completion_tokens" }
+          }
+        },
+        {
+          choices: [{ message: { content: "pong" } }]
+        }
+      ]
+    });
+    elements.get("zms-provider").value = "openai_compatible";
+    elements.get("zms-activeProfileId").value = "openai-compatible";
+    elements.get("zms-profileName").value = "OpenAI Compatible";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "https://router.example/v1";
+    elements.get("zms-model").value = "o3-mini";
+
+    await controller.testConnection();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(JSON.parse(fetchCalls[0].init.body)).toMatchObject({ max_completion_tokens: 32 });
+    expect(JSON.parse(fetchCalls[1].init.body)).toMatchObject({ max_tokens: 32 });
+    expect(JSON.parse(fetchCalls[1].init.body)).not.toHaveProperty("max_completion_tokens");
+    expect(elements.get("zms-status").value).toBe("Connection OK");
+  });
+
   it("retries settings connection tests after stripping unsupported Responses fields", async () => {
     const { controller, elements, fetchCalls } = loadPreferencesController({
       initialModel: "model-a",

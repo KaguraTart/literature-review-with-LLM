@@ -7365,7 +7365,7 @@ function providerCompatibilityFallback(profile, body, status, text, usedFallback
   return {
     profile: {
       ...profile,
-      bodyExtra: mergeProviderBodyOmitFields(profile?.bodyExtra, fields)
+      bodyExtra: mergeProviderFallbackBodyExtra(profile?.bodyExtra, body, fields, usedFallback)
     },
     streamEnabled: fields.includes("stream") ? false : streamEnabled,
     usedFields: nextUsedFields
@@ -7518,6 +7518,29 @@ function normalizeProviderFieldHint(value) {
     .replace(/\[[^\]]+\]/g, "")
     .split(".")[0]
     .trim();
+}
+
+function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = []) {
+  const nextExtra = { ...(bodyExtra || {}) };
+  const omitFields = [...fields];
+  const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
+  if (fields.includes("max_completion_tokens") && !usedFields.has("max_tokens") && body?.max_completion_tokens !== undefined && body?.max_tokens === undefined) {
+    nextExtra.tokenLimitField = "max_tokens";
+    removeFromArray(omitFields, "max_completion_tokens");
+  }
+  if (fields.includes("max_tokens") && !usedFields.has("max_completion_tokens") && body?.max_tokens !== undefined && body?.max_completion_tokens === undefined) {
+    nextExtra.tokenLimitField = "max_completion_tokens";
+    removeFromArray(omitFields, "max_tokens");
+  }
+  return mergeProviderBodyOmitFields(nextExtra, omitFields);
+}
+
+function removeFromArray(values, value) {
+  let index = values.indexOf(value);
+  while (index >= 0) {
+    values.splice(index, 1);
+    index = values.indexOf(value);
+  }
 }
 
 function mergeProviderBodyOmitFields(bodyExtra, fields) {

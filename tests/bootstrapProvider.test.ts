@@ -1117,6 +1117,7 @@ describe("bootstrap provider helpers", () => {
     });
     expect(fetchCalls[1].body).not.toHaveProperty("response_format");
     expect(fetchCalls[1].body).not.toHaveProperty("max_completion_tokens");
+    expect(fetchCalls[1].body).toMatchObject({ max_tokens: 1024 });
   });
 
   it("falls back when direct bootstrap summaries reject advanced optional fields", async () => {

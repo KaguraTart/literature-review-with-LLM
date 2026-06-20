@@ -1055,10 +1055,23 @@ function normalizeProviderFieldHint(value: string): string {
   return normalized;
 }
 
-export function omitProviderRequestBodyFields(body: Record<string, unknown>, fields: string[]): Record<string, unknown> {
+export function omitProviderRequestBodyFields(body: Record<string, unknown>, fields: string[], usedFallback: boolean | string[] = false): Record<string, unknown> {
   if (!fields.length) return body;
   const next = { ...body };
-  for (const field of fields) delete next[field];
+  const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
+  for (const field of fields) {
+    if (field === "max_completion_tokens" && !usedFields.has("max_tokens") && next.max_completion_tokens !== undefined && next.max_tokens === undefined) {
+      next.max_tokens = next.max_completion_tokens;
+      delete next.max_completion_tokens;
+      continue;
+    }
+    if (field === "max_tokens" && !usedFields.has("max_completion_tokens") && next.max_tokens !== undefined && next.max_completion_tokens === undefined) {
+      next.max_completion_tokens = next.max_tokens;
+      delete next.max_tokens;
+      continue;
+    }
+    delete next[field];
+  }
   return next;
 }
 

@@ -5421,6 +5421,18 @@ describe("workbench writeback helpers", () => {
           })
         };
       }
+      if (fetchCalls.length === 2) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "max_tokens is not supported"
+            }
+          })
+        };
+      }
       return {
         ok: true,
         status: 200,
@@ -5438,13 +5450,17 @@ describe("workbench writeback helpers", () => {
     ], "zh-CN", "system", { type: "text", text: "context" }, false);
 
     expect(response.ok).toBe(true);
-    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls).toHaveLength(3);
     expect(fetchCalls[0].body).toMatchObject({
       response_format: { type: "json_object" },
       max_completion_tokens: 8192
     });
     expect(fetchCalls[1].body).not.toHaveProperty("response_format");
     expect(fetchCalls[1].body).not.toHaveProperty("max_completion_tokens");
+    expect(fetchCalls[1].body).toMatchObject({ max_tokens: 8192 });
+    expect(fetchCalls[2].body).not.toHaveProperty("response_format");
+    expect(fetchCalls[2].body).not.toHaveProperty("max_completion_tokens");
+    expect(fetchCalls[2].body).not.toHaveProperty("max_tokens");
   });
 
   it("downgrades structured unsupported-parameter errors in the workbench request path", async () => {
@@ -5493,6 +5509,7 @@ describe("workbench writeback helpers", () => {
     });
     expect(fetchCalls[1].body).not.toHaveProperty("response_format");
     expect(fetchCalls[1].body).not.toHaveProperty("max_completion_tokens");
+    expect(fetchCalls[1].body).toMatchObject({ max_tokens: 8192 });
   });
 
   it("downgrades OpenAI Responses optional fields across multiple workbench attempts", async () => {

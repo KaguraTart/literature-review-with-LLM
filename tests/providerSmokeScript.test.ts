@@ -170,6 +170,7 @@ describe("provider smoke verifier", () => {
       });
       expect(requests[1].body).not.toHaveProperty("response_format");
       expect(requests[1].body).not.toHaveProperty("max_tokens");
+      expect(requests[1].body).toMatchObject({ max_completion_tokens: 64 });
     }, {
       handler: (requestData, response) => {
         if (requestData.body?.response_format || requestData.body?.max_tokens) {

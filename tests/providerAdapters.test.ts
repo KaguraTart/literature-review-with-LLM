@@ -343,13 +343,33 @@ describe("provider adapters", () => {
     expect(omitProviderRequestBodyFields(body, fields)).toEqual({
       model: "router-model",
       messages: [],
-      stream: true
+      stream: true,
+      max_tokens: 1024
     });
-    expect(providerCompatibilityFallbackFields("openai_chat", {
+    const legacyTokenBody = {
       model: "router-model",
       messages: [],
       max_tokens: 1024
-    }, 400, "Unknown field: max_tokens")).toEqual(["max_tokens"]);
+    };
+    expect(providerCompatibilityFallbackFields("openai_chat", legacyTokenBody, 400, "Unknown field: max_tokens")).toEqual(["max_tokens"]);
+    expect(omitProviderRequestBodyFields(legacyTokenBody, ["max_tokens"])).toEqual({
+      model: "router-model",
+      messages: [],
+      max_completion_tokens: 1024
+    });
+    expect(omitProviderRequestBodyFields(legacyTokenBody, ["max_tokens"], ["max_completion_tokens"])).toEqual({
+      model: "router-model",
+      messages: []
+    });
+    expect(omitProviderRequestBodyFields(body, ["max_completion_tokens"], ["max_tokens"])).toEqual({
+      model: "router-model",
+      messages: [],
+      stream: true,
+      stream_options: { include_usage: true },
+      temperature: 0.4,
+      n: 1,
+      response_format: { type: "json_object" }
+    });
     const strictOptionalBody = {
       model: "router-model",
       messages: [],
