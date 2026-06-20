@@ -423,6 +423,11 @@ if (isMainModule()) {
       process.stdout.write(options.json ? `${JSON.stringify(catalog, null, 2)}\n` : formatCaseCatalog(catalog));
       process.exit(0);
     }
+    if (options.envTemplate) {
+      const template = providerLiveEnvTemplate(options.include || "");
+      process.stdout.write(options.json ? `${JSON.stringify(template, null, 2)}\n` : formatEnvTemplate(template));
+      process.exit(0);
+    }
     const report = await runProviderLive(options, process.env);
     process.stdout.write(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report));
     if (!report.ok) process.exit(1);
@@ -538,6 +543,7 @@ function parseArgs(args) {
     bodyExtra: {},
     json: false,
     list: false,
+    envTemplate: false,
     help: false
   };
   for (let index = 0; index < args.length; index += 1) {
@@ -577,6 +583,8 @@ function parseArgs(args) {
       options.failOnSkip = true;
     } else if (key === "--list") {
       options.list = true;
+    } else if (key === "--env-template") {
+      options.envTemplate = true;
     } else if (key === "--header" && value) {
       const [name, headerValue] = splitAssignment(value, "--header");
       options.customHeaders[name] = headerValue;
@@ -614,6 +622,54 @@ export function providerLiveCaseCatalog(include = "") {
       modelList: entry.modelList !== false
     }))
   };
+}
+
+export function providerLiveEnvTemplate(include = "") {
+  const cases = selectedCases(include);
+  return {
+    liveProviderEnvTemplate: true,
+    count: cases.length,
+    cases: cases.map((entry) => providerEnvTemplateForCase(entry))
+  };
+}
+
+function providerEnvTemplateForCase(entry) {
+  const requiredEnv = caseGenerationRequiredEnv(entry);
+  const modelListRequiredEnv = caseModelListRequiredEnv(entry);
+  const optionalEnv = [
+    ...(entry.requireBaseURL ? [] : [entry.baseURLEnv]),
+    entry.headersEnv,
+    entry.bodyExtraEnv
+  ].filter(Boolean);
+  return {
+    id: entry.id,
+    label: entry.label,
+    profile: entry.profile,
+    protocol: entry.protocol,
+    requiredEnv,
+    modelListRequiredEnv,
+    optionalEnv,
+    generationCommand: `npm run verify:provider:live -- --include ${entry.id}`,
+    modelListCommand: entry.modelList === false
+      ? ""
+      : `npm run verify:provider:models:live -- --include ${entry.id}`
+  };
+}
+
+function caseGenerationRequiredEnv(entry) {
+  return [
+    entry.apiKeyEnv,
+    entry.modelEnv,
+    ...(entry.requireBaseURL ? [entry.baseURLEnv] : [])
+  ].filter(Boolean);
+}
+
+function caseModelListRequiredEnv(entry) {
+  if (entry.modelList === false) return [];
+  return [
+    entry.apiKeyEnv,
+    ...(entry.requireBaseURL ? [entry.baseURLEnv] : [])
+  ].filter(Boolean);
 }
 
 function validateLiveOptions(options) {
@@ -863,12 +919,38 @@ function formatCaseCatalog(catalog) {
   return `${lines.join("\n")}\n`;
 }
 
+function formatEnvTemplate(template) {
+  const lines = ["Provider live verification env templates:"];
+  for (const entry of template.cases || []) {
+    lines.push("", `# ${entry.id} (${entry.protocol})`, "# Required for generation checks");
+    for (const name of entry.requiredEnv || []) {
+      lines.push(`${name}=...`);
+    }
+    if (entry.optionalEnv?.length) {
+      lines.push("# Optional");
+      for (const name of entry.optionalEnv) {
+        lines.push(`# ${name}=...`);
+      }
+    }
+    lines.push(entry.generationCommand);
+    if (entry.modelListCommand && entry.modelListRequiredEnv?.length) {
+      lines.push("# Required for model-list checks");
+      for (const name of entry.modelListRequiredEnv) {
+        lines.push(`${name}=...`);
+      }
+      lines.push(entry.modelListCommand);
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 function usage() {
   return [
     "Usage:",
     "  npm run verify:provider:live -- --json",
     "  npm run verify:provider:models:live -- --json",
     "  npm run verify:provider:live -- --list",
+    "  npm run verify:provider:live -- --env-template --include openai-compatible",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai",
     "  OPENAI_API_KEY=... npm run verify:provider:models:live -- --include openai",
     "  OPENAI_RESPONSES_COMPATIBLE_API_KEY=... OPENAI_RESPONSES_COMPATIBLE_MODEL=... OPENAI_RESPONSES_COMPATIBLE_BASE_URL=... npm run verify:provider:live -- --include openai-responses-compatible",
@@ -903,6 +985,7 @@ function usage() {
     "Options:",
     "  --include LIST           Comma-separated live case ids; named cases include built-in provider ids such as minimax, gemini, azure-openai, deepseek, openrouter, groq, github-models, fireworks, cerebras, nvidia-nim, sambanova, sambanova-responses, and sambanova-anthropic",
     "  --list                   Print available live case ids and environment variable names, then exit",
+    "  --env-template           Print copyable placeholder env lines for selected live case ids, then exit",
     "  --prompt TEXT            Override the smoke prompt",
     "  --context TEXT           Override the smoke context",
     "  --timeout-ms NUMBER      Per-provider timeout",

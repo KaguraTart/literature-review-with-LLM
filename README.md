@@ -234,6 +234,8 @@ The same naming pattern is available for `XAI_*`, `TOGETHER_*`, `KIMI_*`, `PERPL
 
 Run `npm run verify:provider:live -- --list --json` to print every live-check case with its protocol, profile id, and environment variable names.
 
+Run `npm run verify:provider:live -- --env-template --include openai-compatible` to print copyable placeholder env lines for selected live-check cases. Add `--json` if you want a machine-readable template for CI secrets or local shell setup.
+
 Live checks also accept request headers and request-body overrides. Use repeated `--header name=value` or per-case env vars such as `OPENAI_COMPATIBLE_HEADERS_JSON`, `OPENAI_RESPONSES_COMPATIBLE_HEADERS_JSON`, and `ANTHROPIC_COMPATIBLE_HEADERS_JSON` for custom gateways. Use `--body-extra-json` for all selected cases, or per-case env vars such as `OPENAI_COMPATIBLE_BODY_EXTRA_JSON`, `OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON`, `ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON`, `OPENAI_BODY_EXTRA_JSON`, and `ANTHROPIC_BODY_EXTRA_JSON`.
 
 ```bash

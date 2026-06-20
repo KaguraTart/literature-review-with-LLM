@@ -867,6 +867,41 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("prints live provider environment templates", async () => {
+    const report = await runLive(["--env-template", "--include", "openai-compatible,anthropic-compatible", "--json"], scrubProviderEnv());
+
+    expect(report).toMatchObject({
+      liveProviderEnvTemplate: true,
+      count: 2
+    });
+    const openaiCompatible = report.cases.find((entry: any) => entry.id === "openai-compatible");
+    expect(openaiCompatible).toMatchObject({
+      protocol: "openai_chat",
+      requiredEnv: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_MODEL", "OPENAI_COMPATIBLE_BASE_URL"],
+      modelListRequiredEnv: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"],
+      generationCommand: "npm run verify:provider:live -- --include openai-compatible",
+      modelListCommand: "npm run verify:provider:models:live -- --include openai-compatible"
+    });
+    expect(openaiCompatible.optionalEnv).toEqual(["OPENAI_COMPATIBLE_HEADERS_JSON", "OPENAI_COMPATIBLE_BODY_EXTRA_JSON"]);
+    const anthropicCompatible = report.cases.find((entry: any) => entry.id === "anthropic-compatible");
+    expect(anthropicCompatible.requiredEnv).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_MODEL", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
+    expect(anthropicCompatible.modelListRequiredEnv).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
+
+    const { stdout } = await execFileAsync(process.execPath, [
+      "scripts/verify-provider-live.mjs",
+      "--env-template",
+      "--include",
+      "anthropic-compatible"
+    ], {
+      cwd: process.cwd(),
+      env: scrubProviderEnv()
+    });
+    expect(stdout).toContain("Provider live verification env templates:");
+    expect(stdout).toContain("ANTHROPIC_COMPATIBLE_API_KEY=...");
+    expect(stdout).toContain("# ANTHROPIC_COMPATIBLE_HEADERS_JSON=...");
+    expect(stdout).toContain("npm run verify:provider:live -- --include anthropic-compatible");
+  });
+
   it("runs live provider env checks against mock endpoints without leaking secrets", async () => {
     await withLiveMockProvider(async (baseURL, requests) => {
       const report = await runLive(["--include", BASIC_LIVE_CASES, "--json"], scrubProviderEnv({
