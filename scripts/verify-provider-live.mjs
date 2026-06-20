@@ -466,6 +466,7 @@ if (isMainModule()) {
 }
 
 export async function runProviderLive(options = {}, env = process.env) {
+  const effectiveEnv = options.envFile ? envWithEnvFile(options.envFile, env) : env;
   const cases = selectedCases(options.include || "");
   const results = [];
   for (const entry of cases) {
@@ -484,8 +485,8 @@ export async function runProviderLive(options = {}, env = process.env) {
     }
 
     try {
-      const customHeaders = customHeadersForCase(entry, options, env);
-      const missing = missingRequirements(entry, env, { models: Boolean(options.models), customHeaders });
+      const customHeaders = customHeadersForCase(entry, options, effectiveEnv);
+      const missing = missingRequirements(entry, effectiveEnv, { models: Boolean(options.models), customHeaders });
       if (missing.length) {
         results.push({
           id: entry.id,
@@ -500,9 +501,9 @@ export async function runProviderLive(options = {}, env = process.env) {
       const smokeOptions = {
         profile: entry.profile,
         protocol: entry.protocol,
-        apiKey: env[entry.apiKeyEnv],
-        baseURL: env[entry.baseURLEnv] || "",
-        model: env[entry.modelEnv],
+        apiKey: effectiveEnv[entry.apiKeyEnv],
+        baseURL: effectiveEnv[entry.baseURLEnv] || "",
+        model: effectiveEnv[entry.modelEnv],
         customHeaders,
         prompt: options.prompt || DEFAULT_PROMPT,
         context: options.context || DEFAULT_CONTEXT,
@@ -513,7 +514,7 @@ export async function runProviderLive(options = {}, env = process.env) {
         pdf: Boolean(options.pdf),
         stream: Boolean(options.stream),
         dryRun: Boolean(options.dryRun),
-        bodyExtra: bodyExtraForCase(entry, options, env)
+        bodyExtra: bodyExtraForCase(entry, options, effectiveEnv)
       };
       const report = options.models
         ? await runProviderModels(smokeOptions)
@@ -524,7 +525,7 @@ export async function runProviderLive(options = {}, env = process.env) {
         status: report.ok ? "passed" : "failed",
         ok: report.ok,
         skipped: false,
-        report: sanitizeSmokeReport(report, env)
+        report: sanitizeSmokeReport(report, effectiveEnv)
       });
     } catch (error) {
       results.push({
@@ -533,7 +534,7 @@ export async function runProviderLive(options = {}, env = process.env) {
         status: "failed",
         ok: false,
         skipped: false,
-        error: redactKnownSecrets(error?.message || String(error), env)
+        error: redactKnownSecrets(error?.message || String(error), effectiveEnv)
       });
     }
   }
@@ -547,6 +548,7 @@ export async function runProviderLive(options = {}, env = process.env) {
     inputMode: liveInputMode(options),
     stream: Boolean(options.stream),
     dryRun: Boolean(options.dryRun),
+    envFileLoaded: Boolean(options.envFile),
     failOnSkip: Boolean(options.failOnSkip),
     counts,
     results
@@ -569,6 +571,7 @@ function parseArgs(args) {
     failOnSkip: false,
     customHeaders: {},
     bodyExtra: {},
+    envFile: "",
     json: false,
     list: false,
     envTemplate: false,
@@ -619,6 +622,9 @@ function parseArgs(args) {
       index += 1;
     } else if (key === "--body-extra-json" && value) {
       options.bodyExtra = parseJSONOption(value, "--body-extra-json");
+      index += 1;
+    } else if (key === "--env-file" && value) {
+      options.envFile = value;
       index += 1;
     } else if (key === "--json") {
       options.json = true;
@@ -745,6 +751,47 @@ function validateLiveOptions(options) {
   if (options.models && options.stream) {
     throw new Error("--stream verifies generation output and cannot be combined with --models");
   }
+}
+
+function envWithEnvFile(path, env) {
+  const fileEnv = parseEnvFile(readFileSync(path, "utf8"), path);
+  const result = { ...(env || {}) };
+  for (const [key, value] of Object.entries(fileEnv)) {
+    if (!String(result[key] ?? "").trim()) result[key] = value;
+  }
+  return result;
+}
+
+function parseEnvFile(text, label = ".env") {
+  const values = {};
+  const lines = String(text || "").split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const raw = lines[index];
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const line = trimmed.startsWith("export ") ? trimmed.slice(7).trim() : trimmed;
+    const equalsIndex = line.indexOf("=");
+    if (equalsIndex <= 0) throw new Error(`${label}:${index + 1} must use KEY=value`);
+    const key = line.slice(0, equalsIndex).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error(`${label}:${index + 1} has invalid env key`);
+    values[key] = parseEnvFileValue(line.slice(equalsIndex + 1));
+  }
+  return values;
+}
+
+function parseEnvFileValue(value) {
+  const raw = String(value || "").trim();
+  if ((raw.startsWith("\"") && raw.endsWith("\"")) || (raw.startsWith("'") && raw.endsWith("'"))) {
+    const inner = raw.slice(1, -1);
+    if (raw.startsWith("'")) return inner;
+    return inner
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\r")
+      .replace(/\\t/g, "\t")
+      .replace(/\\"/g, "\"")
+      .replace(/\\\\/g, "\\");
+  }
+  return raw.replace(/\s+#.*$/, "").trim();
 }
 
 function selectedCases(include) {
@@ -1042,6 +1089,7 @@ function usage() {
     "  OPENAI_COMPATIBLE_API_KEY=... OPENAI_COMPATIBLE_BASE_URL=... npm run verify:provider:models:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_MODEL=... OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:models:live -- --include openai-compatible",
+    "  npm run verify:provider:live -- --include openai-compatible --env-file .env.local",
     "  MINIMAX_API_KEY=... npm run verify:provider:live -- --include minimax",
     "  GEMINI_API_KEY=... GEMINI_MODEL=... npm run verify:provider:live -- --include gemini",
     "  AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=... AZURE_OPENAI_BASE_URL=... npm run verify:provider:live -- --include azure-openai",
@@ -1078,6 +1126,7 @@ function usage() {
     "  --fail-on-skip           Exit non-zero when any selected case is missing env config",
     "  --header name=value       Add or override a request header for all selected cases",
     "  --body-extra-json JSON    Merge extra request-body fields for all selected generation cases",
+    "  --env-file PATH           Load KEY=value lines from a local env file; shell env values take precedence",
     "  --json                   Print machine-readable JSON"
   ].join("\n") + "\n";
 }

@@ -1,5 +1,8 @@
 import { execFile } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
@@ -1154,6 +1157,52 @@ describe("provider smoke verifier", () => {
       expect(JSON.stringify(report)).not.toContain("live-anthropic-secret");
       expect(JSON.stringify(report)).not.toContain("live-anthropic-compatible-secret");
       expect(JSON.stringify(report)).not.toContain("live-compatible-secret");
+    });
+  });
+
+  it("loads live provider credentials from a local env file without leaking secrets", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const tempDir = mkdtempSync(join(tmpdir(), "zms-provider-env-"));
+      const envPath = join(tempDir, ".env.local");
+      try {
+        writeFileSync(envPath, [
+          "# local live check config",
+          "OPENAI_COMPATIBLE_API_KEY=env-file-compatible-secret",
+          "OPENAI_COMPATIBLE_MODEL=env-file-model",
+          `OPENAI_COMPATIBLE_BASE_URL=${baseURL}/v1`,
+          "OPENAI_COMPATIBLE_HEADERS_JSON={\"X-Router\":\"env-file-header-secret\"}",
+          ""
+        ].join("\n"));
+
+        const report = await runLive([
+          "--include",
+          "openai-compatible",
+          "--env-file",
+          envPath,
+          "--json"
+        ], scrubProviderEnv({
+          OPENAI_COMPATIBLE_MODEL: "shell-model"
+        }));
+
+        expect(report).toMatchObject({
+          ok: true,
+          live: true,
+          envFileLoaded: true,
+          counts: {
+            passed: 1,
+            skipped: 0,
+            failed: 0
+          }
+        });
+        expect(requests).toHaveLength(1);
+        expect(requests[0].authorization).toBe("Bearer env-file-compatible-secret");
+        expect(requests[0].xRouter).toBe("env-file-header-secret");
+        expect(requests[0].body.model).toBe("shell-model");
+        expect(JSON.stringify(report)).not.toContain("env-file-compatible-secret");
+        expect(JSON.stringify(report)).not.toContain("env-file-header-secret");
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
     });
   });
 
