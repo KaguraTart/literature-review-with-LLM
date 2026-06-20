@@ -1203,6 +1203,11 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("text");
     expect(fetchCalls[1].body).not.toHaveProperty("reasoning");
     expect(fetchCalls[1].body).not.toHaveProperty("verbosity");
+    expect(fetchCalls[1].body.input[0].content).toEqual([
+      { type: "input_text", text: expect.stringContaining("SYSTEM:\nsystem") },
+      { type: "input_text", text: "ping" },
+      { type: "input_text", text: "CONTEXT:\npaper text" }
+    ]);
   });
 
   it("loads wrapped model-list pages in the workbench", async () => {
@@ -5614,6 +5619,18 @@ describe("workbench writeback helpers", () => {
           })
         };
       }
+      if (Object.prototype.hasOwnProperty.call(body, "system")) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              type: "invalid_request_error",
+              message: "Unsupported parameter: system prompt"
+            }
+          })
+        };
+      }
       if (Object.prototype.hasOwnProperty.call(body, "stream")) {
         return {
           ok: false,
@@ -5645,15 +5662,25 @@ describe("workbench writeback helpers", () => {
     ], "zh-CN", "system", { type: "text", text: "context" }, false);
 
     expect(response.ok).toBe(true);
-    expect(fetchCalls).toHaveLength(3);
+    expect(fetchCalls).toHaveLength(4);
     expect(fetchCalls[0].body).toMatchObject({
       metadata: { source: "zotero" },
+      system: expect.stringContaining("system"),
       stream: false
     });
     expect(fetchCalls[1].body).not.toHaveProperty("metadata");
-    expect(fetchCalls[1].body).toMatchObject({ stream: false });
+    expect(fetchCalls[1].body).toMatchObject({
+      system: expect.stringContaining("system"),
+      stream: false
+    });
     expect(fetchCalls[2].body).not.toHaveProperty("metadata");
-    expect(fetchCalls[2].body).not.toHaveProperty("stream");
+    expect(fetchCalls[2].body).not.toHaveProperty("system");
+    expect(fetchCalls[2].body).toMatchObject({ stream: false });
+    expect(fetchCalls[2].body.messages[0].content).toContain("SYSTEM:\nsystem");
+    expect(fetchCalls[2].body.messages[0].content).toContain("CONTEXT:\ncontext");
+    expect(fetchCalls[3].body).not.toHaveProperty("metadata");
+    expect(fetchCalls[3].body).not.toHaveProperty("system");
+    expect(fetchCalls[3].body).not.toHaveProperty("stream");
   });
 
   it("falls back to non-streaming when an OpenAI Chat route rejects streaming", async () => {

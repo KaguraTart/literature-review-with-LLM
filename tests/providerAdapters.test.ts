@@ -434,7 +434,7 @@ describe("provider adapters", () => {
       "openai_responses",
       {
         model: "responses-model",
-        input: [],
+        input: [{ role: "user", content: [{ type: "input_text", text: "ping" }] }],
         instructions: "system",
         text: { verbosity: "low" },
         reasoning: { effort: "low" },
@@ -443,6 +443,19 @@ describe("provider adapters", () => {
       422,
       "Unsupported parameters: instructions, reasoning, text.verbosity, verbosity"
     )).toEqual(["text", "instructions", "reasoning", "verbosity"]);
+    const responsesRetryBody = omitProviderRequestBodyFields({
+      model: "responses-model",
+      input: [{ role: "user", content: [{ type: "input_text", text: "ping" }] }],
+      instructions: "system",
+      text: { verbosity: "low" },
+      reasoning: { effort: "low" },
+      verbosity: "low"
+    }, ["text", "instructions", "reasoning", "verbosity"]);
+    expect(responsesRetryBody).not.toHaveProperty("instructions");
+    expect((responsesRetryBody.input as any[])[0].content).toEqual([
+      { type: "input_text", text: "SYSTEM:\nsystem" },
+      { type: "input_text", text: "ping" }
+    ]);
     expect(providerCompatibilityFallbackFields(
       "openai_responses",
       responsesBody,
@@ -453,7 +466,7 @@ describe("provider adapters", () => {
     const anthropicBody = {
       model: "claude-compatible",
       system: "system",
-      messages: [],
+      messages: [{ role: "user", content: "ping" }],
       max_tokens: 1024,
       stream: false,
       metadata: { source: "zotero" },
@@ -467,6 +480,9 @@ describe("provider adapters", () => {
       400,
       "Unsupported parameters: stream, system prompt, metadata, thinking, top_p, stop_sequences"
     )).toEqual(["stream", "system", "metadata", "thinking", "top_p", "stop_sequences"]);
+    const anthropicRetryBody = omitProviderRequestBodyFields(anthropicBody, ["stream", "system", "metadata", "thinking", "top_p", "stop_sequences"]);
+    expect(anthropicRetryBody).not.toHaveProperty("system");
+    expect((anthropicRetryBody.messages as any[])[0].content).toBe("SYSTEM:\nsystem\n\nping");
     expect(providerCompatibilityFallbackFields(
       "anthropic_messages",
       anthropicBody,

@@ -910,6 +910,8 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
     openAIChatTokenField: _openAIChatTokenField,
     chatTokenField: _chatTokenField,
     maxTokenField: _maxTokenField,
+    instructionsFallbackToUser: _instructionsFallbackToUser,
+    systemFallbackToUser: _systemFallbackToUser,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,
@@ -1096,6 +1098,14 @@ export function omitProviderRequestBodyFields(body: Record<string, unknown>, fie
   const next = { ...body };
   const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
   for (const field of fields) {
+    if (field === "instructions") {
+      moveInstructionsIntoOpenAIResponsesInput(next);
+      continue;
+    }
+    if (field === "system") {
+      moveAnthropicSystemIntoMessages(next);
+      continue;
+    }
     if (field === "max_completion_tokens" && !usedFields.has("max_tokens") && next.max_completion_tokens !== undefined && next.max_tokens === undefined) {
       next.max_tokens = next.max_completion_tokens;
       delete next.max_completion_tokens;
@@ -1109,6 +1119,60 @@ export function omitProviderRequestBodyFields(body: Record<string, unknown>, fie
     delete next[field];
   }
   return next;
+}
+
+function fallbackSystemText(value: unknown): string {
+  const text = String(value || "").trim();
+  return text ? `SYSTEM:\n${text}` : "";
+}
+
+function moveInstructionsIntoOpenAIResponsesInput(body: Record<string, unknown>): void {
+  const systemText = fallbackSystemText(body.instructions);
+  if (systemText) {
+    body.input = inputWithPrependedOpenAIResponsesText(body.input, systemText);
+  }
+  delete body.instructions;
+}
+
+function inputWithPrependedOpenAIResponsesText(input: unknown, text: string): unknown {
+  const textPart = { type: "input_text", text };
+  const items = Array.isArray(input) ? input.map((item) => clonePlainObject(item)) : [];
+  const userIndex = items.findIndex((item) => item?.role === "user");
+  if (userIndex >= 0) {
+    const item = items[userIndex] as Record<string, unknown>;
+    const content = Array.isArray(item.content) ? item.content : item.content ? [item.content] : [];
+    items[userIndex] = { ...item, content: [textPart, ...content] };
+    return items;
+  }
+  return [{ role: "user", content: [textPart] }, ...items];
+}
+
+function moveAnthropicSystemIntoMessages(body: Record<string, unknown>): void {
+  const systemText = fallbackSystemText(body.system);
+  if (systemText) {
+    body.messages = messagesWithPrependedAnthropicText(body.messages, systemText);
+  }
+  delete body.system;
+}
+
+function messagesWithPrependedAnthropicText(messages: unknown, text: string): unknown {
+  const items = Array.isArray(messages) ? messages.map((item) => clonePlainObject(item)) : [];
+  const userIndex = items.findIndex((item) => item?.role === "user");
+  if (userIndex >= 0) {
+    const item = items[userIndex] as Record<string, unknown>;
+    if (typeof item.content === "string") {
+      items[userIndex] = { ...item, content: `${text}\n\n${item.content}` };
+      return items;
+    }
+    const content = Array.isArray(item.content) ? item.content : item.content ? [item.content] : [];
+    items[userIndex] = { ...item, content: [{ type: "text", text }, ...content] };
+    return items;
+  }
+  return [{ role: "user", content: text }, ...items];
+}
+
+function clonePlainObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : { value };
 }
 
 function omitProviderBodyFields(body: Record<string, unknown>, bodyExtra: Record<string, unknown> | undefined): Record<string, unknown> {

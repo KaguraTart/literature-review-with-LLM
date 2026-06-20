@@ -2161,6 +2161,10 @@ describe("preferences local-agent config helpers", () => {
     expect(retriedBody).not.toHaveProperty("reasoning");
     expect(retriedBody).not.toHaveProperty("verbosity");
     expect(retriedBody).not.toHaveProperty("stop");
+    expect(retriedBody.input[0].content).toEqual([
+      { type: "input_text", text: expect.stringContaining("SYSTEM:\nYou are a provider connection test endpoint") },
+      { type: "input_text", text: "ping" }
+    ]);
     expect(elements.get("zms-status").value).toBe("Connection OK");
   });
 
@@ -2206,6 +2210,8 @@ describe("preferences local-agent config helpers", () => {
     expect(retriedBody).not.toHaveProperty("metadata");
     expect(retriedBody).not.toHaveProperty("top_p");
     expect(retriedBody).toMatchObject({ max_tokens: 32 });
+    expect(retriedBody.messages[0].content).toContain("SYSTEM:\nYou are a provider connection test endpoint");
+    expect(retriedBody.messages[0].content).toContain("ping");
     expect(elements.get("zms-status").value).toBe("Connection OK");
   });
 

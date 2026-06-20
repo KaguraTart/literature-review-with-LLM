@@ -639,7 +639,7 @@ async function requestJSON(url, headers, body, stream, protocol = "openai_chat")
         const text = await response.text();
         const fallbackFields = providerCompatibilityFallbackFields(protocol, requestBody, response.status, text, usedCompatibilityFallbackFields);
         if (fallbackFields.length && attempt < 3) {
-          requestBody = omitProviderRequestBodyFields(requestBody, fallbackFields);
+          requestBody = omitProviderRequestBodyFields(requestBody, fallbackFields, usedCompatibilityFallbackFields);
           requestStream = requestBody.stream === true;
           usedCompatibilityFallbackFields = Array.from(new Set([...usedCompatibilityFallbackFields, ...fallbackFields]));
           continue;

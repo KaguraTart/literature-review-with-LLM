@@ -478,6 +478,8 @@ function providerBodyExtra(bodyExtra) {
     openAIChatTokenField: _openAIChatTokenField,
     chatTokenField: _chatTokenField,
     maxTokenField: _maxTokenField,
+    instructionsFallbackToUser: _instructionsFallbackToUser,
+    systemFallbackToUser: _systemFallbackToUser,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,
@@ -618,6 +620,14 @@ function omitProviderRequestBodyFields(body, fields, usedFallback = false) {
   const next = { ...body };
   const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
   for (const field of fields) {
+    if (field === "instructions") {
+      moveInstructionsIntoOpenAIResponsesInput(next);
+      continue;
+    }
+    if (field === "system") {
+      moveAnthropicSystemIntoMessages(next);
+      continue;
+    }
     if (field === "max_completion_tokens" && !usedFields.has("max_tokens") && next.max_completion_tokens !== undefined && next.max_tokens === undefined) {
       next.max_tokens = next.max_completion_tokens;
       delete next.max_completion_tokens;
@@ -631,6 +641,60 @@ function omitProviderRequestBodyFields(body, fields, usedFallback = false) {
     delete next[field];
   }
   return next;
+}
+
+function fallbackSystemText(value) {
+  const text = String(value || "").trim();
+  return text ? `SYSTEM:\n${text}` : "";
+}
+
+function moveInstructionsIntoOpenAIResponsesInput(body) {
+  const systemText = fallbackSystemText(body.instructions);
+  if (systemText) {
+    body.input = inputWithPrependedOpenAIResponsesText(body.input, systemText);
+  }
+  delete body.instructions;
+}
+
+function inputWithPrependedOpenAIResponsesText(input, text) {
+  const textPart = { type: "input_text", text };
+  const items = Array.isArray(input) ? input.map((item) => clonePlainObject(item)) : [];
+  const userIndex = items.findIndex((item) => item?.role === "user");
+  if (userIndex >= 0) {
+    const item = items[userIndex];
+    const content = Array.isArray(item.content) ? item.content : item.content ? [item.content] : [];
+    items[userIndex] = { ...item, content: [textPart, ...content] };
+    return items;
+  }
+  return [{ role: "user", content: [textPart] }, ...items];
+}
+
+function moveAnthropicSystemIntoMessages(body) {
+  const systemText = fallbackSystemText(body.system);
+  if (systemText) {
+    body.messages = messagesWithPrependedAnthropicText(body.messages, systemText);
+  }
+  delete body.system;
+}
+
+function messagesWithPrependedAnthropicText(messages, text) {
+  const items = Array.isArray(messages) ? messages.map((item) => clonePlainObject(item)) : [];
+  const userIndex = items.findIndex((item) => item?.role === "user");
+  if (userIndex >= 0) {
+    const item = items[userIndex];
+    if (typeof item.content === "string") {
+      items[userIndex] = { ...item, content: `${text}\n\n${item.content}` };
+      return items;
+    }
+    const content = Array.isArray(item.content) ? item.content : item.content ? [item.content] : [];
+    items[userIndex] = { ...item, content: [{ type: "text", text }, ...content] };
+    return items;
+  }
+  return [{ role: "user", content: text }, ...items];
+}
+
+function clonePlainObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...value } : { value };
 }
 
 function openAIChatTokenLimitField(profile) {

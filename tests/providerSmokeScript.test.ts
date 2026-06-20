@@ -243,15 +243,27 @@ describe("provider smoke verifier", () => {
         stream: false,
         text: "OK fallback"
       });
-      expect(requests).toHaveLength(3);
+      expect(requests).toHaveLength(4);
       expect(requests[0].body).toMatchObject({
+        instructions: expect.stringContaining("provider smoke-test"),
         text: { format: { type: "json_object" } },
         max_output_tokens: 64
       });
       expect(requests[1].body).not.toHaveProperty("text");
-      expect(requests[1].body).toMatchObject({ max_output_tokens: 64 });
+      expect(requests[1].body).toMatchObject({
+        instructions: expect.stringContaining("provider smoke-test"),
+        max_output_tokens: 64
+      });
       expect(requests[2].body).not.toHaveProperty("text");
       expect(requests[2].body).not.toHaveProperty("max_output_tokens");
+      expect(requests[2].body).toHaveProperty("instructions");
+      expect(requests[3].body).not.toHaveProperty("text");
+      expect(requests[3].body).not.toHaveProperty("max_output_tokens");
+      expect(requests[3].body).not.toHaveProperty("instructions");
+      expect(requests[3].body.input[0].content[0]).toMatchObject({
+        type: "input_text",
+        text: expect.stringContaining("SYSTEM:")
+      });
     }, {
       handler: (requestData, response) => {
         if (requestData.body?.text) {
@@ -262,6 +274,11 @@ describe("provider smoke verifier", () => {
         if (requestData.body?.max_output_tokens) {
           response.writeHead(400, { "content-type": "application/json" });
           response.end(JSON.stringify({ error: { message: "Unsupported parameter: max_output_tokens" } }));
+          return;
+        }
+        if (requestData.body?.instructions) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: { message: "Unsupported parameter: instructions" } }));
           return;
         }
         response.writeHead(200, { "content-type": "application/json" });
@@ -287,20 +304,34 @@ describe("provider smoke verifier", () => {
         stream: false,
         text: "OK anthropic fallback"
       });
-      expect(requests).toHaveLength(3);
+      expect(requests).toHaveLength(4);
       expect(requests[0].body).toMatchObject({
         metadata: { source: "zotero" },
+        system: expect.stringContaining("provider smoke-test"),
         stream: false
       });
       expect(requests[1].body).not.toHaveProperty("metadata");
-      expect(requests[1].body).toMatchObject({ stream: false });
+      expect(requests[1].body).toMatchObject({
+        system: expect.stringContaining("provider smoke-test"),
+        stream: false
+      });
       expect(requests[2].body).not.toHaveProperty("metadata");
-      expect(requests[2].body).not.toHaveProperty("stream");
+      expect(requests[2].body).not.toHaveProperty("system");
+      expect(requests[2].body).toMatchObject({ stream: false });
+      expect(JSON.stringify(requests[2].body.messages[0].content)).toContain("SYSTEM:");
+      expect(requests[3].body).not.toHaveProperty("metadata");
+      expect(requests[3].body).not.toHaveProperty("system");
+      expect(requests[3].body).not.toHaveProperty("stream");
     }, {
       handler: (requestData, response) => {
         if (requestData.body?.metadata) {
           response.writeHead(400, { "content-type": "application/json" });
           response.end(JSON.stringify({ error: { message: "Unsupported parameter: metadata" } }));
+          return;
+        }
+        if (requestData.body?.system) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: { message: "Unsupported parameter: system prompt" } }));
           return;
         }
         if (Object.prototype.hasOwnProperty.call(requestData.body || {}, "stream")) {

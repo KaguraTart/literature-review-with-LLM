@@ -1284,6 +1284,11 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("text");
     expect(fetchCalls[1].body).not.toHaveProperty("reasoning");
     expect(fetchCalls[1].body).not.toHaveProperty("verbosity");
+    expect(fetchCalls[1].body.input[0].content).toEqual([
+      { type: "input_text", text: "SYSTEM:\nsystem" },
+      { type: "input_text", text: "prompt" },
+      { type: "input_text", text: "CONTEXT:\npaper text" }
+    ]);
   });
 
   it("respects bootstrap OpenAI Chat stream option overrides", async () => {

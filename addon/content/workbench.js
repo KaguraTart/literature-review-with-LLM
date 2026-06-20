@@ -7092,6 +7092,8 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
   const system = `${baseSystem}\n${languageInstruction(outputLanguage)}`;
   const baseText = messagesToText(messages);
   const stream = shouldStream(profile, streamEnabled);
+  const responsesSystemInUser = isTrueValue(profile?.bodyExtra?.instructionsFallbackToUser);
+  const anthropicSystemInUser = isTrueValue(profile?.bodyExtra?.systemFallbackToUser);
   if (requestInputImages(requestInput).length && !canUseImageInput(profile)) {
     throw new Error("Selected provider profile does not support image input");
   }
@@ -7099,7 +7101,7 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
     return withProviderBodyDefaults(profile, {
       model: profile.model,
       system,
-      messages: anthropicMessages(messages, requestInput, baseText),
+      messages: anthropicMessages(messages, requestInput, baseText, anthropicSystemInUser ? system : ""),
       max_tokens: Number(pref("maxOutputTokens")) || 8192,
       stream
     });
@@ -7108,7 +7110,7 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
     return withProviderBodyDefaults(profile, {
       model: profile.model,
       instructions: system,
-      input: openaiResponsesInput(messages, requestInput),
+      input: openaiResponsesInput(messages, requestInput, responsesSystemInUser ? system : ""),
       max_output_tokens: Number(pref("maxOutputTokens")) || 8192,
       temperature: Number(pref("temperature")) || 1,
       stream
@@ -7156,6 +7158,8 @@ function providerBodyExtra(bodyExtra) {
     openAIChatTokenField: _openAIChatTokenField,
     chatTokenField: _chatTokenField,
     maxTokenField: _maxTokenField,
+    instructionsFallbackToUser: _instructionsFallbackToUser,
+    systemFallbackToUser: _systemFallbackToUser,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,
@@ -7224,6 +7228,10 @@ function modelPrefersCompletionTokenLimit(model) {
   return /^o\d(?:$|[-_.])/i.test(String(model || "").trim());
 }
 
+function isTrueValue(value) {
+  return value === true || String(value || "").trim().toLowerCase() === "true";
+}
+
 function withProviderBodyDefaults(profile, body) {
   return omitProviderBodyFields({ ...body, ...jsonModeBodyDefaults(profile), ...providerBodyExtra(profile.bodyExtra) }, profile.bodyExtra);
 }
@@ -7243,25 +7251,29 @@ function messagesToText(messages) {
   return messages.map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
 }
 
-function openaiResponsesInput(messages, requestInput = {}) {
+function openaiResponsesInput(messages, requestInput = {}, fallbackSystem = "") {
   const input = messages.map((message) => ({
     role: message.role,
     content: [{ type: message.role === "assistant" ? "output_text" : "input_text", text: String(message.content || "") }]
   }));
-  const lastUserIndex = findLastIndex(input, (message) => message.role === "user");
+  let lastUserIndex = findLastIndex(input, (message) => message.role === "user");
+  const systemText = fallbackSystemText(fallbackSystem);
+  if (systemText) {
+    lastUserIndex = prependOpenAIResponsesPart(input, lastUserIndex, { type: "input_text", text: systemText });
+  }
   const contextText = requestInput?.type === "text" ? requestInput.text : "";
   if (contextText) {
-    appendOpenAIResponsesPart(input, lastUserIndex, { type: "input_text", text: `CONTEXT:\n${contextText}` });
+    lastUserIndex = appendOpenAIResponsesPart(input, lastUserIndex, { type: "input_text", text: `CONTEXT:\n${contextText}` });
   }
   if (requestInput?.type === "pdf_base64" && requestInput.base64) {
-    prependOpenAIResponsesPart(input, lastUserIndex, {
+    lastUserIndex = prependOpenAIResponsesPart(input, lastUserIndex, {
       type: "input_file",
       filename: requestInput.filename || "paper.pdf",
       file_data: `data:application/pdf;base64,${requestInput.base64}`
     });
   }
   for (const image of requestInputImages(requestInput)) {
-    appendOpenAIResponsesPart(input, lastUserIndex, {
+    lastUserIndex = appendOpenAIResponsesPart(input, lastUserIndex, {
       type: "input_image",
       image_url: imageDataURL(image)
     });
@@ -7296,9 +7308,10 @@ function appendOpenAIResponsesPart(input, lastUserIndex, part) {
       ...input[lastUserIndex],
       content: [...input[lastUserIndex].content, part]
     };
-    return;
+    return lastUserIndex;
   }
   input.push({ role: "user", content: [part] });
+  return input.length - 1;
 }
 
 function prependOpenAIResponsesPart(input, lastUserIndex, part) {
@@ -7307,9 +7320,10 @@ function prependOpenAIResponsesPart(input, lastUserIndex, part) {
       ...input[lastUserIndex],
       content: [part, ...input[lastUserIndex].content]
     };
-    return;
+    return lastUserIndex;
   }
   input.push({ role: "user", content: [part] });
+  return input.length - 1;
 }
 
 async function requestModelWithRetry(profile, messages, outputLanguage, systemPrompt, requestInput, streamEnabled, signal) {
@@ -7524,6 +7538,12 @@ function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = 
   const nextExtra = { ...(bodyExtra || {}) };
   const omitFields = [...fields];
   const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
+  if (fields.includes("instructions") && body?.instructions !== undefined) {
+    nextExtra.instructionsFallbackToUser = true;
+  }
+  if (fields.includes("system") && body?.system !== undefined) {
+    nextExtra.systemFallbackToUser = true;
+  }
   if (fields.includes("max_completion_tokens") && !usedFields.has("max_tokens") && body?.max_completion_tokens !== undefined && body?.max_tokens === undefined) {
     nextExtra.tokenLimitField = "max_tokens";
     removeFromArray(omitFields, "max_completion_tokens");
@@ -7961,9 +7981,11 @@ function extractProviderConnectionText(protocol, text) {
   return extractResponseText(protocol, data);
 }
 
-function anthropicMessages(messages, requestInput, baseText) {
+function anthropicMessages(messages, requestInput, baseText, fallbackSystem = "") {
   const mapped = messages.map((message) => ({ role: message.role, content: message.content }));
   const content = [];
+  const systemText = fallbackSystemText(fallbackSystem);
+  const contextText = requestInput?.type === "text" && requestInput.text ? `CONTEXT:\n${requestInput.text}` : "";
   for (const image of requestInputImages(requestInput)) {
     content.push({
       type: "image",
@@ -7978,9 +8000,12 @@ function anthropicMessages(messages, requestInput, baseText) {
     content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: requestInput.base64 } });
   }
   if (!content.length) {
-    return mergeConsecutiveAnthropicMessages(mapped);
+    let nextMessages = contextText ? messagesWithAppendedAnthropicText(mapped, contextText) : mapped;
+    if (systemText) nextMessages = messagesWithPrependedAnthropicText(nextMessages, systemText);
+    return mergeConsecutiveAnthropicMessages(nextMessages);
   }
-  content.push({ type: "text", text: baseText });
+  const text = contextText ? `${baseText}\n\n${contextText}` : baseText;
+  content.push({ type: "text", text: systemText ? `${systemText}\n\n${text}` : text });
   const lastUserIndex = findLastIndex(mapped, (message) => message.role === "user");
   if (lastUserIndex >= 0) {
     mapped[lastUserIndex] = { role: "user", content };
@@ -7996,6 +8021,43 @@ function requestInputImages(requestInput) {
 
 function imageDataURL(image) {
   return `data:${image.mimeType || "image/png"};base64,${image.base64 || ""}`;
+}
+
+function fallbackSystemText(value) {
+  const text = String(value || "").trim();
+  return text ? `SYSTEM:\n${text}` : "";
+}
+
+function messagesWithPrependedAnthropicText(messages, text) {
+  const items = Array.isArray(messages) ? messages.map((item) => ({ ...item })) : [];
+  const userIndex = items.findIndex((item) => item?.role === "user");
+  if (userIndex >= 0) {
+    const item = items[userIndex];
+    if (typeof item.content === "string") {
+      items[userIndex] = { ...item, content: `${text}\n\n${item.content}` };
+      return items;
+    }
+    const content = Array.isArray(item.content) ? item.content : item.content ? [item.content] : [];
+    items[userIndex] = { ...item, content: [{ type: "text", text }, ...content] };
+    return items;
+  }
+  return [{ role: "user", content: text }, ...items];
+}
+
+function messagesWithAppendedAnthropicText(messages, text) {
+  const items = Array.isArray(messages) ? messages.map((item) => ({ ...item })) : [];
+  const userIndex = findLastIndex(items, (item) => item?.role === "user");
+  if (userIndex >= 0) {
+    const item = items[userIndex];
+    if (typeof item.content === "string") {
+      items[userIndex] = { ...item, content: `${item.content}\n\n${text}` };
+      return items;
+    }
+    const content = Array.isArray(item.content) ? item.content : item.content ? [item.content] : [];
+    items[userIndex] = { ...item, content: [...content, { type: "text", text }] };
+    return items;
+  }
+  return [...items, { role: "user", content: text }];
 }
 
 function mergeConsecutiveAnthropicMessages(messages) {
