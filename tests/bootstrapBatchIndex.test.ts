@@ -255,6 +255,7 @@ describe("batch papers index", () => {
       gapMatrixPath: "/out/collections/COL/knowledge/research-gaps.zh-CN.md",
       topicClustersPath: "/out/collections/COL/knowledge/topic-clusters.zh-CN.md",
       synthesisClaimsPath: "/out/collections/COL/knowledge/synthesis-claims.zh-CN.md",
+      synthesisConflictsPath: "/out/collections/COL/knowledge/synthesis-conflicts.zh-CN.md",
       synthesisRoadmapPath: "/out/collections/COL/knowledge/synthesis-roadmap.zh-CN.md",
       researchQuestionCardsPath: "/out/collections/COL/knowledge/research-question-cards.zh-CN.md",
       reviewDraftPath: "/out/collections/COL/writing/manual-review-draft.zh-CN.md",
@@ -276,6 +277,9 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.topicClustersPath)).toContain("综合线索");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("综合主张矩阵");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("主张风险检查清单");
+    expect(writes.get(artifacts.synthesisConflictsPath)).toContain("综合冲突与缺口台账");
+    expect(writes.get(artifacts.synthesisConflictsPath)).toContain("支持强度");
+    expect(writes.get(artifacts.synthesisConflictsPath)).toContain("冲突审查清单");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("综合路线图");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("跨主题证据地图");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("候选检索词");
@@ -286,6 +290,7 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.reviewReportPath)).toContain("正式综述报告草稿");
     expect(writes.get(artifacts.reviewReportPath)).toContain("论文清单与证据地图");
     expect(writes.get(artifacts.reviewReportPath)).toContain("有证据支持的综合主张");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("综合冲突与证据缺口");
     expect(writes.get(artifacts.reviewReportPath)).toContain("风险核查清单");
     expect(writes.get(artifacts.ideaListPath)).toContain("研究想法列表");
     expect(writes.get(artifacts.ideaListPath)).toContain("推翻条件");
@@ -360,12 +365,16 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("PPO-based CTDE scheduler");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("Only tested in grid simulation");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("Stress-test under mixed priority flights");
+    expect(writes.get(artifacts.synthesisConflictsPath)).toContain("单篇证据支持");
+    expect(writes.get(artifacts.synthesisConflictsPath)).toContain("Only tested in grid simulation");
+    expect(writes.get(artifacts.synthesisConflictsPath)).toContain("Stress-test under mixed priority flights");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("PPO-based CTDE scheduler");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("No field data or ablation");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("Stress-test under mixed priority flights");
     expect(writes.get(artifacts.reviewReportPath)).toContain("PPO-based CTDE scheduler");
     expect(writes.get(artifacts.reviewReportPath)).toContain("Conflict rate and delay minutes");
     expect(writes.get(artifacts.reviewReportPath)).toContain("No field data or ablation");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("综合冲突与证据缺口");
     expect(writes.get(artifacts.reviewReportPath)).toContain("Stress-test under mixed priority flights");
   });
 
@@ -435,10 +444,13 @@ describe("batch papers index", () => {
     expect(writes.get(english.gapMatrixPath)).toContain("Research Gap Matrix");
     expect(writes.get(english.topicClustersPath)).toContain("Topic Clusters");
     expect(writes.get(english.synthesisClaimsPath)).toContain("Synthesis Claims Matrix");
+    expect(writes.get(english.synthesisConflictsPath)).toContain("Synthesis Conflict Ledger");
+    expect(writes.get(english.synthesisConflictsPath)).toContain("Support Level");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Synthesis Roadmap");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Cross-theme Evidence Map");
     expect(writes.get(english.reviewReportPath)).toContain("Formal Review Report");
     expect(writes.get(english.reviewReportPath)).toContain("Evidence-backed Synthesis Claims");
+    expect(writes.get(english.reviewReportPath)).toContain("Synthesis Conflicts and Evidence Gaps");
     expect(writes.get(english.reviewReportPath)).toContain("Risk Checklist");
     expect(writes.get(english.ideaListPath)).toContain("Reject condition");
 
@@ -453,10 +465,13 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.gapMatrixPath)).toContain("研究ギャップマトリクス");
     expect(writes.get(japanese.topicClustersPath)).toContain("トピッククラスタ");
     expect(writes.get(japanese.synthesisClaimsPath)).toContain("統合主張マトリクス");
+    expect(writes.get(japanese.synthesisConflictsPath)).toContain("統合コンフリクト台帳");
+    expect(writes.get(japanese.synthesisConflictsPath)).toContain("支持レベル");
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("統合ロードマップ");
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("テーマ横断エビデンスマップ");
     expect(writes.get(japanese.reviewReportPath)).toContain("正式レビュー報告書");
     expect(writes.get(japanese.reviewReportPath)).toContain("証拠に基づく統合主張");
+    expect(writes.get(japanese.reviewReportPath)).toContain("統合コンフリクトと証拠ギャップ");
     expect(writes.get(japanese.reviewReportPath)).toContain("リスク確認リスト");
     expect(writes.get(japanese.ideaListPath)).toContain("棄却条件");
   });
@@ -491,6 +506,8 @@ describe("batch papers index", () => {
     expect(japanese.topicClustersPath).toBe("/out/collections/COL/knowledge/topic-clusters.ja-JP.md");
     expect(english.synthesisClaimsPath).toBe("/out/collections/COL/knowledge/synthesis-claims.en-US.md");
     expect(japanese.synthesisClaimsPath).toBe("/out/collections/COL/knowledge/synthesis-claims.ja-JP.md");
+    expect(english.synthesisConflictsPath).toBe("/out/collections/COL/knowledge/synthesis-conflicts.en-US.md");
+    expect(japanese.synthesisConflictsPath).toBe("/out/collections/COL/knowledge/synthesis-conflicts.ja-JP.md");
     expect(english.synthesisRoadmapPath).toBe("/out/collections/COL/knowledge/synthesis-roadmap.en-US.md");
     expect(japanese.synthesisRoadmapPath).toBe("/out/collections/COL/knowledge/synthesis-roadmap.ja-JP.md");
     expect(english.reviewDraftPath).not.toBe(japanese.reviewDraftPath);

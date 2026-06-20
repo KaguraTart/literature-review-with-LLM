@@ -322,6 +322,7 @@ async function batchGenerateItems(items, force, collectionContext) {
   const matrixMessage = collectionArtifacts?.methodMatrixPath ? `; method-matrix: ${collectionArtifacts.methodMatrixPath}` : "";
   const clusterMessage = collectionArtifacts?.topicClustersPath ? `; topic-clusters: ${collectionArtifacts.topicClustersPath}` : "";
   const synthesisMessage = collectionArtifacts?.synthesisClaimsPath ? `; synthesis-claims: ${collectionArtifacts.synthesisClaimsPath}` : "";
+  const conflictMessage = collectionArtifacts?.synthesisConflictsPath ? `; synthesis-conflicts: ${collectionArtifacts.synthesisConflictsPath}` : "";
   const draftMessage = collectionArtifacts?.reviewDraftPath ? `; review-draft: ${collectionArtifacts.reviewDraftPath}` : "";
   const reviewReportMessage = collectionArtifacts?.reviewReportPath ? `; formal-report: ${collectionArtifacts.reviewReportPath}` : "";
   const reportMessage = batchReportPath ? `; ${t("batchReport")}: ${batchReportPath}` : "";
@@ -330,7 +331,7 @@ async function batchGenerateItems(items, force, collectionContext) {
   if (skippedNoPdf > 0) extraParts.push(`${t("batchSkippedNoPdf")}: ${skippedNoPdf}`);
   if (skippedExisting > 0) extraParts.push(`${t("batchSkippedExisting")}: ${skippedExisting}`);
   const skippedSuffix = extraParts.length ? ` (${extraParts.join("; ")})` : "";
-  showProgress(`${t("batchDone")}: ${generated}; ${t("batchSkipped")}: ${skipped}${skippedSuffix}; ${t("batchFailed")}: ${failed}${indexMessage}${matrixMessage}${clusterMessage}${synthesisMessage}${draftMessage}${reviewReportMessage}${reportMessage}`);
+  showProgress(`${t("batchDone")}: ${generated}; ${t("batchSkipped")}: ${skipped}${skippedSuffix}; ${t("batchFailed")}: ${failed}${indexMessage}${matrixMessage}${clusterMessage}${synthesisMessage}${conflictMessage}${draftMessage}${reviewReportMessage}${reportMessage}`);
 }
 
 async function generateForItem(item, settings, force) {
@@ -943,6 +944,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
   const gapMatrixPath = artifacts.gapMatrixPath;
   const topicClustersPath = artifacts.topicClustersPath;
   const synthesisClaimsPath = artifacts.synthesisClaimsPath;
+  const synthesisConflictsPath = artifacts.synthesisConflictsPath;
   const synthesisRoadmapPath = artifacts.synthesisRoadmapPath;
   const researchQuestionCardsPath = artifacts.researchQuestionCardsPath;
   const reviewDraftPath = artifacts.reviewDraftPath;
@@ -953,6 +955,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
   await writeText(gapMatrixPath, renderResearchGapMatrix(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(topicClustersPath, renderTopicClusters(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(synthesisClaimsPath, renderSynthesisClaimsMatrix(collectionContext, results, outputLanguage, summaryInsights));
+  await writeText(synthesisConflictsPath, renderSynthesisConflictLedger(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(synthesisRoadmapPath, renderSynthesisRoadmap(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(researchQuestionCardsPath, renderResearchQuestionCards(collectionContext, results, outputLanguage));
   await writeText(reviewDraftPath, renderManualReviewDraft(collectionContext, results, outputLanguage));
@@ -966,6 +969,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
     gapMatrixPath,
     topicClustersPath,
     synthesisClaimsPath,
+    synthesisConflictsPath,
     synthesisRoadmapPath,
     researchQuestionCardsPath,
     reviewDraftPath,
@@ -991,6 +995,7 @@ function collectionWorkspaceArtifactPaths(dirs, outputLanguage) {
     gapMatrixPath: PathUtils.join(dirs.knowledge, `research-gaps.${language}.md`),
     topicClustersPath: PathUtils.join(dirs.knowledge, `topic-clusters.${language}.md`),
     synthesisClaimsPath: PathUtils.join(dirs.knowledge, `synthesis-claims.${language}.md`),
+    synthesisConflictsPath: PathUtils.join(dirs.knowledge, `synthesis-conflicts.${language}.md`),
     synthesisRoadmapPath: PathUtils.join(dirs.knowledge, `synthesis-roadmap.${language}.md`),
     researchQuestionCardsPath: PathUtils.join(dirs.knowledge, `research-question-cards.${language}.md`),
     reviewDraftPath: PathUtils.join(dirs.writing, `manual-review-draft.${language}.md`),
@@ -1266,6 +1271,33 @@ function renderSynthesisClaimsMatrix(collectionContext, results, outputLanguage 
   ].join("\n");
 }
 
+function renderSynthesisConflictLedger(collectionContext, results, outputLanguage = "zh-CN", summaryInsights = new Map()) {
+  const labels = collectionTemplateLabels(outputLanguage);
+  const entries = synthesisConflictEntries(results, summaryInsights, labels);
+  const rows = entries.map((entry) => [
+    escapeMarkdownTable(entry.cluster),
+    escapeMarkdownTable(entry.claim),
+    escapeMarkdownTable(entry.supportLevel),
+    escapeMarkdownTable(entry.counterGap),
+    escapeMarkdownTable(entry.validation),
+    escapeMarkdownTable(entry.reviewAction)
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |";
+  return [
+    `# ${collectionContext.name || collectionContext.key} ${labels.synthesisConflictLedger}`,
+    "",
+    labels.synthesisConflictLedgerNote,
+    "",
+    `| ${labels.clusterColumn} | ${labels.claimColumn} | ${labels.supportLevelColumn} | ${labels.counterGapColumn} | ${labels.validationColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    rows,
+    "",
+    `## ${labels.conflictReviewChecklist}`,
+    "",
+    labels.conflictReviewChecklistItems,
+    ""
+  ].join("\n");
+}
+
 function renderSynthesisRoadmap(collectionContext, results, outputLanguage = "zh-CN", summaryInsights = new Map()) {
   const labels = collectionTemplateLabels(outputLanguage);
   const entries = synthesisRoadmapEntries(results, summaryInsights, labels);
@@ -1347,6 +1379,27 @@ function synthesisClaimEntries(results, summaryInsights = new Map(), labels = co
       evidence,
       gaps,
       validations
+    };
+  });
+}
+
+function synthesisConflictEntries(results, summaryInsights = new Map(), labels = collectionTemplateLabels("zh-CN")) {
+  return synthesisClaimEntries(results, summaryInsights, labels).map((entry) => {
+    const supportCount = entry.supportingPapers.length;
+    const supportLevel = supportCount >= 2
+      ? labels.supportLevelMultiPaper(supportCount)
+      : supportCount === 1
+        ? labels.supportLevelSinglePaper
+        : labels.noSummary;
+    const counterGap = entry.gaps[0] || labels.gapMatrixPendingEvidence;
+    const validation = entry.validations.join("; ") || labels.gapMatrixPendingValidation;
+    return {
+      cluster: entry.cluster,
+      claim: entry.claim,
+      supportLevel,
+      counterGap,
+      validation,
+      reviewAction: labels.conflictReviewAction(supportCount, counterGap, validation)
     };
   });
 }
@@ -1492,6 +1545,7 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
   const generatedItems = batchReportItems(results).filter((item) => item.status === "generated" || item.status === "skipped_existing");
   const clusters = topicClusterEntries(results, summaryInsights, labels);
   const synthesisClaims = synthesisClaimEntries(results, summaryInsights, labels);
+  const synthesisConflicts = synthesisConflictEntries(results, summaryInsights, labels);
   const methodSignals = uniqueInsightLines(generatedItems.map((item) => summaryInsights.get(item.itemKey)?.method).filter(Boolean)).slice(0, 6);
   const dataSignals = uniqueInsightLines(generatedItems.flatMap((item) => {
     const insight = summaryInsights.get(item.itemKey) || {};
@@ -1534,6 +1588,10 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     `## ${labels.reportSynthesisClaims}`,
     "",
     reportSynthesisClaims(synthesisClaims, labels),
+    "",
+    `## ${labels.reportSynthesisConflicts}`,
+    "",
+    reportSynthesisConflicts(synthesisConflicts, labels),
     "",
     `## ${labels.reportResearchGaps}`,
     "",
@@ -1603,6 +1661,19 @@ function reportSynthesisClaims(entries, labels) {
   ].join("\n")).join("\n\n");
 }
 
+function reportSynthesisConflicts(entries, labels) {
+  if (!entries.length) return `- ${labels.noSummary}`;
+  return entries.slice(0, 8).map((entry) => [
+    `### ${entry.cluster}`,
+    "",
+    `- ${labels.claimColumn}: ${entry.claim}`,
+    `- ${labels.supportLevelColumn}: ${entry.supportLevel}`,
+    `- ${labels.counterGapColumn}: ${entry.counterGap}`,
+    `- ${labels.validationColumn}: ${entry.validation}`,
+    `- ${labels.reviewActionColumn}: ${entry.reviewAction}`
+  ].join("\n")).join("\n\n");
+}
+
 function reportBulletList(items, fallback) {
   const values = uniqueInsightLines((items || []).filter(Boolean)).slice(0, 10);
   return values.length ? values.map((item) => `- ${item}`).join("\n") : `- ${fallback}`;
@@ -1633,6 +1704,8 @@ function collectionTemplateLabels(outputLanguage) {
       topicClustersNote: "Heuristic collection-level clusters built from titles and extracted summary signals. Treat them as a review starting point, not final taxonomy.",
       synthesisClaims: "Synthesis Claims Matrix",
       synthesisClaimsNote: "Draft cross-paper claims from topic clusters and single-paper summaries. Use this as a controlled claim ledger before writing prose.",
+      synthesisConflictLedger: "Synthesis Conflict Ledger",
+      synthesisConflictLedgerNote: "Track weak support, counter-evidence, missing evidence, and validation needs before moving claims into review prose.",
       synthesisRoadmap: "Synthesis Roadmap",
       synthesisRoadmapNote: "Turns topic clusters, claim drafts, and evidence gaps into a section-level roadmap for the next review-writing pass.",
       roadmapEvidenceMap: "Cross-theme Evidence Map",
@@ -1661,6 +1734,8 @@ function collectionTemplateLabels(outputLanguage) {
       supportingPapersColumn: "Supporting Papers",
       evidenceColumn: "Evidence Sources",
       counterGapColumn: "Counter-evidence / Gap",
+      supportLevelColumn: "Support Level",
+      reviewActionColumn: "Review Action",
       methodSignalColumn: "Method Signal",
       gapSignalColumn: "Gap / Validation Signal",
       limitationColumn: "Observed Limitation",
@@ -1675,6 +1750,18 @@ function collectionTemplateLabels(outputLanguage) {
         "- [ ] Check whether methods, datasets, scenarios, and metrics are comparable before merging claims.",
         "- [ ] Move only verified claims into the formal review report or manuscript draft."
       ].join("\n"),
+      conflictReviewChecklist: "Conflict Review Checklist",
+      conflictReviewChecklistItems: [
+        "- [ ] Do not turn single-paper support into a collection-level conclusion.",
+        "- [ ] Separate true counter-evidence from untested scenarios or missing measurements.",
+        "- [ ] Add candidate-paper searches for clusters whose validation need remains unresolved.",
+        "- [ ] Keep the conflict ledger next to the formal report during manual revision."
+      ].join("\n"),
+      supportLevelMultiPaper: (count) => `${count} supporting papers`,
+      supportLevelSinglePaper: "Single-paper support; keep claim tentative",
+      conflictReviewAction: (count, gap, validation) => count >= 2
+        ? `Check comparability and resolve: ${gap || validation}`
+        : `Collect more supporting papers before writing; validation need: ${validation}`,
       clusterSynthesis: "Synthesis",
       clusterWritingEntry: "Writing entry",
       clusterSynthesisText: (methods, gaps) => `Method signals: ${methods}. Evidence gaps: ${gaps}.`,
@@ -1739,6 +1826,7 @@ function collectionTemplateLabels(outputLanguage) {
       reportDataAndEvidence: "Data, Scenario, and Metric Evidence",
       reportTopicSynthesis: "Topic-level Synthesis",
       reportSynthesisClaims: "Evidence-backed Synthesis Claims",
+      reportSynthesisConflicts: "Synthesis Conflicts and Evidence Gaps",
       reportResearchGaps: "Research Gaps and Validation Needs",
       reportDraftOutline: "Review Draft Outline",
       reportRiskChecklist: "Risk Checklist",
@@ -1766,6 +1854,8 @@ function collectionTemplateLabels(outputLanguage) {
       topicClustersNote: "タイトルと単一論文要約から抽出した手がかりに基づくヒューリスティックな collection レベルのクラスタです。最終分類ではなくレビューの出発点として扱ってください。",
       synthesisClaims: "統合主張マトリクス",
       synthesisClaimsNote: "トピッククラスタと単一論文要約から横断的な主張の草案を作ります。本文を書く前の管理された主張台帳として使ってください。",
+      synthesisConflictLedger: "統合コンフリクト台帳",
+      synthesisConflictLedgerNote: "主張をレビュー本文へ移す前に、弱い支持、反証、不足証拠、検証ニーズを記録します。",
       synthesisRoadmap: "統合ロードマップ",
       synthesisRoadmapNote: "トピッククラスタ、主張草案、証拠ギャップを次のレビュー執筆パスの節構成ロードマップへ変換します。",
       roadmapEvidenceMap: "テーマ横断エビデンスマップ",
@@ -1794,6 +1884,8 @@ function collectionTemplateLabels(outputLanguage) {
       supportingPapersColumn: "支持する論文",
       evidenceColumn: "証拠ソース",
       counterGapColumn: "反証・ギャップ",
+      supportLevelColumn: "支持レベル",
+      reviewActionColumn: "レビューアクション",
       methodSignalColumn: "手法の手がかり",
       gapSignalColumn: "ギャップ・検証の手がかり",
       limitationColumn: "観察された限界",
@@ -1808,6 +1900,18 @@ function collectionTemplateLabels(outputLanguage) {
         "- [ ] 手法、データセット、シナリオ、指標を統合前に比較可能か確認する。",
         "- [ ] 検証済みの主張だけを正式レビュー報告書または原稿草稿へ移す。"
       ].join("\n"),
+      conflictReviewChecklist: "コンフリクト確認リスト",
+      conflictReviewChecklistItems: [
+        "- [ ] 単一論文の支持を collection レベルの結論として書かない。",
+        "- [ ] 真の反証と未検証のシナリオまたは未測定指標を分ける。",
+        "- [ ] 検証ニーズが残るクラスタには候補論文検索を追加する。",
+        "- [ ] 手動改訂時にこの台帳を正式報告書の横に置く。"
+      ].join("\n"),
+      supportLevelMultiPaper: (count) => `${count} 本の支持論文`,
+      supportLevelSinglePaper: "単一論文の支持。主張は暫定扱い",
+      conflictReviewAction: (count, gap, validation) => count >= 2
+        ? `比較可能性を確認し、${gap || validation} を解決する。`
+        : `本文化の前に支持論文を追加する。検証ニーズ: ${validation}`,
       clusterSynthesis: "統合メモ",
       clusterWritingEntry: "執筆入口",
       clusterSynthesisText: (methods, gaps) => `手法の手がかり: ${methods}。証拠ギャップ: ${gaps}。`,
@@ -1872,6 +1976,7 @@ function collectionTemplateLabels(outputLanguage) {
       reportDataAndEvidence: "データ・シナリオ・指標の証拠",
       reportTopicSynthesis: "トピック別統合",
       reportSynthesisClaims: "証拠に基づく統合主張",
+      reportSynthesisConflicts: "統合コンフリクトと証拠ギャップ",
       reportResearchGaps: "研究ギャップと検証ニーズ",
       reportDraftOutline: "レビュー草稿アウトライン",
       reportRiskChecklist: "リスク確認リスト",
@@ -1898,6 +2003,8 @@ function collectionTemplateLabels(outputLanguage) {
     topicClustersNote: "基于标题和单篇总结抽取线索生成的启发式集合级聚类，用作综述起点，不等同于最终分类。",
     synthesisClaims: "综合主张矩阵",
     synthesisClaimsNote: "基于主题聚类和单篇总结形成跨论文主张草稿，用作正式写作前的受控主张台账。",
+    synthesisConflictLedger: "综合冲突与缺口台账",
+    synthesisConflictLedgerNote: "在把主张迁移到综述正文前，记录支持强度、反证/缺口、验证需求和下一步人工审查动作。",
     synthesisRoadmap: "综合路线图",
     synthesisRoadmapNote: "把主题聚类、主张草稿和证据缺口组织成下一轮综述写作可直接使用的小节路线图。",
     roadmapEvidenceMap: "跨主题证据地图",
@@ -1926,6 +2033,8 @@ function collectionTemplateLabels(outputLanguage) {
     supportingPapersColumn: "支持论文",
     evidenceColumn: "证据来源",
     counterGapColumn: "反证/缺口",
+    supportLevelColumn: "支持强度",
+    reviewActionColumn: "审查动作",
     methodSignalColumn: "方法线索",
     gapSignalColumn: "空白/验证线索",
     limitationColumn: "已观察局限",
@@ -1940,6 +2049,18 @@ function collectionTemplateLabels(outputLanguage) {
       "- [ ] 合并结论前检查方法、数据集、场景和指标是否可比较。",
       "- [ ] 只把已核验主张迁移到正式综述报告或论文草稿。"
     ].join("\n"),
+    conflictReviewChecklist: "冲突审查清单",
+    conflictReviewChecklistItems: [
+      "- [ ] 不要把单篇论文支持写成 collection 级确定结论。",
+      "- [ ] 区分真正反向证据、未测试场景和缺失指标。",
+      "- [ ] 对验证需求未解决的主题继续运行候选论文检索。",
+      "- [ ] 人工修订正式综述报告时，把此台账放在旁边逐条核对。"
+    ].join("\n"),
+    supportLevelMultiPaper: (count) => `${count} 篇支持论文`,
+    supportLevelSinglePaper: "单篇证据支持，主张需保持暂定",
+    conflictReviewAction: (count, gap, validation) => count >= 2
+      ? `检查可比性，并处理：${gap || validation}`
+      : `进入正文前继续补充支持论文；验证需求：${validation}`,
     clusterSynthesis: "综合线索",
     clusterWritingEntry: "写作入口",
     clusterSynthesisText: (methods, gaps) => `方法线索：${methods}。证据空白：${gaps}。`,
@@ -2004,6 +2125,7 @@ function collectionTemplateLabels(outputLanguage) {
     reportDataAndEvidence: "数据、场景与指标证据",
     reportTopicSynthesis: "主题级综合",
     reportSynthesisClaims: "有证据支持的综合主张",
+    reportSynthesisConflicts: "综合冲突与证据缺口",
     reportResearchGaps: "研究空白与验证需求",
     reportDraftOutline: "综述正文大纲",
     reportRiskChecklist: "风险核查清单",
