@@ -876,10 +876,13 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"delta\":{\"text\":\"oops\"}}]}")).toBe("oops");
     expect(parseStreamChunk("openai_responses", "data: {\"output\":[{\"content\":[{\"text\":\"ok\"}]}]}")).toBe("ok");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_text.delta\",\"delta\":\"streamed\"}")).toBe("streamed");
+    expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"hidden reasoning\"}")).toBe("");
+    expect(parseStreamChunk("openai_responses", "data: {\"data\":{\"type\":\"response.reasoning_text.delta\",\"delta\":\"wrapped hidden\"}}")).toBe("");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.content_part.done\",\"part\":{\"type\":\"output_text\",\"text\":\"snapshot part\"}}")).toBe("snapshot part");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_item.done\",\"item\":{\"content\":[{\"type\":\"output_text\",\"text\":\"snapshot item\"}]}}")).toBe("snapshot item");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.completed\",\"response\":{\"output\":[{\"content\":[{\"type\":\"output_text\",\"text\":\"snapshot response\"}]}]}}")).toBe("snapshot response");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"claude\"}}")).toBe("claude");
+    expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"text\":\"hidden thinking\"}}")).toBe("");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"ok\\\"\"}}")).toBe("{\"ok\"");
     expect(parseStreamChunk("openai_chat", "data: {\"data\":{\"choices\":[{\"delta\":{\"content\":\"wrapped chat\"}}]}}")).toBe("wrapped chat");
     expect(parseStreamChunk("openai_responses", "data: {\"result\":{\"type\":\"response.output_text.delta\",\"delta\":\"wrapped responses\"}}")).toBe("wrapped responses");

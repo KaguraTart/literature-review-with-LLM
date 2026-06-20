@@ -2397,6 +2397,8 @@ describe("bootstrap provider helpers", () => {
   it("extracts Responses stream deltas used by the legacy bootstrap path", () => {
     const { helpers } = loadBootstrapProviderHelpers();
     expect(helpers.extractOpenAIStreamText({ type: "response.output_text.delta", delta: "streamed" })).toBe("streamed");
+    expect(helpers.extractOpenAIStreamText({ type: "response.reasoning_summary_text.delta", delta: "hidden reasoning" })).toBe("");
+    expect(helpers.extractOpenAIStreamText({ data: { type: "response.reasoning_text.delta", delta: "wrapped hidden" } })).toBe("");
     expect(helpers.extractOpenAIStreamText({ type: "response.content_part.done", part: { type: "output_text", text: "snapshot part" } })).toBe("snapshot part");
     expect(helpers.extractOpenAIStreamText({ type: "response.completed", response: { output_text: "snapshot response" } })).toBe("snapshot response");
     expect(helpers.extractOpenAIStreamText({ delta: { content: [{ text: "nested" }] } })).toBe("nested");
@@ -2421,6 +2423,10 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.extractAnthropicStreamText({
       payload: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped anthropic" } }
     })).toBe("wrapped anthropic");
+    expect(helpers.extractAnthropicStreamText({
+      type: "content_block_delta",
+      delta: { type: "thinking_delta", text: "hidden thinking" }
+    })).toBe("");
     expect(helpers.extractAnthropicStreamText({
       message: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped message" } }
     })).toBe("wrapped message");

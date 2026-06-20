@@ -188,6 +188,7 @@ function parseStreamPayload(protocol: ProviderProtocol, payload: string): string
 function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, depth = 0): string {
   const errorText = streamErrorText(data);
   if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
+  if (isReasoningStreamEvent(data)) return "";
   if (protocol === "anthropic_messages") {
     if (data?.type === "content_block_delta") {
       return data?.delta?.text || data?.delta?.partial_json || "";
@@ -396,6 +397,13 @@ function extractWrappedResponseContent(protocol: "openai" | "anthropic", data: a
 function isReasoningContent(record: Record<string, unknown>): boolean {
   const type = String(record.type || "");
   return type.includes("reasoning") || type.includes("thinking");
+}
+
+function isReasoningStreamEvent(record: unknown): boolean {
+  if (!record || typeof record !== "object") return false;
+  const data = record as Record<string, any>;
+  return [data.type, data.delta?.type, data.content_block?.type]
+    .some((type) => isReasoningContent({ type }));
 }
 
 function stripThink(value: unknown): string {

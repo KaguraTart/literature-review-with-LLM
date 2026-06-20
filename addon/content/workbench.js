@@ -7474,6 +7474,7 @@ function streamTextFromData(protocol, data, depth = 0) {
   if (!data) return "";
   const errorText = streamErrorText(data);
   if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
+  if (isReasoningStreamEvent(data)) return "";
   if (protocol === "anthropic_messages") {
     if (data?.type === "content_block_delta") {
       return data?.delta?.text || data?.delta?.partial_json || "";
@@ -7919,6 +7920,12 @@ function isStreamSnapshot(protocol, value, depth = 0) {
 function isReasoningModelPart(value) {
   const type = String(value?.type || "");
   return type.includes("reasoning") || type.includes("thinking");
+}
+
+function isReasoningStreamEvent(value) {
+  if (!value || typeof value !== "object") return false;
+  return [value.type, value.delta?.type, value.content_block?.type]
+    .some((type) => isReasoningModelPart({ type }));
 }
 
 async function ensureSummaryFile(item, pdf, outputDir, options = {}) {

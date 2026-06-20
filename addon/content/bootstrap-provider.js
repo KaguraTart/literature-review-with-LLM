@@ -83,6 +83,7 @@ function extractOpenAIStreamText(chunk, depth = 0) {
   if (!chunk) return "";
   const errorText = streamErrorText(chunk);
   if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
+  if (isReasoningStreamEvent(chunk)) return "";
   if (typeof chunk?.choices?.[0]?.delta === "string") return chunk.choices[0].delta;
   const delta = chunk.choices?.[0]?.delta;
   const deltaContent = extractOpenAIMessageContent(delta?.content);
@@ -108,6 +109,7 @@ function extractAnthropicStreamText(chunk, depth = 0) {
   if (!chunk) return "";
   const errorText = streamErrorText(chunk);
   if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
+  if (isReasoningStreamEvent(chunk)) return "";
   if (chunk?.type === "content_block_delta") {
     if (typeof chunk?.delta?.text === "string") return chunk.delta.text;
     if (typeof chunk?.delta?.partial_json === "string") return chunk.delta.partial_json;
@@ -261,6 +263,12 @@ function isOpenAIStreamSnapshot(value, depth = 0) {
 function isOpenAIReasoningPart(value) {
   const type = String(value?.type || "");
   return type.includes("reasoning") || type.includes("thinking");
+}
+
+function isReasoningStreamEvent(value) {
+  if (!value || typeof value !== "object") return false;
+  return [value.type, value.delta?.type, value.content_block?.type]
+    .some((type) => isOpenAIReasoningPart({ type }));
 }
 
 function safeParseJSON(text) {

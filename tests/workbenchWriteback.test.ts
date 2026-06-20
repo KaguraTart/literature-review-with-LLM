@@ -1654,6 +1654,21 @@ describe("workbench writeback helpers", () => {
     expect(deltas).toEqual(["snapshot"]);
   });
 
+  it("ignores OpenAI Responses reasoning stream events in the workbench", async () => {
+    const response = {
+      body: streamFromText([
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"hidden reasoning\"}",
+        "data: {\"data\":{\"type\":\"response.reasoning_text.delta\",\"delta\":\"wrapped hidden\"}}",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"visible\"}"
+      ].join("\n"))
+    };
+    const deltas: string[] = [];
+    const text = await helpers.readStream(response, "openai_responses", (delta) => deltas.push(delta));
+
+    expect(text).toBe("visible");
+    expect(deltas).toEqual(["visible"]);
+  });
+
   it("extracts compatible chat stream text without leaking reasoning tokens", async () => {
     const response = {
       body: streamFromText([
@@ -1667,6 +1682,20 @@ describe("workbench writeback helpers", () => {
 
     expect(text).toBe("visible tail");
     expect(deltas).toEqual(["visible", " tail"]);
+  });
+
+  it("ignores Anthropic thinking stream events in the workbench", async () => {
+    const response = {
+      body: streamFromText([
+        "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"text\":\"hidden thinking\"}}",
+        "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"visible\"}}"
+      ].join("\n"))
+    };
+    const deltas: string[] = [];
+    const text = await helpers.readStream(response, "anthropic_messages", (delta) => deltas.push(delta));
+
+    expect(text).toBe("visible");
+    expect(deltas).toEqual(["visible"]);
   });
 
   it("throws redacted errors from workbench stream error events", async () => {
