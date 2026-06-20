@@ -5310,6 +5310,7 @@ function visualExtractionReportData(payload, options = {}) {
   const tables = visualExtractionParsedTables(answer);
   const evidenceLabels = visualExtractionEvidenceLabels(answer);
   const images = Array.isArray(user?.images) ? user.images : [];
+  const chartDataDrafts = visualExtractionChartDataDrafts(answer, tables, images);
   return {
     templateVersion: "visual-extraction-report-v2",
     generatedAt,
@@ -5334,6 +5335,7 @@ function visualExtractionReportData(payload, options = {}) {
     })),
     sections,
     tables,
+    chartDataDrafts,
     evidenceLabels,
     originalAnswer: answer || "",
     labels
@@ -5345,7 +5347,8 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
   const images = Array.isArray(data?.images) ? data.images : [];
   const sections = Array.isArray(data?.sections) ? data.sections : [];
   const tables = Array.isArray(data?.tables) ? data.tables : [];
-  const reconstructedRows = visualExtractionStructuredRows(tables);
+  const chartDataDrafts = Array.isArray(data?.chartDataDrafts) ? data.chartDataDrafts : [];
+  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts);
   const imageInventory = images.length
     ? [
       `| ${labels.imageName} | ${labels.imageType} | ${labels.imageSize} | ${labels.localOcr} |`,
@@ -5367,6 +5370,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `sourceUserMessageId: ${yamlScalar(data?.sourceUserMessageId || "")}`,
     `imageCount: ${images.length}`,
     `reconstructedTableCount: ${tables.length}`,
+    `chartDataDraftCount: ${chartDataDrafts.length}`,
     `reconstructedDataRowCount: ${reconstructedRows.length}`,
     "---",
     "",
@@ -5392,6 +5396,10 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     "",
     tables.length ? tables.map((table) => [`### ${labels.table} ${table.tableIndex}`, "", table.markdown].join("\n")).join("\n\n") : `- ${labels.noTables}`,
     "",
+    `## ${labels.chartDataDrafts}`,
+    "",
+    chartDataDrafts.length ? visualExtractionChartDataDraftsMarkdown(chartDataDrafts, labels) : `- ${labels.noChartDataDrafts}`,
+    "",
     `## ${labels.structuredData}`,
     "",
     reconstructedRows.length
@@ -5406,6 +5414,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     "",
     `- [ ] ${labels.checkReadableText}`,
     `- [ ] ${labels.checkTableNumbers}`,
+    `- [ ] ${labels.checkChartDataDrafts}`,
     `- [ ] ${labels.checkImageEvidence}`,
     `- [ ] ${labels.checkPdfLocation}`,
     `- [ ] ${labels.checkReuse}`,
@@ -5424,7 +5433,7 @@ function renderVisualExtractionReportJson(data) {
 }
 
 function renderVisualExtractionReportCsv(data) {
-  const rows = visualExtractionStructuredRows(data?.tables || []);
+  const rows = visualExtractionStructuredRows(data?.tables || [], data?.chartDataDrafts || []);
   const header = ["tableIndex", "rowIndex", "column", "value", "evidenceLabels", "sourceAssistantMessageId", "imageNames"];
   const imageNames = (data?.images || []).map((image) => image.name).filter(Boolean).join("; ");
   const lines = [header.map(csvCell).join(",")];
@@ -5615,7 +5624,7 @@ function visualExtractionDataRow(columns, cells) {
   return row;
 }
 
-function visualExtractionStructuredRows(tables) {
+function visualExtractionStructuredRows(tables, chartDataDrafts = []) {
   const rows = [];
   for (const table of tables || []) {
     for (const [rowIndex, row] of (table.rows || []).entries()) {
@@ -5639,7 +5648,226 @@ function visualExtractionStructuredRows(tables) {
       }
     }
   }
+  for (const chart of chartDataDrafts || []) {
+    for (const [pointIndex, point] of (chart.points || []).entries()) {
+      const chartLabel = `chart:${chart.chartIndex || ""}`;
+      const base = {
+        tableIndex: chartLabel,
+        rowIndex: pointIndex + 1,
+        evidenceLabels: Array.from(new Set([...(chart.evidenceLabels || []), ...(point.evidenceLabels || [])]))
+      };
+      for (const [column, value] of [
+        ["source", chart.source || ""],
+        ["series", point.series || ""],
+        ["x", point.x || ""],
+        ["y", point.y || ""],
+        ["yNumber", point.yNumber === null || point.yNumber === undefined ? "" : point.yNumber],
+        ["unit", point.unit || ""],
+        ["confidence", point.confidence || ""],
+        ["basis", point.basis || ""]
+      ]) {
+        if (value === "") continue;
+        rows.push({ ...base, column, value: mdText(value) });
+      }
+    }
+  }
   return rows.filter((row) => row.value);
+}
+
+function visualExtractionChartDataDrafts(answer, tables = [], images = []) {
+  const drafts = [];
+  for (const table of tables || []) {
+    const draft = visualExtractionChartDraftFromTable(table);
+    if (draft) drafts.push({ ...draft, chartIndex: drafts.length + 1 });
+  }
+  for (const image of images || []) {
+    const draft = visualExtractionChartDraftFromLocalOcr(image);
+    if (draft) drafts.push({ ...draft, chartIndex: drafts.length + 1 });
+  }
+  if (!drafts.length) {
+    const draft = visualExtractionChartDraftFromText(answer);
+    if (draft) drafts.push({ ...draft, chartIndex: 1 });
+  }
+  return drafts.slice(0, 12);
+}
+
+function visualExtractionChartDraftFromTable(table) {
+  const rows = Array.isArray(table?.rows) ? table.rows : [];
+  if (!rows.length) return null;
+  const columns = Array.isArray(table?.columns) ? table.columns : [];
+  const xColumn = visualExtractionFindColumn(columns, [
+    /^(x|x[-_\s]?axis|axis\s*x)$/i,
+    /^(item|name|category|condition|dataset|metric|method|model|scenario)$/i,
+    /^(项目|名称|类别|条件|数据集|指标|方法|模型|场景|横轴)$/i
+  ]);
+  const yColumn = visualExtractionFindColumn(columns, [
+    /^(y|y[-_\s]?axis|axis\s*y)$/i,
+    /^(value|value\/text|score|result|number|rate|accuracy|delay|cost|time)$/i,
+    /^(数值|数值\/文本|值|结果|得分|比例|准确率|延误|成本|时间|纵轴)$/i
+  ]);
+  if (!xColumn || !yColumn) return null;
+  const unitColumn = visualExtractionFindColumn(columns, [/^(unit|单位)$/i]);
+  const seriesColumn = visualExtractionFindColumn(columns, [
+    /^(series|legend|group|baseline)$/i,
+    /^(图例|系列|分组|基线)$/i
+  ]);
+  const confidenceColumn = visualExtractionFindColumn(columns, [/^(confidence|置信度)$/i]);
+  const sourceColumn = visualExtractionFindColumn(columns, [/^(source|来源|evidence|证据)$/i]);
+  const notesColumn = visualExtractionFindColumn(columns, [/^(note|notes|备注|说明)$/i]);
+  const points = rows.map((row) => {
+    const y = mdText(row[yColumn] || "");
+    const x = mdText(row[xColumn] || "");
+    const basis = mdText([row[sourceColumn], row[notesColumn]].filter(Boolean).join(" · "));
+    return {
+      series: mdText(row[seriesColumn] || ""),
+      x,
+      y,
+      yNumber: visualExtractionNumber(y),
+      unit: mdText(row[unitColumn] || ""),
+      confidence: visualExtractionConfidence(row[confidenceColumn] || row[sourceColumn] || ""),
+      basis,
+      evidenceLabels: visualExtractionEvidenceLabels(Object.values(row).join(" "))
+    };
+  }).filter((point) => point.x && point.y);
+  if (!points.length) return null;
+  return {
+    source: "reconstructed-table",
+    tableIndex: table.tableIndex,
+    xAxis: xColumn,
+    yAxis: yColumn,
+    seriesColumn: seriesColumn || "",
+    reviewStatus: "needs-review",
+    evidenceLabels: table.evidenceLabels || [],
+    points: points.slice(0, 200)
+  };
+}
+
+function visualExtractionChartDraftFromLocalOcr(image) {
+  const localOcr = image?.localOcr || {};
+  if (!["ok", "corrected", "manual"].includes(localOcr.status)) return null;
+  const points = visualExtractionNumericTextPoints(localOcr.text || "")
+    .slice(0, 80)
+    .map((point) => ({
+      ...point,
+      series: image?.name || "image",
+      confidence: localOcr.status === "corrected" ? "medium" : "low",
+      evidenceLabels: ["[image]", "[metadata]"]
+    }));
+  if (!points.length) return null;
+  return {
+    source: "local-ocr",
+    imageName: mdText(image?.name || "image"),
+    xAxis: "OCR line",
+    yAxis: "recognized numeric value",
+    seriesColumn: "image",
+    reviewStatus: "needs-review",
+    evidenceLabels: ["[image]", "[metadata]"],
+    points
+  };
+}
+
+function visualExtractionChartDraftFromText(answer) {
+  const points = visualExtractionNumericTextPoints(answer).slice(0, 80);
+  if (!points.length) return null;
+  return {
+    source: "answer-text",
+    xAxis: "text item",
+    yAxis: "numeric value",
+    seriesColumn: "",
+    reviewStatus: "needs-review",
+    evidenceLabels: visualExtractionEvidenceLabels(answer),
+    points
+  };
+}
+
+function visualExtractionNumericTextPoints(text) {
+  return String(text || "").split(/\r?\n/)
+    .map((line) => mdText(line.replace(/^[-*]\s*/, "")))
+    .filter((line) => visualExtractionLooksLikeDataLine(line))
+    .map((line) => {
+      const number = visualExtractionNumber(line);
+      const unitMatch = line.match(/[-+]?\d+(?:\.\d+)?\s*([%a-zA-Z\u4e00-\u9fff/]+)?/);
+      const label = line.replace(/[-+]?\d+(?:\.\d+)?\s*[%a-zA-Z\u4e00-\u9fff/]*.*/, "").replace(/[:：,，\-–—]+$/, "").trim() || line.slice(0, 80);
+      return {
+        series: "",
+        x: label,
+        y: unitMatch ? unitMatch[0].trim() : line,
+        yNumber: number,
+        unit: unitMatch?.[1] || "",
+        confidence: "low",
+        basis: truncateText(line, 180),
+        evidenceLabels: visualExtractionEvidenceLabels(line)
+      };
+    })
+    .filter((point) => point.yNumber !== null);
+}
+
+function visualExtractionLooksLikeDataLine(line) {
+  const text = String(line || "");
+  const numeric = text.match(/[-+]?\d+(?:\.\d+)?\s*([%％a-zA-Z\u4e00-\u9fff/]+)?/);
+  if (!numeric) return false;
+  const token = String(numeric[0] || "").toLowerCase();
+  if (/[%％]|(?:^|[-+0-9.\s])(?:ms|s|sec|secs|second|seconds|min|mins|hour|hours|hz|khz|mhz|ghz|fps|px|pt|m|km|cm|mm|gb|mb|kb|tokens?|samples?|epochs?|steps?|runs?)\b/.test(token)) return true;
+  if (/(毫秒|秒|分钟|小时|像素|公里|米|厘米|毫米|样本|轮次|步|次|帧|点)/.test(token)) return true;
+  if (/[:：]/.test(text)) return true;
+  return visualExtractionEvidenceLabels(text).length > 0;
+}
+
+function visualExtractionFindColumn(columns, patterns) {
+  for (const pattern of patterns || []) {
+    const found = (columns || []).find((column) => pattern.test(String(column || "").trim()));
+    if (found) return found;
+  }
+  return "";
+}
+
+function visualExtractionNumber(value) {
+  const match = String(value || "").replace(/,/g, "").match(/[-+]?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function visualExtractionConfidence(value) {
+  const text = String(value || "").toLowerCase();
+  if (/高|high|可靠|confirmed/.test(text)) return "high";
+  if (/中|medium|moderate|校正|corrected/.test(text)) return "medium";
+  if (/低|low|uncertain|不确定|模糊|估计/.test(text)) return "low";
+  return "needs-review";
+}
+
+function visualExtractionChartDataDraftsMarkdown(drafts, labels) {
+  const lines = [
+    `| ${labels.chart} | ${labels.source} | ${labels.xAxis} | ${labels.yAxis} | ${labels.series} | ${labels.pointCount} | ${labels.reviewStatus} | ${labels.evidenceLabels} |`,
+    "| --- | --- | --- | --- | --- | ---: | --- | --- |"
+  ];
+  for (const draft of drafts || []) {
+    lines.push([
+      draft.chartIndex,
+      markdownTableCell(draft.source || ""),
+      markdownTableCell(draft.xAxis || ""),
+      markdownTableCell(draft.yAxis || ""),
+      markdownTableCell(draft.seriesColumn || ""),
+      (draft.points || []).length,
+      markdownTableCell(draft.reviewStatus || ""),
+      markdownTableCell((draft.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+  }
+  for (const draft of drafts || []) {
+    lines.push("", `### ${labels.chart} ${draft.chartIndex}`, "");
+    lines.push(`| ${labels.series} | ${labels.xValue} | ${labels.yValue} | ${labels.unit} | ${labels.confidence} | ${labels.source} | ${labels.evidenceLabels} |`);
+    lines.push("| --- | --- | --- | --- | --- | --- | --- |");
+    for (const point of (draft.points || []).slice(0, 80)) {
+      lines.push([
+        markdownTableCell(point.series || ""),
+        markdownTableCell(point.x || ""),
+        markdownTableCell(point.y || ""),
+        markdownTableCell(point.unit || ""),
+        markdownTableCell(point.confidence || ""),
+        markdownTableCell(point.basis || draft.source || ""),
+        markdownTableCell((point.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+      ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+    }
+  }
+  return lines.join("\n");
 }
 
 function visualExtractionStructuredDataTable(rows, labels) {
@@ -5693,6 +5921,19 @@ function visualExtractionReportLabels(outputLanguage) {
       reconstructedTables: "重建表格/数据",
       table: "表格",
       noTables: "未检测到 Markdown 表格；如原图含图表数据，请人工复核或重新使用图表解析模板提问。",
+      chartDataDrafts: "图表数据草稿",
+      chart: "图表",
+      source: "来源",
+      xAxis: "X 轴/项目",
+      yAxis: "Y 轴/数值",
+      series: "系列",
+      pointCount: "点数",
+      reviewStatus: "复核状态",
+      xValue: "X/项目",
+      yValue: "Y/数值",
+      unit: "单位",
+      confidence: "置信度",
+      noChartDataDrafts: "未能从重建表格、可校正 OCR 或回答文本中抽取图表数据草稿；需要人工放大原图或重新提问。",
       structuredData: "机器可读数据",
       row: "行",
       column: "字段",
@@ -5701,6 +5942,7 @@ function visualExtractionReportLabels(outputLanguage) {
       reviewChecklist: "复核清单",
       checkReadableText: "核对 OCR 文本、标题、坐标轴、图例、表头和公式是否可读。",
       checkTableNumbers: "核对重建表格中的数字、单位、指标和数据集名称。",
+      checkChartDataDrafts: "核对图表数据草稿的轴、系列、单位、读数和置信度，不能直接作为最终数据。",
       checkImageEvidence: "区分直接视觉观察、论文上下文推断和低置信判断。",
       checkPdfLocation: "回到 PDF 原图位置核对页码、图号/表号和上下文。",
       checkReuse: "标记可复用于综述、实验对比、方法复现或后续检索的条目。",
@@ -5739,6 +5981,19 @@ function visualExtractionReportLabels(outputLanguage) {
     reconstructedTables: "Reconstructed Tables / Data",
     table: "Table",
     noTables: "No Markdown table was detected. If the image contains chart data, verify manually or ask again with the figure/table extractor.",
+    chartDataDrafts: "Chart Data Drafts",
+    chart: "Chart",
+    source: "Source",
+    xAxis: "X axis / item",
+    yAxis: "Y axis / value",
+    series: "Series",
+    pointCount: "Points",
+    reviewStatus: "Review status",
+    xValue: "X / item",
+    yValue: "Y / value",
+    unit: "Unit",
+    confidence: "Confidence",
+    noChartDataDrafts: "No chart data draft could be extracted from reconstructed tables, editable OCR, or answer text; zoom the original image or ask again.",
     structuredData: "Machine-Readable Data",
     row: "Row",
     column: "Column",
@@ -5747,6 +6002,7 @@ function visualExtractionReportLabels(outputLanguage) {
     reviewChecklist: "Review Checklist",
     checkReadableText: "Check OCR text, titles, axes, legends, headers, and formulas.",
     checkTableNumbers: "Verify reconstructed numbers, units, metrics, and dataset names.",
+    checkChartDataDrafts: "Verify chart-data draft axes, series, units, readings, and confidence before reuse.",
     checkImageEvidence: "Separate direct visual observations, paper-context inference, and low-confidence judgments.",
     checkPdfLocation: "Return to the PDF figure/table location and verify page, label, and context.",
     checkReuse: "Mark items reusable for review writing, experiment comparison, reproduction, or follow-up search.",

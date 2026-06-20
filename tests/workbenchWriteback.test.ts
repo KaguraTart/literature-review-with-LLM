@@ -2893,8 +2893,13 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("Visual OCR Text");
     expect(report).toContain("## Reconstructed Tables / Data");
     expect(report).toContain("| Delay | 12 ms | [image] |");
+    expect(report).toContain("chartDataDraftCount: 2");
+    expect(report).toContain("## Chart Data Drafts");
+    expect(report).toContain("| 1 | reconstructed-table | Item | Value |");
+    expect(report).toContain("| 2 | local-ocr | OCR line | recognized numeric value | image | 1 | needs-review | [image], [metadata] |");
     expect(report).toContain("## Machine-Readable Data");
     expect(report).toContain("| 1 | 1 | Value | 12 ms | not labeled |");
+    expect(report).toContain("| chart:1 | 1 | yNumber | 12 | [image] |");
     expect(report).toContain("`[image]`");
     expect(report).toContain("`[chunk:summary-method source=summary locator=summary:1 hash=abc123]`");
     expect(report).toContain("## Original Model Answer");
@@ -2943,6 +2948,8 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("| chart.png | image/png | 77 |");
     expect(files.get(reportPath)).toContain("## 重建表格/数据");
     expect(files.get(reportPath)).toContain("| delay | 12 ms |");
+    expect(files.get(reportPath)).toContain("## 图表数据草稿");
+    expect(files.get(reportPath)).toContain("| 1 | reconstructed-table | 指标 | 数值 |");
     expect(files.get(reportPath)).toContain("## 机器可读数据");
     expect(files.get(reportPath)).toContain("| 1 | 1 | 指标 | delay | 未标注 |");
     const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.json";
@@ -2961,9 +2968,16 @@ describe("workbench writeback helpers", () => {
       columns: ["指标", "数值"],
       rows: [{ "指标": "delay", "数值": "12 ms" }]
     });
+    expect(parsed.chartDataDrafts[0]).toMatchObject({
+      source: "reconstructed-table",
+      xAxis: "指标",
+      yAxis: "数值",
+      points: [{ x: "delay", y: "12 ms", yNumber: 12 }]
+    });
     expect(files.get(csvPath)).toContain("tableIndex,rowIndex,column,value,evidenceLabels,sourceAssistantMessageId,imageNames");
     expect(files.get(csvPath)).toContain("1,1,指标,delay,,assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("1,1,数值,12 ms,,assistant-visual,chart.png");
+    expect(files.get(csvPath)).toContain("chart:1,1,yNumber,12,,assistant-visual,chart.png");
     expect(dom.elements.get("zms-status").textContent).toContain(`visualReportDone: ${reportPath}`);
   });
 

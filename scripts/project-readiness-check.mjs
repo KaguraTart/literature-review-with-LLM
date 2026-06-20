@@ -580,6 +580,9 @@ const SOURCE_MARKERS = [
       "visual-extraction-report-v2",
       "Visual OCR Text",
       "Reconstructed Data Table",
+      "visualExtractionChartDataDrafts",
+      "chartDataDraftCount",
+      "Chart Data Drafts",
       "visualExtractionReportJsonPath",
       "renderVisualExtractionReportCsv",
       "visualExtractionLocalOcrMetadata",
@@ -588,6 +591,7 @@ const SOURCE_MARKERS = [
       "视觉 OCR 文本",
       "表格/数据重建",
       "uses a structured visual OCR and table reconstruction contract",
+      "图表数据草稿",
       "renders a figure/table extraction report",
       "exports a figure/table extraction report"
     ]
