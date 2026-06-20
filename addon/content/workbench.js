@@ -1763,7 +1763,7 @@ function hydrateProfile(profile) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "github_models", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = workbenchProviderDefaults(provider);
     return {
       id: defaults.id,
@@ -1812,6 +1812,10 @@ function providerProfileCatalogKey(profile) {
   if (id === "openai_responses_compatible") return "openai-responses-compatible";
   if (id === "anthropic_compatible") return "anthropic-compatible";
   if (id === "azure_openai") return "azure-openai";
+  if (id === "github_models") return "github-models";
+  if (id === "nvidia_nim") return "nvidia-nim";
+  if (id === "sambanova_responses") return "sambanova-responses";
+  if (id === "sambanova_anthropic") return "sambanova-anthropic";
   if (id === "moonshot") return "kimi";
   if (id === "deepseek_anthropic") return "deepseek-anthropic";
   if (id === "zai_anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") return "zai-anthropic";
@@ -1906,6 +1910,27 @@ function workbenchProviderDefaults(provider) {
   if (id === "azure_openai" || id === "azure-openai") {
     return { id: "azure-openai", name: "Azure OpenAI", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, customHeaders: {}, bodyExtra: {} };
   }
+  if (id === "github_models" || id === "github-models") {
+    return { id: "github-models", name: "GitHub Models", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://models.github.ai/inference", model: "", capabilities: { ...commonCapabilities, modelList: false }, customHeaders: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }, bodyExtra: {} };
+  }
+  if (id === "fireworks") {
+    return { id: "fireworks", name: "Fireworks AI", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.fireworks.ai/inference/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "cerebras") {
+    return { id: "cerebras", name: "Cerebras", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.cerebras.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "nvidia_nim" || id === "nvidia-nim") {
+    return { id: "nvidia-nim", name: "NVIDIA NIM", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://integrate.api.nvidia.com/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "sambanova") {
+    return { id: "sambanova", name: "SambaNova", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.sambanova.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "sambanova_responses" || id === "sambanova-responses") {
+    return { id: "sambanova-responses", name: "SambaNova Responses", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://api.sambanova.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
+  if (id === "sambanova_anthropic" || id === "sambanova-anthropic") {
+    return { id: "sambanova-anthropic", name: "SambaNova Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.sambanova.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+  }
   if (id === "xai") {
     return { id: "xai", name: "xAI", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.x.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
   }
@@ -1970,10 +1995,14 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   if (profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent) return "local_agents";
   const id = String(profile?.id || fallbackProvider || "").trim();
   if (id === "moonshot") return "kimi";
+  if (id === "github-models" || id === "github_models") return "github_models";
+  if (id === "nvidia-nim" || id === "nvidia_nim") return "nvidia_nim";
+  if (id === "sambanova-responses" || id === "sambanova_responses") return "sambanova_responses";
+  if (id === "sambanova-anthropic" || id === "sambanova_anthropic") return "sambanova_anthropic";
   if (id === "zai-anthropic" || id === "zai_anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") return "zai_anthropic";
   if (id === "anthropic-compatible" || id === "anthropic_compatible") return "anthropic_compatible";
   if (id === "openai-responses-compatible" || id === "openai_responses_compatible") return "openai_responses_compatible";
-  if (["xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "gemini"].includes(id)) return id;
+  if (["fireworks", "cerebras", "sambanova", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "gemini"].includes(id)) return id;
   if (id === "glm" || id === "bigmodel") return "zhipu";
   if (id === "ark" || id === "doubao") return "volcengine";
   if (id === "baidu") return "qianfan";
@@ -1985,6 +2014,15 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   if (baseURL === "https://api.minimaxi.com/v1") return "minimax";
   if (baseURL === "https://generativelanguage.googleapis.com/v1beta/openai") return "gemini";
   if (/^https:\/\/[^/]+\.openai\.azure\.com\/openai\/v1$/i.test(baseURL) || /^https:\/\/[^/]+\.services\.ai\.azure\.com\/openai\/v1$/i.test(baseURL)) return "azure_openai";
+  if (baseURL === "https://models.github.ai/inference" || baseURL === "https://models.github.ai/inference/chat/completions") return "github_models";
+  if (baseURL === "https://api.fireworks.ai/inference/v1") return "fireworks";
+  if (baseURL === "https://api.cerebras.ai/v1") return "cerebras";
+  if (baseURL === "https://integrate.api.nvidia.com/v1") return "nvidia_nim";
+  if (baseURL === "https://api.sambanova.ai/v1") {
+    if (profile?.protocol === "openai_responses") return "sambanova_responses";
+    if (profile?.protocol === "anthropic_messages") return "sambanova_anthropic";
+    return "sambanova";
+  }
   if (baseURL === "https://api.x.ai/v1") return "xai";
   if (baseURL === "https://api.groq.com/openai/v1") return "groq";
   if (baseURL === "https://api.mistral.ai/v1") return "mistral";
@@ -5581,7 +5619,9 @@ function hasOpenAICompatibleVersionPath(baseURL) {
 }
 
 function usesVersionlessOpenAICompatibleBase(baseURL) {
-  return /^https:\/\/api\.perplexity\.ai$/i.test(String(baseURL || "").replace(/\/+$/, ""));
+  const normalized = String(baseURL || "").replace(/\/+$/, "");
+  return /^https:\/\/api\.perplexity\.ai$/i.test(normalized)
+    || /^https:\/\/models\.github\.ai\/inference$/i.test(normalized);
 }
 
 function modelTextFromValue(value) {

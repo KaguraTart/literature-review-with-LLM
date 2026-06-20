@@ -68,6 +68,16 @@ describe("provider adapters", () => {
         capabilities: { ...defaultCapabilities, modelList: false }
       }
     })).toBe("https://api.perplexity.ai/chat/completions");
+    expect(endpointFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        id: "github-models",
+        name: "GitHub Models",
+        baseURL: "https://models.github.ai/inference",
+        capabilities: { ...defaultCapabilities, modelList: false }
+      }
+    })).toBe("https://models.github.ai/inference/chat/completions");
     expect(bodyFor(baseRequest)).toMatchObject({
       model: "MiniMax-M2.7",
       max_tokens: 8192,
@@ -241,6 +251,12 @@ describe("provider adapters", () => {
       ...profile,
       id: "perplexity",
       baseURL: "https://api.perplexity.ai",
+      capabilities: { ...defaultCapabilities, modelList: false }
+    })).toBeUndefined();
+    expect(modelsEndpointFor({
+      ...profile,
+      id: "github-models",
+      baseURL: "https://models.github.ai/inference",
       capabilities: { ...defaultCapabilities, modelList: false }
     })).toBeUndefined();
   });

@@ -106,6 +106,27 @@ function settingsProviderDefaults(provider) {
   if (id === "zai_anthropic" || id === "zai-anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") {
     return { ...common, protocol: "anthropic_messages", baseURL: "https://api.z.ai/api/anthropic", capabilities: commonCapabilities };
   }
+  if (id === "github_models" || id === "github-models") {
+    return { ...common, protocol: "openai_chat", baseURL: "https://models.github.ai/inference", capabilities: { ...commonCapabilities, modelList: false }, customHeaders: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } };
+  }
+  if (id === "fireworks") {
+    return { ...common, protocol: "openai_chat", baseURL: "https://api.fireworks.ai/inference/v1", capabilities: commonCapabilities };
+  }
+  if (id === "cerebras") {
+    return { ...common, protocol: "openai_chat", baseURL: "https://api.cerebras.ai/v1", capabilities: commonCapabilities };
+  }
+  if (id === "nvidia_nim" || id === "nvidia-nim") {
+    return { ...common, protocol: "openai_chat", baseURL: "https://integrate.api.nvidia.com/v1", capabilities: commonCapabilities };
+  }
+  if (id === "sambanova") {
+    return { ...common, protocol: "openai_chat", baseURL: "https://api.sambanova.ai/v1", capabilities: commonCapabilities };
+  }
+  if (id === "sambanova_responses" || id === "sambanova-responses") {
+    return { ...common, protocol: "openai_responses", baseURL: "https://api.sambanova.ai/v1", capabilities: commonCapabilities };
+  }
+  if (id === "sambanova_anthropic" || id === "sambanova-anthropic") {
+    return { ...common, protocol: "anthropic_messages", baseURL: "https://api.sambanova.ai/v1", capabilities: commonCapabilities };
+  }
   if (id === "minimax") {
     return { ...common, protocol: "openai_chat", baseURL: "https://api.minimaxi.com/v1", model: "MiniMax-M2.7", capabilities: commonCapabilities, bodyExtra: { extra_body: { reasoning_split: true } } };
   }
@@ -136,8 +157,12 @@ function settingsProviderDefaults(provider) {
 function settingsProviderFromProfile(profile) {
   if (profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent) return "local-agents";
   const id = String(profile?.id || "").trim();
-  if (["minimax", "openai", "openai-responses-compatible", "openai_responses_compatible", "anthropic", "anthropic-compatible", "anthropic_compatible", "openai-compatible", "openai_compatible", "gemini", "azure-openai", "azure_openai", "xai", "groq", "mistral", "together", "kimi", "moonshot", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "zai-anthropic", "zai_anthropic", "z_ai_anthropic", "z-ai-anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "glm", "bigmodel", "volcengine", "ark", "doubao", "qianfan", "baidu", "hunyuan", "tencent", "ollama", "lm-studio", "lm_studio"].includes(id)) {
+  if (["minimax", "openai", "openai-responses-compatible", "openai_responses_compatible", "anthropic", "anthropic-compatible", "anthropic_compatible", "openai-compatible", "openai_compatible", "gemini", "azure-openai", "azure_openai", "github-models", "github_models", "fireworks", "cerebras", "nvidia-nim", "nvidia_nim", "sambanova", "sambanova-responses", "sambanova_responses", "sambanova-anthropic", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "moonshot", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "zai-anthropic", "zai_anthropic", "z_ai_anthropic", "z-ai-anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "glm", "bigmodel", "volcengine", "ark", "doubao", "qianfan", "baidu", "hunyuan", "tencent", "ollama", "lm-studio", "lm_studio"].includes(id)) {
     if (id === "azure-openai") return "azure_openai";
+    if (id === "github-models") return "github_models";
+    if (id === "nvidia-nim") return "nvidia_nim";
+    if (id === "sambanova-responses") return "sambanova_responses";
+    if (id === "sambanova-anthropic") return "sambanova_anthropic";
     if (id === "anthropic-compatible") return "anthropic_compatible";
     if (id === "openai-responses-compatible") return "openai_responses_compatible";
     if (id === "moonshot") return "kimi";

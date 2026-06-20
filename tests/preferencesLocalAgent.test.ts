@@ -795,6 +795,43 @@ describe("preferences local-agent config helpers", () => {
       capabilities: { streaming: true, pdfBase64: false, modelList: true },
       bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     });
+    expect(helpers.providerDefaults("github_models")).toMatchObject({
+      id: "github-models",
+      protocol: "openai_chat",
+      baseURL: "https://models.github.ai/inference",
+      customHeaders: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+      capabilities: { streaming: true, pdfBase64: false, modelList: false }
+    });
+    expect(helpers.providerDefaults("fireworks")).toMatchObject({
+      id: "fireworks",
+      protocol: "openai_chat",
+      baseURL: "https://api.fireworks.ai/inference/v1"
+    });
+    expect(helpers.providerDefaults("cerebras")).toMatchObject({
+      id: "cerebras",
+      protocol: "openai_chat",
+      baseURL: "https://api.cerebras.ai/v1"
+    });
+    expect(helpers.providerDefaults("nvidia_nim")).toMatchObject({
+      id: "nvidia-nim",
+      protocol: "openai_chat",
+      baseURL: "https://integrate.api.nvidia.com/v1"
+    });
+    expect(helpers.providerDefaults("sambanova")).toMatchObject({
+      id: "sambanova",
+      protocol: "openai_chat",
+      baseURL: "https://api.sambanova.ai/v1"
+    });
+    expect(helpers.providerDefaults("sambanova_responses")).toMatchObject({
+      id: "sambanova-responses",
+      protocol: "openai_responses",
+      baseURL: "https://api.sambanova.ai/v1"
+    });
+    expect(helpers.providerDefaults("sambanova_anthropic")).toMatchObject({
+      id: "sambanova-anthropic",
+      protocol: "anthropic_messages",
+      baseURL: "https://api.sambanova.ai/v1"
+    });
     expect(helpers.providerDefaults("xai")).toMatchObject({
       id: "xai",
       protocol: "openai_chat",
@@ -930,6 +967,13 @@ describe("preferences local-agent config helpers", () => {
       "anthropic-compatible",
       "gemini",
       "azure-openai",
+      "github-models",
+      "fireworks",
+      "cerebras",
+      "nvidia-nim",
+      "sambanova",
+      "sambanova-responses",
+      "sambanova-anthropic",
       "xai",
       "groq",
       "mistral",
@@ -990,6 +1034,43 @@ describe("preferences local-agent config helpers", () => {
       endpointMode: "base_url",
       baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1",
       customHeaders: {}
+    });
+    expect(profiles.find((profile) => profile.id === "github-models")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://models.github.ai/inference",
+      customHeaders: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+      capabilities: { modelList: false }
+    });
+    expect(profiles.find((profile) => profile.id === "fireworks")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.fireworks.ai/inference/v1"
+    });
+    expect(profiles.find((profile) => profile.id === "cerebras")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.cerebras.ai/v1"
+    });
+    expect(profiles.find((profile) => profile.id === "nvidia-nim")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://integrate.api.nvidia.com/v1"
+    });
+    expect(profiles.find((profile) => profile.id === "sambanova")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.sambanova.ai/v1"
+    });
+    expect(profiles.find((profile) => profile.id === "sambanova-responses")).toMatchObject({
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.sambanova.ai/v1"
+    });
+    expect(profiles.find((profile) => profile.id === "sambanova-anthropic")).toMatchObject({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.sambanova.ai/v1"
     });
     expect(profiles.find((profile) => profile.id === "xai")).toMatchObject({
       protocol: "openai_chat",
@@ -1128,6 +1209,13 @@ describe("preferences local-agent config helpers", () => {
     expect(profiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([
       "gemini",
       "azure-openai",
+      "github-models",
+      "fireworks",
+      "cerebras",
+      "nvidia-nim",
+      "sambanova",
+      "sambanova-responses",
+      "sambanova-anthropic",
       "xai",
       "groq",
       "mistral",
@@ -1491,6 +1579,13 @@ describe("preferences local-agent config helpers", () => {
       "anthropic-compatible",
       "gemini",
       "azure-openai",
+      "github-models",
+      "fireworks",
+      "cerebras",
+      "nvidia-nim",
+      "sambanova",
+      "sambanova-responses",
+      "sambanova-anthropic",
       "xai",
       "groq",
       "mistral",
@@ -1524,6 +1619,13 @@ describe("preferences local-agent config helpers", () => {
       "anthropic-compatible",
       "gemini",
       "azure-openai",
+      "github-models",
+      "fireworks",
+      "cerebras",
+      "nvidia-nim",
+      "sambanova",
+      "sambanova-responses",
+      "sambanova-anthropic",
       "xai",
       "groq",
       "mistral",

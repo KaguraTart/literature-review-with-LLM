@@ -20,6 +20,13 @@ describe("default provider profiles", () => {
       "anthropic-compatible",
       "gemini",
       "azure-openai",
+      "github-models",
+      "fireworks",
+      "cerebras",
+      "nvidia-nim",
+      "sambanova",
+      "sambanova-responses",
+      "sambanova-anthropic",
       "xai",
       "groq",
       "mistral",
@@ -87,6 +94,37 @@ describe("default provider profiles", () => {
       baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1",
       customHeaders: {},
       capabilities: { pdfBase64: true, streaming: true, modelList: true }
+    });
+    expect(profiles.find((profile: any) => profile.id === "github-models")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://models.github.ai/inference",
+      customHeaders: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+      capabilities: { pdfBase64: false, streaming: true, modelList: false }
+    });
+    expect(profiles.find((profile: any) => profile.id === "fireworks")).toMatchObject({
+      protocol: "openai_chat",
+      baseURL: "https://api.fireworks.ai/inference/v1"
+    });
+    expect(profiles.find((profile: any) => profile.id === "cerebras")).toMatchObject({
+      protocol: "openai_chat",
+      baseURL: "https://api.cerebras.ai/v1"
+    });
+    expect(profiles.find((profile: any) => profile.id === "nvidia-nim")).toMatchObject({
+      protocol: "openai_chat",
+      baseURL: "https://integrate.api.nvidia.com/v1"
+    });
+    expect(profiles.find((profile: any) => profile.id === "sambanova")).toMatchObject({
+      protocol: "openai_chat",
+      baseURL: "https://api.sambanova.ai/v1"
+    });
+    expect(profiles.find((profile: any) => profile.id === "sambanova-responses")).toMatchObject({
+      protocol: "openai_responses",
+      baseURL: "https://api.sambanova.ai/v1"
+    });
+    expect(profiles.find((profile: any) => profile.id === "sambanova-anthropic")).toMatchObject({
+      protocol: "anthropic_messages",
+      baseURL: "https://api.sambanova.ai/v1"
     });
     expect(profiles.find((profile: any) => profile.id === "xai")).toMatchObject({
       protocol: "openai_chat",

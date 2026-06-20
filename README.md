@@ -12,7 +12,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 - **Paper-first chat inside Zotero**: open a compact workbench from the selected item and keep the conversation anchored to the current paper.
 - **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, export evidence-labeled paper reading logs, proposal notes, journal/report outlines, and formal review drafts, and write selected answers back with a preview step.
-- **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page with an in-app setup guide and live-check command template.
+- **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, GitHub Models, Fireworks AI, Cerebras, NVIDIA NIM, SambaNova, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page with an in-app setup guide and live-check command template.
 - **Provider diagnostics**: OpenAI-compatible, OpenAI Responses, Anthropic, and wrapped router responses are normalized for text, stream errors, model lists, and token usage metadata in saved sessions.
 - **Multi-paper comparison and literature matrix**: when multiple Zotero items are selected, the first item becomes the focal paper and the rest become comparison context; the workbench can export an evidence-labeled Markdown literature matrix, and the built-in `Literature Matrix` skill can continue the analysis with an LLM.
 - **Collection synthesis workspace**: collection batch runs write `papers.json`, paper-note indexes, method matrices, research-gap matrices, heuristic topic clusters, synthesis-claims matrices, synthesis-conflict ledgers, synthesis roadmaps, research-question cards, idea lists, a manual review draft scaffold, and a formal review report scaffold.
@@ -79,7 +79,7 @@ Open `Tools -> Literature Review with LLM Settings`.
 Important fields:
 
 - `默认接口档案`: choose the active provider profile.
-- `Provider`: built-in presets include MiniMax, OpenAI, OpenAI Compatible Chat, OpenAI Compatible Responses, Anthropic, Anthropic-compatible, Gemini OpenAI-compatible, Azure OpenAI, OpenRouter, DeepSeek, DashScope, SiliconFlow, Ollama, LM Studio, Local Agents, and others.
+- `Provider`: built-in presets include MiniMax, OpenAI, OpenAI Compatible Chat, OpenAI Compatible Responses, Anthropic, Anthropic-compatible, Gemini OpenAI-compatible, Azure OpenAI, GitHub Models, Fireworks AI, Cerebras, NVIDIA NIM, SambaNova, OpenRouter, DeepSeek, DashScope, SiliconFlow, Ollama, LM Studio, Local Agents, and others.
 - `Base URL`: provider endpoint root, for example `https://api.openai.com/v1` or `http://127.0.0.1:11434/v1`.
 - `API Key`: provider API key. Local providers such as Ollama may not require one.
 - `Model`: model name used by the selected provider.
@@ -97,6 +97,8 @@ Provider notes:
 - OpenAI Compatible Responses profiles use the Responses style endpoint. Use this when a provider or router exposes `/v1/responses`; this profile can declare raw PDF and image input when the model supports it.
 - Anthropic profiles use the messages endpoint. Use `Anthropic` for the official API key header, and `Anthropic Compatible Messages` for routers that expose Anthropic-style `/v1/messages` with bearer auth.
 - Gemini is currently configured through the OpenAI-compatible endpoint style.
+- GitHub Models uses `https://models.github.ai/inference` without an added `/v1` segment and includes the required GitHub API headers; use a PAT with Models access as the API key.
+- Fireworks AI, Cerebras, NVIDIA NIM, and SambaNova are available as named OpenAI-compatible presets. SambaNova also includes Responses and Anthropic-compatible presets.
 - MiniMax is the default preset in the current package, but you should still confirm the model and API key in preferences.
 - Local Agents route through a local HTTP bridge instead of directly calling remote model APIs.
 

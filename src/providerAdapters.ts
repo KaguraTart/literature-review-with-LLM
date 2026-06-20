@@ -855,5 +855,7 @@ function hasOpenAICompatibleVersionPath(baseURL: string): boolean {
 }
 
 function usesVersionlessOpenAICompatibleBase(baseURL: string): boolean {
-  return /^https:\/\/api\.perplexity\.ai$/i.test(String(baseURL || "").replace(/\/+$/, ""));
+  const normalized = String(baseURL || "").replace(/\/+$/, "");
+  return /^https:\/\/api\.perplexity\.ai$/i.test(normalized)
+    || /^https:\/\/models\.github\.ai\/inference$/i.test(normalized);
 }

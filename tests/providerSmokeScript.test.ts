@@ -402,8 +402,8 @@ describe("provider smoke verifier", () => {
     expect(report).toMatchObject({
       ok: true,
       catalog: true,
-      profileCount: 27,
-      checked: 26,
+      profileCount: 34,
+      checked: 33,
       skipped: 1
     });
     expect(report.results.find((result: any) => result.id === "local-agents")).toMatchObject({
@@ -421,6 +421,18 @@ describe("provider smoke verifier", () => {
         { mode: "text", supported: true, ok: true, contentTypes: ["input_text", "input_text"], issues: [] },
         { mode: "image", supported: true, ok: true, contentTypes: ["input_text", "input_text", "input_image"], issues: [] },
         { mode: "pdf", supported: true, ok: true, contentTypes: ["input_file", "input_text"], issues: [] }
+      ]
+    });
+    expect(report.results.find((result: any) => result.id === "github-models")).toMatchObject({
+      ok: true,
+      protocol: "openai_chat",
+      endpoint: "https://models.github.ai/inference/chat/completions",
+      modelsEndpoint: "",
+      authHeaderNames: ["authorization"],
+      inputChecks: [
+        { mode: "text", supported: true, ok: true, contentTypes: [], issues: [] },
+        { mode: "image", supported: true, ok: true, contentTypes: ["text", "image_url"], issues: [] },
+        { mode: "pdf", supported: false, ok: true, contentTypes: [], issues: [] }
       ]
     });
     expect(report.results.find((result: any) => result.id === "openai-compatible")).toMatchObject({
