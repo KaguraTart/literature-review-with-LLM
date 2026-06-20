@@ -2367,7 +2367,7 @@ function truncateErrorText(text, limit = 1200) {
 }
 
 function stripThink(value) {
-  return value.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  return String(value || "").replace(/<think\b[^>]*>[\s\S]*?(?:<\/think>|$)/gi, "").trim();
 }
 
 function safeError(err) {

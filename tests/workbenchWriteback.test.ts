@@ -2982,7 +2982,7 @@ describe("workbench writeback helpers", () => {
     workbench.appendMessageElement({
       id: "assistant-copy",
       role: "assistant",
-      content: "<think>private reasoning</think>\n\n## Result\n\nInline $x^2$"
+      content: "<think type=\"reasoning\">private reasoning</think>\n\n## Result\n\nInline $x^2$"
     });
 
     const assistant = dom.elements.get("zms-messages").children[0];
@@ -2998,6 +2998,16 @@ describe("workbench writeback helpers", () => {
     expect(body.children[0].className).toBe("zms-think");
     expect(body.children[0].children[1].textContent).toBe("private reasoning");
     expect(assistant.children[2].children.map((child: any) => child.textContent)).toEqual(["Retry", "Write"]);
+  });
+
+  it("keeps malformed think blocks out of copied and written answer text", () => {
+    const loaded = loadWorkbenchHelpers();
+    const assistant = {
+      role: "assistant",
+      content: "## Result\n\nVisible answer.\n\n<think data-source=\"router\">private reasoning without a closing tag"
+    };
+
+    expect(loaded.answerTextForMessage(assistant)).toBe("## Result\n\nVisible answer.");
   });
 
   it("renders assistant streaming output through the markdown renderer", async () => {

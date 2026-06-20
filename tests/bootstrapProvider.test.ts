@@ -1375,6 +1375,29 @@ describe("bootstrap provider helpers", () => {
         stream: false
       }
     }, "hash", false)).resolves.toMatchObject({ markdown: "wrapped chat summary" });
+
+    const thinking = loadBootstrapProviderHelpers({
+      choices: [{ message: { content: "<think data-source=\"router\">hidden chain</think>\n\nvisible summary\n\n<think>late hidden" } }]
+    });
+    await expect(thinking.helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false)).resolves.toMatchObject({ markdown: "visible summary" });
   });
 
   it("adds JSON mode defaults in bootstrap OpenAI provider requests", async () => {

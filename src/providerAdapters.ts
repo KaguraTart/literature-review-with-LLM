@@ -138,7 +138,7 @@ export function extractResponseText(protocol: ProviderProtocol, data: unknown): 
     ? extractAnthropicResponseContent(value)
     : extractOpenAIResponseContent(value);
   if (!text) throw new Error("No text returned from model");
-  return String(text).trim();
+  return stripThink(text);
 }
 
 export function parseStreamChunk(protocol: ProviderProtocol, rawLine: string): string {
@@ -376,6 +376,10 @@ function extractWrappedResponseContent(protocol: "openai" | "anthropic", data: a
 function isReasoningContent(record: Record<string, unknown>): boolean {
   const type = String(record.type || "");
   return type.includes("reasoning") || type === "thinking";
+}
+
+function stripThink(value: unknown): string {
+  return String(value || "").replace(/<think\b[^>]*>[\s\S]*?(?:<\/think>|$)/gi, "").trim();
 }
 
 function safeParseJSON(raw: string): unknown | null {

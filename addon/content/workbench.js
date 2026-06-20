@@ -7454,7 +7454,7 @@ function redact(value) {
 }
 
 function stripThink(value) {
-  return value.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  return String(value || "").replace(/<think\b[^>]*>[\s\S]*?(?:<\/think>|$)/gi, "").trim();
 }
 
 function sanitizeFilename(value) {

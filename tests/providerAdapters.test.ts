@@ -895,6 +895,9 @@ describe("provider adapters", () => {
     expect(extractResponseText("openai_responses", {
       result: { output: [{ content: [{ type: "output_text", text: "wrapped result text" }] }] }
     } as any)).toBe("wrapped result text");
+    expect(extractResponseText("openai_chat", {
+      choices: [{ message: { content: "<think data-source=\"router\">hidden chain</think>\n\nvisible text\n\n<think>late hidden" } }]
+    } as any)).toBe("visible text");
     expect(extractResponseText("anthropic_messages", {
       content: "compatible anthropic text"
     } as any)).toBe("compatible anthropic text");
