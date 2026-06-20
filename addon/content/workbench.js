@@ -140,6 +140,8 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-export-reading-log": () => this.exportReadingLog(),
       "zms-export-comparison-report": () => this.exportComparisonReport(),
       "zms-export-review-draft": () => this.exportReviewDraft(),
+      "zms-export-proposal-note": () => this.exportProposalNote(),
+      "zms-export-journal-outline": () => this.exportJournalOutline(),
       "zms-search-candidates": () => this.searchCandidates(),
       "zms-expand-citation-network": () => this.expandCandidateCitationNetwork(),
       "zms-load-candidates": () => this.loadCandidates(),
@@ -432,6 +434,8 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-export-reading-log", this.t("exportReadingLog"));
     setText("zms-export-comparison-report", this.t("exportComparisonReport"));
     setText("zms-export-review-draft", this.t("exportReviewDraft"));
+    setText("zms-export-proposal-note", this.t("exportProposalNote"));
+    setText("zms-export-journal-outline", this.t("exportJournalOutline"));
     setText("zms-open-reader", this.t("openReader"));
     setText("zms-writeback-title", this.t("writePreview"));
     setText("zms-write-action-label", this.t("action"));
@@ -1415,6 +1419,48 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.setStatus(`${this.t("reviewDraftDone")}: ${draftPath}`);
     } catch (err) {
       this.setStatus(`${this.t("reviewDraftFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async exportProposalNote() {
+    try {
+      const now = new Date().toISOString();
+      const notePath = proposalNoteMarkdownPath(this.state.outputDir, this.state.item);
+      this.setStatus(this.t("proposalNoteExporting"));
+      await writeTextAtomic(notePath, renderProposalNoteMarkdown(this.state.context || {}, {
+        item: this.state.item,
+        outputLanguage: this.state.outputLanguage,
+        generatedAt: now,
+        notePath,
+        contextSourceHash: this.state.contextSourceHash
+      }), `${notePath}.${Date.now()}.tmp`);
+      this.setStatus(`${this.t("proposalNoteDone")}: ${notePath}`);
+    } catch (err) {
+      this.setStatus(`${this.t("proposalNoteFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async exportJournalOutline() {
+    try {
+      const now = new Date().toISOString();
+      const outlinePath = journalOutlineMarkdownPath(this.state.outputDir, this.state.item);
+      const outlineContext = {
+        ...(this.state.context || {}),
+        comparisonContexts: Array.isArray(this.state.context?.comparisonContexts)
+          ? this.state.context.comparisonContexts
+          : this.state.comparisonContexts || []
+      };
+      this.setStatus(this.t("journalOutlineExporting"));
+      await writeTextAtomic(outlinePath, renderJournalOutlineMarkdown(outlineContext, {
+        item: this.state.item,
+        outputLanguage: this.state.outputLanguage,
+        generatedAt: now,
+        outlinePath,
+        contextSourceHash: this.state.contextSourceHash
+      }), `${outlinePath}.${Date.now()}.tmp`);
+      this.setStatus(`${this.t("journalOutlineDone")}: ${outlinePath}`);
+    } catch (err) {
+      this.setStatus(`${this.t("journalOutlineFailed")}: ${safeError(err)}`);
     }
   },
 
@@ -3874,6 +3920,431 @@ function reviewDraftLabels(outputLanguage) {
   };
 }
 
+function renderProposalNoteMarkdown(context, options = {}) {
+  const labels = proposalNoteLabels(options.outputLanguage);
+  const metadata = context?.metadata || {};
+  const diagnostics = context?.diagnostics || {};
+  const generatedAt = options.generatedAt || new Date().toISOString();
+  const itemKey = options.item?.key || "";
+  const collectionKey = workbenchCollectionKey(options.item);
+  const sections = proposalNoteSections(labels);
+  const lines = [
+    "---",
+    "templateVersion: proposal-note-v1",
+    `generatedAt: ${generatedAt}`,
+    `collectionKey: ${yamlScalar(collectionKey)}`,
+    `itemKey: ${yamlScalar(itemKey)}`,
+    `contextSourceHash: ${yamlScalar(options.contextSourceHash || "")}`,
+    `notePath: ${yamlScalar(options.notePath || "")}`,
+    "---",
+    "",
+    `# ${labels.title}`,
+    "",
+    `- ${labels.paperTitle}: ${mdText(metadata.title || itemKey || "")}`,
+    `- ${labels.authors}: ${mdText(Array.isArray(metadata.authors) ? metadata.authors.join(", ") : "")}`,
+    `- ${labels.year}: ${mdText(metadata.year || "")}`,
+    `- DOI: ${mdText(metadata.doi || "")}`,
+    `- ${labels.generatedAt}: ${generatedAt}`,
+    `- ${labels.noteFile}: ${mdText(options.notePath || "")}`,
+    "",
+    `## ${labels.contextQuality}`,
+    "",
+    `- ${labels.chunks}: ${Number(diagnostics.chunkCount) || 0}`,
+    `- ${labels.fulltextChars}: ${Number(diagnostics.fulltextChars) || 0}`,
+    `- ${labels.annotations}: ${Number(diagnostics.annotationCount) || 0}`,
+    `- ${labels.notesCount}: ${Number(diagnostics.noteCount) || 0}`,
+    ...(diagnostics.error ? [`- ${labels.error}: ${mdText(diagnostics.error)}`] : []),
+    "",
+    `## ${labels.proposalFrame}`,
+    "",
+    `- ${labels.topic}: `,
+    `- ${labels.coreQuestion}: `,
+    `- ${labels.researchObject}: `,
+    `- ${labels.scopeBoundary}: `,
+    `- ${labels.expectedContribution}: `,
+    "",
+    `## ${labels.sections}`,
+    ""
+  ];
+  for (const section of sections) {
+    const evidence = readingLogEvidenceForDimension(context, section, 3);
+    lines.push(
+      `### ${section.label}`,
+      "",
+      `- ${labels.keyEvidence}: ${evidence.length ? evidence.map((item) => `${item.label} ${truncateText(item.text, 240)}`).join("<br>") : labels.noEvidence}`,
+      `- ${labels.note}: `,
+      `- ${labels.gap}: `,
+      `- ${labels.action}: `,
+      ""
+    );
+  }
+  lines.push(
+    `## ${labels.milestones}`,
+    "",
+    `- [ ] ${labels.milestoneLiterature}`,
+    `- [ ] ${labels.milestoneMethod}`,
+    `- [ ] ${labels.milestoneExperiment}`,
+    `- [ ] ${labels.milestoneWriting}`,
+    "",
+    `## ${labels.riskCheck}`,
+    "",
+    `- [ ] ${labels.riskEvidence}`,
+    `- [ ] ${labels.riskScope}`,
+    `- [ ] ${labels.riskFeasibility}`,
+    `- [ ] ${labels.riskNovelty}`,
+    "",
+    `## ${labels.evidenceIndex}`,
+    ""
+  );
+  const overview = readingLogEvidenceForDimension(context, proposalOverviewDimension(labels), 8);
+  if (overview.length) {
+    for (const item of overview) lines.push(`- ${item.label} ${truncateText(item.text, 360)}`);
+  } else {
+    lines.push(`- ${labels.noEvidence}`);
+  }
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+function proposalNoteSections(labels) {
+  return [
+    { id: "background", label: labels.background, query: "background motivation problem gap challenge domain 背景 动机 问题 空白 挑战 领域" },
+    { id: "researchQuestion", label: labels.researchQuestion, query: "research question objective hypothesis 研究问题 研究目标 假设" },
+    { id: "methodRoute", label: labels.methodRoute, query: "method model algorithm framework route 方法 模型 算法 技术路线 框架" },
+    { id: "experimentPlan", label: labels.experimentPlan, query: "experiment dataset metric evaluation baseline 实验 数据集 指标 评价 基线" },
+    { id: "innovation", label: labels.innovation, query: "contribution novelty innovation insight 贡献 创新 新颖 启发" },
+    { id: "limitations", label: labels.limitations, query: "limitation weakness feasibility risk failure 局限 风险 可行性 失败" }
+  ];
+}
+
+function proposalOverviewDimension(labels) {
+  return {
+    id: "proposalOverview",
+    label: labels.evidenceIndex,
+    query: "summary abstract contribution method experiment limitation future 摘要 贡献 方法 实验 局限 未来"
+  };
+}
+
+function proposalNoteLabels(outputLanguage) {
+  const zh = /^zh/i.test(String(outputLanguage || ""));
+  if (zh) {
+    return {
+      title: "开题与课题申报笔记",
+      paperTitle: "题名",
+      authors: "作者",
+      year: "年份",
+      generatedAt: "生成时间",
+      noteFile: "笔记文件",
+      contextQuality: "上下文质量",
+      chunks: "片段",
+      fulltextChars: "全文字符",
+      annotations: "注释",
+      notesCount: "笔记",
+      error: "错误",
+      proposalFrame: "选题框架",
+      topic: "拟定题目/方向",
+      coreQuestion: "核心科学问题或工程问题",
+      researchObject: "研究对象与场景",
+      scopeBoundary: "范围边界",
+      expectedContribution: "预期贡献",
+      sections: "申报要点",
+      keyEvidence: "关键证据",
+      note: "可写入内容",
+      gap: "待补证据/问题",
+      action: "下一步动作",
+      background: "研究背景与问题压力",
+      researchQuestion: "研究问题与目标",
+      methodRoute: "技术路线与方法基础",
+      experimentPlan: "实验验证与数据条件",
+      innovation: "创新点与可借鉴点",
+      limitations: "风险、局限与可行性",
+      milestones: "里程碑",
+      milestoneLiterature: "补齐核心文献和代表性方法。",
+      milestoneMethod: "形成方法框架、变量和约束定义。",
+      milestoneExperiment: "设计验证场景、数据、指标和基线。",
+      milestoneWriting: "整理开题或申报文本中的章节要点。",
+      riskCheck: "风险核查",
+      riskEvidence: "每个主张都有证据标签或明确低置信度说明。",
+      riskScope: "研究边界不过宽，能解释不纳入的对象。",
+      riskFeasibility: "数据、实验平台、时间和实现成本可控。",
+      riskNovelty: "创新点不是简单复述已有工作。",
+      evidenceIndex: "证据摘录索引",
+      noEvidence: "暂无可用证据片段，请人工补充或等待 Zotero 完成全文索引。"
+    };
+  }
+  return {
+    title: "Proposal Note",
+    paperTitle: "Title",
+    authors: "Authors",
+    year: "Year",
+    generatedAt: "Generated at",
+    noteFile: "Note file",
+    contextQuality: "Context Quality",
+    chunks: "chunks",
+    fulltextChars: "fulltext chars",
+    annotations: "annotations",
+    notesCount: "notes",
+    error: "error",
+    proposalFrame: "Proposal Frame",
+    topic: "Working title / direction",
+    coreQuestion: "Core scientific or engineering question",
+    researchObject: "Research object and scenario",
+    scopeBoundary: "Scope boundary",
+    expectedContribution: "Expected contribution",
+    sections: "Proposal Notes",
+    keyEvidence: "Key evidence",
+    note: "Draftable note",
+    gap: "Evidence gap / question",
+    action: "Next action",
+    background: "Background and Problem Pressure",
+    researchQuestion: "Research Question and Objectives",
+    methodRoute: "Technical Route and Method Basis",
+    experimentPlan: "Validation Plan and Data Conditions",
+    innovation: "Innovation and Reusable Ideas",
+    limitations: "Risks, Limits, and Feasibility",
+    milestones: "Milestones",
+    milestoneLiterature: "Complete core literature and representative methods.",
+    milestoneMethod: "Define method framework, variables, and constraints.",
+    milestoneExperiment: "Design validation scenarios, data, metrics, and baselines.",
+    milestoneWriting: "Organize section notes for a proposal document.",
+    riskCheck: "Risk Check",
+    riskEvidence: "Each claim has an evidence label or explicit low-confidence note.",
+    riskScope: "The scope is bounded and exclusions are explainable.",
+    riskFeasibility: "Data, experiment platform, schedule, and implementation cost are feasible.",
+    riskNovelty: "The contribution is more than a restatement of existing work.",
+    evidenceIndex: "Evidence Excerpt Index",
+    noEvidence: "No evidence excerpts are available yet; add notes manually or wait for Zotero full-text indexing."
+  };
+}
+
+function renderJournalOutlineMarkdown(context, options = {}) {
+  const labels = journalOutlineLabels(options.outputLanguage);
+  const generatedAt = options.generatedAt || new Date().toISOString();
+  const focal = {
+    role: labels.focal,
+    evidencePrefix: "chunk",
+    itemKey: options.item?.key || "",
+    metadata: context?.metadata || {},
+    chunks: context?.chunks || [],
+    diagnostics: context?.diagnostics || {}
+  };
+  const comparisons = (context?.comparisonContexts || []).map((entry, index) => ({
+    role: `${labels.comparison} ${index + 1}`,
+    evidencePrefix: `paper${index + 2}`,
+    itemKey: entry.itemKey || "",
+    metadata: entry.metadata || {},
+    chunks: entry.chunks || [],
+    diagnostics: entry.diagnostics || {}
+  }));
+  const papers = [focal, ...comparisons];
+  const collectionKey = workbenchCollectionKey(options.item);
+  const sections = journalOutlineSections(labels);
+  const lines = [
+    "---",
+    "templateVersion: journal-outline-v1",
+    `generatedAt: ${generatedAt}`,
+    `collectionKey: ${yamlScalar(collectionKey)}`,
+    `focalItemKey: ${yamlScalar(focal.itemKey)}`,
+    `comparisonCount: ${comparisons.length}`,
+    `contextSourceHash: ${yamlScalar(options.contextSourceHash || "")}`,
+    `outlinePath: ${yamlScalar(options.outlinePath || "")}`,
+    "---",
+    "",
+    `# ${labels.title}`,
+    "",
+    `- ${labels.focalPaper}: ${mdText(focal.metadata.title || focal.itemKey || "")}`,
+    `- ${labels.comparisonCount}: ${comparisons.length}`,
+    `- ${labels.generatedAt}: ${generatedAt}`,
+    `- ${labels.outlineFile}: ${mdText(options.outlinePath || "")}`,
+    "",
+    `## ${labels.submissionFrame}`,
+    "",
+    `- ${labels.targetVenue}: `,
+    `- ${labels.articleType}: `,
+    `- ${labels.mainClaim}: `,
+    `- ${labels.audience}: `,
+    `- ${labels.requiredEvidence}: `,
+    "",
+    `## ${labels.paperInventory}`,
+    "",
+    `| ${labels.role} | ${labels.evidence} | ${labels.paperTitle} | ${labels.authors} | ${labels.year} | DOI | ${labels.contextQuality} |`,
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    ...papers.map((entry) => comparisonInventoryRow(entry, labels)),
+    "",
+    `## ${labels.manuscriptOutline}`,
+    "",
+    `| ${labels.section} | ${labels.purpose} | ${labels.evidenceExcerpts} | ${labels.draftNote} |`,
+    "| --- | --- | --- | --- |"
+  ];
+  for (const section of sections) {
+    const evidence = reviewDraftEvidenceAcrossPapers(papers, section, labels, 2);
+    lines.push([
+      section.label,
+      section.purpose,
+      evidence.length ? evidence.map((item) => `${item.label} ${truncateText(item.text, 220)}`).join("<br>") : labels.noEvidence,
+      labels.manualPlaceholder
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+  }
+  lines.push(
+    "",
+    `## ${labels.readinessChecklist}`,
+    "",
+    `- [ ] ${labels.checkClaim}`,
+    `- [ ] ${labels.checkMethods}`,
+    `- [ ] ${labels.checkExperiments}`,
+    `- [ ] ${labels.checkFigures}`,
+    `- [ ] ${labels.checkLimits}`,
+    "",
+    `## ${labels.evidenceIndex}`,
+    ""
+  );
+  for (const paper of papers) {
+    lines.push(`### ${paper.role}: ${mdText(paper.metadata.title || paper.itemKey || "")}`, "");
+    const evidence = comparisonEvidenceForContext(paper, journalOverviewDimension(labels), labels, 5);
+    if (evidence.length) {
+      for (const item of evidence) lines.push(`- ${item.label} ${truncateText(item.text, 360)}`);
+    } else {
+      lines.push(`- ${comparisonMetadataLabel(paper)} ${labels.metadataOnly}`);
+    }
+    lines.push("");
+  }
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+function journalOutlineSections(labels) {
+  return [
+    { id: "titleAbstract", label: labels.titleAbstract, purpose: labels.purposeTitleAbstract, query: "title abstract contribution problem method result 标题 摘要 贡献 问题 方法 结果" },
+    { id: "introduction", label: labels.introduction, purpose: labels.purposeIntroduction, query: "introduction background motivation gap challenge 背景 动机 空白 挑战 引言" },
+    { id: "relatedWork", label: labels.relatedWork, purpose: labels.purposeRelatedWork, query: "related work taxonomy comparison limitation literature 相关工作 分类 对比 局限 文献" },
+    { id: "method", label: labels.method, purpose: labels.purposeMethod, query: "method model algorithm framework design 方法 模型 算法 框架 设计" },
+    { id: "experiments", label: labels.experiments, purpose: labels.purposeExperiments, query: "experiment dataset metric baseline evaluation result 实验 数据集 指标 基线 评估 结果" },
+    { id: "discussion", label: labels.discussion, purpose: labels.purposeDiscussion, query: "discussion limitation threat validity implication future 讨论 局限 威胁 有效性 启发 未来" }
+  ];
+}
+
+function journalOverviewDimension(labels) {
+  return {
+    id: "journalOverview",
+    label: labels.evidenceIndex,
+    query: "summary abstract method experiment result limitation contribution discussion 摘要 方法 实验 结果 局限 贡献 讨论"
+  };
+}
+
+function journalOutlineLabels(outputLanguage) {
+  const zh = /^zh/i.test(String(outputLanguage || ""));
+  if (zh) {
+    return {
+      title: "期刊/报告写作提纲",
+      focal: "焦点论文",
+      comparison: "对比论文",
+      focalPaper: "焦点论文",
+      comparisonCount: "对比论文数",
+      generatedAt: "生成时间",
+      outlineFile: "提纲文件",
+      submissionFrame: "投稿/报告定位",
+      targetVenue: "目标期刊/会议/报告类型",
+      articleType: "文章类型",
+      mainClaim: "主张一句话",
+      audience: "目标读者",
+      requiredEvidence: "必须补齐的证据",
+      paperInventory: "论文清单",
+      role: "角色",
+      evidence: "证据标签",
+      paperTitle: "题名",
+      authors: "作者",
+      year: "年份",
+      contextQuality: "上下文质量",
+      manuscriptOutline: "正文提纲",
+      section: "章节",
+      purpose: "写作目的",
+      evidenceExcerpts: "证据摘录",
+      draftNote: "草稿要点",
+      manualPlaceholder: "补充段落句群、图表位置和引用安排",
+      readinessChecklist: "投稿/报告核查清单",
+      checkClaim: "摘要、引言和结论中的核心主张保持一致。",
+      checkMethods: "方法细节足够支撑复现或审稿判断。",
+      checkExperiments: "实验、对照、指标和消融能支撑主张。",
+      checkFigures: "图表计划能解释核心结果而不是重复正文。",
+      checkLimits: "局限、威胁和适用边界有明确说明。",
+      evidenceIndex: "证据摘录索引",
+      titleAbstract: "标题与摘要",
+      purposeTitleAbstract: "压缩问题、方法、结果和贡献。",
+      introduction: "引言",
+      purposeIntroduction: "建立问题压力、研究空白和本文主张。",
+      relatedWork: "相关工作",
+      purposeRelatedWork: "形成分类、对比和本文位置。",
+      method: "方法",
+      purposeMethod: "说明模型、算法、输入输出和关键设计。",
+      experiments: "实验与结果",
+      purposeExperiments: "组织数据、指标、基线、主结果和消融。",
+      discussion: "讨论与局限",
+      purposeDiscussion: "解释适用范围、失败条件和后续工作。",
+      chunks: "片段",
+      fulltextChars: "全文字符",
+      annotations: "注释",
+      notesCount: "笔记",
+      error: "错误",
+      unknown: "未知",
+      noEvidence: "暂无可用证据片段，请人工补充或等待 Zotero 完成全文索引。",
+      metadataOnly: "仅有题录或上下文不足，请低置信度处理。"
+    };
+  }
+  return {
+    title: "Journal / Report Outline",
+    focal: "Focal paper",
+    comparison: "Comparison paper",
+    focalPaper: "Focal paper",
+    comparisonCount: "Comparison papers",
+    generatedAt: "Generated at",
+    outlineFile: "Outline file",
+    submissionFrame: "Submission / Report Frame",
+    targetVenue: "Target journal, venue, or report type",
+    articleType: "Article type",
+    mainClaim: "One-sentence main claim",
+    audience: "Target readers",
+    requiredEvidence: "Evidence still required",
+    paperInventory: "Paper Inventory",
+    role: "Role",
+    evidence: "Evidence label",
+    paperTitle: "Title",
+    authors: "Authors",
+    year: "Year",
+    contextQuality: "Context quality",
+    manuscriptOutline: "Manuscript Outline",
+    section: "Section",
+    purpose: "Writing purpose",
+    evidenceExcerpts: "Evidence excerpts",
+    draftNote: "Draft note",
+    manualPlaceholder: "Add paragraph clusters, figure/table placement, and citation plan",
+    readinessChecklist: "Submission / Report Checklist",
+    checkClaim: "Core claims are consistent across abstract, introduction, and conclusion.",
+    checkMethods: "Method details are sufficient for reproduction or review.",
+    checkExperiments: "Experiments, baselines, metrics, and ablations support the claim.",
+    checkFigures: "Figures and tables explain key results instead of repeating prose.",
+    checkLimits: "Limitations, threats, and boundary conditions are explicit.",
+    evidenceIndex: "Evidence Excerpt Index",
+    titleAbstract: "Title and Abstract",
+    purposeTitleAbstract: "Compress problem, method, result, and contribution.",
+    introduction: "Introduction",
+    purposeIntroduction: "Build problem pressure, gap, and paper claim.",
+    relatedWork: "Related Work",
+    purposeRelatedWork: "Shape taxonomy, comparison, and positioning.",
+    method: "Method",
+    purposeMethod: "Explain model, algorithm, inputs, outputs, and design choices.",
+    experiments: "Experiments and Results",
+    purposeExperiments: "Organize data, metrics, baselines, main results, and ablations.",
+    discussion: "Discussion and Limitations",
+    purposeDiscussion: "Explain scope, failure conditions, and follow-up work.",
+    chunks: "chunks",
+    fulltextChars: "fulltext chars",
+    annotations: "annotations",
+    notesCount: "notes",
+    error: "error",
+    unknown: "unknown",
+    noEvidence: "No evidence excerpts are available yet; add notes manually or wait for Zotero full-text indexing.",
+    metadataOnly: "Metadata only or insufficient context; treat as low-confidence."
+  };
+}
+
 function markdownTableCell(value) {
   const text = mdText(value);
   return text ? text.replace(/\|/g, "\\|").replace(/\n/g, "<br>") : "";
@@ -5584,6 +6055,18 @@ function reviewDraftMarkdownPath(outputDir, item) {
   const collectionKey = workbenchCollectionKey(item);
   const itemKey = sanitizeFilename(item?.key || "focus");
   return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", `review-draft-${itemKey}.md`);
+}
+
+function proposalNoteMarkdownPath(outputDir, item) {
+  const collectionKey = workbenchCollectionKey(item);
+  const itemKey = sanitizeFilename(item?.key || "paper");
+  return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", `proposal-note-${itemKey}.md`);
+}
+
+function journalOutlineMarkdownPath(outputDir, item) {
+  const collectionKey = workbenchCollectionKey(item);
+  const itemKey = sanitizeFilename(item?.key || "focus");
+  return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", `journal-outline-${itemKey}.md`);
 }
 
 function candidateSearchOptionsFromDom(item) {

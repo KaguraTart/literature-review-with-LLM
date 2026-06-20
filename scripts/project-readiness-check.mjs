@@ -360,6 +360,25 @@ const SOURCE_MARKERS = [
     ]
   },
   {
+    id: "proposal-journal.templates",
+    description: "Workbench exports proposal notes and journal/report outlines with evidence labels",
+    files: ["addon/content/workbench.xhtml", "addon/content/workbench.js", "addon/content/messages.js", "tests/workbenchWriteback.test.ts"],
+    markers: [
+      "zms-export-proposal-note",
+      "zms-export-journal-outline",
+      "exportProposalNote",
+      "renderProposalNoteMarkdown",
+      "proposalNoteMarkdownPath",
+      "templateVersion: proposal-note-v1",
+      "exportJournalOutline",
+      "renderJournalOutlineMarkdown",
+      "journalOutlineMarkdownPath",
+      "templateVersion: journal-outline-v1",
+      "proposalNoteDone",
+      "journalOutlineDone"
+    ]
+  },
+  {
     id: "collection.workspace",
     description: "Collection workspace artifacts, topic clustering, synthesis claims, and summary insight extraction are wired",
     files: ["addon/bootstrap.js"],

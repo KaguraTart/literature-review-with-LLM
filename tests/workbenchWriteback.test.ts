@@ -213,6 +213,10 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     renderCandidateReviewMarkdown: (records: any[], options?: any) => string;
     reviewDraftMarkdownPath: (outputDir: string, item: any) => string;
     renderReviewDraftMarkdown: (context: any, options?: any) => string;
+    proposalNoteMarkdownPath: (outputDir: string, item: any) => string;
+    renderProposalNoteMarkdown: (context: any, options?: any) => string;
+    journalOutlineMarkdownPath: (outputDir: string, item: any) => string;
+    renderJournalOutlineMarkdown: (context: any, options?: any) => string;
     applyCitationNetworkPolicyToDom: (policy: string) => void;
     citationNetworkOptionsFromDom: () => any;
     citationNetworkPolicyDefaults: (policy: string) => any;
@@ -244,6 +248,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
       exportReadingLog: () => Promise<void>;
       exportComparisonReport: () => Promise<void>;
       exportReviewDraft: () => Promise<void>;
+      exportProposalNote: () => Promise<void>;
+      exportJournalOutline: () => Promise<void>;
       searchCandidates: () => Promise<void>;
       t: (key: string) => string;
       sessionDir: () => string;
@@ -1898,6 +1904,204 @@ describe("workbench writeback helpers", () => {
     expect(files.get(draftPath)).toContain("Focal Review Paper");
     expect(files.get(draftPath)).toContain("[paper2:compare-results source=summary locator=summary:1 hash=comparehash]");
     expect(dom.elements.get("zms-status").textContent).toContain(`reviewDraftDone: ${draftPath}`);
+  });
+
+  it("renders a proposal note with evidence-backed proposal sections", () => {
+    const loaded = loadWorkbenchHelpers();
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const item = {
+      key: "ITEM",
+      getCollections: () => [10]
+    };
+    const note = loaded.renderProposalNoteMarkdown({
+      metadata: {
+        title: "Proposal Source Paper",
+        authors: ["Ada One"],
+        year: "2026",
+        doi: "10.1000/proposal"
+      },
+      chunks: [
+        {
+          chunkId: "proposal-method",
+          sourceType: "summary",
+          locator: "summary:1",
+          sourceHash: "methodhash",
+          text: "The method model and algorithm framework define a technical route for the proposal."
+        },
+        {
+          chunkId: "proposal-limit",
+          sourceType: "note",
+          locator: "note:1",
+          sourceHash: "limithash",
+          text: "The limitation and feasibility risks require additional experiment evidence."
+        }
+      ],
+      diagnostics: { chunkCount: 2, fulltextChars: 1200, annotationCount: 0, noteCount: 1 }
+    }, {
+      item,
+      outputLanguage: "zh-CN",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      notePath: "/tmp/out/collections/COL/writing/proposal-note-ITEM.md",
+      contextSourceHash: "sourcehash"
+    });
+
+    expect(note).toContain("templateVersion: proposal-note-v1");
+    expect(note).toContain("# 开题与课题申报笔记");
+    expect(note).toContain("## 选题框架");
+    expect(note).toContain("### 技术路线与方法基础");
+    expect(note).toContain("[chunk:proposal-method source=summary locator=summary:1 hash=methodhash]");
+    expect(note).toContain("## 风险核查");
+    expect(note).toContain("## 证据摘录索引");
+  });
+
+  it("exports a proposal note from the workbench context", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "ITEM",
+      getCollections: () => [10]
+    };
+    workbench.state.contextSourceHash = "sourcehash";
+    workbench.state.context = {
+      metadata: { title: "Proposal Source Paper", authors: ["Ada One"], year: "2026", doi: "10.1000/proposal" },
+      chunks: [
+        {
+          chunkId: "proposal-method",
+          sourceType: "summary",
+          locator: "summary:1",
+          sourceHash: "methodhash",
+          text: "The method model and algorithm framework define a technical route for the proposal."
+        }
+      ],
+      diagnostics: { chunkCount: 1, fulltextChars: 900, annotationCount: 0, noteCount: 0 }
+    };
+    workbench.t = (key: string) => key;
+
+    await workbench.exportProposalNote();
+
+    const notePath = "/tmp/out/collections/COL/writing/proposal-note-ITEM.md";
+    expect(files.get(notePath)).toContain("# Proposal Note");
+    expect(files.get(notePath)).toContain("Proposal Source Paper");
+    expect(files.get(notePath)).toContain("[chunk:proposal-method source=summary locator=summary:1 hash=methodhash]");
+    expect(dom.elements.get("zms-status").textContent).toContain(`proposalNoteDone: ${notePath}`);
+  });
+
+  it("renders a journal outline with focal and comparison evidence", () => {
+    const loaded = loadWorkbenchHelpers();
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const item = {
+      key: "FOC",
+      getCollections: () => [10]
+    };
+    const outline = loaded.renderJournalOutlineMarkdown({
+      metadata: {
+        title: "Focal Writing Paper",
+        authors: ["Ada One"],
+        year: "2026",
+        doi: "10.1000/focal"
+      },
+      chunks: [
+        {
+          chunkId: "focal-abstract",
+          sourceType: "summary",
+          locator: "summary:1",
+          sourceHash: "focalhash",
+          text: "The abstract states the contribution, method, result, and research problem."
+        }
+      ],
+      diagnostics: { chunkCount: 1, fulltextChars: 1000, annotationCount: 0, noteCount: 0 },
+      comparisonContexts: [
+        {
+          itemKey: "CMP",
+          metadata: { title: "Comparison Evidence Paper", authors: ["Bo Two"], year: "2025", doi: "" },
+          chunks: [
+            {
+              chunkId: "compare-results",
+              sourceType: "summary",
+              locator: "summary:1",
+              sourceHash: "comparehash",
+              text: "The comparison paper reports experiment metrics and limitations."
+            }
+          ],
+          diagnostics: { chunkCount: 1, fulltextChars: 800, annotationCount: 0, noteCount: 0 }
+        }
+      ]
+    }, {
+      item,
+      outputLanguage: "zh-CN",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      outlinePath: "/tmp/out/collections/COL/writing/journal-outline-FOC.md",
+      contextSourceHash: "sourcehash"
+    });
+
+    expect(outline).toContain("templateVersion: journal-outline-v1");
+    expect(outline).toContain("# 期刊/报告写作提纲");
+    expect(outline).toContain("## 投稿/报告定位");
+    expect(outline).toContain("## 正文提纲");
+    expect(outline).toContain("标题与摘要");
+    expect(outline).toContain("[chunk:focal-abstract source=summary locator=summary:1 hash=focalhash]");
+    expect(outline).toContain("[paper2:compare-results source=summary locator=summary:1 hash=comparehash]");
+    expect(outline).toContain("## 投稿/报告核查清单");
+  });
+
+  it("exports a journal outline from the workbench context", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "FOC",
+      getCollections: () => [10]
+    };
+    workbench.state.contextSourceHash = "sourcehash";
+    workbench.state.context = {
+      metadata: { title: "Focal Writing Paper", authors: ["Ada One"], year: "2026", doi: "10.1000/focal" },
+      chunks: [
+        {
+          chunkId: "focal-abstract",
+          sourceType: "summary",
+          locator: "summary:1",
+          sourceHash: "focalhash",
+          text: "The abstract states the contribution, method, result, and research problem."
+        }
+      ],
+      diagnostics: { chunkCount: 1, fulltextChars: 1000, annotationCount: 0, noteCount: 0 },
+      comparisonContexts: [
+        {
+          itemKey: "CMP",
+          metadata: { title: "Comparison Evidence Paper", authors: ["Bo Two"], year: "2025", doi: "" },
+          chunks: [
+            {
+              chunkId: "compare-results",
+              sourceType: "summary",
+              locator: "summary:1",
+              sourceHash: "comparehash",
+              text: "The comparison paper reports experiment metrics and limitations."
+            }
+          ],
+          diagnostics: { chunkCount: 1, fulltextChars: 800, annotationCount: 0, noteCount: 0 }
+        }
+      ]
+    };
+    workbench.t = (key: string) => key;
+
+    await workbench.exportJournalOutline();
+
+    const outlinePath = "/tmp/out/collections/COL/writing/journal-outline-FOC.md";
+    expect(files.get(outlinePath)).toContain("# Journal / Report Outline");
+    expect(files.get(outlinePath)).toContain("Comparison Evidence Paper");
+    expect(files.get(outlinePath)).toContain("[paper2:compare-results source=summary locator=summary:1 hash=comparehash]");
+    expect(dom.elements.get("zms-status").textContent).toContain(`journalOutlineDone: ${outlinePath}`);
   });
 
   it("chooses citation-network seeds from the current item and high-value candidates", () => {
