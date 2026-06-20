@@ -446,7 +446,7 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
     stream: request.stream,
     n: 1
   };
-  const merged = withProviderBodyDefaults(summaryRequest, body);
+  const merged = useResponses ? withProviderBodyDefaults(summaryRequest, body) : withOpenAIChatBodyDefaults(summaryRequest, body);
   if (summaryRequest.provider === "minimax" && merged.extra_body === undefined && !providerBodyOmitFields(bodyExtra).has("extra_body")) {
     merged.extra_body = { reasoning_split: true };
   }

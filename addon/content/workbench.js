@@ -4954,7 +4954,7 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
       stream
     });
   }
-  return withProviderBodyDefaults(profile, {
+  return withOpenAIChatBodyDefaults(profile, {
     model: profile.model,
     messages: [{ role: "system", content: system }, ...openaiChatMessages(messages, requestInput)],
     ...openAIChatTokenLimit(profile, Number(pref("maxOutputTokens")) || 8192),
@@ -4962,6 +4962,18 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
     stream,
     n: 1
   });
+}
+
+function withOpenAIChatBodyDefaults(profile, body) {
+  const merged = withProviderBodyDefaults(profile, body);
+  if (merged.stream === true && merged.stream_options === undefined && !providerBodyOmitFields(profile?.bodyExtra).has("stream_options")) {
+    merged.stream_options = openAIChatStreamOptions();
+  }
+  return merged;
+}
+
+function openAIChatStreamOptions() {
+  return { include_usage: true };
 }
 
 function shouldStream(profile, streamEnabled = true) {

@@ -148,6 +148,18 @@ function withProviderBodyDefaults(profile, body) {
   return omitProviderBodyFields({ ...body, ...jsonModeBodyDefaults(profile), ...providerBodyExtra(profile.bodyExtra) }, profile.bodyExtra);
 }
 
+function withOpenAIChatBodyDefaults(profile, body) {
+  const merged = withProviderBodyDefaults(profile, body);
+  if (merged.stream === true && merged.stream_options === undefined && !providerBodyOmitFields(profile?.bodyExtra).has("stream_options")) {
+    merged.stream_options = openAIChatStreamOptions();
+  }
+  return merged;
+}
+
+function openAIChatStreamOptions() {
+  return { include_usage: true };
+}
+
 function jsonModeBodyDefaults(profile) {
   if (!profile?.capabilities?.jsonMode || profile.protocol === "anthropic_messages") return {};
   const extra = providerBodyExtra(profile.bodyExtra);

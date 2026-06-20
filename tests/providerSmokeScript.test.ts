@@ -308,6 +308,12 @@ describe("provider smoke verifier", () => {
       ["/v1/responses", true],
       ["/v1/messages", true]
     ]);
+    expect(report.requests.map((request: any) => [request.path, request.bodyKeys.includes("stream_options")])).toEqual([
+      ["/v1/chat/completions", true],
+      ["/v1/responses", false],
+      ["/v1/responses", false],
+      ["/v1/messages", false]
+    ]);
     expect(JSON.stringify(report)).not.toContain("mock-secret");
   });
 

@@ -661,6 +661,28 @@ describe("workbench writeback helpers", () => {
     expect(helpers.shouldStream({ ...profile, capabilities: { streaming: false } }, true)).toBe(false);
     expect(helpers.normalizeBoolean("", true)).toBe(true);
     expect(helpers.normalizeBoolean("false", true)).toBe(false);
+
+    const chatProfile = {
+      protocol: "openai_chat",
+      model: "model-a",
+      capabilities: { streaming: true },
+      bodyExtra: {}
+    };
+    expect(helpers.bodyForProfile(chatProfile, messages, "zh-CN", "system", {}, true)).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true }
+    });
+    expect(helpers.bodyForProfile(chatProfile, messages, "zh-CN", "system", {}, false)).not.toHaveProperty("stream_options");
+    expect(helpers.bodyForProfile({
+      ...chatProfile,
+      bodyExtra: { stream_options: { include_usage: false } }
+    }, messages, "zh-CN", "system", {}, true)).toMatchObject({
+      stream_options: { include_usage: false }
+    });
+    expect(helpers.bodyForProfile({
+      ...chatProfile,
+      bodyExtra: { omitFields: ["stream_options"] }
+    }, messages, "zh-CN", "system", {}, true)).not.toHaveProperty("stream_options");
   });
 
   it("adds protocol-specific JSON mode defaults in workbench request bodies", () => {

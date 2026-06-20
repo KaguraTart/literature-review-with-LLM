@@ -870,7 +870,7 @@ describe("bootstrap provider helpers", () => {
   });
 
   it("keeps newline-only bootstrap streams compatible", async () => {
-    const { helpers } = loadBootstrapProviderHelpers({
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       __streamText: [
         "data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}",
         "data: {\"choices\":[{\"delta\":{\"content\":\" second\"}}]}"
@@ -896,6 +896,10 @@ describe("bootstrap provider helpers", () => {
     }, "hash", false);
 
     expect(result.markdown).toBe("first second");
+    expect(fetchCalls[0].body).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true }
+    });
   });
 
   it("uses Chat Completions without MiniMax extras for OpenAI-compatible bootstrap profiles", async () => {
@@ -934,6 +938,60 @@ describe("bootstrap provider helpers", () => {
     });
     expect(fetchCalls[0].body).not.toHaveProperty("extra_body");
     expect(fetchCalls[0].body).not.toHaveProperty("input");
+    expect(fetchCalls[0].body).not.toHaveProperty("stream_options");
+  });
+
+  it("respects bootstrap OpenAI Chat stream option overrides", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      choices: [{ message: { content: "chat summary" } }]
+    });
+
+    await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { streaming: true },
+      customHeaders: {},
+      bodyExtra: { stream_options: { include_usage: false } },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: true
+      }
+    }, "hash", false);
+
+    await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { streaming: true },
+      customHeaders: {},
+      bodyExtra: { omitFields: ["stream_options"] },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: true
+      }
+    }, "hash", false);
+
+    expect(fetchCalls[0].body).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: false }
+    });
+    expect(fetchCalls[1].body).toMatchObject({ stream: true });
+    expect(fetchCalls[1].body).not.toHaveProperty("stream_options");
   });
 
   it("sends image attachments through bootstrap OpenAI-compatible chat bodies", async () => {

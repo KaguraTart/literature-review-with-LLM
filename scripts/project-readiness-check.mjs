@@ -155,9 +155,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "provider.protocols",
-    description: "OpenAI chat, OpenAI Responses, Anthropic Messages, JSON mode, and Chat token-limit field selection are present",
+    description: "OpenAI chat, OpenAI Responses, Anthropic Messages, JSON mode, Chat token limits, and streamed usage options are present",
     files: ["src/providerAdapters.ts", "addon/content/bootstrap-provider.js", "addon/content/workbench.js"],
-    markers: ["openai_responses", "anthropic_messages", "jsonModeBodyDefaults", "openAIChatTokenLimit"]
+    markers: ["openai_responses", "anthropic_messages", "jsonModeBodyDefaults", "openAIChatTokenLimit", "openAIChatStreamOptions"]
   },
   {
     id: "provider.stream-snapshot-fallback",
@@ -217,7 +217,7 @@ const SOURCE_MARKERS = [
     id: "provider.stream-smoke",
     description: "Provider smoke verification covers streaming OpenAI-compatible, Responses, and Anthropic text/event-stream output",
     files: ["scripts/verify-provider-smoke.mjs", "scripts/verify-provider-live.mjs", "package.json", "tests/providerSmokeScript.test.ts"],
-    markers: ["--stream", "verify:provider:stream:mock", "mockProviderStreamResponse", "streamTextFromBody", "streamUsageFromBody", "parseStreamChunk", "parseStreamUsage", "runs built-in mock stream checks", "runs live provider stream checks"]
+    markers: ["--stream", "verify:provider:stream:mock", "mockProviderStreamResponse", "streamTextFromBody", "streamUsageFromBody", "parseStreamChunk", "parseStreamUsage", "stream_options", "runs built-in mock stream checks", "runs live provider stream checks"]
   },
   {
     id: "provider.multimodal-smoke",

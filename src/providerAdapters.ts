@@ -251,7 +251,7 @@ function openaiChatBody(request: ModelRequest): Record<string, unknown> {
     { role: "system", content: request.system },
     ...openaiChatMessages(request)
   ];
-  return withBodyExtra(request.profile, {
+  return withOpenAIChatBodyDefaults(request.profile, {
     model: request.profile.model,
     messages,
     temperature: request.temperature,
@@ -259,6 +259,18 @@ function openaiChatBody(request: ModelRequest): Record<string, unknown> {
     stream: request.stream,
     n: 1
   });
+}
+
+function withOpenAIChatBodyDefaults(profile: ProviderProfile, body: Record<string, unknown>): Record<string, unknown> {
+  const merged = withBodyExtra(profile, body);
+  if (merged.stream === true && merged.stream_options === undefined && !providerBodyOmitFields(profile.bodyExtra).has("stream_options")) {
+    merged.stream_options = openAIChatStreamOptions();
+  }
+  return merged;
+}
+
+function openAIChatStreamOptions(): Record<string, unknown> {
+  return { include_usage: true };
 }
 
 function openaiChatMessages(request: ModelRequest): Array<Record<string, unknown>> {

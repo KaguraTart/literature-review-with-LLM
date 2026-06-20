@@ -71,8 +71,47 @@ describe("provider adapters", () => {
     expect(bodyFor(baseRequest)).toMatchObject({
       model: "MiniMax-M2.7",
       max_tokens: 8192,
-      stream: true
+      stream: true,
+      stream_options: { include_usage: true }
     });
+  });
+
+  it("requests OpenAI-compatible Chat stream usage while respecting body-extra overrides", () => {
+    const nonStreamBody = bodyFor({ ...baseRequest, stream: false });
+    expect(nonStreamBody).toMatchObject({ stream: false });
+    expect(nonStreamBody).not.toHaveProperty("stream_options");
+
+    const overrideBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        bodyExtra: { stream_options: { include_usage: false, marker: "router" } }
+      }
+    });
+    expect(overrideBody).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: false, marker: "router" }
+    });
+
+    const omittedBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        bodyExtra: { omitFields: ["stream_options"] }
+      }
+    });
+    expect(omittedBody).toMatchObject({ stream: true });
+    expect(omittedBody).not.toHaveProperty("stream_options");
+
+    const noStreamBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        bodyExtra: { omitFields: ["stream"] }
+      }
+    });
+    expect(noStreamBody).not.toHaveProperty("stream");
+    expect(noStreamBody).not.toHaveProperty("stream_options");
   });
 
   it("normalizes pasted full provider endpoints in base URL mode", () => {
