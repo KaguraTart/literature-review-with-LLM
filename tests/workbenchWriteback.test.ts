@@ -223,7 +223,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     candidateReviewEvidenceRows: (records: any[], labels: any) => Array<{ title: string; state: string; gap: string; check: string; source: string }>;
     candidateReviewSourceEvidenceRows: (records: any[], labels: any) => Array<{ title: string; label: string; type: string; locator: string; snippet: string; followUp: string }>;
     enrichCandidatesWithFullTextEvidence: (records: any[], contextItem: any, now?: string) => Promise<any[]>;
-    candidateFullTextEvidenceSnippets: (text: string, record: any, pdf?: any) => any[];
+    candidateFullTextEvidenceSnippets: (text: any, record: any, pdf?: any) => any[];
     reviewDraftMarkdownPath: (outputDir: string, item: any) => string;
     renderReviewDraftMarkdown: (context: any, options?: any) => string;
     proposalNoteMarkdownPath: (outputDir: string, item: any) => string;
@@ -2109,6 +2109,76 @@ describe("workbench writeback helpers", () => {
       attachmentKey: "PDFPAGE"
     });
     expect(snippets[0].locator).toContain("page-span:");
+  });
+
+  it("keeps true PDF page-text locators when page-level text is available", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const snippets = loaded.candidateFullTextEvidenceSnippets({
+      pages: [
+        { page: 1, pageLabel: "i", text: "Opening context without target terms." },
+        {
+          page: 4,
+          pageLabel: "4",
+          text: [
+            "The proposed method uses graph attention to model route conflicts.",
+            "Experiments evaluate benchmark scenarios with delay and throughput metrics."
+          ].join(" ")
+        }
+      ]
+    }, {
+      candidateId: "doi:10.1000/pdf-pages",
+      title: "PDF Page Candidate",
+      decision: "include",
+      quality: { dedupeStatus: "new" }
+    }, { key: "PDFPAGES" });
+
+    expect(snippets[0]).toMatchObject({
+      topic: "method",
+      sourceType: "pdf-page-text",
+      page: 4,
+      pageLabel: "4",
+      locator: expect.stringContaining("pdf-page-text:"),
+      quote: expect.stringContaining("proposed method uses graph attention"),
+      attachmentKey: "PDFPAGES"
+    });
+    expect(snippets[0].locator).toContain("page:4");
+    expect(snippets[0].locator).toContain("page-label:4");
+
+    loaded.__zoteroItems.set(52, {
+      id: 52,
+      key: "ITEM52",
+      getAttachments: () => [53]
+    });
+    loaded.__zoteroItems.set(53, {
+      id: 53,
+      key: "PDF53",
+      attachmentContentType: "application/pdf",
+      attachmentText: "Unpaged fallback text mentions method but should not be preferred.",
+      attachmentTextPages: [
+        { page: 3, pageLabel: "3", text: "The proposed method uses graph attention and evaluates delay metrics." },
+        { page: 9, pageLabel: "9", text: "Limitations include missing weather robustness checks." }
+      ]
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/attached-pages",
+        title: "Attached Page Candidate",
+        decision: "include",
+        zoteroItemID: 52,
+        zoteroItemKey: "ITEM52",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      sourceType: "pdf-page-text",
+      page: 3,
+      pageLabel: "3",
+      locator: expect.stringContaining("pdf-page-text:")
+    });
+    expect(enriched[0].review.fullTextEvidence[0].locator).toContain("page:3");
   });
 
   it("uses standalone indexed-text page markers as candidate evidence locators", () => {

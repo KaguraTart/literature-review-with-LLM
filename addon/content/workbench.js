@@ -8702,6 +8702,7 @@ function candidateReviewFullTextEvidence(record) {
         locator: mdText(item.locator || ""),
         sourceHash: normalizeEvidenceHash(item.sourceHash || item.hash || ""),
         attachmentKey: mdText(item.attachmentKey || ""),
+        sourceType: candidateFullTextLocatorSourceType(item.sourceType || ""),
         page: candidateEvidencePage(item.page),
         pageLabel: mdText(item.pageLabel || item.annotationPageLabel || ""),
         annotationKey: mdText(item.annotationKey || ""),
@@ -8738,8 +8739,8 @@ async function enrichCandidateWithFullTextEvidence(record, contextItem, now) {
     const item = await candidateImportedZoteroItem(record, contextItem);
     if (!item) return record;
     const pdf = await findPdfAttachment(item);
-    const text = String((await pdf?.attachmentText) || "").trim();
-    const snippets = candidateFullTextEvidenceSnippets(text, record, pdf);
+    const source = await candidatePdfEvidenceSource(pdf, record);
+    const snippets = candidateFullTextEvidenceSnippets(source, record, pdf);
     if (!snippets.length) return record;
     return {
       ...record,
@@ -8792,6 +8793,7 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
       locator: candidateFullTextLocator(locatedHit),
       sourceHash: hit.sourceHash,
       attachmentKey: pdf?.key || record.pdfAttachmentKey || "",
+      sourceType: locatedHit.sourceType || "indexed-text",
       page: hit.page,
       pageLabel: locatedHit.pageLabel,
       annotationKey: locatedHit.annotationKey,
@@ -8811,6 +8813,7 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
         page: indexed.pages[0]?.page,
         pageStart: 0,
         pageEnd: Math.min(indexed.pages[0]?.text?.length || fallback.length, fallback.length),
+        sourceType: indexed.sourceType,
         sourceHash: shortEvidenceHash(fallback)
       };
       const annotation = candidatePdfAnnotationForHit(pdf, hit);
@@ -8830,6 +8833,7 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
         locator: candidateFullTextLocator(locatedHit),
         sourceHash: hit.sourceHash,
         attachmentKey: pdf?.key || record.pdfAttachmentKey || "",
+        sourceType: locatedHit.sourceType || "indexed-text",
         page: hit.page,
         pageLabel: locatedHit.pageLabel,
         annotationKey: locatedHit.annotationKey,
@@ -8840,8 +8844,37 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
   return rows.slice(0, 4);
 }
 
+async function candidatePdfEvidenceSource(pdf, record = {}) {
+  const pageSources = [
+    record?.review?.fullTextPages,
+    record?.review?.pdfTextPages,
+    record?.fullTextPages,
+    record?.pdfTextPages,
+    pdf?.attachmentTextPages,
+    pdf?.pdfTextPages,
+    pdf?.textPages,
+    pdf?.pageTexts
+  ];
+  for (const source of pageSources) {
+    const pages = normalizePdfTextPagesForEvidence(source);
+    if (pages.length) return { sourceType: "pdf-page-text", pages };
+  }
+  for (const method of ["getTextPages", "getPageTexts", "getPageTextEntries", "getPdfTextPages"]) {
+    if (typeof pdf?.[method] !== "function") continue;
+    try {
+      const pages = normalizePdfTextPagesForEvidence(await pdf[method]());
+      if (pages.length) return { sourceType: "pdf-page-text", pages };
+    } catch (_err) {
+      // Keep the indexed-text fallback below.
+    }
+  }
+  return String((await pdf?.attachmentText) || "").trim();
+}
+
 function indexedTextForEvidence(text) {
-  const normalizedPages = splitIndexedTextPages(text);
+  const explicitPages = normalizePdfTextPagesForEvidence(text);
+  const normalizedPages = explicitPages.length ? explicitPages : splitIndexedTextPages(text);
+  const sourceType = explicitPages.length ? "pdf-page-text" : "indexed-text";
   const pages = [];
   let cursor = 0;
   normalizedPages.forEach((pageEntry, index) => {
@@ -8855,11 +8888,43 @@ function indexedTextForEvidence(text) {
       pageLabel: pageEntry.pageLabel || (page ? String(page) : ""),
       text: pageText,
       start,
-      end
+      end,
+      sourceType
     });
     cursor = end + 1;
   });
-  return { text: pages.map((page) => page.text).join(" "), pages };
+  return { text: pages.map((page) => page.text).join(" "), pages, sourceType };
+}
+
+function normalizePdfTextPagesForEvidence(source) {
+  const rawPages = pdfTextPageCandidates(source);
+  if (!rawPages.length) return [];
+  return normalizeIndexedPageEntries(rawPages.map((entry, index) => {
+    const text = entry && typeof entry === "object" && !Array.isArray(entry)
+      ? entry.text ?? entry.content ?? entry.value ?? entry.pageText ?? ""
+      : entry;
+    const page = entry && typeof entry === "object" && !Array.isArray(entry)
+      ? entry.page ?? entry.pageNumber ?? entry.index ?? entry.pageIndex
+      : index + 1;
+    const pageLabel = entry && typeof entry === "object" && !Array.isArray(entry)
+      ? entry.pageLabel ?? entry.label ?? entry.page_label ?? entry.pageNumber
+      : String(index + 1);
+    return {
+      text,
+      page: candidateEvidencePage(page) || (index + 1),
+      pageLabel: mdText(pageLabel || String(candidateEvidencePage(page) || index + 1))
+    };
+  }));
+}
+
+function pdfTextPageCandidates(source) {
+  if (!source) return [];
+  if (Array.isArray(source)) return source;
+  if (typeof source !== "object") return [];
+  for (const key of ["pages", "textPages", "pageTexts", "pdfTextPages", "fullTextPages", "items"]) {
+    if (Array.isArray(source[key])) return source[key];
+  }
+  return [];
 }
 
 function splitIndexedTextPages(text) {
@@ -9062,6 +9127,7 @@ function candidateSnippetHitForMatch(page, localCenter, topicId = "") {
     pageLabel: page.pageLabel || "",
     pageStart: contextStart,
     pageEnd: contextEnd,
+    sourceType: page.sourceType || "indexed-text",
     sourceHash
   };
 }
@@ -9109,7 +9175,9 @@ function candidateSentenceRange(text, center) {
 function candidateFullTextLocator(hit) {
   const start = Number.isFinite(hit?.start) ? Math.max(0, Math.floor(hit.start)) : 0;
   const end = Number.isFinite(hit?.end) ? Math.max(start, Math.floor(hit.end)) : start;
-  const parts = [`indexed-text:${start}-${end}`];
+  const sourceType = candidateFullTextLocatorSourceType(hit?.sourceType);
+  const prefix = CANDIDATE_FULL_TEXT_LOCATOR_PREFIXES[sourceType] || CANDIDATE_FULL_TEXT_LOCATOR_PREFIXES["indexed-text"];
+  const parts = [`${prefix}${start}-${end}`];
   const page = candidateEvidencePage(hit?.page);
   if (page) parts.push(`page:${page}`);
   if (page && Number.isFinite(hit?.pageStart) && Number.isFinite(hit?.pageEnd)) {
@@ -9120,6 +9188,16 @@ function candidateFullTextLocator(hit) {
   const annotationKey = mdText(hit?.annotationKey || "");
   if (annotationKey) parts.push(`annotation:${candidateLocatorValue(annotationKey)}`);
   return parts.join("; ");
+}
+
+const CANDIDATE_FULL_TEXT_LOCATOR_PREFIXES = {
+  "indexed-text": "indexed-text:",
+  "pdf-page-text": "pdf-page-text:"
+};
+
+function candidateFullTextLocatorSourceType(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  return normalized === "pdf-page-text" ? "pdf-page-text" : "indexed-text";
 }
 
 function candidateEvidencePage(value) {
