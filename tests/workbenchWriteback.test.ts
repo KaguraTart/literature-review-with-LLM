@@ -1905,6 +1905,40 @@ describe("workbench writeback helpers", () => {
     });
   });
 
+  it("cleans repeated PDF page headers, footers, and line-break hyphenation from indexed evidence", () => {
+    const loaded = loadWorkbenchHelpers();
+    const snippets = loaded.candidateFullTextEvidenceSnippets([
+      "Journal of Airspace Review",
+      "1",
+      "Opening context without the target terms.",
+      "© 2026 Example Publisher",
+      "\f",
+      "Journal of Airspace Review",
+      "2",
+      "The meth-",
+      "od uses graph attention to model route conflicts.",
+      "Experiments evaluate benchmark scenarios with delay and throughput metrics.",
+      "© 2026 Example Publisher"
+    ].join("\n"), {
+      candidateId: "doi:10.1000/clean-paged",
+      title: "Clean Paged Candidate",
+      decision: "include",
+      quality: { dedupeStatus: "new" }
+    }, { key: "PDFCLEAN" });
+
+    expect(snippets[0]).toMatchObject({
+      topic: "method",
+      page: 2,
+      locator: expect.stringContaining("page:2"),
+      quote: expect.stringContaining("The method uses graph attention"),
+      attachmentKey: "PDFCLEAN"
+    });
+    expect(snippets[0].text).not.toContain("Journal of Airspace Review");
+    expect(snippets[0].text).not.toContain("Example Publisher");
+    expect(snippets[0].text).not.toContain("meth- od");
+    expect(snippets[0].locator).toContain("page-span:");
+  });
+
   it("persists candidate review notes with decisions and can clear old notes", () => {
     const records = [
       {

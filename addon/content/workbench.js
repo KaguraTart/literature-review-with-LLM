@@ -7289,27 +7289,27 @@ function indexedTextForEvidence(text) {
 
 function splitIndexedTextPages(text) {
   const source = String(text || "");
-  const formFeedPages = source
+  const formFeedPages = normalizeIndexedPageEntries(source
     .split(/\f+/)
-    .map((pageText, index) => normalizedIndexedPageEntry(pageText, index + 1))
-    .filter((entry) => entry.text);
+    .map((pageText, index) => ({ text: pageText, page: index + 1, pageLabel: String(index + 1) }))
+    .filter((entry) => normalizeIndexedText(entry.text)));
   if (formFeedPages.length > 1) return formFeedPages;
 
   const markedPages = splitIndexedTextPagesByMarkers(source);
   if (markedPages.length) return markedPages;
 
-  const normalized = normalizeIndexedText(source);
+  const normalized = normalizeIndexedText(cleanIndexedPageText(source));
   return normalized ? [{ text: normalized, page: undefined, pageLabel: "" }] : [];
 }
 
 function splitIndexedTextPagesByMarkers(text) {
-  const pages = [];
+  const rawPages = [];
   let current = null;
   for (const line of String(text || "").split(/\r?\n/)) {
     const marker = indexedPageMarker(line);
     if (marker) {
       if (current && normalizeIndexedText(current.lines.join(" "))) {
-        pages.push(normalizedIndexedPageEntry(current.lines.join(" "), current.page, current.pageLabel));
+        rawPages.push({ text: current.lines.join("\n"), page: current.page, pageLabel: current.pageLabel });
       }
       current = { page: marker.page, pageLabel: marker.pageLabel, lines: [] };
       continue;
@@ -7318,9 +7318,9 @@ function splitIndexedTextPagesByMarkers(text) {
     current.lines.push(line);
   }
   if (current && normalizeIndexedText(current.lines.join(" "))) {
-    pages.push(normalizedIndexedPageEntry(current.lines.join(" "), current.page, current.pageLabel));
+    rawPages.push({ text: current.lines.join("\n"), page: current.page, pageLabel: current.pageLabel });
   }
-  return pages.filter((entry) => entry.text);
+  return normalizeIndexedPageEntries(rawPages);
 }
 
 function indexedPageMarker(line) {
@@ -7335,14 +7335,93 @@ function indexedPageMarker(line) {
   };
 }
 
-function normalizedIndexedPageEntry(pageText, fallbackPage, pageLabel = "") {
-  const text = normalizeIndexedText(pageText);
+function normalizeIndexedPageEntries(rawPages) {
+  const repeatedEdgeLines = repeatedIndexedPageEdgeLines((rawPages || []).map((entry) => entry.text));
+  return (rawPages || [])
+    .map((entry, index) => normalizedIndexedPageEntry(
+      entry.text,
+      entry.page || ((rawPages || []).length > 1 ? index + 1 : undefined),
+      entry.pageLabel,
+      repeatedEdgeLines
+    ))
+    .filter((entry) => entry.text);
+}
+
+function normalizedIndexedPageEntry(pageText, fallbackPage, pageLabel = "", repeatedEdgeLines = new Set()) {
+  const text = normalizeIndexedText(cleanIndexedPageText(pageText, repeatedEdgeLines));
   const page = candidateEvidencePage(fallbackPage);
   return {
     text,
     page,
     pageLabel: mdText(pageLabel || (page ? String(page) : ""))
   };
+}
+
+function cleanIndexedPageText(pageText, repeatedEdgeLines = new Set()) {
+  const lines = String(pageText || "").split(/\r?\n/);
+  const edgeLineIndexes = indexedPageEdgeLineIndexes(lines);
+  const kept = lines.filter((line, index) => {
+    const normalized = normalizeIndexedPageLine(line);
+    if (!normalized) return false;
+    if (indexedStandalonePageNumberLine(normalized)) return false;
+    if (edgeLineIndexes.has(index) && indexedPageFooterNoiseLine(normalized)) return false;
+    if (edgeLineIndexes.has(index) && repeatedEdgeLines.has(normalized)) return false;
+    return true;
+  });
+  return dehyphenateIndexedText(kept.join("\n"));
+}
+
+function repeatedIndexedPageEdgeLines(pageTexts) {
+  const counts = new Map();
+  for (const pageText of pageTexts || []) {
+    const lines = String(pageText || "").split(/\r?\n/);
+    const pageKeys = new Set();
+    for (const index of indexedPageEdgeLineIndexes(lines)) {
+      const normalized = normalizeIndexedPageLine(lines[index]);
+      if (!normalized || normalized.length > 140 || indexedStandalonePageNumberLine(normalized)) continue;
+      pageKeys.add(normalized);
+    }
+    for (const key of pageKeys) counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return new Set(Array.from(counts.entries())
+    .filter(([, count]) => count >= 2)
+    .map(([key]) => key));
+}
+
+function indexedPageEdgeLineIndexes(lines) {
+  const nonEmpty = (lines || [])
+    .map((line, index) => ({ index, text: normalizeIndexedPageLine(line) }))
+    .filter((entry) => entry.text);
+  return new Set([
+    ...nonEmpty.slice(0, 2).map((entry) => entry.index),
+    ...nonEmpty.slice(-2).map((entry) => entry.index)
+  ]);
+}
+
+function normalizeIndexedPageLine(line) {
+  return String(line || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function indexedStandalonePageNumberLine(normalizedLine) {
+  return /^\d{1,4}$/.test(normalizedLine)
+    || /^[ivxlcdm]{1,8}$/i.test(normalizedLine)
+    || /^\d{1,4}\s*(?:\/|of)\s*\d{1,4}$/i.test(normalizedLine)
+    || /^(?:page|p\.?|页|第)\s*[A-Za-z0-9ivxlcdmIVXLCDM-]{1,12}\s*(?:页)?$/i.test(normalizedLine);
+}
+
+function indexedPageFooterNoiseLine(normalizedLine) {
+  return /^©\s*\d{4}\b/.test(normalizedLine)
+    || /^copyright\b/i.test(normalizedLine)
+    || /^all rights reserved\b/i.test(normalizedLine)
+    || /^preprint\b/i.test(normalizedLine)
+    || /^arxiv\b/i.test(normalizedLine)
+    || /^doi:\s*10\./i.test(normalizedLine);
+}
+
+function dehyphenateIndexedText(text) {
+  return String(text || "").replace(/([A-Za-z])-\s+([a-z])/g, "$1$2");
 }
 
 function normalizeIndexedText(text) {
