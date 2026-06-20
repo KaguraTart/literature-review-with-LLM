@@ -1566,20 +1566,55 @@ function pushStreamPayload(payloads, buffer) {
 
 function providerResponseErrorDetail(data, depth = 0) {
   if (!data || typeof data !== "object") return "";
-  const error = data.error || (data.type === "error" ? data : null);
-  if (error) {
-    if (typeof error === "string") return error;
-    const message = error.message || data.message || "";
-    const code = error.code || data.code || "";
-    const type = error.type || data.type || "";
-    return [code, type, message || JSON.stringify(error)].filter(Boolean).join(" - ");
-  }
+  const direct = directProviderResponseErrorDetail(data);
+  if (direct) return direct;
   if (depth >= 3 || Array.isArray(data)) return "";
   for (const key of PREFERENCES_PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const nested = providerResponseErrorDetail(value, depth + 1);
     if (nested) return nested;
+  }
+  return "";
+}
+
+function directProviderResponseErrorDetail(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return "";
+  const error = data.error || (data.type === "error" ? data : null);
+  if (error) {
+    if (typeof error === "string") return error;
+    const message = errorString(error.message, data.message, error.detail, data.detail, error.error_description, data.error_description);
+    const code = errorString(error.code, data.code);
+    const type = normalizedProviderErrorType(error.type);
+    return [code, type, message || JSON.stringify(error)].filter(Boolean).join(" - ");
+  }
+  if (Array.isArray(data.errors) && data.errors.length) {
+    const text = data.errors.map((entry) => directProviderResponseErrorDetail({ error: entry })).filter(Boolean).join("; ");
+    if (text) return text;
+  }
+  const message = errorString(data.message, data.detail, data.error_description, data.errorMessage, data.error_message);
+  const code = errorString(data.code, data.error_code, data.errorCode);
+  const type = errorString(data.type, data.error_type, data.errorType);
+  const status = errorString(data.status, data.status_code, data.statusCode);
+  const statusText = status.toLowerCase();
+  const typeText = type.toLowerCase();
+  const looksLikeError = data.ok === false
+    || data.success === false
+    || /^(error|failed|failure|invalid|unauthorized|forbidden)$/i.test(statusText)
+    || /error|invalid|unauth|forbidden|denied|rate|limit|unsupported/.test(typeText)
+    || !!code;
+  return message && looksLikeError ? [code, type, status, message].filter(Boolean).join(" - ") : "";
+}
+
+function normalizedProviderErrorType(value) {
+  const type = errorString(value);
+  return type.toLowerCase() === "error" ? "" : type;
+}
+
+function errorString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
   }
   return "";
 }
@@ -1695,6 +1730,8 @@ function localAgentErrorText(status, text) {
 function providerErrorDetail(text) {
   const parsed = safeParseJSON(text);
   if (parsed) {
+    const responseError = providerResponseErrorDetail(parsed);
+    if (responseError) return responseError;
     const error = parsed.error;
     if (typeof error === "string") return error;
     const message = error?.message || parsed.message || parsed.detail || parsed.error_description;

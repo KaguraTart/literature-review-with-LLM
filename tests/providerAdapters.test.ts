@@ -1004,6 +1004,7 @@ describe("provider adapters", () => {
     expect(() => parseStreamChunk("openai_responses", "data: {\"type\":\"error\",\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"Too many requests for sk-test-secret\"}}")).toThrow("rate_limit_exceeded - Too many requests for [redacted]");
     expect(() => parseStreamChunk("openai_chat", "data: {\"data\":{\"type\":\"error\",\"error\":{\"code\":\"bad_request\",\"message\":\"Bad sk-test-secret\"}}}")).toThrow("bad_request - Bad [redacted]");
     expect(() => parseStreamChunk("anthropic_messages", "data: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Bearer routed-secret overloaded\"}}")).toThrow("overloaded_error - Bearer [redacted] overloaded");
+    expect(() => parseStreamChunk("openai_chat", "data: {\"payload\":{\"status\":\"error\",\"code\":\"invalid_api_key\",\"message\":\"Bad key sk-test-secret\"}}")).toThrow("invalid_api_key - error - Bad key [redacted]");
   });
 
   it("throws redacted provider errors from non-stream response bodies", () => {
@@ -1037,6 +1038,19 @@ describe("provider adapters", () => {
         }
       }
     } as any)).toThrow("authentication_error - Bearer [redacted] rejected");
+    expect(() => extractResponseText("openai_chat", {
+      result: {
+        status: "failed",
+        code: "invalid_api_key",
+        message: "Bad key sk-test-secret"
+      }
+    } as any)).toThrow("invalid_api_key - failed - Bad key [redacted]");
+    expect(() => extractResponseText("openai_chat", {
+      errors: [
+        { code: "invalid_api_key", message: "Bad key sk-test-secret" },
+        { code: "rate_limit", message: "Slow down" }
+      ]
+    } as any)).toThrow("invalid_api_key - Bad key [redacted]; rate_limit - Slow down");
   });
 
   it("normalizes provider token usage across OpenAI, Anthropic, Gemini-style, and wrapped responses", () => {

@@ -1038,21 +1038,36 @@ describe("workbench writeback helpers", () => {
 
   it("fails workbench model listing when a 200 response contains a provider error", async () => {
     const loaded: any = loadWorkbenchHelpers();
-    loaded.fetch = async () => ({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({
+    const payloads = [
+      {
         error: {
           code: "invalid_api_key",
           message: "Bad key sk-test-secret"
         }
-      })
+      },
+      {
+        result: {
+          status: "error",
+          code: "invalid_api_key",
+          message: "Bad key sk-test-secret"
+        }
+      }
+    ];
+    let index = 0;
+    loaded.fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify(payloads[index++])
     });
 
     await expect(loaded.workbenchFetchModelOptions({
       url: "https://api.openai.com/v1/models",
       headers: { authorization: "Bearer sk-test-secret" }
     })).rejects.toThrow("Provider error: invalid_api_key - Bad key [redacted]");
+    await expect(loaded.workbenchFetchModelOptions({
+      url: "https://api.openai.com/v1/models",
+      headers: { authorization: "Bearer sk-test-secret" }
+    })).rejects.toThrow("Provider error: invalid_api_key - error - Bad key [redacted]");
   });
 
   it("retries workbench provider requests without unsupported advanced optional fields", async () => {
@@ -1794,6 +1809,9 @@ describe("workbench writeback helpers", () => {
     };
 
     await expect(helpers.readStream(response, "openai_responses", () => undefined)).rejects.toThrow("rate_limit_exceeded - Too many requests for [redacted]");
+    await expect(helpers.readStream({
+      body: streamFromText("data: {\"payload\":{\"status\":\"error\",\"code\":\"invalid_api_key\",\"message\":\"Bad key sk-test-secret\"}}\n")
+    }, "openai_chat", () => undefined)).rejects.toThrow("invalid_api_key - error - Bad key [redacted]");
   });
 
   it("throws redacted errors from workbench non-stream response bodies", () => {
@@ -1810,6 +1828,15 @@ describe("workbench writeback helpers", () => {
     expect(() => helpers.extractResponseText("anthropic_messages", {
       payload: { type: "error", error: { type: "authentication_error", message: "Bearer routed-secret rejected" } }
     })).toThrow("authentication_error - Bearer [redacted] rejected");
+    expect(() => helpers.extractResponseText("openai_chat", {
+      result: { status: "failed", code: "invalid_api_key", message: "Bad key sk-test-secret" }
+    })).toThrow("invalid_api_key - failed - Bad key [redacted]");
+    expect(() => helpers.extractResponseText("openai_chat", {
+      errors: [
+        { code: "invalid_api_key", message: "Bad key sk-test-secret" },
+        { code: "rate_limit", message: "Slow down" }
+      ]
+    })).toThrow("invalid_api_key - Bad key [redacted]; rate_limit - Slow down");
   });
 
   it("extracts OpenAI-compatible non-stream response text variants in workbench", () => {

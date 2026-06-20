@@ -1154,12 +1154,50 @@ function providerErrorText(parsed, rawText) {
 
 function providerResponseErrorText(parsed) {
   if (!parsed || typeof parsed !== "object") return "";
+  const direct = directProviderResponseErrorText(parsed);
+  if (direct) return direct;
+  if (Array.isArray(parsed)) return "";
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
+    const value = parsed?.[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const nested = providerResponseErrorText(value);
+    if (nested) return nested;
+  }
+  return "";
+}
+
+function directProviderResponseErrorText(parsed) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "";
   const error = parsed.error || (parsed.type === "error" ? parsed : null);
-  if (!error) return "";
+  if (!error && !Array.isArray(parsed.errors)) {
+    const message = stringField(parsed.message, parsed.detail, parsed.error_description, parsed.errorMessage, parsed.error_message);
+    const code = stringField(parsed.code, parsed.error_code, parsed.errorCode);
+    const type = stringField(parsed.type, parsed.error_type, parsed.errorType);
+    const status = stringField(parsed.status, parsed.status_code, parsed.statusCode);
+    const statusText = status.toLowerCase();
+    const typeText = type.toLowerCase();
+    const looksLikeError = parsed.ok === false
+      || parsed.success === false
+      || /^(error|failed|failure|invalid|unauthorized|forbidden)$/i.test(statusText)
+      || /error|invalid|unauth|forbidden|denied|rate|limit|unsupported/.test(typeText)
+      || !!code;
+    return message && looksLikeError
+      ? [code, type, status, redactSecret(message)].filter(Boolean).join(" - ")
+      : "";
+  }
+  if (Array.isArray(parsed.errors) && parsed.errors.length) {
+    return parsed.errors.map((entry) => directProviderResponseErrorText({ error: entry })).filter(Boolean).join("; ");
+  }
   if (typeof error === "string") return redactSecret(error);
-  const code = error.code || error.type || parsed.code || parsed.type || "";
-  const message = error.message || parsed.message || JSON.stringify(error);
-  return [code, redactSecret(message)].filter(Boolean).join(" - ");
+  const code = error.code || parsed.code || "";
+  const type = normalizedProviderErrorType(error.type);
+  const message = error.message || parsed.message || error.detail || parsed.detail || error.error_description || parsed.error_description || JSON.stringify(error);
+  return [code, type, redactSecret(message)].filter(Boolean).join(" - ");
+}
+
+function normalizedProviderErrorType(value) {
+  const type = stringField(value);
+  return type.toLowerCase() === "error" ? "" : type;
 }
 
 function redactSecret(text) {

@@ -824,6 +824,17 @@ describe("preferences local-agent config helpers", () => {
     expect(formatted).not.toContain("sk-test-secret");
     expect(formatted).not.toContain("routed-secret");
     expect(formatted).not.toContain("gsk_test-secret");
+    const wrapped = helpers.providerErrorText(401, JSON.stringify({
+      payload: {
+        status: "failed",
+        code: "invalid_api_key",
+        message: "Invalid API key sk-test-secret"
+      }
+    }));
+    expect(wrapped).toContain("invalid_api_key");
+    expect(wrapped).toContain("failed");
+    expect(wrapped).toContain("Invalid API key [redacted]");
+    expect(wrapped).not.toContain("sk-test-secret");
     expect(helpers.localAgentErrorText(200, JSON.stringify({
       error: { code: "tool_failed", message: "Tool failed with Bearer local-secret" }
     }))).toBe("tool_failed - Tool failed with Bearer [redacted]");
@@ -2219,6 +2230,21 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toContain("authentication_error");
     expect(elements.get("zms-status").value).toContain("Invalid API key [redacted]");
     expect(elements.get("zms-status").value).not.toContain("sk-test-secret");
+
+    const wrapped = loadPreferencesController({
+      fetchResponse: {
+        result: {
+          status: "error",
+          code: "invalid_api_key",
+          message: "Invalid API key sk-test-secret"
+        }
+      }
+    });
+    await wrapped.controller.loadModels();
+    expect(wrapped.elements.get("zms-status").value).toContain("Connection failed: Provider error");
+    expect(wrapped.elements.get("zms-status").value).toContain("invalid_api_key");
+    expect(wrapped.elements.get("zms-status").value).toContain("Invalid API key [redacted]");
+    expect(wrapped.elements.get("zms-status").value).not.toContain("sk-test-secret");
   });
 
   it("fails settings connection tests when a 200 response has no model text", async () => {

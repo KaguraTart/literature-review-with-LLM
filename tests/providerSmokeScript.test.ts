@@ -832,6 +832,33 @@ describe("provider smoke verifier", () => {
         }
       }
     });
+
+    await withMockProvider(async (baseURL) => {
+      let error: any;
+      try {
+        await runSmoke([
+          "--profile", "openai-compatible",
+          "--base-url", `${baseURL}/v1`,
+          "--models",
+          "--json"
+        ]);
+      } catch (err) {
+        error = err;
+      }
+
+      expect(error?.stdout).toContain("invalid_api_key");
+      expect(error?.stdout).toContain("error");
+      expect(error?.stdout).toContain("Bad key [redacted]");
+      expect(error?.stdout).not.toContain("sk-test-secret");
+    }, {
+      responseBody: {
+        payload: {
+          status: "error",
+          code: "invalid_api_key",
+          message: "Bad key sk-test-secret"
+        }
+      }
+    });
   });
 
   it("skips live provider checks when required env config is missing", async () => {
