@@ -1863,6 +1863,48 @@ describe("workbench writeback helpers", () => {
     expect(snippets[0].locator).toContain("page-span:");
   });
 
+  it("uses standalone indexed-text page markers as candidate evidence locators", () => {
+    const loaded = loadWorkbenchHelpers();
+    const snippets = loaded.candidateFullTextEvidenceSnippets([
+      "--- Page 1 ---",
+      "Opening context without the target terms.",
+      "Page 12",
+      "The proposed method uses graph attention to model route conflicts.",
+      "Experiments evaluate benchmark scenarios with delay and throughput metrics."
+    ].join("\n"), {
+      candidateId: "doi:10.1000/page-marker",
+      title: "Page Marker Candidate",
+      decision: "include",
+      quality: { dedupeStatus: "new" }
+    }, { key: "PDFMARKER" });
+
+    expect(snippets[0]).toMatchObject({
+      topic: "method",
+      page: 12,
+      pageLabel: "12",
+      locator: expect.stringContaining("page:12"),
+      quote: expect.stringContaining("proposed method uses graph attention"),
+      attachmentKey: "PDFMARKER"
+    });
+    expect(snippets[0].locator).toContain("page-label:12");
+    expect(snippets[0].locator).toContain("page-span:");
+
+    const singleMarkedPage = loaded.candidateFullTextEvidenceSnippets([
+      "[Page 9]",
+      "The proposed method uses graph attention to model route conflicts."
+    ].join("\n"), {
+      candidateId: "doi:10.1000/single-page-marker",
+      title: "Single Page Marker Candidate",
+      decision: "include",
+      quality: { dedupeStatus: "new" }
+    }, { key: "PDFSINGLE" });
+    expect(singleMarkedPage[0]).toMatchObject({
+      page: 9,
+      pageLabel: "9",
+      locator: expect.stringContaining("page-label:9")
+    });
+  });
+
   it("persists candidate review notes with decisions and can clear old notes", () => {
     const records = [
       {

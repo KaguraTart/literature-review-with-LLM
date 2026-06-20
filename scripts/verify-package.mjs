@@ -540,6 +540,7 @@ const requiredMarkers = [
   [workbenchJs, "candidateFullTextEvidenceSnippets", "candidate full-text evidence extraction"],
   [workbenchJs, "candidateFullTextEvidenceDisplayText", "candidate full-text evidence context display"],
   [workbenchJs, "indexedTextForEvidence", "candidate indexed-text page splitting"],
+  [workbenchJs, "indexedPageMarker", "candidate indexed-text page marker parsing"],
   [workbenchJs, "candidatePdfAnnotationForHit", "candidate PDF annotation page matching"],
   [workbenchJs, "annotationPageLabel", "candidate annotation page-label evidence"],
   [workbenchJs, "fullTextEvidenceUpdatedAt", "candidate full-text evidence timestamp"],

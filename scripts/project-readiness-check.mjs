@@ -348,6 +348,7 @@ const SOURCE_MARKERS = [
       "candidateFullTextEvidenceSnippets",
       "candidateFullTextEvidenceDisplayText",
       "indexedTextForEvidence",
+      "indexedPageMarker",
       "candidatePdfAnnotationForHit",
       "annotationPageLabel",
       "fullTextEvidenceUpdatedAt",

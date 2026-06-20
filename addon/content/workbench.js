@@ -7203,7 +7203,7 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
     const annotation = candidatePdfAnnotationForHit(pdf, hit);
     const locatedHit = {
       ...hit,
-      pageLabel: annotation?.pageLabel || "",
+      pageLabel: annotation?.pageLabel || hit.pageLabel || "",
       annotationKey: annotation?.key || "",
       annotationType: annotation?.type || ""
     };
@@ -7241,7 +7241,7 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
       const annotation = candidatePdfAnnotationForHit(pdf, hit);
       const locatedHit = {
         ...hit,
-        pageLabel: annotation?.pageLabel || "",
+        pageLabel: annotation?.pageLabel || hit.pageLabel || "",
         annotationKey: annotation?.key || "",
         annotationType: annotation?.type || ""
       };
@@ -7266,20 +7266,83 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
 }
 
 function indexedTextForEvidence(text) {
-  const rawPages = String(text || "")
-    .split(/\f+/)
-    .map((pageText) => normalizeIndexedText(pageText))
-    .filter(Boolean);
-  const normalizedPages = rawPages.length ? rawPages : [normalizeIndexedText(text)].filter(Boolean);
+  const normalizedPages = splitIndexedTextPages(text);
   const pages = [];
   let cursor = 0;
-  normalizedPages.forEach((pageText, index) => {
+  normalizedPages.forEach((pageEntry, index) => {
+    const pageText = pageEntry.text;
     const start = cursor;
     const end = start + pageText.length;
-    pages.push({ page: normalizedPages.length > 1 ? index + 1 : undefined, text: pageText, start, end });
+    const fallbackPage = normalizedPages.length > 1 ? index + 1 : undefined;
+    const page = candidateEvidencePage(pageEntry.page || fallbackPage);
+    pages.push({
+      page,
+      pageLabel: pageEntry.pageLabel || (page ? String(page) : ""),
+      text: pageText,
+      start,
+      end
+    });
     cursor = end + 1;
   });
   return { text: pages.map((page) => page.text).join(" "), pages };
+}
+
+function splitIndexedTextPages(text) {
+  const source = String(text || "");
+  const formFeedPages = source
+    .split(/\f+/)
+    .map((pageText, index) => normalizedIndexedPageEntry(pageText, index + 1))
+    .filter((entry) => entry.text);
+  if (formFeedPages.length > 1) return formFeedPages;
+
+  const markedPages = splitIndexedTextPagesByMarkers(source);
+  if (markedPages.length) return markedPages;
+
+  const normalized = normalizeIndexedText(source);
+  return normalized ? [{ text: normalized, page: undefined, pageLabel: "" }] : [];
+}
+
+function splitIndexedTextPagesByMarkers(text) {
+  const pages = [];
+  let current = null;
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const marker = indexedPageMarker(line);
+    if (marker) {
+      if (current && normalizeIndexedText(current.lines.join(" "))) {
+        pages.push(normalizedIndexedPageEntry(current.lines.join(" "), current.page, current.pageLabel));
+      }
+      current = { page: marker.page, pageLabel: marker.pageLabel, lines: [] };
+      continue;
+    }
+    if (!current) current = { page: undefined, pageLabel: "", lines: [] };
+    current.lines.push(line);
+  }
+  if (current && normalizeIndexedText(current.lines.join(" "))) {
+    pages.push(normalizedIndexedPageEntry(current.lines.join(" "), current.page, current.pageLabel));
+  }
+  return pages.filter((entry) => entry.text);
+}
+
+function indexedPageMarker(line) {
+  const source = String(line || "").trim();
+  if (!source) return null;
+  const match = source.match(/^(?:[-=_*]{2,}\s*)?(?:\[\s*)?(?:page|p\.?|页|第)\s*([A-Za-z0-9ivxlcdmIVXLCDM-]{1,12})\s*(?:页)?(?:\s*\])?(?:\s*[-=_*]{2,})?$/i);
+  if (!match) return null;
+  const pageLabel = match[1];
+  return {
+    page: candidateEvidencePage(pageLabel),
+    pageLabel: mdText(pageLabel)
+  };
+}
+
+function normalizedIndexedPageEntry(pageText, fallbackPage, pageLabel = "") {
+  const text = normalizeIndexedText(pageText);
+  const page = candidateEvidencePage(fallbackPage);
+  return {
+    text,
+    page,
+    pageLabel: mdText(pageLabel || (page ? String(page) : ""))
+  };
 }
 
 function normalizeIndexedText(text) {
@@ -7313,6 +7376,7 @@ function candidateSnippetForPattern(indexed, pattern, used, topicId = "") {
       start,
       end,
       page: page.page,
+      pageLabel: page.pageLabel || "",
       pageStart: contextStart,
       pageEnd: contextEnd,
       sourceHash
