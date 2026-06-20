@@ -200,15 +200,8 @@ function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, dept
       || extractWrappedStreamContent(protocol, data, depth)
       || "";
   }
-  if (typeof data?.choices?.[0]?.delta === "string") return data.choices[0].delta;
-  const deltaContent = extractMessageContent(data?.choices?.[0]?.delta?.content);
-  if (deltaContent) return deltaContent;
-  const deltaMessage = extractMessageContent(data?.choices?.[0]?.delta);
-  if (deltaMessage) return deltaMessage;
-  const messageContent = extractMessageContent(data?.choices?.[0]?.message?.content);
-  if (messageContent) return messageContent;
-  const message = extractMessageContent(data?.choices?.[0]?.message);
-  if (message) return message;
+  const choiceContent = extractOpenAIChoiceContent(data?.choices);
+  if (choiceContent) return choiceContent;
   if (data?.type === "response.output_text.delta" && typeof data?.delta === "string") return data.delta;
   if (data?.type === "response.text.delta" && typeof data?.delta === "string") return data.delta;
   if (data?.type === "response.refusal.delta" && typeof data?.delta === "string") return data.delta;
@@ -222,12 +215,26 @@ function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, dept
   if (directContent) return directContent;
   const eventContent = extractOpenAIEventContainer(data);
   if (eventContent) return eventContent;
-  return data?.choices?.[0]?.text
-    || data?.choices?.[0]?.delta?.text
-    || extractOutputContent(data?.output)
+  return extractOutputContent(data?.output)
     || (typeof data?.delta === "string" ? data.delta : "")
     || extractWrappedStreamContent(protocol, data, depth)
     || "";
+}
+
+function extractOpenAIChoiceContent(choices: unknown): string {
+  if (!Array.isArray(choices)) return "";
+  return choices
+    .map((choice: any) => {
+      if (typeof choice?.delta === "string") return choice.delta;
+      return extractMessageContent(choice?.delta?.content)
+        || extractMessageContent(choice?.delta)
+        || extractMessageContent(choice?.message?.content)
+        || extractMessageContent(choice?.message)
+        || (typeof choice?.text === "string" ? choice.text : "")
+        || (typeof choice?.delta?.text === "string" ? choice.delta.text : "");
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 function extractWrappedStreamContent(protocol: ProviderProtocol, data: any, depth: number): string {
@@ -366,10 +373,7 @@ function extractOpenAIEventContainer(data: any): string {
 
 function extractOpenAIResponseContent(data: any, depth = 0): string {
   return data?.output_text
-    || extractMessageContent(data?.choices?.[0]?.message)
-    || extractMessageContent(data?.choices?.[0]?.delta)
-    || data?.choices?.[0]?.text
-    || data?.choices?.[0]?.delta?.text
+    || extractOpenAIChoiceContent(data?.choices)
     || extractOutputContent(data?.output)
     || extractMessageContent(data?.content)
     || extractMessageContent(data?.candidates)

@@ -248,6 +248,12 @@ describe("workbench session helpers", () => {
     expect(helpers.extractResponseText("openai_chat", {
       choices: [{ message: { content: null, refusal: "chat refusal" } }]
     })).toBe("chat refusal");
+    expect(helpers.extractResponseText("openai_chat", {
+      choices: [{ message: { content: null } }, { message: { content: "second choice text" } }]
+    })).toBe("second choice text");
+    expect(helpers.extractResponseText("openai_chat", {
+      choices: [{ delta: { reasoning_content: "hidden" } }, { delta: { refusal: "second refusal" } }]
+    })).toBe("second refusal");
     expect(helpers.extractResponseText("openai_responses", {
       output: [{ content: [{ type: "refusal", refusal: "responses refusal" }] }]
     })).toBe("responses refusal");
@@ -324,6 +330,12 @@ describe("workbench session helpers", () => {
     expect(helpers.streamTextFromData("openai_chat", {
       choices: [{ delta: { refusal: "stream refusal" } }]
     })).toBe("stream refusal");
+    expect(helpers.streamTextFromData("openai_chat", {
+      choices: [{ delta: {} }, { delta: { content: "second choice" } }]
+    })).toBe("second choice");
+    expect(helpers.streamTextFromData("openai_chat", {
+      choices: [{ message: { content: null } }, { message: { refusal: "second refusal" } }]
+    })).toBe("second refusal");
     expect(helpers.streamTextFromData("openai_responses", {
       type: "response.refusal.delta", delta: "responses refusal"
     })).toBe("responses refusal");

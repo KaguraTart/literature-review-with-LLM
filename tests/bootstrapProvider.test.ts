@@ -1743,6 +1743,52 @@ describe("bootstrap provider helpers", () => {
       }
     }, "hash", false)).resolves.toMatchObject({ markdown: "chat refusal" });
 
+    const laterChoice = loadBootstrapProviderHelpers({
+      choices: [{ message: { content: null } }, { message: { content: "second choice text" } }]
+    });
+    await expect(laterChoice.helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false)).resolves.toMatchObject({ markdown: "second choice text" });
+
+    const laterRefusal = loadBootstrapProviderHelpers({
+      choices: [{ delta: { reasoning_content: "hidden" } }, { delta: { refusal: "second refusal" } }]
+    });
+    await expect(laterRefusal.helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false)).resolves.toMatchObject({ markdown: "second refusal" });
+
     const responsesRefusal = loadBootstrapProviderHelpers({
       output: [{ content: [{ type: "refusal", refusal: "responses refusal" }] }]
     });
@@ -2531,6 +2577,8 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.extractOpenAIStreamText({ delta: { content: [{ text: "nested" }] } })).toBe("nested");
     expect(helpers.extractOpenAIStreamText({ choices: [{ delta: { reasoning_content: "hidden" } }] })).toBe("");
     expect(helpers.extractOpenAIStreamText({ choices: [{ delta: { refusal: "stream refusal" } }] })).toBe("stream refusal");
+    expect(helpers.extractOpenAIStreamText({ choices: [{ delta: {} }, { delta: { content: "second choice" } }] })).toBe("second choice");
+    expect(helpers.extractOpenAIStreamText({ choices: [{ message: { content: null } }, { message: { refusal: "second refusal" } }] })).toBe("second refusal");
     expect(helpers.extractOpenAIStreamText({
       choices: [{
         delta: {

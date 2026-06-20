@@ -68,10 +68,7 @@ function extractOpenAIText(data) {
 
 function extractOpenAITextValue(data, depth = 0) {
   return data?.output_text
-    || extractOpenAIMessageContent(data?.choices?.[0]?.message)
-    || extractOpenAIMessageContent(data?.choices?.[0]?.delta)
-    || data?.choices?.[0]?.text
-    || data?.choices?.[0]?.delta?.text
+    || extractOpenAIChoiceText(data?.choices)
     || extractOpenAIContentArray(data?.output)
     || extractOpenAIMessageContent(data?.content)
     || extractOpenAIMessageContent(data?.candidates)
@@ -84,17 +81,8 @@ function extractOpenAIStreamText(chunk, depth = 0) {
   const errorText = streamErrorText(chunk);
   if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
   if (isReasoningStreamEvent(chunk)) return "";
-  if (typeof chunk?.choices?.[0]?.delta === "string") return chunk.choices[0].delta;
-  const delta = chunk.choices?.[0]?.delta;
-  const deltaContent = extractOpenAIMessageContent(delta?.content);
-  if (deltaContent) return deltaContent;
-  const deltaMessage = extractOpenAIMessageContent(delta);
-  if (deltaMessage) return deltaMessage;
-  const messageContent = extractOpenAIMessageContent(chunk.choices?.[0]?.message?.content);
-  if (messageContent) return messageContent;
-  const message = extractOpenAIMessageContent(chunk.choices?.[0]?.message);
-  if (message) return message;
-  if (typeof delta?.text === "string") return delta.text;
+  const choiceText = extractOpenAIChoiceText(chunk?.choices);
+  if (choiceText) return choiceText;
   if ((chunk?.type === "response.output_text.delta" || chunk?.type === "response.text.delta") && typeof chunk?.delta === "string") return chunk.delta;
   if (chunk?.type === "response.refusal.delta" && typeof chunk?.delta === "string") return chunk.delta;
   if (chunk?.type === "response.output_text.done" && typeof chunk?.text === "string") return chunk.text;
@@ -110,6 +98,22 @@ function extractOpenAIStreamText(chunk, depth = 0) {
   const eventText = extractOpenAIEventContainer(chunk);
   if (eventText) return eventText;
   return extractWrappedStreamText("openai", chunk, depth);
+}
+
+function extractOpenAIChoiceText(choices) {
+  if (!Array.isArray(choices)) return "";
+  return choices
+    .map((choice) => {
+      if (typeof choice?.delta === "string") return choice.delta;
+      return extractOpenAIMessageContent(choice?.delta?.content)
+        || extractOpenAIMessageContent(choice?.delta)
+        || extractOpenAIMessageContent(choice?.message?.content)
+        || extractOpenAIMessageContent(choice?.message)
+        || (typeof choice?.text === "string" ? choice.text : "")
+        || (typeof choice?.delta?.text === "string" ? choice.delta.text : "");
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 function extractAnthropicStreamText(chunk, depth = 0) {

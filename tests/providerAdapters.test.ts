@@ -924,6 +924,8 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"message\":{\"content\":[{\"type\":\"output_text\",\"text\":\"message text\"}]}}]}")).toBe("message text");
     expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"delta\":{\"refusal\":\"stream refusal\"}}]}")).toBe("stream refusal");
     expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"delta\":{\"text\":\"oops\"}}]}")).toBe("oops");
+    expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"delta\":{}},{\"delta\":{\"content\":\"second choice\"}}]}")).toBe("second choice");
+    expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"message\":{\"content\":null}},{\"message\":{\"refusal\":\"second refusal\"}}]}")).toBe("second refusal");
     expect(parseStreamChunk("openai_responses", "data: {\"output\":[{\"content\":[{\"text\":\"ok\"}]}]}")).toBe("ok");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_text.delta\",\"delta\":\"streamed\"}")).toBe("streamed");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.refusal.delta\",\"delta\":\"responses refusal\"}")).toBe("responses refusal");
@@ -1150,6 +1152,12 @@ describe("provider adapters", () => {
     expect(extractResponseText("openai_chat", {
       choices: [{ delta: { content: [{ type: "text", text: "delta content" }] } }]
     } as any)).toBe("delta content");
+    expect(extractResponseText("openai_chat", {
+      choices: [{ message: { content: null } }, { message: { content: "second choice text" } }]
+    } as any)).toBe("second choice text");
+    expect(extractResponseText("openai_chat", {
+      choices: [{ delta: { reasoning_content: "hidden" } }, { delta: { refusal: "second refusal" } }]
+    } as any)).toBe("second refusal");
     expect(extractResponseText("openai_chat", {
       content: [{ type: "text", text: "top-level content" }]
     } as any)).toBe("top-level content");

@@ -3324,8 +3324,8 @@ function localAgentTextFromPayload(parsed) {
     parsed?.message?.content,
     parsed?.result?.message?.content,
     parsed?.result?.message?.text,
-    parsed?.choices?.[0]?.message?.content,
-    parsed?.result?.choices?.[0]?.message?.content,
+    localAgentTextFromChoices(parsed?.choices),
+    localAgentTextFromChoices(parsed?.result?.choices),
     parsed?.result?.content?.[0]?.text
   ];
   for (const candidate of candidates) {
@@ -3333,6 +3333,19 @@ function localAgentTextFromPayload(parsed) {
     if (text) return text;
   }
   return "";
+}
+
+function localAgentTextFromChoices(choices) {
+  if (!Array.isArray(choices)) return "";
+  return choices
+    .map((choice) => localAgentTextFromValue(choice?.message?.content)
+      || localAgentTextFromValue(choice?.message)
+      || localAgentTextFromValue(choice?.delta?.content)
+      || localAgentTextFromValue(choice?.delta)
+      || localAgentTextFromValue(choice?.text))
+    .filter(Boolean)
+    .join("\n")
+    .trim();
 }
 
 function localAgentTextFromValue(value) {
@@ -7604,15 +7617,8 @@ function streamTextFromData(protocol, data, depth = 0) {
       || modelTextFromValue(data?.message)
       || wrappedStreamTextFromData(protocol, data, depth);
   }
-  if (typeof data?.choices?.[0]?.delta === "string") return data.choices[0].delta;
-  const deltaContent = modelTextFromValue(data?.choices?.[0]?.delta?.content);
-  if (deltaContent) return deltaContent;
-  const deltaMessage = modelTextFromValue(data?.choices?.[0]?.delta);
-  if (deltaMessage) return deltaMessage;
-  const messageContent = modelTextFromValue(data?.choices?.[0]?.message?.content);
-  if (messageContent) return messageContent;
-  const message = modelTextFromValue(data?.choices?.[0]?.message);
-  if (message) return message;
+  const choiceText = modelTextFromChoices(data?.choices);
+  if (choiceText) return choiceText;
   if ((data?.type === "response.output_text.delta" || data?.type === "response.text.delta") && typeof data?.delta === "string") return data.delta;
   if (data?.type === "response.refusal.delta" && typeof data?.delta === "string") return data.delta;
   if (data?.type === "response.output_text.done" && typeof data?.text === "string") return data.text;
@@ -7625,7 +7631,7 @@ function streamTextFromData(protocol, data, depth = 0) {
   if (directContent) return directContent;
   const eventText = modelTextFromStreamContainer(data);
   if (eventText) return eventText;
-  return data?.choices?.[0]?.text || data?.choices?.[0]?.delta?.text || modelTextFromValue(data?.output) || (typeof data?.delta === "string" ? data.delta : "") || wrappedStreamTextFromData(protocol, data, depth);
+  return modelTextFromValue(data?.output) || (typeof data?.delta === "string" ? data.delta : "") || wrappedStreamTextFromData(protocol, data, depth);
 }
 
 function wrappedStreamTextFromData(protocol, data, depth) {
@@ -8035,6 +8041,22 @@ function modelTextFromValue(value, depth = 0) {
   return "";
 }
 
+function modelTextFromChoices(choices) {
+  if (!Array.isArray(choices)) return "";
+  return choices
+    .map((choice) => {
+      if (typeof choice?.delta === "string") return choice.delta;
+      return modelTextFromValue(choice?.delta?.content)
+        || modelTextFromValue(choice?.delta)
+        || modelTextFromValue(choice?.message?.content)
+        || modelTextFromValue(choice?.message)
+        || (typeof choice?.text === "string" ? choice.text : "")
+        || (typeof choice?.delta?.text === "string" ? choice.delta.text : "");
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
 function modelTextFromStreamContainer(value) {
   return modelTextFromValue(value?.part)
     || modelTextFromValue(value?.item)
@@ -8045,10 +8067,7 @@ function modelTextFromStreamContainer(value) {
 
 function openAITextFromResponse(data, depth = 0) {
   return data?.output_text
-    || modelTextFromValue(data?.choices?.[0]?.message)
-    || modelTextFromValue(data?.choices?.[0]?.delta)
-    || data?.choices?.[0]?.text
-    || data?.choices?.[0]?.delta?.text
+    || modelTextFromChoices(data?.choices)
     || modelTextFromValue(data?.output)
     || modelTextFromValue(data?.content)
     || modelTextFromValue(data?.candidates)
