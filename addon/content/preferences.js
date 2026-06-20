@@ -60,6 +60,7 @@ var ZoteroMarkdownSummaryPrefs = {
     this.mergeDefaultProfilesIntoEditor();
     this.refreshProfileOptions();
     this.loadProfileEditor();
+    this.refreshProviderGuide();
     this.bindProfileStatusEvents();
     document.getElementById("zms-skillId").value ||= "paper-deep-summary";
     this.refreshSkillMenu().then(() => this.loadSkillTemplateEditor());
@@ -111,6 +112,7 @@ var ZoteroMarkdownSummaryPrefs = {
     document.getElementById("zms-profileBodyExtra").value = JSON.stringify(defaults.bodyExtra || {}, null, 2);
     this.setCapabilityValues(defaults.capabilities);
     this.refreshProfileStatus();
+    this.refreshProviderGuide();
   },
 
   save(options = {}) {
@@ -134,6 +136,7 @@ var ZoteroMarkdownSummaryPrefs = {
     this.refreshProfileOptions();
     this.applyLanguage();
     this.refreshProfileStatus();
+    this.refreshProviderGuide();
     if (options.statusKey !== "") this.setStatus(this.t(options.statusKey || "saved"));
     return true;
   },
@@ -192,6 +195,7 @@ var ZoteroMarkdownSummaryPrefs = {
     this.setCapabilityValues(hydrated.capabilities || {});
     this.refreshProfileOptions();
     this.refreshProfileStatus();
+    this.refreshProviderGuide();
   },
 
   loadLocalAgentEditor(bodyExtra) {
@@ -567,6 +571,16 @@ var ZoteroMarkdownSummaryPrefs = {
     return text;
   },
 
+  refreshProviderGuide() {
+    const element = document.getElementById("zms-providerGuide");
+    if (!element) return "";
+    const draft = profileDraftFromEditor();
+    const lang = resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale());
+    const text = providerSetupGuide(draft.profile, lang);
+    element.textContent = text;
+    return text;
+  },
+
   bindProfileStatusEvents() {
     const ids = [
       "zms-activeProfileId",
@@ -601,9 +615,13 @@ var ZoteroMarkdownSummaryPrefs = {
     for (const id of ids) {
       const element = document.getElementById(id);
       if (typeof element?.addEventListener !== "function") continue;
-      element.addEventListener("input", () => this.refreshProfileStatus());
-      element.addEventListener("change", () => this.refreshProfileStatus());
-      element.addEventListener("command", () => this.refreshProfileStatus());
+      const refresh = () => {
+        this.refreshProfileStatus();
+        this.refreshProviderGuide();
+      };
+      element.addEventListener("input", refresh);
+      element.addEventListener("change", refresh);
+      element.addEventListener("command", refresh);
     }
   },
 
@@ -626,6 +644,7 @@ var ZoteroMarkdownSummaryPrefs = {
       "baseURL",
       "apiKey",
       "model",
+      "providerGuide",
       "profileStatus",
       "outputDir",
       "inputMode",
@@ -811,6 +830,129 @@ function profileStatusText(profile, translate = (key) => key) {
   ];
   if (isLocalAgent) parts.push(t("profileLocalAgentReady"));
   return parts.filter(Boolean).join("\n");
+}
+
+function providerSetupGuide(profile, language = "en-US") {
+  if (!profile) return "";
+  const zh = /^zh/i.test(String(language || ""));
+  const provider = providerFromProfile(profile);
+  const defaults = providerDefaults(provider);
+  const endpoint = endpointForProfileSafe(profile) || "";
+  const modelList = providerModelListGuide(profile);
+  const verify = providerLiveVerifyGuide(profile, provider);
+  const capabilities = [
+    canUseImageInput(profile) ? (zh ? "图片" : "image") : "",
+    canUsePdfBase64Input(profile) ? "PDF base64" : (zh ? "PDF 文本抽取" : "PDF text extraction"),
+    profile?.capabilities?.streaming === true ? (zh ? "流式" : "streaming") : "",
+    profile?.capabilities?.modelList === true ? (zh ? "模型列表" : "model list") : ""
+  ].filter(Boolean).join(", ");
+  const auth = providerAuthGuide(profile, provider, zh);
+  if (zh) {
+    return [
+      `当前档案：${profile.name || defaults.name || profile.id || provider}`,
+      `协议：${providerProtocolLabel(profile.protocol, zh)}`,
+      `Base URL：${profile.baseURL || defaults.baseURL || "未填写"}`,
+      `请求 endpoint：${endpoint || "未配置"}`,
+      `鉴权：${auth}`,
+      `模型：${profile.model || "请填写模型名称，或点击“加载模型”后选择"}`,
+      `能力：${capabilities || "文本"}`,
+      `模型列表：${modelList || "当前档案不支持自动加载模型列表"}`,
+      `保存后测试：点击“测试连接”；失败信息会隐藏完整 API Key。`,
+      `终端 live 检查：${verify.liveCommand}`,
+      `模型列表 live 检查：${verify.modelsCommand}`
+    ].join("\n");
+  }
+  return [
+    `Active profile: ${profile.name || defaults.name || profile.id || provider}`,
+    `Protocol: ${providerProtocolLabel(profile.protocol, zh)}`,
+    `Base URL: ${profile.baseURL || defaults.baseURL || "not set"}`,
+    `Request endpoint: ${endpoint || "not configured"}`,
+    `Auth: ${auth}`,
+    `Model: ${profile.model || "enter a model name, or use Load models"}`,
+    `Capabilities: ${capabilities || "text"}`,
+    `Model list: ${modelList || "not available for this profile"}`,
+    "After saving: click Test connection. Failure messages hide full API keys.",
+    `Terminal live check: ${verify.liveCommand}`,
+    `Model-list live check: ${verify.modelsCommand}`
+  ].join("\n");
+}
+
+function providerProtocolLabel(protocol, zh = false) {
+  if (protocol === "openai_responses") return zh ? "OpenAI Responses" : "OpenAI Responses";
+  if (protocol === "anthropic_messages") return zh ? "Anthropic Messages" : "Anthropic Messages";
+  return zh ? "OpenAI Chat Completions" : "OpenAI Chat Completions";
+}
+
+function providerAuthGuide(profile, provider, zh = false) {
+  if (isLocalAgentProfile(profile)) {
+    return zh ? "本地代理 HTTP 端点；通常不需要 API Key。" : "Local agent HTTP endpoint; API key is usually not required.";
+  }
+  const endpoint = endpointForProfileSafe(profile);
+  if (isLocalEndpoint(endpoint)) {
+    return zh ? "本地接口；通常不需要 API Key，若网关要求可填写。" : "Local endpoint; API key is usually optional unless your gateway requires one.";
+  }
+  if (provider === "anthropic") {
+    return zh ? "API Key 会作为 x-api-key 发送，并自动附带 anthropic-version。" : "API key is sent as x-api-key with anthropic-version.";
+  }
+  if (profile.protocol === "anthropic_messages") {
+    const header = normalizeAuthHeaderName(profile?.bodyExtra?.authHeader || profile?.bodyExtra?.anthropicAuthHeader) || "authorization";
+    return header === "x-api-key"
+      ? (zh ? "API Key 会作为 x-api-key 发送。" : "API key is sent as x-api-key.")
+      : (zh ? "API Key 会作为 Authorization: Bearer 发送。" : "API key is sent as Authorization: Bearer.");
+  }
+  if (provider === "azure_openai") {
+    return zh ? "默认使用 Bearer；如 Azure 网关要求 api-key，请在自定义 Headers JSON 填写 api-key。" : "Uses Bearer by default; if your Azure gateway requires api-key, set it in Custom headers JSON.";
+  }
+  return zh ? "API Key 会作为 Authorization: Bearer 发送。" : "API key is sent as Authorization: Bearer.";
+}
+
+function providerModelListGuide(profile) {
+  try {
+    const request = modelListRequestForProfile(profile);
+    return request?.url || "";
+  } catch (_err) {
+    return "";
+  }
+}
+
+function providerLiveVerifyGuide(profile, provider = providerFromProfile(profile)) {
+  const entry = providerLiveVerifyCase(profile, provider);
+  const baseURL = String(profile?.baseURL || providerDefaults(provider).baseURL || "").trim();
+  const model = String(profile?.model || "").trim();
+  const assignments = [];
+  if (!entry.apiKeyOptional) assignments.push(`${entry.apiKeyEnv}=...`);
+  if (entry.modelEnv) assignments.push(`${entry.modelEnv}=${providerGuideEnvValue(model || "...")}`);
+  if (entry.baseURLEnv && entry.includeBaseURL) assignments.push(`${entry.baseURLEnv}=${providerGuideEnvValue(baseURL || "...")}`);
+  const prefix = assignments.join(" ");
+  const liveCommand = `${prefix ? `${prefix} ` : ""}npm run verify:provider:live -- --include ${entry.include}`;
+  const modelAssignments = assignments.filter((item) => !item.startsWith(`${entry.modelEnv}=`));
+  const modelPrefix = modelAssignments.join(" ");
+  const modelsCommand = `${modelPrefix ? `${modelPrefix} ` : ""}npm run verify:provider:models:live -- --include ${entry.include}`;
+  return { ...entry, liveCommand, modelsCommand };
+}
+
+function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)) {
+  const endpoint = endpointForProfileSafe(profile);
+  const apiKeyOptional = isLocalAgentProfile(profile) || isLocalEndpoint(endpoint);
+  if (provider === "openai") {
+    return { include: "openai", apiKeyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL", baseURLEnv: "OPENAI_BASE_URL", includeBaseURL: false, apiKeyOptional };
+  }
+  if (provider === "anthropic") {
+    return { include: "anthropic", apiKeyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL", baseURLEnv: "ANTHROPIC_BASE_URL", includeBaseURL: false, apiKeyOptional };
+  }
+  if (profile?.protocol === "openai_responses") {
+    return { include: "openai-responses-compatible", apiKeyEnv: "OPENAI_RESPONSES_COMPATIBLE_API_KEY", modelEnv: "OPENAI_RESPONSES_COMPATIBLE_MODEL", baseURLEnv: "OPENAI_RESPONSES_COMPATIBLE_BASE_URL", includeBaseURL: true, apiKeyOptional };
+  }
+  if (profile?.protocol === "anthropic_messages") {
+    return { include: "anthropic-compatible", apiKeyEnv: "ANTHROPIC_COMPATIBLE_API_KEY", modelEnv: "ANTHROPIC_COMPATIBLE_MODEL", baseURLEnv: "ANTHROPIC_COMPATIBLE_BASE_URL", includeBaseURL: true, apiKeyOptional };
+  }
+  return { include: "openai-compatible", apiKeyEnv: "OPENAI_COMPATIBLE_API_KEY", modelEnv: "OPENAI_COMPATIBLE_MODEL", baseURLEnv: "OPENAI_COMPATIBLE_BASE_URL", includeBaseURL: true, apiKeyOptional };
+}
+
+function providerGuideEnvValue(value) {
+  const text = String(value || "...");
+  if (text === "...") return text;
+  return /^[A-Za-z0-9_./:@-]+$/.test(text) ? text : JSON.stringify(text);
 }
 
 function endpointForProfileSafe(profile) {

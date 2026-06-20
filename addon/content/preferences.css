@@ -34,6 +34,19 @@
   font-family: monospace;
 }
 
+.zms-provider-guide {
+  width: 58em;
+  min-height: 7em;
+  margin: 0;
+  padding: 10px;
+  white-space: pre-wrap;
+  border: 1px solid #cfd8e3;
+  border-radius: 6px;
+  background: #f6f8fb;
+  color: #1f2937;
+  font-family: monospace;
+}
+
 .zms-prompt {
   width: 58em;
   min-height: 7em;

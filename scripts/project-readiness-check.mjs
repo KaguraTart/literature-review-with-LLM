@@ -232,6 +232,12 @@ const SOURCE_MARKERS = [
     markers: ["extractProviderConnectionText", "connectionTestBodyForProfile", "Provider error", "No text returned from model", "input_text", "builds workbench settings connection tests with generation-compatible request bodies", "marks settings connection tests OK only after extracting model text", "fails settings connection tests when a 200 response still contains a provider error"]
   },
   {
+    id: "provider.settings-guide",
+    description: "Settings page shows a provider setup guide with endpoint, auth, capability, and live-check commands without exposing API keys",
+    files: ["addon/content/preferences.xhtml", "addon/content/preferences.js", "addon/content/messages.js", "tests/preferencesLocalAgent.test.ts"],
+    markers: ["zms-providerGuide", "providerSetupGuide", "providerLiveVerifyGuide", "OPENAI_COMPATIBLE_BASE_URL", "ANTHROPIC_COMPATIBLE_BASE_URL", "not.toContain", "routed-secret", "providerGuide"]
+  },
+  {
     id: "provider.retry-boundary",
     description: "Provider requests retry only retryable HTTP failures and fail fast on bad credentials or invalid requests",
     files: ["addon/bootstrap.js", "addon/content/workbench.js", "tests/bootstrapProvider.test.ts", "tests/workbenchWriteback.test.ts"],

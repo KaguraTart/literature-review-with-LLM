@@ -12,7 +12,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 - **Paper-first chat inside Zotero**: open a compact workbench from the selected item and keep the conversation anchored to the current paper.
 - **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, export evidence-labeled paper reading logs, proposal notes, journal/report outlines, and formal review drafts, and write selected answers back with a preview step.
-- **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page.
+- **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page with an in-app setup guide and live-check command template.
 - **Multi-paper comparison and literature matrix**: when multiple Zotero items are selected, the first item becomes the focal paper and the rest become comparison context; the workbench can export an evidence-labeled Markdown literature matrix, and the built-in `Literature Matrix` skill can continue the analysis with an LLM.
 - **Collection synthesis workspace**: collection batch runs write `papers.json`, paper-note indexes, method matrices, research-gap matrices, heuristic topic clusters, synthesis-claims matrices, research-question cards, idea lists, a manual review draft scaffold, and a formal review report scaffold.
 - **Image questions and figure extraction**: paste screenshots, drop images, or choose local image files; the built-in `Figure/Table Extractor` skill turns paper figures, tables, and result panels into structured Markdown.
@@ -81,6 +81,7 @@ Important fields:
 - `Base URL`: provider endpoint root, for example `https://api.openai.com/v1` or `http://127.0.0.1:11434/v1`.
 - `API Key`: provider API key. Local providers such as Ollama may not require one.
 - `Model`: model name used by the selected provider.
+- `Setup guide`: shows the resolved protocol, request endpoint, auth behavior, model-list endpoint, supported inputs, and a copyable terminal live-check command without showing the saved API key.
 - `输入模式`: choose extracted text or raw PDF input where supported.
 - `流式输出`: enable streaming responses when the provider profile supports it.
 - `输出目录`: where Markdown summaries, sessions, candidate files, and logs are written.
@@ -238,7 +239,7 @@ build/update.json
 - Improve cross-collection clustering and continue polishing collection-level synthesis claims and report generation.
 - Improve structured extraction quality for screenshots, PDF figures, tables, and experimental results with local OCR/table reconstruction.
 - Add richer candidate-paper review workflows after the current configurable citation-network policies.
-- Add per-provider setup guides with screenshots.
+- Add more per-provider screenshots and tutorial examples beyond the in-app setup guide.
 - Continue polishing proposal-note and journal/report-outline templates, and add more domain-specific writing formats.
 
 ## Security and Privacy

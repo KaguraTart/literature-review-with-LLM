@@ -34,6 +34,7 @@ function loadPreferencesHelpers() {
     providerFromProfile: (profile: any) => string;
     builtInSkillTemplate: (skillId: string, outputLanguage: string) => string;
     providerDefaults: (provider: string) => any;
+    providerSetupGuide: (profile: any, language?: string) => string;
     defaultProviderProfiles: () => any[];
     mergeDefaultProviderProfiles: (profiles: any[]) => any[];
     normalizeProviderProfile: (profile: any) => any;
@@ -137,6 +138,7 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
   createElement("zms-model-options", { localName: "datalist" });
   createElement("zms-profile-options", { localName: "datalist" });
   createElement("zms-profileStatus", { localName: "pre" });
+  createElement("zms-providerGuide", { localName: "pre" });
   setChecked("zms-stream", false);
   setChecked("zms-profileLocalAgentFallback", false);
   setChecked("zms-profileLocalAgentEnabled", false);
@@ -1324,6 +1326,70 @@ describe("preferences local-agent config helpers", () => {
     expect(summary).toContain("Authentication configured");
     expect(summary).not.toContain("sk-test-secret");
     expect(summary).not.toContain("routed-secret");
+  });
+
+  it("renders a provider setup guide with endpoint and live-check commands", () => {
+    const helpers = loadPreferencesHelpers();
+    const guide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("openai"),
+      apiKey: "sk-test-secret",
+      model: "gpt-4.1"
+    }, "en-US");
+
+    expect(guide).toContain("Protocol: OpenAI Responses");
+    expect(guide).toContain("Request endpoint: https://api.openai.com/v1/responses");
+    expect(guide).toContain("OPENAI_API_KEY=...");
+    expect(guide).toContain("OPENAI_MODEL=gpt-4.1");
+    expect(guide).toContain("npm run verify:provider:live -- --include openai");
+    expect(guide).toContain("npm run verify:provider:models:live -- --include openai");
+    expect(guide).not.toContain("sk-test-secret");
+  });
+
+  it("uses compatible live-check variables for Anthropic-style routers", () => {
+    const helpers = loadPreferencesHelpers();
+    const guide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("anthropic_compatible"),
+      apiKey: "anthropic-secret",
+      model: "claude-router",
+      baseURL: "https://router.example/anthropic"
+    }, "en-US");
+
+    expect(guide).toContain("Protocol: Anthropic Messages");
+    expect(guide).toContain("ANTHROPIC_COMPATIBLE_API_KEY=...");
+    expect(guide).toContain("ANTHROPIC_COMPATIBLE_MODEL=claude-router");
+    expect(guide).toContain("ANTHROPIC_COMPATIBLE_BASE_URL=https://router.example/anthropic");
+    expect(guide).toContain("--include anthropic-compatible");
+    expect(guide).not.toContain("anthropic-secret");
+  });
+
+  it("treats local OpenAI-compatible endpoints as API-key optional in setup guides", () => {
+    const helpers = loadPreferencesHelpers();
+    const guide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("openai_compatible"),
+      baseURL: "http://127.0.0.1:11434/v1",
+      apiKey: "",
+      model: "qwen3"
+    }, "en-US");
+
+    expect(guide).toContain("Local endpoint; API key is usually optional");
+    expect(guide).toContain("OPENAI_COMPATIBLE_MODEL=qwen3");
+    expect(guide).toContain("OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1");
+    expect(guide).toContain("--include openai-compatible");
+    expect(guide).not.toContain("OPENAI_COMPATIBLE_API_KEY=...");
+  });
+
+  it("updates the settings provider guide from edited fields", () => {
+    const { controller, elements } = loadPreferencesController({ initialModel: "gpt-4.1" });
+    elements.get("zms-profileCustomHeaders").value = "{\"Authorization\":\"Bearer routed-secret\"}";
+
+    const guide = controller.refreshProviderGuide();
+
+    expect(guide).toContain("Active profile: OpenAI");
+    expect(guide).toContain("Request endpoint: https://api.openai.com/v1/responses");
+    expect(guide).toContain("OPENAI_API_KEY=...");
+    expect(elements.get("zms-providerGuide").textContent).toBe(guide);
+    expect(guide).not.toContain("sk-test-secret");
+    expect(guide).not.toContain("routed-secret");
   });
 
   it("saves edited API key and model into the active provider profile", () => {
