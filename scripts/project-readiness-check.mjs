@@ -276,9 +276,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "provider.model-list-pagination",
-    description: "Settings model list loading follows bounded pagination cursors",
-    files: ["addon/content/preferences.js"],
-    markers: ["fetchModelOptions", "nextModelListURL", "MODEL_LIST_MAX_PAGES"]
+    description: "Settings and workbench model list loading follow bounded pagination cursors",
+    files: ["addon/content/preferences.js", "addon/content/workbench.js", "tests/workbenchSession.test.ts"],
+    markers: ["fetchModelOptions", "nextModelListURL", "MODEL_LIST_MAX_PAGES", "workbenchFetchModelOptions", "workbenchNextModelListURL", "WORKBENCH_MODEL_LIST_MAX_PAGES", "follows bounded wrapped model-list pagination in the workbench"]
   },
   {
     id: "local-agents.bridge",

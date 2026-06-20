@@ -3,8 +3,9 @@ import { resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
-function loadWorkbenchHelpers() {
+function loadWorkbenchHelpers(options: { fetchResponses?: any[] } = {}) {
   const code = readFileSync(resolve(process.cwd(), "addon/content/workbench.js"), "utf8");
+  const fetchCalls: Array<{ url: string; init: any }> = [];
   const context: any = createContext({
     window: { parent: undefined, location: { search: "" }, arguments: [] },
     navigator: { clipboard: { writeText() { return Promise.resolve(); } } },
@@ -34,17 +35,29 @@ function loadWorkbenchHelpers() {
       body: { appendChild() {} }
     },
     console,
+    fetch: async (url: string, init: any) => {
+      const responseIndex = fetchCalls.length;
+      fetchCalls.push({ url, init });
+      const payload = options.fetchResponses?.[Math.min(responseIndex, (options.fetchResponses?.length || 1) - 1)] || { data: [] };
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify(payload)
+      };
+    },
     setTimeout: () => 0,
     URL,
     Date
   });
   runInContext(code, context, { filename: "workbench.js" });
-  return context as {
+  return Object.assign(context, { fetchCalls }) as {
+    fetchCalls: Array<{ url: string; init: any }>;
     renderSessionAsMarkdown: (messages: any[], t: (k: string) => string, compactionSummary?: string) => string;
     requestMessagesWithHistory: (messages: any[], latestUserText: string, requestPrompt: string, options?: any) => any[];
     sessionIdFromPath: (path: string) => string;
     sessionLabelFromPath: (path: string) => string;
     workbenchModelListRequestForProfile: (profile: any) => { url: string; headers: Record<string, string> } | null;
+    workbenchFetchModelOptions: (request: { url: string; headers: Record<string, string> }) => Promise<Array<{ id: string; label: string }>>;
     workbenchModelOptionsFromItems: (source: any[]) => Array<{ id: string; label: string }>;
     extractResponseText: (protocol: string, data: any) => string;
     providerUsageFromResponse: (data: any) => any;
@@ -182,6 +195,42 @@ describe("workbench session helpers", () => {
       { id: "name-only-model", label: "name-only-model" },
       { id: "router-model", label: "Router Model" },
       { id: "string-model", label: "string-model" }
+    ]);
+  });
+
+  it("follows bounded wrapped model-list pagination in the workbench", async () => {
+    const paged = loadWorkbenchHelpers({
+      fetchResponses: [
+        {
+          result: {
+            data: [{ id: "model-b" }],
+            has_more: true,
+            last_id: "model-b"
+          }
+        },
+        {
+          payload: {
+            models: [{ id: "model-a", display_name: "Model A" }, { id: "model-b", display_name: "Duplicate" }],
+            has_more: false
+          }
+        }
+      ]
+    });
+
+    const options = await paged.workbenchFetchModelOptions({
+      url: "https://router.example/v1/models",
+      headers: { authorization: "Bearer sk-test-secret" }
+    });
+
+    expect(paged.fetchCalls).toHaveLength(2);
+    expect(paged.fetchCalls[0]).toMatchObject({
+      url: "https://router.example/v1/models",
+      init: { method: "GET", headers: { authorization: "Bearer sk-test-secret" } }
+    });
+    expect(paged.fetchCalls[1].url).toBe("https://router.example/v1/models?after_id=model-b");
+    expect(options).toEqual([
+      { id: "model-a", label: "Model A" },
+      { id: "model-b", label: "model-b" }
     ]);
   });
 
