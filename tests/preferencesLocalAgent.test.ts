@@ -700,6 +700,12 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.modelIdsFromResponse({
       models: [{ name: "custom-a" }, "custom-b", { model: "custom-c" }]
     })).toEqual(["custom-a", "custom-b", "custom-c"]);
+    expect(helpers.modelIdsFromResponse({
+      result: { data: [{ id: "wrapped-a" }] }
+    })).toEqual(["wrapped-a"]);
+    expect(helpers.modelIdsFromResponse({
+      payload: { models: [{ id: "wrapped-b" }] }
+    })).toEqual(["wrapped-b"]);
     expect(helpers.modelIdsFromResponse({ data: [{ id: "same" }, { id: "same" }] })).toEqual(["same"]);
     expect(helpers.modelOptionsFromResponse({
       data: [
@@ -1532,6 +1538,34 @@ describe("preferences local-agent config helpers", () => {
     expect(fetchCalls[1].url).toBe("https://api.openai.com/v1/models?after_id=model-b");
     expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toEqual(["model-a", "model-b", "model-c"]);
     expect(elements.get("zms-status").value).toBe("Models loaded: 3");
+  });
+
+  it("loads wrapped model-list pages in settings", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      fetchResponses: [
+        {
+          result: {
+            data: [{ id: "model-b" }],
+            has_more: true,
+            last_id: "model-b"
+          }
+        },
+        {
+          payload: {
+            models: [{ id: "model-a", display_name: "Model A" }]
+          }
+        }
+      ]
+    });
+
+    await controller.loadModels();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[1].url).toBe("https://api.openai.com/v1/models?after_id=model-b");
+    const options = elements.get("zms-model-options").children;
+    expect(options.map((option: any) => option.value)).toEqual(["model-a", "model-b"]);
+    expect(options.find((option: any) => option.value === "model-a")?.label).toBe("Model A");
+    expect(elements.get("zms-status").value).toBe("Models loaded: 2");
   });
 
   it("loads model options with a custom authorization header and empty API key", async () => {

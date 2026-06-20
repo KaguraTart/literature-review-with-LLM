@@ -6754,28 +6754,62 @@ async function workbenchFetchModelOptions(request) {
   return workbenchModelOptionsFromItems(items);
 }
 
-function workbenchModelListItemsFromResponse(data) {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.data)) return data.data;
-  if (Array.isArray(data?.models)) return data.models;
-  if (Array.isArray(data?.model)) return data.model;
+function workbenchModelListItemsFromResponse(data, depth = 0) {
+  const direct = workbenchDirectModelListItemsFromResponse(data);
+  if (direct.length) return direct;
+  if (depth >= 2 || !data || typeof data !== "object" || Array.isArray(data)) return [];
+  for (const key of ["result", "payload", "response", "data"]) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const items = workbenchModelListItemsFromResponse(value, depth + 1);
+    if (items.length) return items;
+  }
   return [];
 }
 
 function workbenchNextModelListURL(currentUrl, data) {
-  if (!data || typeof data !== "object") return "";
-  const direct = workbenchStringField(data.next_page, data.nextPage, data.next);
+  const envelope = workbenchModelListPaginationEnvelope(data);
+  if (!envelope) return "";
+  const direct = workbenchStringField(envelope.next_page, envelope.nextPage, envelope.next);
   if (direct) return workbenchModelListURLFromNextValue(currentUrl, direct);
-  if (data.has_more !== true && data.hasMore !== true) return "";
+  if (envelope.has_more !== true && envelope.hasMore !== true) return "";
   const pairs = [
-    ["after_id", workbenchStringField(data.last_id, data.lastId, data.after_id, data.afterId)],
-    ["page_token", workbenchStringField(data.next_page_token, data.nextPageToken, data.next_token, data.nextToken)],
-    ["after", workbenchStringField(data.next_cursor, data.nextCursor, data.cursor, data.after)]
+    ["after_id", workbenchStringField(envelope.last_id, envelope.lastId, envelope.after_id, envelope.afterId)],
+    ["page_token", workbenchStringField(envelope.next_page_token, envelope.nextPageToken, envelope.next_token, envelope.nextToken)],
+    ["after", workbenchStringField(envelope.next_cursor, envelope.nextCursor, envelope.cursor, envelope.after)]
   ];
   for (const [param, token] of pairs) {
     if (token) return workbenchUrlWithQueryParam(currentUrl, param, token);
   }
   return "";
+}
+
+function workbenchDirectModelListItemsFromResponse(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.models)) return data.models;
+  if (Array.isArray(data?.model)) return data.model;
+  if (Array.isArray(data?.items)) return data.items;
+  return [];
+}
+
+function workbenchModelListPaginationEnvelope(data, depth = 0) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  if (workbenchHasModelListPaginationFields(data)) return data;
+  if (depth >= 2) return null;
+  for (const key of ["result", "payload", "response", "data"]) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const envelope = workbenchModelListPaginationEnvelope(value, depth + 1);
+    if (envelope) return envelope;
+  }
+  return null;
+}
+
+function workbenchHasModelListPaginationFields(data) {
+  return !!workbenchStringField(data?.next_page, data?.nextPage, data?.next)
+    || data?.has_more === true
+    || data?.hasMore === true;
 }
 
 function workbenchModelListURLFromNextValue(currentUrl, nextValue) {

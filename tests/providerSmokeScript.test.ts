@@ -1215,11 +1215,13 @@ async function withLiveMockProvider(
 function liveMockResponse(path: string) {
   if (path.endsWith("/models")) {
     return {
-      data: [
-        { id: "live-model-a", display_name: "Live Model A" },
-        { id: "live-model-b", display_name: "Live Model B" }
-      ],
-      has_more: false
+      result: {
+        data: [
+          { id: "live-model-a", display_name: "Live Model A" },
+          { id: "live-model-b", display_name: "Live Model B" }
+        ],
+        has_more: false
+      }
     };
   }
   if (path.endsWith("/responses")) return { output_text: "OK live responses" };

@@ -1062,14 +1062,15 @@ async function fetchModelOptions(request) {
 }
 
 function nextModelListURL(currentUrl, data) {
-  if (!data || typeof data !== "object") return "";
-  const direct = stringField(data.next_page, data.nextPage, data.next);
+  const envelope = modelListPaginationEnvelope(data);
+  if (!envelope) return "";
+  const direct = stringField(envelope.next_page, envelope.nextPage, envelope.next);
   if (direct) return modelListURLFromNextValue(currentUrl, direct);
-  if (data.has_more !== true && data.hasMore !== true) return "";
+  if (envelope.has_more !== true && envelope.hasMore !== true) return "";
   const tokenPairs = [
-    ["after_id", stringField(data.last_id, data.lastId, data.after_id, data.afterId)],
-    ["page_token", stringField(data.next_page_token, data.nextPageToken, data.next_token, data.nextToken)],
-    ["after", stringField(data.next_cursor, data.nextCursor, data.cursor, data.after)]
+    ["after_id", stringField(envelope.last_id, envelope.lastId, envelope.after_id, envelope.afterId)],
+    ["page_token", stringField(envelope.next_page_token, envelope.nextPageToken, envelope.next_token, envelope.nextToken)],
+    ["after", stringField(envelope.next_cursor, envelope.nextCursor, envelope.cursor, envelope.after)]
   ];
   for (const [param, token] of tokenPairs) {
     if (token) return urlWithQueryParam(currentUrl, param, token);
@@ -1137,7 +1138,20 @@ async function fetchOllamaTags(profile) {
     .filter(Boolean);
 }
 
-function modelListItemsFromResponse(data) {
+function modelListItemsFromResponse(data, depth = 0) {
+  const direct = directModelListItemsFromResponse(data);
+  if (direct.length) return direct;
+  if (depth >= 2 || !data || typeof data !== "object" || Array.isArray(data)) return [];
+  for (const key of ["result", "payload", "response", "data"]) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const items = modelListItemsFromResponse(value, depth + 1);
+    if (items.length) return items;
+  }
+  return [];
+}
+
+function directModelListItemsFromResponse(data) {
   const source = Array.isArray(data)
     ? data
     : Array.isArray(data?.data)
@@ -1146,8 +1160,29 @@ function modelListItemsFromResponse(data) {
         ? data.models
         : Array.isArray(data?.model)
           ? data.model
-          : [];
+          : Array.isArray(data?.items)
+            ? data.items
+            : [];
   return source;
+}
+
+function modelListPaginationEnvelope(data, depth = 0) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  if (hasModelListPaginationFields(data)) return data;
+  if (depth >= 2) return null;
+  for (const key of ["result", "payload", "response", "data"]) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const envelope = modelListPaginationEnvelope(value, depth + 1);
+    if (envelope) return envelope;
+  }
+  return null;
+}
+
+function hasModelListPaginationFields(data) {
+  return !!stringField(data?.next_page, data?.nextPage, data?.next)
+    || data?.has_more === true
+    || data?.hasMore === true;
 }
 
 function modelOptionFromItem(item) {

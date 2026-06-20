@@ -141,6 +141,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     TextDecoder,
     AbortController,
     ReadableStream,
+    URL,
     console
   };
   const context = createContext(sandbox);
@@ -953,6 +954,46 @@ describe("workbench writeback helpers", () => {
       url: "https://api.openai.com/v1/models",
       headers: { authorization: "Bearer sk-test-secret" }
     })).rejects.toThrow("Provider error: invalid_api_key - Bad key [redacted]");
+  });
+
+  it("loads wrapped model-list pages in the workbench", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: string[] = [];
+    const responses = [
+      {
+        result: {
+          data: [{ id: "model-b" }],
+          has_more: true,
+          last_id: "model-b"
+        }
+      },
+      {
+        payload: {
+          models: [{ id: "model-a", display_name: "Model A" }]
+        }
+      }
+    ];
+    loaded.fetch = async (url: string) => {
+      fetchCalls.push(url);
+      const payload = responses[Math.min(fetchCalls.length - 1, responses.length - 1)];
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify(payload)
+      };
+    };
+
+    await expect(loaded.workbenchFetchModelOptions({
+      url: "https://api.openai.com/v1/models",
+      headers: { authorization: "Bearer sk-test-secret" }
+    })).resolves.toEqual([
+      { id: "model-a", label: "Model A" },
+      { id: "model-b", label: "" }
+    ]);
+    expect(fetchCalls).toEqual([
+      "https://api.openai.com/v1/models",
+      "https://api.openai.com/v1/models?after_id=model-b"
+    ]);
   });
 
   it("validates remote profile credentials before sending provider requests", () => {
