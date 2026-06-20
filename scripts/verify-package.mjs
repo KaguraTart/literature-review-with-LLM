@@ -509,6 +509,8 @@ const requiredMarkers = [
   [workbenchJs, "renderProviderDiagnosticsMarkdown", "provider diagnostics report renderer"],
   [workbenchJs, "provider-diagnostics-v1", "provider diagnostics report template version"],
   [workbenchJs, "providerLiveVerifyGuideForWorkbench", "provider diagnostics live-check command builder"],
+  [workbenchJs, "providerRequestPreviews", "provider diagnostics request preview builder"],
+  [workbenchJs, "sanitizeProviderRequestPreview", "provider diagnostics request preview redaction"],
   [workbenchJs, "openaiResponsesInput", "structured OpenAI Responses input in workbench"],
   [workbenchJs, "jsonModeBodyDefaults", "workbench JSON mode request defaults"],
   [workbenchJs, "hasExplicitAuthHeader", "workbench explicit auth header preservation"],

@@ -1228,7 +1228,11 @@ describe("workbench writeback helpers", () => {
       model: "deepseek-chat",
       capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true, modelList: true },
       customHeaders: { Authorization: "Bearer routed-secret", "X-Trace": "trace-value" },
-      bodyExtra: {}
+      bodyExtra: {
+        api_key: "body-secret",
+        metadata: { token: "nested-secret" },
+        extra_body: { reasoning_split: true }
+      }
     }, {
       outputLanguage: "en-US",
       generatedAt: "2026-06-20T00:00:00.000Z",
@@ -1244,9 +1248,67 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("DEEPSEEK_MODEL=deepseek-chat");
     expect(report).toContain("npm run verify:provider:live -- --include deepseek");
     expect(report).toContain("`Authorization`");
+    expect(report).toContain("## Redacted Request Preview");
+    expect(report).toContain("### text");
+    expect(report).toContain("### image");
+    expect(report).toContain("\"messages\"");
+    expect(report).toContain("\"image_url\"");
+    expect(report).toContain("data:image/png;base64,[omitted]");
+    expect(report).toContain("\"api_key\": \"[redacted]\"");
+    expect(report).toContain("\"token\": \"[redacted]\"");
+    expect(report).toContain("\"reasoning_split\": true");
     expect(report).not.toContain("sk-test-secret");
     expect(report).not.toContain("routed-secret");
+    expect(report).not.toContain("body-secret");
+    expect(report).not.toContain("nested-secret");
     expect(report).not.toContain("trace-value");
+  });
+
+  it("renders raw PDF request previews for Responses and Anthropic profiles", () => {
+    const openAIReport = helpers.renderProviderDiagnosticsMarkdown({
+      id: "openai",
+      name: "OpenAI",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test-secret",
+      model: "response-model",
+      capabilities: { text: true, imageBase64: true, pdfBase64: true, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {}
+    }, {
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+
+    expect(openAIReport).toContain("### raw PDF");
+    expect(openAIReport).toContain("\"input_file\"");
+    expect(openAIReport).toContain("data:application/pdf;base64,[omitted]");
+    expect(openAIReport).not.toContain("JVBERi0=");
+    expect(openAIReport).not.toContain("sk-test-secret");
+
+    const anthropicReport = helpers.renderProviderDiagnosticsMarkdown({
+      id: "anthropic",
+      name: "Anthropic",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "anthropic-secret",
+      model: "claude-model",
+      capabilities: { text: true, imageBase64: true, pdfBase64: true, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {}
+    }, {
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+
+    expect(anthropicReport).toContain("### raw PDF");
+    expect(anthropicReport).toContain("\"document\"");
+    expect(anthropicReport).toContain("\"media_type\": \"application/pdf\"");
+    expect(anthropicReport).toContain("\"data\": \"[omitted]\"");
+    expect(anthropicReport).not.toContain("JVBERi0=");
+    expect(anthropicReport).not.toContain("anthropic-secret");
   });
 
   it("exports provider diagnostics from the latest workbench settings", async () => {

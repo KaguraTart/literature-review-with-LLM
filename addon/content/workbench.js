@@ -2199,6 +2199,7 @@ function renderProviderDiagnosticsMarkdown(profile, options = {}) {
   const auth = providerAuthDiagnostics(profile, labels);
   const capabilities = providerCapabilityRows(profile, labels);
   const headerNames = diagnosticHeaderNamesForProfile(profile);
+  const previews = providerRequestPreviews(profile, labels);
   const generatedAt = options.generatedAt || new Date().toISOString();
   const statusText = String(options.statusText || profileStatusText(profile)).trim();
   const lines = [
@@ -2242,6 +2243,10 @@ function renderProviderDiagnosticsMarkdown(profile, options = {}) {
     `- ${labels.modelListEndpoint}: ${mdText(modelList || labels.modelListUnavailable)}`,
     `- ${labels.defaultBaseURL}: ${mdText(defaults.baseURL || labels.notConfigured)}`,
     `- ${labels.baseURLDiffers}: ${providerBaseURLDiffersForWorkbench(profile, provider) ? labels.yes : labels.no}`,
+    "",
+    `## ${labels.requestPreview}`,
+    "",
+    providerRequestPreviewMarkdown(previews, labels),
     "",
     `## ${labels.liveChecks}`,
     "",
@@ -2307,6 +2312,14 @@ function providerDiagnosticsLabels(outputLanguage) {
       modelListEndpoint: "模型列表 endpoint",
       defaultBaseURL: "默认 Base URL",
       baseURLDiffers: "是否偏离默认值",
+      requestPreview: "脱敏请求预览",
+      previewKind: "输入类型",
+      previewTopFields: "顶层字段",
+      previewBody: "请求体",
+      previewUnavailable: "无法生成预览",
+      previewText: "文本",
+      previewImage: "图片",
+      previewPdf: "原始 PDF",
       liveChecks: "终端 live 检查",
       statusSnapshot: "当前状态快照",
       troubleshooting: "排查清单",
@@ -2361,6 +2374,14 @@ function providerDiagnosticsLabels(outputLanguage) {
     modelListEndpoint: "Model-list endpoint",
     defaultBaseURL: "Default Base URL",
     baseURLDiffers: "Differs from default",
+    requestPreview: "Redacted Request Preview",
+    previewKind: "Input type",
+    previewTopFields: "Top-level fields",
+    previewBody: "Request body",
+    previewUnavailable: "Preview unavailable",
+    previewText: "text",
+    previewImage: "image",
+    previewPdf: "raw PDF",
     liveChecks: "Terminal Live Checks",
     statusSnapshot: "Current Status Snapshot",
     troubleshooting: "Troubleshooting Checklist",
@@ -2394,6 +2415,91 @@ function providerCapabilityRows(profile, labels) {
     { label: labels.capModelList, enabled: capabilities.modelList !== false },
     { label: labels.capToolUse, enabled: capabilities.toolUse === true }
   ];
+}
+
+function providerRequestPreviews(profile, labels = providerDiagnosticsLabels()) {
+  const inputs = [
+    { kind: labels.previewText, requestInput: {} }
+  ];
+  if (canUseImageInput(profile)) {
+    inputs.push({
+      kind: labels.previewImage,
+      requestInput: {
+        source: "image_attachment",
+        images: [{ name: "diagnostic.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+      }
+    });
+  }
+  if (canUsePdfBase64Input(profile)) {
+    inputs.push({
+      kind: labels.previewPdf,
+      requestInput: {
+        type: "pdf_base64",
+        source: "pdf_base64",
+        filename: "diagnostic.pdf",
+        base64: "JVBERi0="
+      }
+    });
+  }
+  return inputs.map((entry) => {
+    try {
+      const body = bodyForProfile(profile, [{ role: "user", content: "Diagnostic request preview." }], "en-US", "Diagnostic system prompt.", entry.requestInput, false);
+      return {
+        kind: entry.kind,
+        ok: true,
+        topFields: Object.keys(body || {}).sort(),
+        body: sanitizeProviderRequestPreview(body)
+      };
+    } catch (err) {
+      return {
+        kind: entry.kind,
+        ok: false,
+        topFields: [],
+        error: safeError(err)
+      };
+    }
+  });
+}
+
+function providerRequestPreviewMarkdown(previews, labels) {
+  const sections = [];
+  for (const preview of previews || []) {
+    sections.push(`### ${preview.kind}`);
+    if (!preview.ok) {
+      sections.push("", `- ${labels.previewUnavailable}: ${mdText(preview.error || "")}`, "");
+      continue;
+    }
+    sections.push(
+      "",
+      `- ${labels.previewTopFields}: ${preview.topFields.map((field) => `\`${field}\``).join(", ") || labels.none}`,
+      "",
+      "```json",
+      JSON.stringify(preview.body, null, 2),
+      "```",
+      ""
+    );
+  }
+  return sections.length ? sections.join("\n").trim() : `- ${labels.previewUnavailable}`;
+}
+
+function sanitizeProviderRequestPreview(value, key = "") {
+  const normalizedKey = String(key || "").toLowerCase();
+  if (isSensitivePreviewKey(normalizedKey)) return "[redacted]";
+  if (Array.isArray(value)) return value.map((item) => sanitizeProviderRequestPreview(item, key));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([entryKey, entryValue]) => [entryKey, sanitizeProviderRequestPreview(entryValue, entryKey)]));
+  }
+  if (typeof value === "string") {
+    if (/^data:image\/[^;]+;base64,/i.test(value)) return value.replace(/;base64,.+$/i, ";base64,[omitted]");
+    if (/^data:application\/pdf;base64,/i.test(value)) return "data:application/pdf;base64,[omitted]";
+    if (normalizedKey === "base64" || normalizedKey === "file_data" || normalizedKey === "data") return "[omitted]";
+    return redact(value);
+  }
+  return value;
+}
+
+function isSensitivePreviewKey(key) {
+  return /api[_-]?key|secret|token|password|authorization|x-api-key|bearer/i.test(String(key || ""));
 }
 
 function providerAuthDiagnostics(profile, labels = providerDiagnosticsLabels()) {
