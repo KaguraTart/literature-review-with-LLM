@@ -4,14 +4,14 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 [中文说明](README.zh-CN.md)
 
-> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, single-paper reading-log export, proposal-note export, journal/report-outline export, formal review-draft export, first-pass multi-paper comparison with a reusable Markdown literature-matrix report, collection topic-cluster workspace with evidence-backed synthesis claims, a conflict/gap ledger, a synthesis roadmap, a formal review report scaffold, a cross-collection synthesis index/map, and configurable bounded citation-network expansion are in place; richer cross-paper analysis is still being improved.
+> Current status: usable but still early. The core single-paper workflow, image-question flow, figure/table extraction prompt, single-paper reading-log export, proposal-note export with domain writing checklists, journal/report-outline export with domain writing checklists, formal review-draft export, first-pass multi-paper comparison with a reusable Markdown literature-matrix report, collection topic-cluster workspace with evidence-backed synthesis claims, a conflict/gap ledger, a synthesis roadmap, a formal review report scaffold, a cross-collection synthesis index/map, and configurable bounded citation-network expansion are in place; richer cross-paper analysis is still being improved.
 
 ![Zotero paper chat workbench](docs/assets/workbench-chat.png)
 
 ## Highlights
 
 - **Paper-first chat inside Zotero**: open a compact workbench from the selected item and keep the conversation anchored to the current paper.
-- **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, export evidence-labeled paper reading logs, proposal notes, journal/report outlines, and formal review drafts, and write selected answers back with a preview step.
+- **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, export evidence-labeled paper reading logs, proposal notes and journal/report outlines with prompt-pack-specific writing checklists, plus formal review drafts, and write selected answers back with a preview step.
 - **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, GitHub Models, Fireworks AI, Cerebras, NVIDIA NIM, SambaNova, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page with an in-app setup guide and live-check command template.
 - **Provider diagnostics**: OpenAI-compatible, OpenAI Responses, Anthropic, and wrapped router responses are normalized for text, stream errors, model lists, and token usage metadata in saved sessions.
 - **Multi-paper comparison and literature matrix**: when multiple Zotero items are selected, the first item becomes the focal paper and the rest become comparison context; the workbench can export an evidence-labeled Markdown literature matrix, and the built-in `Literature Matrix` skill can continue the analysis with an LLM.
@@ -33,7 +33,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - Ask image-based questions by pasting screenshots, dropping images, or selecting local image files in the workbench; image-only sends use a default image-analysis prompt.
 - Write selected answers back into the Markdown summary with a preview step and backup file.
 - Export a structured paper reading log with context-quality diagnostics, reading checklist, evidence snippets, and reuse-plan fields.
-- Export proposal notes and journal/report outlines with evidence labels, writing-positioning fields, and manual follow-up checklists.
+- Export proposal notes and journal/report outlines with evidence labels, writing-positioning fields, prompt-pack-specific domain writing checklists, and manual follow-up checklists.
 - Export a formal review-draft scaffold with positioning notes, taxonomy tables, evidence-backed draft sections, risk checks, and an evidence index.
 - Configure multiple model providers from Zotero preferences.
 - Generate collection workspace artifacts during collection batch runs, including method matrices, topic clusters, synthesis-claims matrices, synthesis-conflict ledgers, synthesis roadmaps, gap matrices, review-draft scaffolds, and a formal review report scaffold.
@@ -268,7 +268,7 @@ build/update.json
 - Replace the current prompt-level visual OCR/table-reconstruction contract with local OCR, table parsing, and chart-data reconstruction for screenshots, PDF figures, tables, and experimental results.
 - Add true page-accurate source-to-PDF evidence extraction for unannotated PDF text on top of the current screening stages, exclusion reasons, screening board, evidence-chain queue, source-evidence snippets, Zotero indexed full-text snippets with hit context, matched annotation page labels, best-effort page hints, locators and hashes, and configurable citation-network policies.
 - Add more per-provider screenshots and tutorial examples beyond the in-app setup guide.
-- Continue polishing proposal-note and journal/report-outline templates, and add more domain-specific writing formats.
+- Continue adding deeper domain-specific writing formats beyond the current prompt-pack-specific proposal-note and journal/report-outline checklists.
 
 ## Security and Privacy
 

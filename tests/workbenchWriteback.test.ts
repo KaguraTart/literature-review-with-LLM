@@ -2635,14 +2635,19 @@ describe("workbench writeback helpers", () => {
     }, {
       item,
       outputLanguage: "zh-CN",
+      promptPackId: "transportation",
       generatedAt: "2026-06-20T00:00:00.000Z",
       notePath: "/tmp/out/collections/COL/writing/proposal-note-ITEM.md",
       contextSourceHash: "sourcehash"
     });
 
     expect(note).toContain("templateVersion: proposal-note-v1");
+    expect(note).toContain('promptPackId: "transportation"');
     expect(note).toContain("# 开题与课题申报笔记");
     expect(note).toContain("## 选题框架");
+    expect(note).toContain("## 领域化写作格式");
+    expect(note).toContain("交通与城市空域");
+    expect(note).toContain("明确道路/空域/网络约束");
     expect(note).toContain("### 技术路线与方法基础");
     expect(note).toContain("[chunk:proposal-method source=summary locator=summary:1 hash=methodhash]");
     expect(note).toContain("## 风险核查");
@@ -2658,6 +2663,7 @@ describe("workbench writeback helpers", () => {
     const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
     workbench.state.outputDir = "/tmp/out";
     workbench.state.outputLanguage = "en-US";
+    workbench.state.promptPackId = "biomedicine";
     workbench.state.item = {
       key: "ITEM",
       getCollections: () => [10]
@@ -2682,6 +2688,9 @@ describe("workbench writeback helpers", () => {
 
     const notePath = "/tmp/out/collections/COL/writing/proposal-note-ITEM.md";
     expect(files.get(notePath)).toContain("# Proposal Note");
+    expect(files.get(notePath)).toContain('promptPackId: "biomedicine"');
+    expect(files.get(notePath)).toContain("Biomedicine and life sciences");
+    expect(files.get(notePath)).toContain("Define study design, sample or cohort");
     expect(files.get(notePath)).toContain("Proposal Source Paper");
     expect(files.get(notePath)).toContain("[chunk:proposal-method source=summary locator=summary:1 hash=methodhash]");
     expect(dom.elements.get("zms-status").textContent).toContain(`proposalNoteDone: ${notePath}`);
@@ -2730,14 +2739,19 @@ describe("workbench writeback helpers", () => {
     }, {
       item,
       outputLanguage: "zh-CN",
+      promptPackId: "ai-ml",
       generatedAt: "2026-06-20T00:00:00.000Z",
       outlinePath: "/tmp/out/collections/COL/writing/journal-outline-FOC.md",
       contextSourceHash: "sourcehash"
     });
 
     expect(outline).toContain("templateVersion: journal-outline-v1");
+    expect(outline).toContain('promptPackId: "ai-ml"');
     expect(outline).toContain("# 期刊/报告写作提纲");
     expect(outline).toContain("## 投稿/报告定位");
+    expect(outline).toContain("## 领域化写作格式");
+    expect(outline).toContain("AI/ML/系统");
+    expect(outline).toContain("模型类别、数据与评价协议");
     expect(outline).toContain("## 正文提纲");
     expect(outline).toContain("标题与摘要");
     expect(outline).toContain("[chunk:focal-abstract source=summary locator=summary:1 hash=focalhash]");
@@ -2754,6 +2768,7 @@ describe("workbench writeback helpers", () => {
     const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
     workbench.state.outputDir = "/tmp/out";
     workbench.state.outputLanguage = "en-US";
+    workbench.state.promptPackId = "review-writing";
     workbench.state.item = {
       key: "FOC",
       getCollections: () => [10]
@@ -2794,6 +2809,9 @@ describe("workbench writeback helpers", () => {
 
     const outlinePath = "/tmp/out/collections/COL/writing/journal-outline-FOC.md";
     expect(files.get(outlinePath)).toContain("# Journal / Report Outline");
+    expect(files.get(outlinePath)).toContain('promptPackId: "review-writing"');
+    expect(files.get(outlinePath)).toContain("Literature-review writing");
+    expect(files.get(outlinePath)).toContain("Organize related work by taxonomy dimensions");
     expect(files.get(outlinePath)).toContain("Comparison Evidence Paper");
     expect(files.get(outlinePath)).toContain("[paper2:compare-results source=summary locator=summary:1 hash=comparehash]");
     expect(dom.elements.get("zms-status").textContent).toContain(`journalOutlineDone: ${outlinePath}`);

@@ -421,10 +421,13 @@ const SOURCE_MARKERS = [
       "renderProposalNoteMarkdown",
       "proposalNoteMarkdownPath",
       "templateVersion: proposal-note-v1",
+      "proposalDomainChecklist",
       "exportJournalOutline",
       "renderJournalOutlineMarkdown",
       "journalOutlineMarkdownPath",
       "templateVersion: journal-outline-v1",
+      "journalDomainChecklist",
+      "Domain Writing Format",
       "proposalNoteDone",
       "journalOutlineDone"
     ]

@@ -1492,7 +1492,8 @@ var ZoteroMarkdownSummaryWorkbench = {
         outputLanguage: this.state.outputLanguage,
         generatedAt: now,
         notePath,
-        contextSourceHash: this.state.contextSourceHash
+        contextSourceHash: this.state.contextSourceHash,
+        promptPackId: this.state.promptPackId
       }), `${notePath}.${Date.now()}.tmp`);
       this.setStatus(`${this.t("proposalNoteDone")}: ${notePath}`);
     } catch (err) {
@@ -1516,7 +1517,8 @@ var ZoteroMarkdownSummaryWorkbench = {
         outputLanguage: this.state.outputLanguage,
         generatedAt: now,
         outlinePath,
-        contextSourceHash: this.state.contextSourceHash
+        contextSourceHash: this.state.contextSourceHash,
+        promptPackId: this.state.promptPackId
       }), `${outlinePath}.${Date.now()}.tmp`);
       this.setStatus(`${this.t("journalOutlineDone")}: ${outlinePath}`);
     } catch (err) {
@@ -4025,6 +4027,8 @@ function renderProposalNoteMarkdown(context, options = {}) {
   const generatedAt = options.generatedAt || new Date().toISOString();
   const itemKey = options.item?.key || "";
   const collectionKey = workbenchCollectionKey(options.item);
+  const promptPackId = normalizePromptPackId(options.promptPackId || "general");
+  const domainChecklist = proposalDomainChecklist(promptPackId, labels);
   const sections = proposalNoteSections(labels);
   const lines = [
     "---",
@@ -4032,6 +4036,7 @@ function renderProposalNoteMarkdown(context, options = {}) {
     `generatedAt: ${generatedAt}`,
     `collectionKey: ${yamlScalar(collectionKey)}`,
     `itemKey: ${yamlScalar(itemKey)}`,
+    `promptPackId: ${yamlScalar(promptPackId)}`,
     `contextSourceHash: ${yamlScalar(options.contextSourceHash || "")}`,
     `notePath: ${yamlScalar(options.notePath || "")}`,
     "---",
@@ -4060,6 +4065,11 @@ function renderProposalNoteMarkdown(context, options = {}) {
     `- ${labels.researchObject}: `,
     `- ${labels.scopeBoundary}: `,
     `- ${labels.expectedContribution}: `,
+    "",
+    `## ${labels.domainWritingFormat}`,
+    "",
+    `- ${labels.promptPack}: ${mdText(domainChecklist.title)}`,
+    ...domainChecklist.items.map((item) => `- [ ] ${item}`),
     "",
     `## ${labels.sections}`,
     ""
@@ -4122,6 +4132,94 @@ function proposalOverviewDimension(labels) {
   };
 }
 
+function proposalDomainChecklist(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const title = zh ? domainPackLabelZh(id) : domainPackLabelEn(id);
+  const packs = zh ? {
+    "ai-ml": [
+      "明确模型输入输出、训练目标、baseline 与公平对照。",
+      "列出数据集、指标、消融、算力预算和复现成本。",
+      "把失败模式、泛化边界和安全风险写进可行性分析。"
+    ],
+    transportation: [
+      "明确道路/空域/网络约束、需求流量和运行管理场景。",
+      "列出安全、效率、鲁棒性、可扩展性和仿真/实测数据条件。",
+      "说明路径规划、控制策略或调度机制如何落到工程验证。"
+    ],
+    biomedicine: [
+      "明确研究设计、样本/队列、干预或暴露和终点指标。",
+      "列出偏倚来源、统计不确定性、伦理边界和数据合规要求。",
+      "区分机制解释、临床相关性和不能直接外推的结论。"
+    ],
+    "social-science": [
+      "明确理论框架、变量构造、测量有效性和样本代表性。",
+      "列出因果识别策略、混杂因素、外部有效性和政策边界。",
+      "把可证伪假设与替代解释写进研究设计。"
+    ],
+    "review-writing": [
+      "明确综述分类维度、代表性论文位置和证据强弱。",
+      "列出可比较指标、冲突证据、研究空白和后续路线。",
+      "把单篇证据和跨论文综合主张分开标注。"
+    ],
+    general: [
+      "明确研究问题、研究对象、证据范围和边界条件。",
+      "列出方法、数据、验证指标和可复核证据标签。",
+      "把创新点、可行性风险和待补文献分开记录。"
+    ]
+  } : {
+    "ai-ml": [
+      "Define model inputs, outputs, training objective, baselines, and fair comparisons.",
+      "List datasets, metrics, ablations, compute budget, and reproducibility cost.",
+      "Turn failure modes, generalization boundaries, and safety risks into feasibility checks."
+    ],
+    transportation: [
+      "Define road, airspace, or network constraints, demand flow, and operational scenario.",
+      "List safety, efficiency, robustness, scalability, and simulation or field-data conditions.",
+      "Explain how routing, control, or scheduling mechanisms become engineering validation."
+    ],
+    biomedicine: [
+      "Define study design, sample or cohort, intervention or exposure, and endpoints.",
+      "List bias sources, statistical uncertainty, ethics boundaries, and data-compliance needs.",
+      "Separate mechanism explanation, clinical relevance, and conclusions that should not be generalized."
+    ],
+    "social-science": [
+      "Define theory, constructs, measurement validity, and sample representativeness.",
+      "List causal identification, confounders, external validity, and policy boundaries.",
+      "Write falsifiable hypotheses and alternative explanations into the design."
+    ],
+    "review-writing": [
+      "Define review taxonomy dimensions, representative-paper positioning, and evidence strength.",
+      "List comparable metrics, conflicting evidence, research gaps, and future routes.",
+      "Separate single-paper evidence from cross-paper synthesis claims."
+    ],
+    general: [
+      "Define research question, object, evidence scope, and boundary conditions.",
+      "List method, data, validation metrics, and traceable evidence labels.",
+      "Separate contribution, feasibility risk, and literature still to be followed up."
+    ]
+  };
+  return { title, items: packs[id] || packs.general };
+}
+
+function domainPackLabelZh(id) {
+  if (id === "ai-ml") return "AI/ML/系统";
+  if (id === "transportation") return "交通与城市空域";
+  if (id === "biomedicine") return "医学与生命科学";
+  if (id === "social-science") return "社科与政策";
+  if (id === "review-writing") return "综述写作";
+  return "通用研究";
+}
+
+function domainPackLabelEn(id) {
+  if (id === "ai-ml") return "AI/ML systems";
+  if (id === "transportation") return "Transportation and urban airspace";
+  if (id === "biomedicine") return "Biomedicine and life sciences";
+  if (id === "social-science") return "Social science and policy";
+  if (id === "review-writing") return "Literature-review writing";
+  return "General research";
+}
+
 function proposalNoteLabels(outputLanguage) {
   const zh = /^zh/i.test(String(outputLanguage || ""));
   if (zh) {
@@ -4138,7 +4236,10 @@ function proposalNoteLabels(outputLanguage) {
       annotations: "注释",
       notesCount: "笔记",
       error: "错误",
+      language: "zh-CN",
       proposalFrame: "选题框架",
+      domainWritingFormat: "领域化写作格式",
+      promptPack: "提示模板包",
       topic: "拟定题目/方向",
       coreQuestion: "核心科学问题或工程问题",
       researchObject: "研究对象与场景",
@@ -4182,7 +4283,10 @@ function proposalNoteLabels(outputLanguage) {
     annotations: "annotations",
     notesCount: "notes",
     error: "error",
+    language: "en-US",
     proposalFrame: "Proposal Frame",
+    domainWritingFormat: "Domain Writing Format",
+    promptPack: "Prompt pack",
     topic: "Working title / direction",
     coreQuestion: "Core scientific or engineering question",
     researchObject: "Research object and scenario",
@@ -4235,6 +4339,8 @@ function renderJournalOutlineMarkdown(context, options = {}) {
   }));
   const papers = [focal, ...comparisons];
   const collectionKey = workbenchCollectionKey(options.item);
+  const promptPackId = normalizePromptPackId(options.promptPackId || "general");
+  const domainChecklist = journalDomainChecklist(promptPackId, labels);
   const sections = journalOutlineSections(labels);
   const lines = [
     "---",
@@ -4243,6 +4349,7 @@ function renderJournalOutlineMarkdown(context, options = {}) {
     `collectionKey: ${yamlScalar(collectionKey)}`,
     `focalItemKey: ${yamlScalar(focal.itemKey)}`,
     `comparisonCount: ${comparisons.length}`,
+    `promptPackId: ${yamlScalar(promptPackId)}`,
     `contextSourceHash: ${yamlScalar(options.contextSourceHash || "")}`,
     `outlinePath: ${yamlScalar(options.outlinePath || "")}`,
     "---",
@@ -4261,6 +4368,11 @@ function renderJournalOutlineMarkdown(context, options = {}) {
     `- ${labels.mainClaim}: `,
     `- ${labels.audience}: `,
     `- ${labels.requiredEvidence}: `,
+    "",
+    `## ${labels.domainWritingFormat}`,
+    "",
+    `- ${labels.promptPack}: ${mdText(domainChecklist.title)}`,
+    ...domainChecklist.items.map((item) => `- [ ] ${item}`),
     "",
     `## ${labels.paperInventory}`,
     "",
@@ -4327,11 +4439,82 @@ function journalOverviewDimension(labels) {
   };
 }
 
+function journalDomainChecklist(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const title = zh ? domainPackLabelZh(id) : domainPackLabelEn(id);
+  const packs = zh ? {
+    "ai-ml": [
+      "引言中交代任务定义、模型类别、数据与评价协议。",
+      "方法章节明确训练目标、架构差异、复杂度和复现设置。",
+      "实验章节包含主结果、消融、鲁棒性、失败案例和算力成本。"
+    ],
+    transportation: [
+      "引言中交代交通/空域场景、网络约束、需求流和安全问题。",
+      "方法章节明确状态变量、约束、控制/路径/调度策略和可扩展性。",
+      "实验章节包含仿真设置、基线、指标、安全边界和运行管理启示。"
+    ],
+    biomedicine: [
+      "引言中交代研究设计、样本来源、临床或生物学问题边界。",
+      "方法章节明确队列、干预/暴露、终点、统计方法和偏倚控制。",
+      "讨论章节区分相关性、因果性、机制解释和不可直接外推部分。"
+    ],
+    "social-science": [
+      "引言中交代理论框架、研究问题和政策或社会背景。",
+      "方法章节明确变量测量、样本、识别策略和稳健性检验。",
+      "讨论章节处理替代解释、外部有效性和政策含义。"
+    ],
+    "review-writing": [
+      "相关工作按分类维度组织，而不是逐篇罗列。",
+      "正文每个综合判断都连接代表论文、证据强弱和冲突证据。",
+      "结论给出研究空白、方法路线和可执行的后续研究问题。"
+    ],
+    general: [
+      "引言中交代问题压力、研究空白和本文主张。",
+      "方法和实验章节保持证据标签、指标和图表计划可追踪。",
+      "讨论章节明确适用边界、局限和后续工作。"
+    ]
+  } : {
+    "ai-ml": [
+      "Frame task definition, model class, data, and evaluation protocol in the introduction.",
+      "Make objective, architecture differences, complexity, and reproducibility settings explicit in methods.",
+      "Cover main results, ablations, robustness, failure cases, and compute cost in experiments."
+    ],
+    transportation: [
+      "Frame traffic or airspace scenario, network constraints, demand flow, and safety problem in the introduction.",
+      "Make state variables, constraints, control/routing/scheduling policy, and scalability explicit in methods.",
+      "Cover simulation setup, baselines, metrics, safety boundary, and operational implications in experiments."
+    ],
+    biomedicine: [
+      "Frame study design, sample source, and clinical or biological problem boundary in the introduction.",
+      "Make cohort, intervention or exposure, endpoints, statistics, and bias control explicit in methods.",
+      "Separate association, causality, mechanism interpretation, and non-generalizable conclusions in discussion."
+    ],
+    "social-science": [
+      "Frame theory, research question, and policy or social background in the introduction.",
+      "Make measurement, sample, identification strategy, and robustness checks explicit in methods.",
+      "Handle alternative explanations, external validity, and policy implications in discussion."
+    ],
+    "review-writing": [
+      "Organize related work by taxonomy dimensions instead of paper-by-paper listing.",
+      "Connect every synthesis claim to representative papers, evidence strength, and counter-evidence.",
+      "End with research gaps, method routes, and actionable follow-up questions."
+    ],
+    general: [
+      "Frame problem pressure, research gap, and paper claim in the introduction.",
+      "Keep evidence labels, metrics, and figure/table plans traceable in methods and experiments.",
+      "Make scope, limitations, and future work explicit in discussion."
+    ]
+  };
+  return { title, items: packs[id] || packs.general };
+}
+
 function journalOutlineLabels(outputLanguage) {
   const zh = /^zh/i.test(String(outputLanguage || ""));
   if (zh) {
     return {
       title: "期刊/报告写作提纲",
+      language: "zh-CN",
       focal: "焦点论文",
       comparison: "对比论文",
       focalPaper: "焦点论文",
@@ -4344,6 +4527,8 @@ function journalOutlineLabels(outputLanguage) {
       mainClaim: "主张一句话",
       audience: "目标读者",
       requiredEvidence: "必须补齐的证据",
+      domainWritingFormat: "领域化写作格式",
+      promptPack: "提示模板包",
       paperInventory: "论文清单",
       role: "角色",
       evidence: "证据标签",
@@ -4388,6 +4573,7 @@ function journalOutlineLabels(outputLanguage) {
   }
   return {
     title: "Journal / Report Outline",
+    language: "en-US",
     focal: "Focal paper",
     comparison: "Comparison paper",
     focalPaper: "Focal paper",
@@ -4400,6 +4586,8 @@ function journalOutlineLabels(outputLanguage) {
     mainClaim: "One-sentence main claim",
     audience: "Target readers",
     requiredEvidence: "Evidence still required",
+    domainWritingFormat: "Domain Writing Format",
+    promptPack: "Prompt pack",
     paperInventory: "Paper Inventory",
     role: "Role",
     evidence: "Evidence label",
