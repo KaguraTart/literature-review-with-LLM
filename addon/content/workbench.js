@@ -7712,12 +7712,31 @@ function streamErrorText(data, depth = 0) {
 
 function providerUsageFromResponse(data, depth = 0) {
   if (!data || typeof data !== "object" || depth > 3) return null;
-  const direct = normalizeProviderUsage(data.usage || data.token_usage || data.tokenUsage || data.usage_metadata);
+  const direct = directProviderUsageFromResponse(data);
   const nested = PROVIDER_RESPONSE_WRAPPER_KEYS
     .map((key) => providerUsageFromResponse(data?.[key], depth + 1))
     .filter(Boolean)
     .reduce((merged, usage) => mergeProviderUsage(merged, usage), null);
   return mergeProviderUsage(direct, nested);
+}
+
+function directProviderUsageFromResponse(data) {
+  const candidates = [
+    data?.usage,
+    data?.token_usage,
+    data?.tokenUsage,
+    data?.usage_metadata,
+    data?.usageMetadata,
+    data?.token_counts,
+    data?.tokenCounts,
+    data?.metadata?.usage,
+    data?.metadata?.usage_metadata,
+    data?.metadata?.usageMetadata
+  ];
+  return candidates
+    .map((candidate) => normalizeProviderUsage(candidate))
+    .filter(Boolean)
+    .reduce((merged, usage) => mergeProviderUsage(merged, usage), null);
 }
 
 function normalizeProviderUsage(usage) {
@@ -7727,37 +7746,63 @@ function normalizeProviderUsage(usage) {
     usage.prompt_tokens,
     usage.inputTokens,
     usage.promptTokens,
+    usage.inputTokenCount,
     usage.promptTokenCount,
-    usage.input_token_count
+    usage.input_token_count,
+    usage.prompt_token_count
   );
   const outputTokens = firstNumber(
     usage.output_tokens,
     usage.completion_tokens,
     usage.outputTokens,
     usage.completionTokens,
+    usage.outputTokenCount,
     usage.candidatesTokenCount,
-    usage.output_token_count
+    usage.output_token_count,
+    usage.candidates_token_count
   );
   const totalTokens = firstNumber(
     usage.total_tokens,
     usage.totalTokens,
     usage.totalTokenCount,
+    usage.total_token_count,
     inputTokens !== undefined || outputTokens !== undefined ? (inputTokens || 0) + (outputTokens || 0) : undefined
   );
   const cachedInputTokens = sumNumbers(
     usage.cachedInputTokens,
+    usage.cached_input_tokens,
+    usage.cachedContentTokens,
+    usage.cachedContentTokenCount,
+    usage.cached_content_tokens,
+    usage.cached_content_token_count,
     usage.cache_read_input_tokens,
     usage.cache_creation_input_tokens,
+    usage.cacheReadInputTokens,
+    usage.cacheCreationInputTokens,
     usage.input_tokens_details?.cached_tokens,
+    usage.input_tokens_details?.cachedTokens,
+    usage.inputTokensDetails?.cached_tokens,
+    usage.inputTokensDetails?.cachedTokens,
     usage.prompt_tokens_details?.cached_tokens,
+    usage.prompt_tokens_details?.cachedTokens,
+    usage.promptTokensDetails?.cached_tokens,
     usage.promptTokensDetails?.cachedTokens
   );
   const reasoningTokens = firstNumber(
     usage.output_tokens_details?.reasoning_tokens,
+    usage.output_tokens_details?.reasoningTokens,
+    usage.outputTokensDetails?.reasoning_tokens,
+    usage.outputTokensDetails?.reasoningTokens,
     usage.completion_tokens_details?.reasoning_tokens,
+    usage.completion_tokens_details?.reasoningTokens,
+    usage.completionTokensDetails?.reasoning_tokens,
     usage.completionTokensDetails?.reasoningTokens,
     usage.reasoning_tokens,
-    usage.reasoningTokens
+    usage.reasoningTokens,
+    usage.thoughtsTokenCount,
+    usage.thoughts_token_count,
+    usage.thinkingTokens,
+    usage.thinking_tokens
   );
   const normalized = {};
   if (inputTokens !== undefined) normalized.inputTokens = inputTokens;
@@ -7772,10 +7817,18 @@ function mergeProviderUsage(left, right) {
   if (!left) return right || null;
   if (!right) return left;
   const merged = {};
-  for (const key of ["inputTokens", "outputTokens", "totalTokens", "cachedInputTokens", "reasoningTokens"]) {
+  for (const key of ["inputTokens", "outputTokens", "cachedInputTokens", "reasoningTokens"]) {
     const value = maxNumber(left[key], right[key]);
     if (value !== undefined) merged[key] = value;
   }
+  const total = maxNumber(
+    left.totalTokens,
+    right.totalTokens,
+    merged.inputTokens !== undefined || merged.outputTokens !== undefined
+      ? (merged.inputTokens || 0) + (merged.outputTokens || 0)
+      : undefined
+  );
+  if (total !== undefined) merged.totalTokens = total;
   return Object.keys(merged).length ? merged : null;
 }
 

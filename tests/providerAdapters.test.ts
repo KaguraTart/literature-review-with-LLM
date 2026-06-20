@@ -1070,6 +1070,40 @@ describe("provider adapters", () => {
       outputTokens: 6,
       totalTokens: 14
     });
+
+    expect(extractProviderUsage({
+      usageMetadata: {
+        inputTokenCount: "9",
+        outputTokenCount: "5",
+        totalTokenCount: "20",
+        cachedContentTokenCount: "4",
+        thoughtsTokenCount: "6"
+      }
+    })).toEqual({
+      inputTokens: 9,
+      outputTokens: 5,
+      totalTokens: 20,
+      cachedInputTokens: 4,
+      reasoningTokens: 6
+    });
+
+    expect(extractProviderUsage({
+      metadata: {
+        usageMetadata: {
+          prompt_token_count: 3,
+          candidates_token_count: 2,
+          total_token_count: 5,
+          cached_content_token_count: 1,
+          thinking_tokens: 4
+        }
+      }
+    })).toEqual({
+      inputTokens: 3,
+      outputTokens: 2,
+      totalTokens: 5,
+      cachedInputTokens: 1,
+      reasoningTokens: 4
+    });
   });
 
   it("extracts provider token usage from stream chunks", () => {
@@ -1081,6 +1115,20 @@ describe("provider adapters", () => {
       inputTokens: 10,
       outputTokens: 5,
       totalTokens: 15
+    });
+
+    expect(parseStreamUsage([
+      "event: message_start",
+      "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":3,\"output_tokens\":0,\"cacheReadInputTokens\":1}}}",
+      "",
+      "event: message_delta",
+      "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":7,\"thinkingTokens\":2}}"
+    ].join("\n"))).toEqual({
+      inputTokens: 3,
+      outputTokens: 7,
+      totalTokens: 10,
+      cachedInputTokens: 1,
+      reasoningTokens: 2
     });
   });
 

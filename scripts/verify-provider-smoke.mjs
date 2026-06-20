@@ -837,10 +837,18 @@ function mergeProviderUsage(left, right) {
   if (!left) return right || null;
   if (!right) return left;
   const merged = {};
-  for (const key of ["inputTokens", "outputTokens", "totalTokens", "cachedInputTokens", "reasoningTokens"]) {
+  for (const key of ["inputTokens", "outputTokens", "cachedInputTokens", "reasoningTokens"]) {
     const values = [left[key], right[key]].filter((value) => typeof value === "number" && Number.isFinite(value));
     if (values.length) merged[key] = Math.max(...values);
   }
+  const totalValues = [
+    left.totalTokens,
+    right.totalTokens,
+    merged.inputTokens !== undefined || merged.outputTokens !== undefined
+      ? (merged.inputTokens || 0) + (merged.outputTokens || 0)
+      : undefined
+  ].filter((value) => typeof value === "number" && Number.isFinite(value));
+  if (totalValues.length) merged.totalTokens = Math.max(...totalValues);
   return Object.keys(merged).length ? merged : null;
 }
 

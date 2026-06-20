@@ -1706,6 +1706,31 @@ describe("workbench writeback helpers", () => {
       outputTokens: 6,
       totalTokens: 18
     });
+
+    const anthropicResponse: any = {
+      body: streamFromText([
+        "event: content_block_delta",
+        "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}",
+        "",
+        "event: message_start",
+        "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":3,\"output_tokens\":0,\"cacheReadInputTokens\":1}}}",
+        "",
+        "event: message_delta",
+        "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":7,\"thinkingTokens\":2}}"
+      ].join("\n"))
+    };
+    const anthropicDeltas: string[] = [];
+    const anthropicText = await helpers.readStream(anthropicResponse, "anthropic_messages", (delta) => anthropicDeltas.push(delta));
+
+    expect(anthropicText).toBe("ok");
+    expect(anthropicDeltas).toEqual(["ok"]);
+    expect(anthropicResponse.zmsUsage).toEqual({
+      inputTokens: 3,
+      outputTokens: 7,
+      totalTokens: 10,
+      cachedInputTokens: 1,
+      reasoningTokens: 2
+    });
   });
 
   it("uses OpenAI Responses done snapshots as a workbench stream fallback", async () => {

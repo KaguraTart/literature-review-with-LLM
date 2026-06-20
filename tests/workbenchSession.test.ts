@@ -61,6 +61,7 @@ function loadWorkbenchHelpers(options: { fetchResponses?: any[] } = {}) {
     workbenchModelOptionsFromItems: (source: any[]) => Array<{ id: string; label: string }>;
     extractResponseText: (protocol: string, data: any) => string;
     providerUsageFromResponse: (data: any) => any;
+    mergeProviderUsage: (left: any, right: any) => any;
     providerUsageText: (usage: any) => string;
     streamTextFromData: (protocol: string, data: any) => string;
     isStreamSnapshot: (protocol: string, value: any) => boolean;
@@ -270,6 +271,31 @@ describe("workbench session helpers", () => {
       outputTokens: 5,
       totalTokens: 15,
       reasoningTokens: 2
+    });
+    expect(helpers.providerUsageFromResponse({
+      metadata: {
+        usageMetadata: {
+          inputTokenCount: "9",
+          outputTokenCount: "5",
+          totalTokenCount: "20",
+          cachedContentTokenCount: "4",
+          thoughtsTokenCount: "6"
+        }
+      }
+    })).toEqual({
+      inputTokens: 9,
+      outputTokens: 5,
+      totalTokens: 20,
+      cachedInputTokens: 4,
+      reasoningTokens: 6
+    });
+    expect(helpers.mergeProviderUsage(
+      { inputTokens: 3, outputTokens: 0, totalTokens: 3 },
+      { outputTokens: 7, totalTokens: 7 }
+    )).toEqual({
+      inputTokens: 3,
+      outputTokens: 7,
+      totalTokens: 10
     });
     expect(helpers.providerUsageText({
       inputTokens: 7,
