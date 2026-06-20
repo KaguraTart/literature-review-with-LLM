@@ -603,6 +603,34 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("loads wrapped local model-list responses without API credentials", async () => {
+    await withMockProvider(async (baseURL) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--models",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        models: true,
+        modelCount: 2,
+        modelIds: ["local-model-a", "local-model-b"]
+      });
+      expect(report.modelOptions.find((option: any) => option.id === "local-model-a").label).toBe("Local Model A");
+    }, {
+      responseBody: {
+        message: {
+          list: [
+            { id: "local-model-b" },
+            { id: "local-model-a", display_name: "Local Model A" }
+          ]
+        }
+      }
+    });
+  });
+
   it("fails model-list checks when a 200 response contains a provider error", async () => {
     await withMockProvider(async (baseURL) => {
       let error: any;

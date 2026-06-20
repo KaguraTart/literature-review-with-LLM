@@ -1377,7 +1377,7 @@ function modelListItemsFromResponse(data, depth = 0) {
   const direct = directModelListItemsFromResponse(data);
   if (direct.length) return direct;
   if (depth >= 2 || !data || typeof data !== "object" || Array.isArray(data)) return [];
-  for (const key of ["result", "payload", "response", "data"]) {
+  for (const key of PREFERENCES_PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const items = modelListItemsFromResponse(value, depth + 1);
@@ -1397,7 +1397,17 @@ function directModelListItemsFromResponse(data) {
           ? data.model
           : Array.isArray(data?.items)
             ? data.items
-            : [];
+            : Array.isArray(data?.list)
+              ? data.list
+              : Array.isArray(data?.model_list)
+                ? data.model_list
+                : Array.isArray(data?.modelList)
+                  ? data.modelList
+                  : Array.isArray(data?.models?.data)
+                    ? data.models.data
+                    : Array.isArray(data?.models?.items)
+                      ? data.models.items
+                      : [];
   return source;
 }
 
@@ -1405,7 +1415,7 @@ function modelListPaginationEnvelope(data, depth = 0) {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   if (hasModelListPaginationFields(data)) return data;
   if (depth >= 2) return null;
-  for (const key of ["result", "payload", "response", "data"]) {
+  for (const key of PREFERENCES_PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const envelope = modelListPaginationEnvelope(value, depth + 1);

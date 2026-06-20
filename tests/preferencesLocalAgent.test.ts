@@ -732,6 +732,15 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.modelIdsFromResponse({
       payload: { models: [{ id: "wrapped-b" }] }
     })).toEqual(["wrapped-b"]);
+    expect(helpers.modelIdsFromResponse({
+      body: { model_list: [{ id: "wrapped-body" }] }
+    })).toEqual(["wrapped-body"]);
+    expect(helpers.modelIdsFromResponse({
+      message: { models: { data: [{ id: "nested-models-data" }] } }
+    })).toEqual(["nested-models-data"]);
+    expect(helpers.modelIdsFromResponse({
+      completion: { list: [{ name: "completion-list-model" }] }
+    })).toEqual(["completion-list-model"]);
     expect(helpers.modelIdsFromResponse({ data: [{ id: "same" }, { id: "same" }] })).toEqual(["same"]);
     expect(helpers.modelOptionsFromResponse({
       data: [
@@ -1873,6 +1882,35 @@ describe("preferences local-agent config helpers", () => {
     expect(options.map((option: any) => option.value)).toEqual(["model-a", "model-b"]);
     expect(options.find((option: any) => option.value === "model-a")?.label).toBe("Model A");
     expect(elements.get("zms-status").value).toBe("Models loaded: 2");
+  });
+
+  it("loads body-wrapped model-list pages in settings", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      fetchResponses: [
+        {
+          body: {
+            models: {
+              data: [{ id: "model-b" }]
+            },
+            has_more: true,
+            last_id: "model-b"
+          }
+        },
+        {
+          message: {
+            model_list: [{ id: "model-a", display_name: "Model A" }]
+          }
+        }
+      ]
+    });
+
+    await controller.loadModels();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[1].url).toBe("https://api.openai.com/v1/models?after_id=model-b");
+    const options = elements.get("zms-model-options").children;
+    expect(options.map((option: any) => option.value)).toEqual(["model-a", "model-b"]);
+    expect(options.find((option: any) => option.value === "model-a")?.label).toBe("Model A");
   });
 
   it("loads model options with a custom authorization header and empty API key", async () => {

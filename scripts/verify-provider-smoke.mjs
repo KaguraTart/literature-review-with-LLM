@@ -17,6 +17,7 @@ import {
   providerCompatibilityFallbackFields
 } from "../src/providerAdapters.ts";
 
+const PROVIDER_RESPONSE_WRAPPER_KEYS = ["data", "result", "payload", "response", "message", "body", "completion"];
 const DEFAULT_PROMPT = "Reply with OK only.";
 const DEFAULT_CONTEXT = "Provider smoke-test context.";
 const DEFAULT_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
@@ -899,11 +900,13 @@ function isStreamFieldLine(line) {
 function mockModelListResponse(url) {
   if (url.searchParams.get("after_id") || url.searchParams.get("page_token") || url.searchParams.get("after") || url.searchParams.get("page")) {
     return {
-      data: [
-        { id: "mock-model-c", display_name: "Mock Model C" },
-        { id: "mock-model-a" }
-      ],
-      has_more: false
+      body: {
+        model_list: [
+          { id: "mock-model-c", display_name: "Mock Model C" },
+          { id: "mock-model-a" }
+        ],
+        has_more: false
+      }
     };
   }
   return {
@@ -1007,7 +1010,7 @@ function modelListItemsFromResponse(data, depth = 0) {
   const direct = directModelListItemsFromResponse(data);
   if (direct.length) return direct;
   if (depth >= 2 || !data || typeof data !== "object" || Array.isArray(data)) return [];
-  for (const key of ["result", "payload", "response", "data"]) {
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const items = modelListItemsFromResponse(value, depth + 1);
@@ -1039,6 +1042,11 @@ function directModelListItemsFromResponse(data) {
   if (Array.isArray(data?.models)) return data.models;
   if (Array.isArray(data?.model)) return data.model;
   if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.list)) return data.list;
+  if (Array.isArray(data?.model_list)) return data.model_list;
+  if (Array.isArray(data?.modelList)) return data.modelList;
+  if (Array.isArray(data?.models?.data)) return data.models.data;
+  if (Array.isArray(data?.models?.items)) return data.models.items;
   return [];
 }
 
@@ -1046,7 +1054,7 @@ function modelListPaginationEnvelope(data, depth = 0) {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   if (hasModelListPaginationFields(data)) return data;
   if (depth >= 2) return null;
-  for (const key of ["result", "payload", "response", "data"]) {
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const envelope = modelListPaginationEnvelope(value, depth + 1);

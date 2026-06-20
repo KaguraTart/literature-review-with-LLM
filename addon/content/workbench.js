@@ -9766,7 +9766,7 @@ function workbenchModelListItemsFromResponse(data, depth = 0) {
   const direct = workbenchDirectModelListItemsFromResponse(data);
   if (direct.length) return direct;
   if (depth >= 2 || !data || typeof data !== "object" || Array.isArray(data)) return [];
-  for (const key of ["result", "payload", "response", "data"]) {
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const items = workbenchModelListItemsFromResponse(value, depth + 1);
@@ -9798,6 +9798,11 @@ function workbenchDirectModelListItemsFromResponse(data) {
   if (Array.isArray(data?.models)) return data.models;
   if (Array.isArray(data?.model)) return data.model;
   if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.list)) return data.list;
+  if (Array.isArray(data?.model_list)) return data.model_list;
+  if (Array.isArray(data?.modelList)) return data.modelList;
+  if (Array.isArray(data?.models?.data)) return data.models.data;
+  if (Array.isArray(data?.models?.items)) return data.models.items;
   return [];
 }
 
@@ -9805,7 +9810,7 @@ function workbenchModelListPaginationEnvelope(data, depth = 0) {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   if (workbenchHasModelListPaginationFields(data)) return data;
   if (depth >= 2) return null;
-  for (const key of ["result", "payload", "response", "data"]) {
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const envelope = workbenchModelListPaginationEnvelope(value, depth + 1);

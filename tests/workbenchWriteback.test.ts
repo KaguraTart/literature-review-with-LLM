@@ -1046,15 +1046,17 @@ describe("workbench writeback helpers", () => {
     const fetchCalls: string[] = [];
     const responses = [
       {
-        result: {
-          data: [{ id: "model-b" }],
+        body: {
+          models: {
+            data: [{ id: "model-b" }]
+          },
           has_more: true,
           last_id: "model-b"
         }
       },
       {
-        payload: {
-          models: [{ id: "model-a", display_name: "Model A" }]
+        message: {
+          model_list: [{ id: "model-a", display_name: "Model A" }]
         }
       }
     ];
