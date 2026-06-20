@@ -966,13 +966,26 @@ describe("provider smoke verifier", () => {
       bodyExtraEnv: "OPENAI_COMPATIBLE_BODY_EXTRA_JSON",
       requireBaseURL: true,
       allowLocalNoAuth: true,
-      modelList: true
+      modelList: true,
+      imageInput: true,
+      pdfInput: false
     });
     expect(report.cases.find((entry: any) => entry.id === "anthropic-compatible")).toMatchObject({
       protocol: "anthropic_messages",
       apiKeyEnv: "ANTHROPIC_COMPATIBLE_API_KEY",
       modelEnv: "ANTHROPIC_COMPATIBLE_MODEL",
-      baseURLEnv: "ANTHROPIC_COMPATIBLE_BASE_URL"
+      baseURLEnv: "ANTHROPIC_COMPATIBLE_BASE_URL",
+      imageInput: true,
+      pdfInput: false
+    });
+    expect(report.cases.find((entry: any) => entry.id === "openai")).toMatchObject({
+      imageInput: true,
+      pdfInput: true
+    });
+    expect(report.cases.find((entry: any) => entry.id === "gemini")).toMatchObject({
+      protocol: "openai_chat",
+      imageInput: true,
+      pdfInput: false
     });
     expect(report.cases.find((entry: any) => entry.id === "github-models")).toMatchObject({
       modelList: false
@@ -1011,17 +1024,23 @@ describe("provider smoke verifier", () => {
       requiredEnv: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_MODEL", "OPENAI_COMPATIBLE_BASE_URL"],
       modelListRequiredEnv: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"],
       generationCommand: "npm run verify:provider:live -- --include openai-compatible",
+      imageCommand: "npm run verify:provider:image:live -- --include openai-compatible",
+      pdfCommand: "",
       modelListCommand: "npm run verify:provider:models:live -- --include openai-compatible"
     });
     expect(openaiCompatible.optionalEnv).toEqual(["OPENAI_COMPATIBLE_HEADERS_JSON", "OPENAI_COMPATIBLE_BODY_EXTRA_JSON"]);
     const anthropicCompatible = report.cases.find((entry: any) => entry.id === "anthropic-compatible");
     expect(anthropicCompatible.requiredEnv).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_MODEL", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
     expect(anthropicCompatible.modelListRequiredEnv).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
+    expect(anthropicCompatible.imageCommand).toBe("npm run verify:provider:image:live -- --include anthropic-compatible");
+    expect(anthropicCompatible.pdfCommand).toBe("");
     const ollama = report.cases.find((entry: any) => entry.id === "ollama");
     expect(ollama.requiredEnv).toEqual(["OLLAMA_MODEL", "OLLAMA_BASE_URL"]);
     expect(ollama.modelListRequiredEnv).toEqual(["OLLAMA_BASE_URL"]);
     expect(ollama.optionalEnv).toEqual(["OLLAMA_API_KEY", "OLLAMA_HEADERS_JSON", "OLLAMA_BODY_EXTRA_JSON"]);
     expect(ollama.generationCommand).toBe("npm run verify:provider:live -- --include ollama");
+    expect(ollama.imageCommand).toBe("npm run verify:provider:image:live -- --include ollama");
+    expect(ollama.pdfCommand).toBe("");
     const lmStudio = report.cases.find((entry: any) => entry.id === "lm-studio");
     expect(lmStudio.requiredEnv).toEqual(["LM_STUDIO_MODEL", "LM_STUDIO_BASE_URL"]);
     expect(lmStudio.modelListRequiredEnv).toEqual(["LM_STUDIO_BASE_URL"]);
@@ -1040,6 +1059,8 @@ describe("provider smoke verifier", () => {
     expect(stdout).toContain("ANTHROPIC_COMPATIBLE_API_KEY=...");
     expect(stdout).toContain("# ANTHROPIC_COMPATIBLE_HEADERS_JSON=...");
     expect(stdout).toContain("npm run verify:provider:live -- --include anthropic-compatible");
+    expect(stdout).toContain("# Image input check");
+    expect(stdout).toContain("npm run verify:provider:image:live -- --include anthropic-compatible");
   });
 
   it("runs live provider env checks against mock endpoints without leaking secrets", async () => {

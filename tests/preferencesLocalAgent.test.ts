@@ -1697,11 +1697,15 @@ describe("preferences local-agent config helpers", () => {
     expect(geminiGuide).toContain("GEMINI_API_KEY=...");
     expect(geminiGuide).toContain("GEMINI_MODEL=gemini-2.5-flash");
     expect(geminiGuide).toContain("--include gemini");
+    expect(geminiGuide).toContain("Image live check: GEMINI_API_KEY=... GEMINI_MODEL=gemini-2.5-flash npm run verify:provider:image:live -- --include gemini");
+    expect(geminiGuide).toContain("PDF live check: uses Zotero extracted text");
     expect(geminiGuide).not.toContain("gemini-secret");
     expect(azureGuide).toContain("AZURE_OPENAI_API_KEY=...");
     expect(azureGuide).toContain("AZURE_OPENAI_MODEL=gpt-4.1");
     expect(azureGuide).toContain("AZURE_OPENAI_BASE_URL=https://example-resource.openai.azure.com/openai/v1");
     expect(azureGuide).toContain("--include azure-openai");
+    expect(azureGuide).toContain("Image live check: AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=gpt-4.1 AZURE_OPENAI_BASE_URL=https://example-resource.openai.azure.com/openai/v1 npm run verify:provider:image:live -- --include azure-openai");
+    expect(azureGuide).toContain("PDF live check: AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=gpt-4.1 AZURE_OPENAI_BASE_URL=https://example-resource.openai.azure.com/openai/v1 npm run verify:provider:pdf:live -- --include azure-openai");
     expect(azureGuide).not.toContain("azure-secret");
   });
 

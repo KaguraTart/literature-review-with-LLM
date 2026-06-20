@@ -648,7 +648,9 @@ export function providerLiveCaseCatalog(include = "") {
       requireBaseURL: Boolean(entry.requireBaseURL),
       allowLocalNoAuth: Boolean(entry.allowLocalNoAuth),
       apiKeyOptional: Boolean(entry.apiKeyOptional),
-      modelList: entry.modelList !== false
+      modelList: entry.modelList !== false,
+      imageInput: caseSupportsImageInput(entry),
+      pdfInput: caseSupportsPdfInput(entry)
     }))
   };
 }
@@ -680,10 +682,25 @@ function providerEnvTemplateForCase(entry) {
     modelListRequiredEnv,
     optionalEnv,
     generationCommand: `npm run verify:provider:live -- --include ${entry.id}`,
+    imageCommand: caseSupportsImageInput(entry)
+      ? `npm run verify:provider:image:live -- --include ${entry.id}`
+      : "",
+    pdfCommand: caseSupportsPdfInput(entry)
+      ? `npm run verify:provider:pdf:live -- --include ${entry.id}`
+      : "",
     modelListCommand: entry.modelList === false
       ? ""
       : `npm run verify:provider:models:live -- --include ${entry.id}`
   };
+}
+
+function caseSupportsImageInput(entry) {
+  return runProfileDefault(entry.profile)?.capabilities?.imageBase64 === true;
+}
+
+function caseSupportsPdfInput(entry) {
+  const profile = runProfileDefault(entry.profile);
+  return profile?.capabilities?.pdfBase64 === true && entry.protocol !== "openai_chat";
 }
 
 function caseGenerationRequiredEnv(entry) {
@@ -963,6 +980,14 @@ function formatEnvTemplate(template) {
       }
     }
     lines.push(entry.generationCommand);
+    if (entry.imageCommand) {
+      lines.push("# Image input check");
+      lines.push(entry.imageCommand);
+    }
+    if (entry.pdfCommand) {
+      lines.push("# Raw PDF input check");
+      lines.push(entry.pdfCommand);
+    }
     if (entry.modelListCommand && entry.modelListRequiredEnv?.length) {
       lines.push("# Required for model-list checks");
       for (const name of entry.modelListRequiredEnv) {

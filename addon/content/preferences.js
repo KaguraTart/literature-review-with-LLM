@@ -875,6 +875,8 @@ function providerSetupGuide(profile, language = "en-US") {
       `保存后测试：点击“测试连接”；失败信息会隐藏完整 API Key。`,
       `复制环境变量模板：${verify.envTemplateCommand}`,
       `终端 live 检查：${verify.liveCommand}`,
+      `图片 live 检查：${verify.imageCommand || "当前档案不支持图片输入"}`,
+      `PDF live 检查：${verify.pdfCommand || "当前档案使用 Zotero 文本抽取"}`,
       `模型列表 live 检查：${verify.modelsCommand}`
     ].join("\n");
   }
@@ -890,6 +892,8 @@ function providerSetupGuide(profile, language = "en-US") {
     "After saving: click Test connection. Failure messages hide full API keys.",
     `Copy env template: ${verify.envTemplateCommand}`,
     `Terminal live check: ${verify.liveCommand}`,
+    `Image live check: ${verify.imageCommand || "not supported by this profile"}`,
+    `PDF live check: ${verify.pdfCommand || "uses Zotero extracted text"}`,
     `Model-list live check: ${verify.modelsCommand}`
   ].join("\n");
 }
@@ -942,11 +946,13 @@ function providerLiveVerifyGuide(profile, provider = providerFromProfile(profile
   if (entry.baseURLEnv && entry.includeBaseURL) assignments.push(`${entry.baseURLEnv}=${providerGuideEnvValue(baseURL || "...")}`);
   const prefix = assignments.join(" ");
   const liveCommand = `${prefix ? `${prefix} ` : ""}npm run verify:provider:live -- --include ${entry.include}`;
+  const imageCommand = canUseImageInput(profile) ? `${prefix ? `${prefix} ` : ""}npm run verify:provider:image:live -- --include ${entry.include}` : "";
+  const pdfCommand = canUsePdfBase64Input(profile) ? `${prefix ? `${prefix} ` : ""}npm run verify:provider:pdf:live -- --include ${entry.include}` : "";
   const modelAssignments = assignments.filter((item) => !item.startsWith(`${entry.modelEnv}=`));
   const modelPrefix = modelAssignments.join(" ");
   const modelsCommand = `${modelPrefix ? `${modelPrefix} ` : ""}npm run verify:provider:models:live -- --include ${entry.include}`;
   const envTemplateCommand = `npm run verify:provider:live -- --env-template --include ${entry.include}`;
-  return { ...entry, liveCommand, modelsCommand, envTemplateCommand };
+  return { ...entry, liveCommand, imageCommand, pdfCommand, modelsCommand, envTemplateCommand };
 }
 
 function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)) {
