@@ -175,6 +175,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     contextForPrompt: (context: any, query: string) => string;
     contextDiagnosticsText: (diagnostics: any, translate?: (key: string) => string) => string;
     writePreviewSummary: (preview: any, options?: any) => string;
+    buildRequestInput: (profile: any, inputMode: string, pdf: any, images?: any[]) => Promise<any>;
     requestInputStatusText: (requestInput: any, translate?: (key: string) => string) => string;
     profileStatusText: (profile: any, translate?: (key: string) => string) => string;
     renderProviderDiagnosticsMarkdown: (profile: any, options?: any) => string;
@@ -5486,6 +5487,44 @@ describe("workbench writeback helpers", () => {
       .toContain("PDF 路径不可用");
     expect(helpers.requestInputStatusText({ type: "text", source: "read_failed" }, translate))
       .toContain("PDF 读取失败");
+  });
+
+  it("uses raw PDF input from attachment base64 or byte accessors when no local path is available", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const profile = {
+      protocol: "openai_responses",
+      capabilities: { pdfBase64: true, imageBase64: true }
+    };
+    const directBase64 = Buffer.from("%PDF direct").toString("base64");
+
+    await expect(loaded.buildRequestInput(profile, "pdf_base64", {
+      getFilePathAsync: async () => "",
+      pdfBase64: directBase64,
+      getField: (field: string) => field === "title" ? "direct.pdf" : ""
+    })).resolves.toMatchObject({
+      type: "pdf_base64",
+      source: "pdf_base64",
+      base64: directBase64,
+      filename: "direct.pdf"
+    });
+
+    const bytes = new Uint8Array(Buffer.from("%PDF bytes"));
+    const expectedBase64 = Buffer.from(bytes).toString("base64");
+    await expect(loaded.buildRequestInput(profile, "pdf_base64", {
+      getFilePathAsync: async () => "",
+      getBytes: async () => bytes,
+      getField: (field: string) => field === "title" ? "bytes.pdf" : ""
+    }, [
+      { name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=", size: 5 }
+    ])).resolves.toMatchObject({
+      type: "pdf_base64",
+      source: "pdf_base64",
+      base64: expectedBase64,
+      filename: "bytes.pdf",
+      images: [
+        { name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=" }
+      ]
+    });
   });
 
   it("formats provider JSON errors without leaking credentials", () => {

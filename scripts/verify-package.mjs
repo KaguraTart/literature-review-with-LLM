@@ -582,7 +582,7 @@ const requiredMarkers = [
   [workbenchJs, "candidatePdfEvidenceSource", "candidate PDF page-text source selection"],
   [workbenchJs, "candidatePdfTextPagesFromLocalBridge", "candidate local bridge PDF page extraction"],
   [workbenchJs, "candidatePdfBridgeArguments", "candidate local bridge PDF argument selection"],
-  [workbenchJs, "candidatePdfBase64", "candidate local bridge PDF base64 fallback"],
+[workbenchJs, "attachmentPdfBase64", "candidate/local raw PDF base64 fallback"],
   [workbenchJs, "indexedTextForEvidence", "candidate indexed-text page splitting"],
   [workbenchJs, "normalizePdfTextPagesForEvidence", "candidate page-level PDF text normalization"],
   [workbenchJs, "indexedPageMarker", "candidate indexed-text page marker parsing"],

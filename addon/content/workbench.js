@@ -6811,12 +6811,14 @@ async function buildRequestInput(profile, inputMode, pdf, images = []) {
     return { type: "text", source: "no_pdf", reason: "No PDF attachment", images: normalizedImageAttachments(images) };
   }
   const pdfPath = await attachmentFilePath(pdf);
-  if (!pdfPath) {
-    return { type: "text", source: "no_pdf_path", reason: "PDF path unavailable", images: normalizedImageAttachments(images) };
-  }
-  const base64 = await attachmentToBase64(pdfPath);
+  let base64 = pdfPath ? await attachmentToBase64(pdfPath) : "";
   if (!base64) {
-    return { type: "text", source: "read_failed", reason: "Failed to encode PDF as base64", images: normalizedImageAttachments(images) };
+    base64 = await attachmentPdfBase64(pdf);
+  }
+  if (!base64) {
+    return pdfPath
+      ? { type: "text", source: "read_failed", reason: "Failed to encode PDF as base64", images: normalizedImageAttachments(images) }
+      : { type: "text", source: "no_pdf_path", reason: "PDF path unavailable", images: normalizedImageAttachments(images) };
   }
   return {
     type: "pdf_base64",
@@ -9740,7 +9742,7 @@ async function candidatePdfBridgeArguments(pdf) {
   const name = attachmentDisplayName(pdf) || "paper.pdf";
   const filePath = await candidatePdfFilePath(pdf);
   if (filePath) return { filePath, name };
-  const pdfBase64 = await candidatePdfBase64(pdf);
+  const pdfBase64 = await attachmentPdfBase64(pdf);
   if (pdfBase64) return { pdfBase64, name };
   return null;
 }
@@ -9755,7 +9757,7 @@ async function candidatePdfFilePath(pdf) {
   return String(pdf?.path || pdf?.filePath || pdf?.attachmentPath || "").trim();
 }
 
-async function candidatePdfBase64(pdf) {
+async function attachmentPdfBase64(pdf) {
   const direct = normalizedPdfBase64(
     pdf?.pdfBase64
     || pdf?.attachmentBase64

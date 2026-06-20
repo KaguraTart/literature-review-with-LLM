@@ -362,7 +362,7 @@ const SOURCE_MARKERS = [
       "candidatePdfEvidenceSource",
       "candidatePdfTextPagesFromLocalBridge",
       "candidatePdfBridgeArguments",
-      "candidatePdfBase64",
+      "attachmentPdfBase64",
       "indexedTextForEvidence",
       "normalizePdfTextPagesForEvidence",
       "indexedPageMarker",
