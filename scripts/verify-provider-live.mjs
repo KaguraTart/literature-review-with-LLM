@@ -823,8 +823,14 @@ function unsupportedInputReason(entry, options = {}) {
   if (options.models && entry.modelList === false) {
     return "Model-list checks are not supported for this provider profile";
   }
-  if (options.pdf && entry.protocol === "openai_chat") {
-    return "OpenAI-compatible Chat profiles use extracted text input; choose a Responses or Anthropic profile for raw PDF input";
+  if (options.image && !caseSupportsImageInput(entry)) {
+    return "Image checks are not supported for this provider profile";
+  }
+  if (options.pdf && !caseSupportsPdfInput(entry)) {
+    if (entry.protocol === "openai_chat") {
+      return "OpenAI-compatible Chat profiles use extracted text input; choose a Responses or Anthropic profile for raw PDF input";
+    }
+    return "Raw PDF checks are not supported for this provider profile";
   }
   return "";
 }

@@ -1408,7 +1408,7 @@ describe("provider smoke verifier", () => {
     });
   });
 
-  it("runs live provider PDF checks against raw-document protocols and skips OpenAI Chat", async () => {
+  it("runs live provider PDF checks only against profiles that support raw documents", async () => {
     await withLiveMockProvider(async (baseURL, requests) => {
       const report = await runLive(["--include", BASIC_LIVE_CASES, "--pdf", "--json"], scrubProviderEnv({
         OPENAI_API_KEY: "live-openai-pdf-secret",
@@ -1433,8 +1433,8 @@ describe("provider smoke verifier", () => {
         live: true,
         inputMode: "pdf",
         counts: {
-          passed: 4,
-          skipped: 1,
+          passed: 3,
+          skipped: 2,
           failed: 0
         }
       });
@@ -1442,20 +1442,19 @@ describe("provider smoke verifier", () => {
         ["openai", "passed"],
         ["openai-responses-compatible", "passed"],
         ["anthropic", "passed"],
-        ["anthropic-compatible", "passed"],
+        ["anthropic-compatible", "skipped"],
         ["openai-compatible", "skipped"]
       ]);
+      expect(report.results.find((result: any) => result.id === "anthropic-compatible").reason).toContain("Raw PDF checks are not supported");
       expect(report.results.at(-1).reason).toContain("OpenAI-compatible Chat profiles use extracted text input");
-      expect(report.results.slice(0, 4).map((result: any) => [result.id, result.report.inputMode, result.report.contentTypes])).toEqual([
+      expect(report.results.filter((result: any) => result.status === "passed").map((result: any) => [result.id, result.report.inputMode, result.report.contentTypes])).toEqual([
         ["openai", "pdf", ["input_file", "input_text"]],
         ["openai-responses-compatible", "pdf", ["input_file", "input_text"]],
-        ["anthropic", "pdf", ["document", "text"]],
-        ["anthropic-compatible", "pdf", ["document", "text"]]
+        ["anthropic", "pdf", ["document", "text"]]
       ]);
       expect(requests.map((request) => request.path)).toEqual([
         "/v1/responses",
         "/v1/responses",
-        "/v1/messages",
         "/v1/messages"
       ]);
       expect(JSON.stringify(report)).not.toContain("live-openai-pdf-secret");
