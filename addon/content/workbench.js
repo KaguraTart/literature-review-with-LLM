@@ -2790,9 +2790,9 @@ function providerLiveVerifyCaseForWorkbench(profile, provider = workbenchProvide
     volcengine: ["volcengine", "VOLCENGINE"],
     qianfan: ["qianfan", "QIANFAN"],
     hunyuan: ["hunyuan", "HUNYUAN"],
-    ollama: ["openai-compatible", "OPENAI_COMPATIBLE", true],
-    lm_studio: ["openai-compatible", "OPENAI_COMPATIBLE", true],
-    "lm-studio": ["openai-compatible", "OPENAI_COMPATIBLE", true]
+    ollama: ["ollama", "OLLAMA", true],
+    lm_studio: ["lm-studio", "LM_STUDIO", true],
+    "lm-studio": ["lm-studio", "LM_STUDIO", true]
   };
   const fallback = profile?.protocol === "anthropic_messages"
     ? ["anthropic-compatible", "ANTHROPIC_COMPATIBLE", true]

@@ -1544,6 +1544,31 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).not.toContain("OPENAI_COMPATIBLE_API_KEY=...");
   });
 
+  it("uses named live-check variables for local Ollama and LM Studio guides", () => {
+    const helpers = loadPreferencesHelpers();
+    const ollamaGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("ollama"),
+      model: "llama3.1"
+    }, "en-US");
+    const lmStudioGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("lm_studio"),
+      model: "local-model"
+    }, "en-US");
+
+    expect(ollamaGuide).toContain("Local endpoint; API key is usually optional");
+    expect(ollamaGuide).toContain("OLLAMA_MODEL=llama3.1");
+    expect(ollamaGuide).toContain("OLLAMA_BASE_URL=http://localhost:11434/v1");
+    expect(ollamaGuide).toContain("--include ollama");
+    expect(ollamaGuide).not.toContain("OPENAI_COMPATIBLE_API_KEY");
+    expect(ollamaGuide).not.toContain("OLLAMA_API_KEY=...");
+    expect(lmStudioGuide).toContain("Local endpoint; API key is usually optional");
+    expect(lmStudioGuide).toContain("LM_STUDIO_MODEL=local-model");
+    expect(lmStudioGuide).toContain("LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1");
+    expect(lmStudioGuide).toContain("--include lm-studio");
+    expect(lmStudioGuide).not.toContain("OPENAI_COMPATIBLE_API_KEY");
+    expect(lmStudioGuide).not.toContain("LM_STUDIO_API_KEY=...");
+  });
+
   it("uses named live-check variables for GitHub Models setup guides", () => {
     const helpers = loadPreferencesHelpers();
     const guide = helpers.providerSetupGuide({

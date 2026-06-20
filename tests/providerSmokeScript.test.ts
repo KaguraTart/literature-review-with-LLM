@@ -31,7 +31,9 @@ const NAMED_LIVE_SPECS = [
   { id: "zhipu", envPrefix: "ZHIPU", protocol: "openai_chat", basePath: "/zhipu/api/paas/v4", model: "glm-4.5", secret: "live-zhipu-secret" },
   { id: "volcengine", envPrefix: "VOLCENGINE", protocol: "openai_chat", basePath: "/volcengine/api/v3", model: "doubao-seed-1-6-250615", secret: "live-volcengine-secret" },
   { id: "qianfan", envPrefix: "QIANFAN", protocol: "openai_chat", basePath: "/qianfan/v2", model: "ernie-x1-turbo-32k", secret: "live-qianfan-secret" },
-  { id: "hunyuan", envPrefix: "HUNYUAN", protocol: "openai_chat", basePath: "/hunyuan/v1", model: "hunyuan-turbos-latest", secret: "live-hunyuan-secret" }
+  { id: "hunyuan", envPrefix: "HUNYUAN", protocol: "openai_chat", basePath: "/hunyuan/v1", model: "hunyuan-turbos-latest", secret: "live-hunyuan-secret" },
+  { id: "ollama", envPrefix: "OLLAMA", protocol: "openai_chat", basePath: "/ollama/v1", model: "llama3.1", secret: "live-ollama-secret", apiKeyOptional: true },
+  { id: "lm-studio", envPrefix: "LM_STUDIO", protocol: "openai_chat", basePath: "/lm-studio/v1", model: "local-model", secret: "live-lm-studio-secret", apiKeyOptional: true }
 ];
 const NAMED_LIVE_CASE_IDS = NAMED_LIVE_SPECS.map((entry) => entry.id);
 const BASIC_LIVE_CASES = BASIC_LIVE_CASE_IDS.join(",");
@@ -850,6 +852,8 @@ describe("provider smoke verifier", () => {
     expect(report.results.find((result: any) => result.id === "deepseek").missing).toContain("DEEPSEEK_API_KEY");
     expect(report.results.find((result: any) => result.id === "openrouter").missing).toContain("OPENROUTER_API_KEY");
     expect(report.results.find((result: any) => result.id === "sambanova-anthropic").missing).toContain("SAMBANOVA_ANTHROPIC_API_KEY");
+    expect(report.results.find((result: any) => result.id === "ollama").missing).toEqual(["OLLAMA_MODEL", "OLLAMA_BASE_URL"]);
+    expect(report.results.find((result: any) => result.id === "lm-studio").missing).toEqual(["LM_STUDIO_MODEL", "LM_STUDIO_BASE_URL"]);
   });
 
   it("skips live provider model-list checks without requiring model names", async () => {
@@ -876,6 +880,8 @@ describe("provider smoke verifier", () => {
     expect(report.results.find((result: any) => result.id === "azure-openai").missing).toEqual(["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_BASE_URL"]);
     expect(report.results.find((result: any) => result.id === "deepseek").missing).toEqual(["DEEPSEEK_API_KEY"]);
     expect(report.results.find((result: any) => result.id === "sambanova-anthropic").missing).toEqual(["SAMBANOVA_ANTHROPIC_API_KEY"]);
+    expect(report.results.find((result: any) => result.id === "ollama").missing).toEqual(["OLLAMA_BASE_URL"]);
+    expect(report.results.find((result: any) => result.id === "lm-studio").missing).toEqual(["LM_STUDIO_BASE_URL"]);
   });
 
   it("lists live provider cases and environment variables", async () => {
@@ -907,14 +913,33 @@ describe("provider smoke verifier", () => {
     expect(report.cases.find((entry: any) => entry.id === "github-models")).toMatchObject({
       modelList: false
     });
+    expect(report.cases.find((entry: any) => entry.id === "ollama")).toMatchObject({
+      profile: "ollama",
+      protocol: "openai_chat",
+      apiKeyEnv: "OLLAMA_API_KEY",
+      modelEnv: "OLLAMA_MODEL",
+      baseURLEnv: "OLLAMA_BASE_URL",
+      apiKeyOptional: true,
+      requireBaseURL: true,
+      allowLocalNoAuth: true
+    });
+    expect(report.cases.find((entry: any) => entry.id === "lm-studio")).toMatchObject({
+      profile: "lm-studio",
+      apiKeyEnv: "LM_STUDIO_API_KEY",
+      modelEnv: "LM_STUDIO_MODEL",
+      baseURLEnv: "LM_STUDIO_BASE_URL",
+      apiKeyOptional: true,
+      requireBaseURL: true,
+      allowLocalNoAuth: true
+    });
   });
 
   it("prints live provider environment templates", async () => {
-    const report = await runLive(["--env-template", "--include", "openai-compatible,anthropic-compatible", "--json"], scrubProviderEnv());
+    const report = await runLive(["--env-template", "--include", "openai-compatible,anthropic-compatible,ollama,lm-studio", "--json"], scrubProviderEnv());
 
     expect(report).toMatchObject({
       liveProviderEnvTemplate: true,
-      count: 2
+      count: 4
     });
     const openaiCompatible = report.cases.find((entry: any) => entry.id === "openai-compatible");
     expect(openaiCompatible).toMatchObject({
@@ -928,6 +953,15 @@ describe("provider smoke verifier", () => {
     const anthropicCompatible = report.cases.find((entry: any) => entry.id === "anthropic-compatible");
     expect(anthropicCompatible.requiredEnv).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_MODEL", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
     expect(anthropicCompatible.modelListRequiredEnv).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
+    const ollama = report.cases.find((entry: any) => entry.id === "ollama");
+    expect(ollama.requiredEnv).toEqual(["OLLAMA_MODEL", "OLLAMA_BASE_URL"]);
+    expect(ollama.modelListRequiredEnv).toEqual(["OLLAMA_BASE_URL"]);
+    expect(ollama.optionalEnv).toEqual(["OLLAMA_API_KEY", "OLLAMA_HEADERS_JSON", "OLLAMA_BODY_EXTRA_JSON"]);
+    expect(ollama.generationCommand).toBe("npm run verify:provider:live -- --include ollama");
+    const lmStudio = report.cases.find((entry: any) => entry.id === "lm-studio");
+    expect(lmStudio.requiredEnv).toEqual(["LM_STUDIO_MODEL", "LM_STUDIO_BASE_URL"]);
+    expect(lmStudio.modelListRequiredEnv).toEqual(["LM_STUDIO_BASE_URL"]);
+    expect(lmStudio.optionalEnv).toEqual(["LM_STUDIO_API_KEY", "LM_STUDIO_HEADERS_JSON", "LM_STUDIO_BODY_EXTRA_JSON"]);
 
     const { stdout } = await execFileAsync(process.execPath, [
       "scripts/verify-provider-live.mjs",
@@ -1032,6 +1066,35 @@ describe("provider smoke verifier", () => {
       for (const entry of NAMED_LIVE_SPECS) {
         expect(JSON.stringify(report)).not.toContain(entry.secret);
       }
+    });
+  });
+
+  it("runs named local provider live checks without API credentials", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--include", "ollama,lm-studio", "--json"], scrubProviderEnv({
+        OLLAMA_MODEL: "llama3.1",
+        OLLAMA_BASE_URL: `${baseURL}/ollama/v1`,
+        LM_STUDIO_MODEL: "local-model",
+        LM_STUDIO_BASE_URL: `${baseURL}/lm-studio/v1`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        counts: {
+          passed: 2,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results.map((result: any) => [result.id, result.report.text])).toEqual([
+        ["ollama", "OK live chat"],
+        ["lm-studio", "OK live chat"]
+      ]);
+      expect(requests.map((request) => [request.path, request.authorization, request.body.model])).toEqual([
+        ["/ollama/v1/chat/completions", undefined, "llama3.1"],
+        ["/lm-studio/v1/chat/completions", undefined, "local-model"]
+      ]);
     });
   });
 

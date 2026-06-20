@@ -209,9 +209,11 @@ GROQ_API_KEY=... GROQ_MODEL=... npm run verify:provider:live -- --include groq
 MISTRAL_API_KEY=... MISTRAL_MODEL=... npm run verify:provider:live -- --include mistral
 DASHSCOPE_API_KEY=... DASHSCOPE_MODEL=... npm run verify:provider:live -- --include dashscope
 SILICONFLOW_API_KEY=... SILICONFLOW_MODEL=... npm run verify:provider:live -- --include siliconflow
+OLLAMA_MODEL=llama3.1 OLLAMA_BASE_URL=http://localhost:11434/v1 npm run verify:provider:live -- --include ollama
+LM_STUDIO_MODEL=local-model LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1 npm run verify:provider:live -- --include lm-studio
 ```
 
-同样的命名规则也适用于 `XAI_*`、`TOGETHER_*`、`KIMI_*`、`PERPLEXITY_*`、`DEEPSEEK_ANTHROPIC_*`、`ZAI_ANTHROPIC_*`、`ZHIPU_*`、`VOLCENGINE_*`、`QIANFAN_*` 和 `HUNYUAN_*`。只有覆盖内置 endpoint 或使用代理时，才需要额外设置对应的 `*_BASE_URL`。
+同样的命名规则也适用于 `XAI_*`、`TOGETHER_*`、`KIMI_*`、`PERPLEXITY_*`、`DEEPSEEK_ANTHROPIC_*`、`ZAI_ANTHROPIC_*`、`ZHIPU_*`、`VOLCENGINE_*`、`QIANFAN_*` 和 `HUNYUAN_*`。远程命名厂商只有覆盖内置 endpoint 或使用代理时，才需要额外设置对应的 `*_BASE_URL`。Ollama、LM Studio 这类本地 provider 的 live 检查会显式要求 `*_BASE_URL`，这样在没有环境变量时不会误打到本机端口；API key 默认可选，除非你的本地服务要求鉴权。
 
 运行 `npm run verify:provider:live -- --list --json` 可以直接列出全部 live-check case、协议、profile id 和对应环境变量名。
 

@@ -228,9 +228,11 @@ GROQ_API_KEY=... GROQ_MODEL=... npm run verify:provider:live -- --include groq
 MISTRAL_API_KEY=... MISTRAL_MODEL=... npm run verify:provider:live -- --include mistral
 DASHSCOPE_API_KEY=... DASHSCOPE_MODEL=... npm run verify:provider:live -- --include dashscope
 SILICONFLOW_API_KEY=... SILICONFLOW_MODEL=... npm run verify:provider:live -- --include siliconflow
+OLLAMA_MODEL=llama3.1 OLLAMA_BASE_URL=http://localhost:11434/v1 npm run verify:provider:live -- --include ollama
+LM_STUDIO_MODEL=local-model LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1 npm run verify:provider:live -- --include lm-studio
 ```
 
-The same naming pattern is available for `XAI_*`, `TOGETHER_*`, `KIMI_*`, `PERPLEXITY_*`, `DEEPSEEK_ANTHROPIC_*`, `ZAI_ANTHROPIC_*`, `ZHIPU_*`, `VOLCENGINE_*`, `QIANFAN_*`, and `HUNYUAN_*`. Add the matching `*_BASE_URL` only when you override the built-in endpoint or use a proxy.
+The same naming pattern is available for `XAI_*`, `TOGETHER_*`, `KIMI_*`, `PERPLEXITY_*`, `DEEPSEEK_ANTHROPIC_*`, `ZAI_ANTHROPIC_*`, `ZHIPU_*`, `VOLCENGINE_*`, `QIANFAN_*`, and `HUNYUAN_*`. For remote named providers, add the matching `*_BASE_URL` only when you override the built-in endpoint or use a proxy. For local providers such as Ollama and LM Studio, `*_BASE_URL` is explicit in live checks so running all live checks without env config does not accidentally call a local port; API keys are optional unless your local server requires one.
 
 Run `npm run verify:provider:live -- --list --json` to print every live-check case with its protocol, profile id, and environment variable names.
 

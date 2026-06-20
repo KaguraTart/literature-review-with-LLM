@@ -405,6 +405,34 @@ const DEFAULT_CASES = [
     bodyExtraEnv: "HUNYUAN_BODY_EXTRA_JSON",
     requireBaseURL: false,
     allowLocalNoAuth: true
+  },
+  {
+    id: "ollama",
+    label: "Ollama",
+    profile: "ollama",
+    protocol: "openai_chat",
+    apiKeyEnv: "OLLAMA_API_KEY",
+    modelEnv: "OLLAMA_MODEL",
+    baseURLEnv: "OLLAMA_BASE_URL",
+    headersEnv: "OLLAMA_HEADERS_JSON",
+    bodyExtraEnv: "OLLAMA_BODY_EXTRA_JSON",
+    requireBaseURL: true,
+    allowLocalNoAuth: true,
+    apiKeyOptional: true
+  },
+  {
+    id: "lm-studio",
+    label: "LM Studio",
+    profile: "lm-studio",
+    protocol: "openai_chat",
+    apiKeyEnv: "LM_STUDIO_API_KEY",
+    modelEnv: "LM_STUDIO_MODEL",
+    baseURLEnv: "LM_STUDIO_BASE_URL",
+    headersEnv: "LM_STUDIO_HEADERS_JSON",
+    bodyExtraEnv: "LM_STUDIO_BODY_EXTRA_JSON",
+    requireBaseURL: true,
+    allowLocalNoAuth: true,
+    apiKeyOptional: true
   }
 ];
 
@@ -619,6 +647,7 @@ export function providerLiveCaseCatalog(include = "") {
       bodyExtraEnv: entry.bodyExtraEnv,
       requireBaseURL: Boolean(entry.requireBaseURL),
       allowLocalNoAuth: Boolean(entry.allowLocalNoAuth),
+      apiKeyOptional: Boolean(entry.apiKeyOptional),
       modelList: entry.modelList !== false
     }))
   };
@@ -637,6 +666,7 @@ function providerEnvTemplateForCase(entry) {
   const requiredEnv = caseGenerationRequiredEnv(entry);
   const modelListRequiredEnv = caseModelListRequiredEnv(entry);
   const optionalEnv = [
+    ...(entry.apiKeyOptional && entry.apiKeyEnv ? [entry.apiKeyEnv] : []),
     ...(entry.requireBaseURL ? [] : [entry.baseURLEnv]),
     entry.headersEnv,
     entry.bodyExtraEnv
@@ -658,7 +688,7 @@ function providerEnvTemplateForCase(entry) {
 
 function caseGenerationRequiredEnv(entry) {
   return [
-    entry.apiKeyEnv,
+    ...(entry.apiKeyOptional ? [] : [entry.apiKeyEnv]),
     entry.modelEnv,
     ...(entry.requireBaseURL ? [entry.baseURLEnv] : [])
   ].filter(Boolean);
@@ -667,7 +697,7 @@ function caseGenerationRequiredEnv(entry) {
 function caseModelListRequiredEnv(entry) {
   if (entry.modelList === false) return [];
   return [
-    entry.apiKeyEnv,
+    ...(entry.apiKeyOptional ? [] : [entry.apiKeyEnv]),
     ...(entry.requireBaseURL ? [entry.baseURLEnv] : [])
   ].filter(Boolean);
 }
@@ -700,7 +730,7 @@ function missingRequirements(entry, env, options = {}) {
   const baseURL = String(env[entry.baseURLEnv] || (entry.requireBaseURL ? "" : defaultBaseURLForCase(entry)) || "").trim();
   const localNoAuth = entry.allowLocalNoAuth && isLocalEndpoint(baseURL);
   const customAuth = hasAuthHeader(options.customHeaders || {});
-  if (!localNoAuth && !String(env[entry.apiKeyEnv] || "").trim() && !customAuth) missing.push(entry.apiKeyEnv);
+  if (!entry.apiKeyOptional && !localNoAuth && !String(env[entry.apiKeyEnv] || "").trim() && !customAuth) missing.push(entry.apiKeyEnv);
   if (!options.models && !String(env[entry.modelEnv] || defaultModelForCase(entry) || "").trim()) missing.push(entry.modelEnv);
   if (entry.requireBaseURL && !baseURL) missing.push(entry.baseURLEnv);
   return missing;
@@ -978,12 +1008,14 @@ function usage() {
     "  DEEPSEEK_API_KEY=... DEEPSEEK_MODEL=... npm run verify:provider:live -- --include deepseek",
     "  OPENROUTER_API_KEY=... OPENROUTER_MODEL=... npm run verify:provider:live -- --include openrouter",
     "  GROQ_API_KEY=... GROQ_MODEL=... npm run verify:provider:live -- --include groq",
+    "  OLLAMA_MODEL=llama3.1 OLLAMA_BASE_URL=http://localhost:11434/v1 npm run verify:provider:live -- --include ollama",
+    "  LM_STUDIO_MODEL=local-model LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1 npm run verify:provider:live -- --include lm-studio",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --image",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --pdf",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --stream",
     "",
     "Options:",
-    "  --include LIST           Comma-separated live case ids; named cases include built-in provider ids such as minimax, gemini, azure-openai, deepseek, openrouter, groq, github-models, fireworks, cerebras, nvidia-nim, sambanova, sambanova-responses, and sambanova-anthropic",
+    "  --include LIST           Comma-separated live case ids; named cases include built-in provider ids such as minimax, gemini, azure-openai, deepseek, openrouter, groq, github-models, fireworks, cerebras, nvidia-nim, sambanova, sambanova-responses, sambanova-anthropic, ollama, and lm-studio",
     "  --list                   Print available live case ids and environment variable names, then exit",
     "  --env-template           Print copyable placeholder env lines for selected live case ids, then exit",
     "  --prompt TEXT            Override the smoke prompt",

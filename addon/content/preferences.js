@@ -1037,6 +1037,12 @@ function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)
   if (provider === "hunyuan") {
     return { include: "hunyuan", apiKeyEnv: "HUNYUAN_API_KEY", modelEnv: "HUNYUAN_MODEL", baseURLEnv: "HUNYUAN_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
   }
+  if (provider === "ollama") {
+    return { include: "ollama", apiKeyEnv: "OLLAMA_API_KEY", modelEnv: "OLLAMA_MODEL", baseURLEnv: "OLLAMA_BASE_URL", includeBaseURL: true, apiKeyOptional: true };
+  }
+  if (provider === "lm_studio" || provider === "lm-studio") {
+    return { include: "lm-studio", apiKeyEnv: "LM_STUDIO_API_KEY", modelEnv: "LM_STUDIO_MODEL", baseURLEnv: "LM_STUDIO_BASE_URL", includeBaseURL: true, apiKeyOptional: true };
+  }
   if (profile?.protocol === "openai_responses") {
     return { include: "openai-responses-compatible", apiKeyEnv: "OPENAI_RESPONSES_COMPATIBLE_API_KEY", modelEnv: "OPENAI_RESPONSES_COMPATIBLE_MODEL", baseURLEnv: "OPENAI_RESPONSES_COMPATIBLE_BASE_URL", includeBaseURL: true, apiKeyOptional };
   }
@@ -2661,6 +2667,9 @@ function isKnownProviderId(value) {
     "baidu",
     "hunyuan",
     "tencent",
+    "ollama",
+    "lm-studio",
+    "lm_studio",
     "local-agents",
     "local_agents",
     "custom"
@@ -2702,6 +2711,8 @@ function isKnownProviderBaseURL(value) {
     "https://qianfan.baidubce.com/v2",
     "https://qianfan.bj.baidubce.com/v2",
     "https://api.hunyuan.cloud.tencent.com/v1",
+    "http://localhost:11434/v1",
+    "http://127.0.0.1:1234/v1",
     "http://127.0.0.1:3333/v1"
   ].includes(String(value || "").replace(/\/+$/, ""));
 }
