@@ -1651,6 +1651,59 @@ describe("workbench writeback helpers", () => {
     expect(dom.elements.get("zms-status").textContent).toContain(`providerDiagnosticsDone: ${reportPath}`);
   });
 
+  it("saves raw-PDF capability from the workbench settings panel only for raw-document protocols", () => {
+    const prefs: Record<string, any> = {};
+    const loaded = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument({
+      "zms-profile-name": "Responses Router",
+      "zms-profile-base-url": "https://router.example/v1",
+      "zms-profile-api-key": "router-secret",
+      "zms-profile-model": "router-model"
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => key;
+    const profile = {
+      id: "openai-responses-compatible",
+      name: "OpenAI Compatible Responses",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://old.example/v1",
+      apiKey: "old-secret",
+      model: "",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+    dom.getElementById("zms-profile-image-input").checked = true;
+    dom.getElementById("zms-profile-pdf-input").checked = true;
+
+    const saved = workbench.saveProfileSettings();
+
+    expect(saved.capabilities).toMatchObject({ imageBase64: true, pdfBase64: true });
+    expect(saved.baseURL).toBe("https://router.example/v1");
+    expect(JSON.parse(prefs.profilesJson)[0].capabilities.pdfBase64).toBe(true);
+
+    const chatProfile = {
+      ...saved,
+      id: "openai-compatible",
+      protocol: "openai_chat",
+      capabilities: { ...saved.capabilities, pdfBase64: true }
+    };
+    workbench.state.profile = chatProfile;
+    workbench.state.profiles = [chatProfile];
+    dom.getElementById("zms-profile-pdf-input").checked = true;
+
+    const savedChat = workbench.saveProfileSettings();
+
+    expect(savedChat.capabilities.pdfBase64).toBe(false);
+    expect(dom.getElementById("zms-profile-pdf-input").disabled).toBe(true);
+    expect(dom.getElementById("zms-profile-pdf-input").checked).toBe(false);
+  });
+
   it("keeps custom auth headers when building workbench provider headers", () => {
     expect(helpers.headersForProfile({
       protocol: "openai_chat",

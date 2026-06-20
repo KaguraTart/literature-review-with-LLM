@@ -264,9 +264,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "provider.input-capability-boundary",
-    description: "PDF/base64 input is gated by the same explicit provider capability rule in bootstrap batch generation and the workbench",
-    files: ["addon/bootstrap.js", "addon/content/workbench.js", "tests/bootstrapProvider.test.ts"],
-    markers: ["canUsePdfBase64Input", "capabilities?.pdfBase64 === true", "protocol !== \"openai_chat\"", "same PDF/base64 capability rule"]
+    description: "PDF/base64 input is gated by the same explicit provider capability rule in bootstrap batch generation, the workbench, and workbench settings",
+    files: ["addon/bootstrap.js", "addon/content/workbench.xhtml", "addon/content/workbench.js", "tests/bootstrapProvider.test.ts", "tests/workbenchWriteback.test.ts"],
+    markers: ["canUsePdfBase64Input", "capabilities?.pdfBase64 === true", "protocol !== \"openai_chat\"", "zms-profile-pdf-input", "same PDF/base64 capability rule", "saves raw-PDF capability from the workbench settings panel"]
   },
   {
     id: "provider.live-script",

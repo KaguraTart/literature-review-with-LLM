@@ -464,6 +464,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-profile-api-key-label", this.t("apiKey"));
     setText("zms-profile-model-label", this.t("model"));
     setText("zms-profile-image-text", this.t("imageInput"));
+    setText("zms-profile-pdf-text", this.t("pdfInput"));
     setText("zms-local-ocr-text", this.t("localOcr"));
     setText("zms-local-ocr-options-heading", this.t("localOcrOptions"));
     setText("zms-local-ocr-endpoint-label", this.t("localOcrEndpoint"));
@@ -585,6 +586,12 @@ var ZoteroMarkdownSummaryWorkbench = {
     setInputValue("zms-profile-model", profile.model || "");
     const imageInput = document.getElementById("zms-profile-image-input");
     if (imageInput) imageInput.checked = profile?.capabilities?.imageBase64 === true;
+    const pdfInput = document.getElementById("zms-profile-pdf-input");
+    if (pdfInput) {
+      pdfInput.checked = canUsePdfBase64Input(profile);
+      pdfInput.disabled = profile?.protocol === "openai_chat";
+      pdfInput.setAttribute?.("title", pdfInput.disabled ? this.t("pdfBase64Unsupported") : this.t("pdfInput"));
+    }
     const localOcrInput = document.getElementById("zms-local-ocr-input");
     if (localOcrInput) localOcrInput.checked = this.state.localOcrEnabled === true;
     setInputValue("zms-local-ocr-endpoint", this.state.localOcrEndpoint || "http://127.0.0.1:3333/mcp");
@@ -594,6 +601,8 @@ var ZoteroMarkdownSummaryWorkbench = {
 
   profileFromSettingsPanel() {
     if (!this.state.profile) return null;
+    const pdfInput = document.getElementById("zms-profile-pdf-input");
+    const nextProtocol = this.state.profile.protocol;
     const next = hydrateProfile({
       ...this.state.profile,
       name: document.getElementById("zms-profile-name")?.value?.trim() || this.state.profile.name || this.state.profile.id,
@@ -602,7 +611,8 @@ var ZoteroMarkdownSummaryWorkbench = {
       model: document.getElementById("zms-profile-model")?.value?.trim() || "",
       capabilities: {
         ...(this.state.profile.capabilities || {}),
-        imageBase64: document.getElementById("zms-profile-image-input")?.checked === true
+        imageBase64: document.getElementById("zms-profile-image-input")?.checked === true,
+        pdfBase64: nextProtocol !== "openai_chat" && pdfInput?.checked === true
       }
     });
     return next;
