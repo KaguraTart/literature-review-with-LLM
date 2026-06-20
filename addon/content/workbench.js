@@ -4171,6 +4171,7 @@ function renderComparisonReportMarkdown(context, options = {}) {
   const lines = [
     "---",
     "templateVersion: literature-matrix-v1",
+    "synthesisVersion: evidence-synthesis-v1",
     `generatedAt: ${generatedAt}`,
     `collectionKey: ${yamlScalar(collectionKey)}`,
     `focalItemKey: ${yamlScalar(focal.itemKey)}`,
@@ -4207,6 +4208,28 @@ function renderComparisonReportMarkdown(context, options = {}) {
     }
     lines.push("");
   }
+  lines.push(
+    `## ${labels.synthesis}`,
+    "",
+    `### ${labels.coverageMap}`,
+    "",
+    `| ${labels.dimension} | ${labels.coverage} | ${labels.sharedSignals} | ${labels.evidenceLabels} | ${labels.followUp} |`,
+    "| --- | --- | --- | --- | --- |",
+    ...comparisonSynthesisRows(contexts, dimensions, labels),
+    "",
+    `### ${labels.pairwiseContrasts}`,
+    "",
+    `| ${labels.comparisonPaper} | ${labels.method} | ${labels.dataExperiment} | ${labels.finding} | ${labels.limitation} | ${labels.followUp} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    ...comparisonPairwiseContrastRows(focal, comparisons, labels),
+    "",
+    `### ${labels.gapLedger}`,
+    "",
+    `| ${labels.dimension} | ${labels.paper} | ${labels.gap} | ${labels.followUp} |`,
+    "| --- | --- | --- | --- |",
+    ...comparisonGapLedgerRows(contexts, dimensions, labels),
+    ""
+  );
   lines.push(
     `## ${labels.crossAnalysis}`,
     "",
@@ -4267,6 +4290,110 @@ function comparisonEvidenceForContext(entry, dimension, labels, limit = 3) {
   })).filter((item) => item.text);
 }
 
+function comparisonSynthesisRows(contexts, dimensions, labels) {
+  return dimensions.map((dimension) => {
+    const evidenceByContext = contexts.map((entry) => ({
+      entry,
+      evidence: comparisonEvidenceForContext(entry, dimension, labels, 2)
+    }));
+    const covered = evidenceByContext.filter((item) => item.evidence.length);
+    const evidenceLabels = covered
+      .map((item) => item.evidence.map((evidence) => evidence.label).join("<br>"))
+      .filter(Boolean)
+      .join("<br>");
+    return [
+      dimension.label,
+      `${covered.length}/${contexts.length}`,
+      comparisonSharedSignals(covered.map((item) => item.evidence.map((evidence) => evidence.text).join(" ")), labels),
+      evidenceLabels || labels.noEvidence,
+      comparisonCoverageFollowUp(covered.length, contexts.length, labels)
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |");
+  });
+}
+
+function comparisonPairwiseContrastRows(focal, comparisons, labels) {
+  const dimensions = comparisonPairwiseDimensions(labels);
+  if (!comparisons.length) {
+    return [`| ${labels.noComparisonPaper} | ${labels.metadataOnly} | ${labels.metadataOnly} | ${labels.metadataOnly} | ${labels.metadataOnly} | ${labels.selectComparisonPapers} |`];
+  }
+  return comparisons.map((entry) => {
+    const cells = [comparisonMetadataLabel(entry)];
+    for (const dimension of dimensions) {
+      const focalEvidence = comparisonEvidenceForContext(focal, dimension, labels, 1);
+      const comparisonEvidence = comparisonEvidenceForContext(entry, dimension, labels, 1);
+      cells.push(comparisonPairwiseEvidenceCell(focalEvidence, comparisonEvidence, labels));
+    }
+    cells.push(labels.pairwiseFollowUp);
+    return cells.map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |");
+  });
+}
+
+function comparisonPairwiseDimensions(labels) {
+  return [
+    { id: "method", label: labels.method, query: "method model algorithm framework architecture 方法 模型 算法 框架 结构" },
+    { id: "dataExperiment", label: labels.dataExperiment, query: "experiment dataset data metric evaluation result 实验 数据集 指标 评估 结果" },
+    { id: "finding", label: labels.finding, query: "finding conclusion contribution result insight 发现 结论 贡献 结果" },
+    { id: "limitation", label: labels.limitation, query: "limitation weakness threat failure future 局限 不足 威胁 失败 未来" }
+  ];
+}
+
+function comparisonPairwiseEvidenceCell(focalEvidence, comparisonEvidence, labels) {
+  const focalLabels = focalEvidence.map((item) => item.label).join("<br>");
+  const comparisonLabels = comparisonEvidence.map((item) => item.label).join("<br>");
+  if (focalLabels && comparisonLabels) return `${labels.focal}: ${focalLabels}<br>${labels.comparison}: ${comparisonLabels}`;
+  if (focalLabels) return `${labels.focal}: ${focalLabels}<br>${labels.comparisonMissing}`;
+  if (comparisonLabels) return `${labels.focalMissing}<br>${labels.comparison}: ${comparisonLabels}`;
+  return labels.noEvidence;
+}
+
+function comparisonGapLedgerRows(contexts, dimensions, labels) {
+  const rows = [];
+  for (const dimension of dimensions) {
+    for (const entry of contexts) {
+      const evidence = comparisonEvidenceForContext(entry, dimension, labels, 1);
+      if (evidence.length) continue;
+      rows.push([
+        dimension.label,
+        `${entry.role}: ${entry.metadata?.title || entry.itemKey || ""}`,
+        comparisonContextQuality(entry.diagnostics, labels) || labels.metadataOnly,
+        labels.gapFollowUp
+      ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+    }
+  }
+  return rows.length ? rows : [`| ${labels.allDimensions} | ${labels.allPapers} | ${labels.noMajorGap} | ${labels.verifyEvidence} |`];
+}
+
+function comparisonSharedSignals(texts, labels) {
+  const counts = new Map();
+  for (const text of texts || []) {
+    const terms = new Set(comparisonSignalTerms(text));
+    for (const term of terms) counts.set(term, (counts.get(term) || 0) + 1);
+  }
+  const shared = [...counts.entries()]
+    .filter(([, count]) => count >= 2)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([term]) => term)
+    .slice(0, 6);
+  return shared.length ? shared.join(", ") : labels.noSharedSignals;
+}
+
+function comparisonSignalTerms(text) {
+  const stopwords = new Set([
+    "about", "above", "after", "again", "algorithm", "analysis", "based", "between", "could", "dataset",
+    "datasets", "different", "during", "experimental", "experiments", "finding", "findings", "framework",
+    "larger", "method", "methods", "model", "models", "paper", "proposed", "reports", "results", "scenario",
+    "scenarios", "shows", "study", "system", "these", "using", "which", "with", "without"
+  ]);
+  return String(text || "").toLowerCase()
+    .match(/[a-z][a-z0-9-]{4,}/g)?.filter((term) => !stopwords.has(term)).slice(0, 40) || [];
+}
+
+function comparisonCoverageFollowUp(coveredCount, totalCount, labels) {
+  if (totalCount > 0 && coveredCount === totalCount) return labels.coverageAllFollowUp;
+  if (coveredCount > 0) return labels.coveragePartialFollowUp;
+  return labels.coverageMissingFollowUp;
+}
+
 function comparisonMetadataLabel(entry) {
   return `[${entry.evidencePrefix || "chunk"}:metadata itemKey=${entry.itemKey || "unknown"}]`;
 }
@@ -4322,6 +4449,17 @@ function comparisonReportLabels(outputLanguage) {
       year: "年份",
       contextQuality: "上下文质量",
       matrix: "对比矩阵",
+      synthesis: "跨文献综合",
+      coverageMap: "证据覆盖图",
+      pairwiseContrasts: "两两对比",
+      gapLedger: "缺口台账",
+      dimension: "维度",
+      coverage: "覆盖",
+      sharedSignals: "共同信号",
+      evidenceLabels: "证据标签",
+      followUp: "下一步",
+      comparisonPaper: "对比论文",
+      gap: "缺口",
       paper: "论文",
       evidenceExcerpts: "证据摘录",
       manualJudgment: "人工判断",
@@ -4342,6 +4480,21 @@ function comparisonReportLabels(outputLanguage) {
       error: "错误",
       unknown: "未知",
       metadataOnly: "仅有题录或上下文不足，请低置信度处理。",
+      noEvidence: "暂无证据标签",
+      noSharedSignals: "暂无稳定共同信号",
+      noComparisonPaper: "暂无对比论文",
+      selectComparisonPapers: "在 Zotero 中多选文献后重新打开工作台。",
+      comparisonMissing: "对比论文缺少该维度证据",
+      focalMissing: "焦点论文缺少该维度证据",
+      pairwiseFollowUp: "核对证据后写成相同点、差异点和不可比条件。",
+      gapFollowUp: "补充全文、批注或摘要证据，再重新导出矩阵。",
+      coverageAllFollowUp: "可提炼共同主张、差异条件和综述段落。",
+      coveragePartialFollowUp: "先补齐缺失论文证据，再做结论比较。",
+      coverageMissingFollowUp: "需要回到 PDF、摘要或笔记补充证据。",
+      allDimensions: "所有维度",
+      allPapers: "所有论文",
+      noMajorGap: "当前抽取范围内未发现明显缺口。",
+      verifyEvidence: "人工复核证据标签后使用。",
       researchQuestion: "研究问题",
       method: "方法/模型",
       dataExperiment: "数据与实验",
@@ -4367,6 +4520,17 @@ function comparisonReportLabels(outputLanguage) {
     year: "Year",
     contextQuality: "Context quality",
     matrix: "Comparison Matrix",
+    synthesis: "Cross-paper Synthesis",
+    coverageMap: "Evidence Coverage Map",
+    pairwiseContrasts: "Pairwise Contrasts",
+    gapLedger: "Gap Ledger",
+    dimension: "Dimension",
+    coverage: "Coverage",
+    sharedSignals: "Shared signals",
+    evidenceLabels: "Evidence labels",
+    followUp: "Follow-up",
+    comparisonPaper: "Comparison paper",
+    gap: "Gap",
     paper: "Paper",
     evidenceExcerpts: "Evidence excerpts",
     manualJudgment: "Manual judgment",
@@ -4387,6 +4551,21 @@ function comparisonReportLabels(outputLanguage) {
     error: "error",
     unknown: "unknown",
     metadataOnly: "Metadata only or insufficient context; treat as low-confidence.",
+    noEvidence: "No evidence labels yet",
+    noSharedSignals: "No stable shared signals yet",
+    noComparisonPaper: "No comparison paper",
+    selectComparisonPapers: "Select multiple Zotero papers and reopen the workbench.",
+    comparisonMissing: "Comparison paper lacks evidence for this dimension",
+    focalMissing: "Focal paper lacks evidence for this dimension",
+    pairwiseFollowUp: "After checking evidence, write similarities, differences, and non-comparable conditions.",
+    gapFollowUp: "Add full text, annotations, or abstract evidence, then export the matrix again.",
+    coverageAllFollowUp: "Ready to draft shared claims, boundary conditions, and review paragraphs.",
+    coveragePartialFollowUp: "Fill missing paper evidence before making a comparative conclusion.",
+    coverageMissingFollowUp: "Return to PDFs, abstracts, or notes to add evidence.",
+    allDimensions: "All dimensions",
+    allPapers: "All papers",
+    noMajorGap: "No obvious gap found in the extracted context.",
+    verifyEvidence: "Verify evidence labels manually before using.",
     researchQuestion: "Research Question",
     method: "Method / Model",
     dataExperiment: "Data and Experiments",

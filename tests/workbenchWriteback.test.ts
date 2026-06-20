@@ -3068,8 +3068,89 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("### 方法/模型");
     expect(report).toContain("[chunk:summary-focal source=summary locator=summary:1 hash=focalhash]");
     expect(report).toContain("[paper2:summary-compare source=summary locator=summary:1 hash=comparehash]");
+    expect(report).toContain("synthesisVersion: evidence-synthesis-v1");
+    expect(report).toContain("## 跨文献综合");
+    expect(report).toContain("### 证据覆盖图");
+    expect(report).toContain("### 两两对比");
+    expect(report).toContain("### 缺口台账");
     expect(report).toContain("## 横向分析清单");
     expect(report).toContain("## 证据摘录索引");
+  });
+
+  it("renders evidence-backed synthesis rows and gap ledger in the literature matrix", () => {
+    const loaded = loadWorkbenchHelpers();
+    const report = loaded.renderComparisonReportMarkdown({
+      metadata: {
+        title: "Focal Synthesis Paper",
+        authors: ["Ada One"],
+        year: "2026",
+        doi: ""
+      },
+      chunks: [
+        {
+          chunkId: "focal-method",
+          sourceType: "fulltext",
+          locator: "page:2",
+          sourceHash: "focalmethod",
+          text: "The method uses transformer attention for route planning and scenario control."
+        },
+        {
+          chunkId: "focal-result",
+          sourceType: "fulltext",
+          locator: "page:8",
+          sourceHash: "focalresult",
+          text: "The evaluation reports benchmark metrics for route delay and throughput."
+        }
+      ],
+      diagnostics: { chunkCount: 2, fulltextChars: 1800, annotationCount: 0, noteCount: 0 },
+      comparisonContexts: [
+        {
+          itemKey: "CMPA",
+          metadata: { title: "Comparison A", authors: ["Bo Two"], year: "2025", doi: "" },
+          chunks: [
+            {
+              chunkId: "cmp-method",
+              sourceType: "fulltext",
+              locator: "page:3",
+              sourceHash: "cmpmethod",
+              text: "The comparison method also uses transformer attention for routing policy design."
+            },
+            {
+              chunkId: "cmp-limit",
+              sourceType: "summary",
+              locator: "summary:2",
+              sourceHash: "cmplimit",
+              text: "A limitation is that sparse scenario cases remain unstable."
+            }
+          ],
+          diagnostics: { chunkCount: 2, fulltextChars: 1400, annotationCount: 0, noteCount: 1 }
+        },
+        {
+          itemKey: "CMPB",
+          metadata: { title: "Metadata Only Paper", authors: [], year: "2024", doi: "" },
+          chunks: [],
+          diagnostics: { chunkCount: 0, fulltextChars: 0, annotationCount: 0, noteCount: 0 }
+        }
+      ]
+    }, {
+      item: { key: "FOC", getCollections: () => [] },
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      reportPath: "/tmp/literature-matrix.md"
+    });
+
+    expect(report).toContain("## Cross-paper Synthesis");
+    expect(report).toContain("### Evidence Coverage Map");
+    expect(report).toContain("attention, transformer");
+    expect(report).toContain("[chunk:focal-method source=fulltext locator=page:2 hash=focalmethod]");
+    expect(report).toContain("[paper2:cmp-method source=fulltext locator=page:3 hash=cmpmethod]");
+    expect(report).toContain("### Pairwise Contrasts");
+    expect(report).toContain("[paper2:metadata itemKey=CMPA]");
+    expect(report).toContain("Focal paper: [chunk:focal-method source=fulltext locator=page:2 hash=focalmethod]");
+    expect(report).toContain("Comparison paper: [paper2:cmp-method source=fulltext locator=page:3 hash=cmpmethod]");
+    expect(report).toContain("### Gap Ledger");
+    expect(report).toContain("Metadata Only Paper");
+    expect(report).toContain("Add full text, annotations, or abstract evidence");
   });
 
   it("exports a literature matrix report from comparison contexts", async () => {

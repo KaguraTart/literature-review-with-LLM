@@ -403,6 +403,10 @@ const SOURCE_MARKERS = [
       "renderComparisonReportMarkdown",
       "comparisonReportMarkdownPath",
       "templateVersion: literature-matrix-v1",
+      "synthesisVersion: evidence-synthesis-v1",
+      "comparisonSynthesisRows",
+      "comparisonPairwiseContrastRows",
+      "comparisonGapLedgerRows",
       "comparisonReportDone"
     ]
   },
