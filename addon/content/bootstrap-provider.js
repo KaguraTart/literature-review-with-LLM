@@ -97,6 +97,8 @@ function extractOpenAIStreamText(chunk, depth = 0) {
   if (typeof delta?.text === "string") return delta.text;
   if ((chunk?.type === "response.output_text.delta" || chunk?.type === "response.text.delta") && typeof chunk?.delta === "string") return chunk.delta;
   if (chunk?.type === "response.refusal.delta" && typeof chunk?.delta === "string") return chunk.delta;
+  if (chunk?.type === "response.output_text.done" && typeof chunk?.text === "string") return chunk.text;
+  if (chunk?.type === "response.refusal.done" && typeof chunk?.refusal === "string") return chunk.refusal;
   if (chunk?.delta?.content) {
     const nestedDelta = extractOpenAIMessageContent(chunk.delta.content);
     if (nestedDelta) return nestedDelta;

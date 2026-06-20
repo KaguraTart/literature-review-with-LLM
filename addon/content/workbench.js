@@ -7615,6 +7615,8 @@ function streamTextFromData(protocol, data, depth = 0) {
   if (message) return message;
   if ((data?.type === "response.output_text.delta" || data?.type === "response.text.delta") && typeof data?.delta === "string") return data.delta;
   if (data?.type === "response.refusal.delta" && typeof data?.delta === "string") return data.delta;
+  if (data?.type === "response.output_text.done" && typeof data?.text === "string") return data.text;
+  if (data?.type === "response.refusal.done" && typeof data?.refusal === "string") return data.refusal;
   if (data?.delta?.content) {
     const nestedDelta = modelTextFromValue(data.delta.content);
     if (nestedDelta) return nestedDelta;

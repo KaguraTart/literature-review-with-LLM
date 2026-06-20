@@ -927,6 +927,8 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_responses", "data: {\"output\":[{\"content\":[{\"text\":\"ok\"}]}]}")).toBe("ok");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_text.delta\",\"delta\":\"streamed\"}")).toBe("streamed");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.refusal.delta\",\"delta\":\"responses refusal\"}")).toBe("responses refusal");
+    expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_text.done\",\"text\":\"done text\"}")).toBe("done text");
+    expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.refusal.done\",\"refusal\":\"done refusal\"}")).toBe("done refusal");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"hidden reasoning\"}")).toBe("");
     expect(parseStreamChunk("openai_responses", "data: {\"data\":{\"type\":\"response.reasoning_text.delta\",\"delta\":\"wrapped hidden\"}}")).toBe("");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.content_part.done\",\"part\":{\"type\":\"output_text\",\"text\":\"snapshot part\"}}")).toBe("snapshot part");

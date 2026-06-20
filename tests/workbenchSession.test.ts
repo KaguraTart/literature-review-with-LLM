@@ -328,6 +328,12 @@ describe("workbench session helpers", () => {
       type: "response.refusal.delta", delta: "responses refusal"
     })).toBe("responses refusal");
     expect(helpers.streamTextFromData("openai_responses", {
+      type: "response.output_text.done", text: "done text"
+    })).toBe("done text");
+    expect(helpers.streamTextFromData("openai_responses", {
+      type: "response.refusal.done", refusal: "done refusal"
+    })).toBe("done refusal");
+    expect(helpers.streamTextFromData("openai_responses", {
       item: { content: [{ type: "refusal", refusal: "snapshot refusal" }] }
     })).toBe("snapshot refusal");
     expect(helpers.streamTextFromData("anthropic_messages", {

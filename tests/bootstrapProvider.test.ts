@@ -2521,6 +2521,8 @@ describe("bootstrap provider helpers", () => {
     const { helpers } = loadBootstrapProviderHelpers();
     expect(helpers.extractOpenAIStreamText({ type: "response.output_text.delta", delta: "streamed" })).toBe("streamed");
     expect(helpers.extractOpenAIStreamText({ type: "response.refusal.delta", delta: "responses refusal" })).toBe("responses refusal");
+    expect(helpers.extractOpenAIStreamText({ type: "response.output_text.done", text: "done text" })).toBe("done text");
+    expect(helpers.extractOpenAIStreamText({ type: "response.refusal.done", refusal: "done refusal" })).toBe("done refusal");
     expect(helpers.extractOpenAIStreamText({ type: "response.reasoning_summary_text.delta", delta: "hidden reasoning" })).toBe("");
     expect(helpers.extractOpenAIStreamText({ data: { type: "response.reasoning_text.delta", delta: "wrapped hidden" } })).toBe("");
     expect(helpers.extractOpenAIStreamText({ type: "response.content_part.done", part: { type: "output_text", text: "snapshot part" } })).toBe("snapshot part");

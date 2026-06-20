@@ -212,6 +212,8 @@ function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, dept
   if (data?.type === "response.output_text.delta" && typeof data?.delta === "string") return data.delta;
   if (data?.type === "response.text.delta" && typeof data?.delta === "string") return data.delta;
   if (data?.type === "response.refusal.delta" && typeof data?.delta === "string") return data.delta;
+  if (data?.type === "response.output_text.done" && typeof data?.text === "string") return data.text;
+  if (data?.type === "response.refusal.done" && typeof data?.refusal === "string") return data.refusal;
   if (data?.delta?.content) {
     const nestedDelta = extractMessageContent(data.delta.content);
     if (nestedDelta) return nestedDelta;
