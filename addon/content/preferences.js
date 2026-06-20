@@ -1722,8 +1722,8 @@ function connectionTestBodyForProfile(profile) {
       { role: "user", content: "ping" }
     ],
     ...openAIChatTokenLimit(profile, 32),
-    stream: shouldProfileStream(profile),
-    n: 1
+    ...openAIChatOptionalDefaults(profile, { n: 1 }),
+    stream: shouldProfileStream(profile)
   };
 }
 
@@ -1781,6 +1781,10 @@ function bodyFieldList(value) {
 
 function openAIChatTokenLimit(profile, maxTokens) {
   return { [openAIChatTokenLimitField(profile)]: maxTokens };
+}
+
+function openAIChatOptionalDefaults(profile, defaults) {
+  return openAIChatTokenLimitField(profile) === "max_completion_tokens" ? {} : defaults;
 }
 
 function openAIChatTokenLimitField(profile) {

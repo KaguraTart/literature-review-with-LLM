@@ -271,6 +271,8 @@ describe("provider adapters", () => {
     });
     expect(reasoningBody).toMatchObject({ max_completion_tokens: 8192 });
     expect(reasoningBody).not.toHaveProperty("max_tokens");
+    expect(reasoningBody).not.toHaveProperty("temperature");
+    expect(reasoningBody).not.toHaveProperty("n");
 
     const explicitCompletionBody = bodyFor({
       ...baseRequest,
@@ -285,7 +287,26 @@ describe("provider adapters", () => {
     });
     expect(explicitCompletionBody).toMatchObject({ max_completion_tokens: 2048 });
     expect(explicitCompletionBody).not.toHaveProperty("max_tokens");
+    expect(explicitCompletionBody).not.toHaveProperty("temperature");
+    expect(explicitCompletionBody).not.toHaveProperty("n");
     expect(explicitCompletionBody).not.toHaveProperty("tokenLimitField");
+
+    const explicitSamplingBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        model: "o3-mini",
+        bodyExtra: {
+          temperature: 0.2,
+          n: 2
+        }
+      }
+    });
+    expect(explicitSamplingBody).toMatchObject({
+      max_completion_tokens: 8192,
+      temperature: 0.2,
+      n: 2
+    });
 
     const explicitLegacyBody = bodyFor({
       ...baseRequest,

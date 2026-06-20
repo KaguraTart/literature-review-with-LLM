@@ -941,6 +941,62 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[0].body).not.toHaveProperty("stream_options");
   });
 
+  it("keeps bootstrap OpenAI Chat reasoning models on completion-token defaults", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      choices: [{ message: { content: "reasoning summary" } }]
+    });
+
+    await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "o3-mini",
+      capabilities: { streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "o3-mini",
+      capabilities: { streaming: true },
+      customHeaders: {},
+      bodyExtra: { temperature: 0.2, n: 2 },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.4,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(fetchCalls[0].body).toMatchObject({ max_completion_tokens: 1024 });
+    expect(fetchCalls[0].body).not.toHaveProperty("max_tokens");
+    expect(fetchCalls[0].body).not.toHaveProperty("temperature");
+    expect(fetchCalls[0].body).not.toHaveProperty("n");
+    expect(fetchCalls[1].body).toMatchObject({
+      max_completion_tokens: 1024,
+      temperature: 0.2,
+      n: 2
+    });
+  });
+
   it("respects bootstrap OpenAI Chat stream option overrides", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       choices: [{ message: { content: "chat summary" } }]

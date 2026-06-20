@@ -2821,8 +2821,8 @@ function connectionTestBodyForProfile(profile) {
       { role: "user", content: "ping" }
     ],
     ...openAIChatTokenLimit(profile, 32),
-    stream: false,
-    n: 1
+    ...openAIChatOptionalDefaults(profile, { n: 1 }),
+    stream: false
   };
 }
 
@@ -5045,10 +5045,12 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
   return withOpenAIChatBodyDefaults(profile, {
     model: profile.model,
     messages: [{ role: "system", content: system }, ...openaiChatMessages(messages, requestInput)],
+    ...openAIChatOptionalDefaults(profile, {
+      temperature: Number(pref("temperature")) || 1,
+      n: 1
+    }),
     ...openAIChatTokenLimit(profile, Number(pref("maxOutputTokens")) || 8192),
-    temperature: Number(pref("temperature")) || 1,
-    stream,
-    n: 1
+    stream
   });
 }
 
@@ -5118,6 +5120,10 @@ function bodyFieldList(value) {
 
 function openAIChatTokenLimit(profile, maxTokens) {
   return { [openAIChatTokenLimitField(profile)]: maxTokens };
+}
+
+function openAIChatOptionalDefaults(profile, defaults) {
+  return openAIChatTokenLimitField(profile) === "max_completion_tokens" ? {} : defaults;
 }
 
 function openAIChatTokenLimitField(profile) {

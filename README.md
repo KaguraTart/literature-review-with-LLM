@@ -91,7 +91,7 @@ Important fields:
 Provider notes:
 
 - OpenAI Compatible Chat profiles use the chat-completions style endpoint. Use this for most routers and providers that expose `/v1/chat/completions`.
-- OpenAI Compatible Chat profiles send `max_tokens` by default, but switch to `max_completion_tokens` for `o`-series reasoning models. For custom routers, set `bodyExtra.tokenLimitField` to `max_completion_tokens` or `max_tokens` to force either field.
+- OpenAI Compatible Chat profiles send `max_tokens` by default, but switch to `max_completion_tokens` for `o`-series reasoning models and avoid default `temperature` / `n` fields that many reasoning routes reject. For custom routers, set `bodyExtra.tokenLimitField` to `max_completion_tokens` or `max_tokens` to force either field; explicit `bodyExtra.temperature` or `bodyExtra.n` values are still respected.
 - Streaming OpenAI Compatible Chat requests include `stream_options.include_usage` so the workbench can preserve token usage metadata when the provider returns it.
 - Strict routers or reasoning models that reject default request fields can use `bodyExtra.omitFields`, for example `["temperature", "n", "max_tokens"]`. These names remove top-level request body fields before the request is sent.
 - OpenAI Compatible Responses profiles use the Responses style endpoint. Use this when a provider or router exposes `/v1/responses`; this profile can declare raw PDF and image input when the model supports it.

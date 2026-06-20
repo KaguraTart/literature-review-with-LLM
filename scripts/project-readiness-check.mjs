@@ -164,7 +164,7 @@ const SOURCE_MARKERS = [
     id: "provider.protocols",
     description: "OpenAI chat, OpenAI Responses, Anthropic Messages, JSON mode, Chat token limits, and streamed usage options are present",
     files: ["src/providerAdapters.ts", "addon/content/bootstrap-provider.js", "addon/content/preferences.js", "addon/content/workbench.js"],
-    markers: ["openai_responses", "anthropic_messages", "jsonModeBodyDefaults", "openAIChatTokenLimit", "openAIChatStreamOptions"]
+    markers: ["openai_responses", "anthropic_messages", "jsonModeBodyDefaults", "openAIChatTokenLimit", "openAIChatOptionalDefaults", "openAIChatStreamOptions"]
   },
   {
     id: "provider.stream-snapshot-fallback",

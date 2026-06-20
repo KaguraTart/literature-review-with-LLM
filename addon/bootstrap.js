@@ -442,10 +442,12 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
   } : {
     model,
     messages: openAIChatSummaryMessages(request),
-    temperature: request.temperature,
+    ...openAIChatOptionalDefaults(summaryRequest, {
+      temperature: request.temperature,
+      n: 1
+    }),
     ...openAIChatTokenLimit(summaryRequest, request.maxOutputTokens),
-    stream: request.stream,
-    n: 1
+    stream: request.stream
   };
   const merged = useResponses ? withProviderBodyDefaults(summaryRequest, body) : withOpenAIChatBodyDefaults(summaryRequest, body);
   if (summaryRequest.provider === "minimax" && merged.extra_body === undefined && !providerBodyOmitFields(bodyExtra).has("extra_body")) {

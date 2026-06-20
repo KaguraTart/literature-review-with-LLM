@@ -722,6 +722,8 @@ describe("workbench writeback helpers", () => {
     }, messages, "zh-CN", "system", {}, false);
     expect(reasoningChatBody).toMatchObject({ max_completion_tokens: 8192 });
     expect(reasoningChatBody).not.toHaveProperty("max_tokens");
+    expect(reasoningChatBody).not.toHaveProperty("temperature");
+    expect(reasoningChatBody).not.toHaveProperty("n");
 
     const explicitCompletionBody = helpers.bodyForProfile({
       protocol: "openai_chat",
@@ -731,7 +733,20 @@ describe("workbench writeback helpers", () => {
     }, messages, "zh-CN", "system", {}, false);
     expect(explicitCompletionBody).toMatchObject({ max_completion_tokens: 2048 });
     expect(explicitCompletionBody).not.toHaveProperty("max_tokens");
+    expect(explicitCompletionBody).not.toHaveProperty("temperature");
+    expect(explicitCompletionBody).not.toHaveProperty("n");
     expect(explicitCompletionBody).not.toHaveProperty("tokenLimitField");
+
+    expect(helpers.bodyForProfile({
+      protocol: "openai_chat",
+      model: "o3-mini",
+      capabilities: { streaming: true },
+      bodyExtra: { temperature: 0.2, n: 2 }
+    }, messages, "zh-CN", "system", {}, false)).toMatchObject({
+      max_completion_tokens: 8192,
+      temperature: 0.2,
+      n: 2
+    });
 
     const strippedChatBody = helpers.bodyForProfile({
       protocol: "openai_chat",

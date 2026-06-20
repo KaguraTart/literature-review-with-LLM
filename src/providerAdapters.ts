@@ -254,10 +254,12 @@ function openaiChatBody(request: ModelRequest): Record<string, unknown> {
   return withOpenAIChatBodyDefaults(request.profile, {
     model: request.profile.model,
     messages,
-    temperature: request.temperature,
+    ...openAIChatOptionalDefaults(request.profile, {
+      temperature: request.temperature,
+      n: 1
+    }),
     ...openAIChatTokenLimit(request.profile, request.maxOutputTokens),
-    stream: request.stream,
-    n: 1
+    stream: request.stream
   });
 }
 
@@ -795,6 +797,10 @@ function bodyFieldList(value: unknown): string[] {
 
 function openAIChatTokenLimit(profile: ProviderProfile, maxTokens: number): Record<string, unknown> {
   return { [openAIChatTokenLimitField(profile)]: maxTokens };
+}
+
+function openAIChatOptionalDefaults(profile: ProviderProfile, defaults: Record<string, unknown>): Record<string, unknown> {
+  return openAIChatTokenLimitField(profile) === "max_completion_tokens" ? {} : defaults;
 }
 
 function openAIChatTokenLimitField(profile: ProviderProfile): "max_tokens" | "max_completion_tokens" {
