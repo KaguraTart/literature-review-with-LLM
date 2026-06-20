@@ -8812,6 +8812,7 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
         start: 0,
         end: Math.min(indexed.text.length, fallback.length),
         page: indexed.pages[0]?.page,
+        pageLabel: indexed.pages[0]?.pageLabel || "",
         pageStart: 0,
         pageEnd: Math.min(indexed.pages[0]?.text?.length || fallback.length, fallback.length),
         sourceType: indexed.sourceType,
@@ -8876,8 +8877,8 @@ async function candidatePdfEvidenceSource(pdf, record = {}) {
 
 async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
   if (!pdf || typeof fetch !== "function") return [];
-  const filePath = await candidatePdfFilePath(pdf);
-  if (!filePath) return [];
+  const bridgeArguments = await candidatePdfBridgeArguments(pdf);
+  if (!bridgeArguments) return [];
   const endpoint = candidatePdfTextBridgeEndpoint(record);
   if (!endpoint) return [];
   const [signal, clearPdfTextTimeout] = typeof setTimeout === "function"
@@ -8895,8 +8896,7 @@ async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
         params: {
           name: "extract_pdf_pages",
           arguments: {
-            filePath,
-            name: attachmentDisplayName(pdf) || "paper.pdf",
+            ...bridgeArguments,
             timeoutSeconds: 50,
             ocrFallback: true,
             maxOcrPages: 3,
@@ -8914,6 +8914,15 @@ async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
   }
 }
 
+async function candidatePdfBridgeArguments(pdf) {
+  const name = attachmentDisplayName(pdf) || "paper.pdf";
+  const filePath = await candidatePdfFilePath(pdf);
+  if (filePath) return { filePath, name };
+  const pdfBase64 = await candidatePdfBase64(pdf);
+  if (pdfBase64) return { pdfBase64, name };
+  return null;
+}
+
 async function candidatePdfFilePath(pdf) {
   try {
     const path = await attachmentFilePath(pdf);
@@ -8922,6 +8931,64 @@ async function candidatePdfFilePath(pdf) {
     // Keep the fallback path checks below.
   }
   return String(pdf?.path || pdf?.filePath || pdf?.attachmentPath || "").trim();
+}
+
+async function candidatePdfBase64(pdf) {
+  const direct = normalizedPdfBase64(
+    pdf?.pdfBase64
+    || pdf?.attachmentBase64
+    || pdf?.base64
+    || pdf?.data
+    || pdf?.dataURL
+  );
+  if (direct) return direct;
+  const directBytes = pdfBytesToBase64(pdf?.bytes || pdf?.fileBytes || pdf?.attachmentBytes);
+  if (directBytes) return directBytes;
+  for (const method of ["getPdfBase64", "getBase64", "getDataURL", "getData", "getFileDataAsync", "getBytes", "getArrayBuffer"]) {
+    if (typeof pdf?.[method] !== "function") continue;
+    try {
+      const value = await pdf[method]();
+      const normalized = normalizedPdfBase64(value) || pdfBytesToBase64(value);
+      if (normalized) return normalized;
+    } catch (_err) {
+      // Keep trying other data accessors.
+    }
+  }
+  for (const method of ["getBlob", "getFile", "getFileAsync"]) {
+    if (typeof pdf?.[method] !== "function") continue;
+    try {
+      const blob = await pdf[method]();
+      if (blob && typeof blob.arrayBuffer === "function") {
+        const buffer = await blob.arrayBuffer();
+        const normalized = pdfBytesToBase64(buffer);
+        if (normalized) return normalized;
+      }
+    } catch (_err) {
+      // Keep trying other data accessors.
+    }
+  }
+  return "";
+}
+
+function normalizedPdfBase64(value) {
+  if (typeof value !== "string") return "";
+  const text = value.replace(/^data:application\/pdf[^,]*,/i, "").trim();
+  if (!text || !/^[A-Za-z0-9+/=\r\n]+$/.test(text)) return "";
+  return text.replace(/\s+/g, "");
+}
+
+function pdfBytesToBase64(value) {
+  if (!value) return "";
+  if (Array.isArray(value)) return bytesToBase64(Uint8Array.from(value));
+  if (typeof ArrayBuffer !== "undefined") {
+    if (typeof ArrayBuffer.isView === "function" && ArrayBuffer.isView(value)) {
+      return bytesToBase64(new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength || value.length || 0));
+    }
+    if (value instanceof ArrayBuffer || Object.prototype.toString.call(value) === "[object ArrayBuffer]") {
+      return bytesToBase64(new Uint8Array(value));
+    }
+  }
+  return "";
 }
 
 function candidatePdfTextBridgeEndpoint(record = {}) {

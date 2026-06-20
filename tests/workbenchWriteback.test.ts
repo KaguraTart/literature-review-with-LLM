@@ -142,6 +142,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     AbortController,
     ReadableStream,
     URL,
+    btoa: (value: string) => Buffer.from(value, "binary").toString("base64"),
     console
   };
   const context = createContext(sandbox);
@@ -2260,6 +2261,147 @@ describe("workbench writeback helpers", () => {
     });
     expect(enriched[0].review.fullTextEvidence[0].locator).toContain("page:2");
     expect(enriched[0].review.fullTextEvidence[0].locator).not.toContain("indexed-text:");
+  });
+
+  it("uses base64 PDF bridge extraction when no local attachment path is available", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const pdfBase64 = Buffer.from("%PDF in-memory candidate").toString("base64");
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    (loaded as any).fetch = async (url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ url, body });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  engine: "pdftotext",
+                  pageCount: 1,
+                  pages: [
+                    { page: 5, pageLabel: "5", text: "The proposed method uses graph attention from in-memory PDF bytes." }
+                  ]
+                })
+              }
+            ]
+          }
+        })
+      };
+    };
+    loaded.__zoteroItems.set(72, {
+      id: 72,
+      key: "ITEM72",
+      getAttachments: () => [73]
+    });
+    loaded.__zoteroItems.set(73, {
+      id: 73,
+      key: "PDF73",
+      attachmentContentType: "application/pdf",
+      pdfBase64,
+      attachmentText: "Unpaged fallback method text should not be preferred.",
+      getFilePathAsync: async () => "",
+      getField: (field: string) => field === "title" ? "memory.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/base64-pages",
+        title: "Base64 Page Candidate",
+        decision: "include",
+        zoteroItemID: 72,
+        zoteroItemKey: "ITEM72",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].body.params.arguments).toMatchObject({
+      pdfBase64,
+      name: "memory.pdf",
+      ocrFallback: true,
+      maxOcrPages: 3
+    });
+    expect(fetchCalls[0].body.params.arguments).not.toHaveProperty("filePath");
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      sourceType: "pdf-page-text",
+      page: 5,
+      pageLabel: "5",
+      locator: expect.stringContaining("pdf-page-text:")
+    });
+  });
+
+  it("serializes PDF byte accessors for bridge extraction", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const pdfBytes = new Uint8Array(Buffer.from("%PDF typed-array candidate"));
+    const expectedBase64 = Buffer.from(pdfBytes).toString("base64");
+    const fetchCalls: Array<{ body: any }> = [];
+    (loaded as any).fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  pages: [
+                    { page: 3, pageLabel: "3", text: "Typed-array PDF bytes preserve page evidence." }
+                  ]
+                })
+              }
+            ]
+          }
+        })
+      };
+    };
+    loaded.__zoteroItems.set(74, {
+      id: 74,
+      key: "ITEM74",
+      getAttachments: () => [75]
+    });
+    loaded.__zoteroItems.set(75, {
+      id: 75,
+      key: "PDF75",
+      attachmentContentType: "application/pdf",
+      getBytes: async () => pdfBytes,
+      getFilePathAsync: async () => "",
+      getField: (field: string) => field === "title" ? "typed-array.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/typed-array-pages",
+        title: "Typed Array Page Candidate",
+        decision: "include",
+        zoteroItemID: 74,
+        zoteroItemKey: "ITEM74",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].body.params.arguments).toMatchObject({
+      pdfBase64: expectedBase64,
+      name: "typed-array.pdf"
+    });
+    expect(fetchCalls[0].body.params.arguments).not.toHaveProperty("filePath");
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      sourceType: "pdf-page-text",
+      page: 3,
+      pageLabel: "3"
+    });
   });
 
   it("uses standalone indexed-text page markers as candidate evidence locators", () => {
