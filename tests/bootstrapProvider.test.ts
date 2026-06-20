@@ -1086,6 +1086,72 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("max_completion_tokens");
   });
 
+  it("falls back when direct bootstrap summaries reject advanced optional fields", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 400,
+          error: {
+            message: "Unsupported parameters: presence_penalty, frequency_penalty, seed, top_logprobs, logprobs, parallel_tool_calls, reasoning_effort, stop"
+          }
+        },
+        {
+          choices: [{ message: { content: "fallback summary" } }]
+        }
+      ]
+    });
+
+    const result = await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { streaming: true },
+      customHeaders: {},
+      bodyExtra: {
+        presence_penalty: 0.2,
+        frequency_penalty: 0.1,
+        seed: 42,
+        top_logprobs: 3,
+        logprobs: true,
+        parallel_tool_calls: false,
+        reasoning_effort: "low",
+        stop: ["END"]
+      },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(result.markdown).toBe("fallback summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({
+      presence_penalty: 0.2,
+      frequency_penalty: 0.1,
+      seed: 42,
+      top_logprobs: 3,
+      logprobs: true,
+      parallel_tool_calls: false,
+      reasoning_effort: "low",
+      stop: ["END"]
+    });
+    expect(fetchCalls[1].body).not.toHaveProperty("presence_penalty");
+    expect(fetchCalls[1].body).not.toHaveProperty("frequency_penalty");
+    expect(fetchCalls[1].body).not.toHaveProperty("seed");
+    expect(fetchCalls[1].body).not.toHaveProperty("top_logprobs");
+    expect(fetchCalls[1].body).not.toHaveProperty("logprobs");
+    expect(fetchCalls[1].body).not.toHaveProperty("parallel_tool_calls");
+    expect(fetchCalls[1].body).not.toHaveProperty("reasoning_effort");
+    expect(fetchCalls[1].body).not.toHaveProperty("stop");
+  });
+
   it("falls back across multiple bootstrap OpenAI Responses optional-field errors", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       __responses: [
@@ -2205,6 +2271,7 @@ describe("bootstrap provider helpers", () => {
   it("parses Anthropic stream deltas in the bootstrap provider path", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       __streamLines: [
+        "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":5}}}",
         "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"anthropic \"}}",
         "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"stream\"}}",
         "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":2}}",
@@ -2232,7 +2299,7 @@ describe("bootstrap provider helpers", () => {
 
     expect(fetchCalls[0].body).toMatchObject({ stream: true });
     expect(result.markdown).toBe("anthropic stream");
-    expect(result.usage).toEqual({ output_tokens: 2 });
+    expect(result.usage).toEqual({ input_tokens: 5, output_tokens: 2 });
   });
 
   it("flushes a final Anthropic stream event without a trailing newline", async () => {

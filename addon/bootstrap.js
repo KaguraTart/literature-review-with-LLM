@@ -682,7 +682,7 @@ async function readProviderStream(response, protocol) {
   let usage;
   const consumeRecord = (record) => {
     const parsed = parseProviderStreamLine(protocol, record);
-    if (parsed.usage) usage ||= parsed.usage;
+    usage = mergeStreamUsage(usage, parsed.usage);
     if (parsed.text && (!parsed.snapshot || !text)) text += parsed.text;
   };
   while (true) {
@@ -726,11 +726,31 @@ function parseProviderStreamLine(protocol, line) {
   let snapshot = false;
   for (const payload of payloads) {
     const parsed = parseProviderStreamPayload(protocol, payload);
-    if (parsed.usage) usage ||= parsed.usage;
+    usage = mergeStreamUsage(usage, parsed.usage);
     if (parsed.snapshot) snapshot = true;
     if (parsed.text && (!parsed.snapshot || !text)) text += parsed.text;
   }
   return { text, snapshot, usage };
+}
+
+function mergeStreamUsage(left, right) {
+  if (!left) return right || undefined;
+  if (!right) return left;
+  const merged = { ...left };
+  for (const [key, value] of Object.entries(right)) {
+    const leftNumber = numericUsageValue(merged[key]);
+    const rightNumber = numericUsageValue(value);
+    merged[key] = leftNumber !== undefined && rightNumber !== undefined
+      ? Math.max(leftNumber, rightNumber)
+      : value;
+  }
+  return merged;
+}
+
+function numericUsageValue(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return undefined;
 }
 
 function parseProviderStreamPayload(protocol, payload) {
