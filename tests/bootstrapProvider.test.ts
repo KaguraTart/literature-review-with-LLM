@@ -2628,7 +2628,7 @@ describe("bootstrap provider helpers", () => {
 
     expect(fetchCalls[0].body).toMatchObject({ stream: true });
     expect(result.markdown).toBe("anthropic stream");
-    expect(result.usage).toEqual({ input_tokens: 5, output_tokens: 2 });
+    expect(result.usage).toEqual({ inputTokens: 5, outputTokens: 2, totalTokens: 7 });
   });
 
   it("flushes a final Anthropic stream event without a trailing newline", async () => {
@@ -2711,7 +2711,24 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.isProviderStreamSnapshot("openai_responses", {
       body: { type: "response.completed", response: { output_text: "snapshot" } }
     })).toBe(true);
-    expect(helpers.streamUsage({ data: { usage: { total_tokens: 9 } } })).toEqual({ total_tokens: 9 });
-    expect(helpers.streamUsage({ body: { usage: { total_tokens: 10 } } })).toEqual({ total_tokens: 10 });
+    expect(helpers.streamUsage({ data: { usage: { total_tokens: 9 } } })).toEqual({ totalTokens: 9 });
+    expect(helpers.streamUsage({ body: { usage: { total_tokens: 10 } } })).toEqual({ totalTokens: 10 });
+    expect(helpers.streamUsage({
+      body: {
+        usageMetadata: {
+          promptTokenCount: "4",
+          candidatesTokenCount: "3",
+          totalTokenCount: "7",
+          cachedContentTokenCount: "1",
+          thoughtsTokenCount: "2"
+        }
+      }
+    })).toEqual({
+      inputTokens: 4,
+      outputTokens: 3,
+      totalTokens: 7,
+      cachedInputTokens: 1,
+      reasoningTokens: 2
+    });
   });
 });

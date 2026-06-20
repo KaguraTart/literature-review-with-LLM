@@ -772,6 +772,13 @@ function mergeStreamUsage(left, right) {
       ? Math.max(leftNumber, rightNumber)
       : value;
   }
+  const inputTokens = numericUsageValue(merged.inputTokens);
+  const outputTokens = numericUsageValue(merged.outputTokens);
+  if (inputTokens !== undefined || outputTokens !== undefined) {
+    const computedTotal = (inputTokens || 0) + (outputTokens || 0);
+    const existingTotal = numericUsageValue(merged.totalTokens);
+    merged.totalTokens = existingTotal !== undefined ? Math.max(existingTotal, computedTotal) : computedTotal;
+  }
   return merged;
 }
 
