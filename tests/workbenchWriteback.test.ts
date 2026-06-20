@@ -1044,6 +1044,80 @@ describe("workbench writeback helpers", () => {
     })).rejects.toThrow("Provider error: invalid_api_key - Bad key [redacted]");
   });
 
+  it("retries workbench provider requests without unsupported advanced optional fields", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    loaded.fetch = async (url: string, init: any) => {
+      fetchCalls.push({ url, body: JSON.parse(init.body) });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              message: "Unsupported parameters: presence_penalty, frequency_penalty, seed, top_logprobs, logprobs, parallel_tool_calls, reasoning_effort, stop"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ choices: [{ message: { content: "pong" } }] })
+      };
+    };
+
+    const profile = {
+      id: "router",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: false },
+      bodyExtra: {
+        presence_penalty: 0.2,
+        frequency_penalty: 0.1,
+        seed: 42,
+        top_logprobs: 3,
+        logprobs: true,
+        parallel_tool_calls: false,
+        reasoning_effort: "low",
+        stop: ["END"]
+      }
+    };
+
+    const response = await loaded.requestModelWithRetry(
+      profile,
+      [{ role: "user", content: "ping" }],
+      "en-US",
+      "system",
+      { type: "text", text: "paper text" },
+      false
+    );
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({
+      presence_penalty: 0.2,
+      frequency_penalty: 0.1,
+      seed: 42,
+      top_logprobs: 3,
+      logprobs: true,
+      parallel_tool_calls: false,
+      reasoning_effort: "low",
+      stop: ["END"]
+    });
+    expect(fetchCalls[1].body).not.toHaveProperty("presence_penalty");
+    expect(fetchCalls[1].body).not.toHaveProperty("frequency_penalty");
+    expect(fetchCalls[1].body).not.toHaveProperty("seed");
+    expect(fetchCalls[1].body).not.toHaveProperty("top_logprobs");
+    expect(fetchCalls[1].body).not.toHaveProperty("logprobs");
+    expect(fetchCalls[1].body).not.toHaveProperty("parallel_tool_calls");
+    expect(fetchCalls[1].body).not.toHaveProperty("reasoning_effort");
+    expect(fetchCalls[1].body).not.toHaveProperty("stop");
+  });
+
   it("loads wrapped model-list pages in the workbench", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: string[] = [];

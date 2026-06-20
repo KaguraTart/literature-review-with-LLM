@@ -1989,7 +1989,7 @@ describe("preferences local-agent config helpers", () => {
           __fetchStatus: 400,
           __fetchBody: {
             error: {
-              message: "Unsupported parameters: text.format, max_output_tokens, stream"
+              message: "Unsupported parameters: text.format, max_output_tokens, stream, presence_penalty, frequency_penalty, seed, top_logprobs, logprobs, parallel_tool_calls, reasoning_effort, stop"
             }
           }
         },
@@ -1997,6 +1997,16 @@ describe("preferences local-agent config helpers", () => {
       ]
     });
     elements.get("zms-cap-jsonMode").checked = true;
+    elements.get("zms-profileBodyExtra").value = JSON.stringify({
+      presence_penalty: 0.2,
+      frequency_penalty: 0.1,
+      seed: 42,
+      top_logprobs: 3,
+      logprobs: true,
+      parallel_tool_calls: false,
+      reasoning_effort: "low",
+      stop: ["END"]
+    });
 
     await controller.testConnection();
 
@@ -2004,12 +2014,28 @@ describe("preferences local-agent config helpers", () => {
     expect(JSON.parse(fetchCalls[0].init.body)).toMatchObject({
       text: { format: { type: "json_object" } },
       max_output_tokens: 32,
-      stream: false
+      stream: false,
+      presence_penalty: 0.2,
+      frequency_penalty: 0.1,
+      seed: 42,
+      top_logprobs: 3,
+      logprobs: true,
+      parallel_tool_calls: false,
+      reasoning_effort: "low",
+      stop: ["END"]
     });
     const retriedBody = JSON.parse(fetchCalls[1].init.body);
     expect(retriedBody).not.toHaveProperty("text");
     expect(retriedBody).not.toHaveProperty("max_output_tokens");
     expect(retriedBody).not.toHaveProperty("stream");
+    expect(retriedBody).not.toHaveProperty("presence_penalty");
+    expect(retriedBody).not.toHaveProperty("frequency_penalty");
+    expect(retriedBody).not.toHaveProperty("seed");
+    expect(retriedBody).not.toHaveProperty("top_logprobs");
+    expect(retriedBody).not.toHaveProperty("logprobs");
+    expect(retriedBody).not.toHaveProperty("parallel_tool_calls");
+    expect(retriedBody).not.toHaveProperty("reasoning_effort");
+    expect(retriedBody).not.toHaveProperty("stop");
     expect(elements.get("zms-status").value).toBe("Connection OK");
   });
 

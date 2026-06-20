@@ -6258,6 +6258,30 @@ function providerUnsupportedOptionalFields(body, text, usedFallback = []) {
   if (body?.top_p !== undefined && /top_p|top p/.test(detail)) {
     fields.push("top_p");
   }
+  if (body?.presence_penalty !== undefined && /presence_penalty|presence penalty/.test(detail)) {
+    fields.push("presence_penalty");
+  }
+  if (body?.frequency_penalty !== undefined && /frequency_penalty|frequency penalty/.test(detail)) {
+    fields.push("frequency_penalty");
+  }
+  if (body?.seed !== undefined && /(?:^|[^a-z0-9_])seed(?:[^a-z0-9_]|$)/.test(detail)) {
+    fields.push("seed");
+  }
+  if (body?.top_logprobs !== undefined && /top_logprobs|top logprobs/.test(detail)) {
+    fields.push("top_logprobs");
+  }
+  if (body?.logprobs !== undefined && /(?:^|[^a-z0-9_])logprobs(?:[^a-z0-9_]|$)/.test(detail)) {
+    fields.push("logprobs");
+  }
+  if (body?.parallel_tool_calls !== undefined && /parallel_tool_calls|parallel tool calls|parallel tool call/.test(detail)) {
+    fields.push("parallel_tool_calls");
+  }
+  if (body?.reasoning_effort !== undefined && /reasoning_effort|reasoning effort/.test(detail)) {
+    fields.push("reasoning_effort");
+  }
+  if (body?.stop !== undefined && /(?:^|[^a-z0-9_])stop(?:[^a-z0-9_]|$)|stop sequence|stop sequences/.test(detail)) {
+    fields.push("stop");
+  }
   if (body?.top_k !== undefined && /top_k|top k/.test(detail)) {
     fields.push("top_k");
   }

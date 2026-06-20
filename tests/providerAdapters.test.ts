@@ -350,6 +350,35 @@ describe("provider adapters", () => {
       messages: [],
       max_tokens: 1024
     }, 400, "Unknown field: max_tokens")).toEqual(["max_tokens"]);
+    const strictOptionalBody = {
+      model: "router-model",
+      messages: [],
+      top_p: 0.9,
+      presence_penalty: 0.2,
+      frequency_penalty: 0.1,
+      seed: 42,
+      top_logprobs: 3,
+      logprobs: true,
+      parallel_tool_calls: false,
+      reasoning_effort: "low",
+      stop: ["END"]
+    };
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      strictOptionalBody,
+      400,
+      "Unsupported parameters: top_p, presence_penalty, frequency_penalty, seed, top_logprobs, logprobs, parallel_tool_calls, reasoning_effort, stop"
+    )).toEqual([
+      "top_p",
+      "presence_penalty",
+      "frequency_penalty",
+      "seed",
+      "top_logprobs",
+      "logprobs",
+      "parallel_tool_calls",
+      "reasoning_effort",
+      "stop"
+    ]);
     expect(providerCompatibilityFallbackFields("openai_chat", body, 422, "stream is not supported"))
       .toEqual(["stream", "stream_options"]);
     const responsesBody = {
