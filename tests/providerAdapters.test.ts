@@ -854,6 +854,14 @@ describe("provider adapters", () => {
         message: "Too many requests for sk-test-secret"
       }
     })).toThrow("rate_limit_exceeded - Too many requests for [redacted]");
+    expect(() => extractResponseText("openai_chat", {
+      body: {
+        error: {
+          code: "invalid_api_key",
+          message: "Bad key sk-test-secret"
+        }
+      }
+    } as any)).toThrow("invalid_api_key - Bad key [redacted]");
     expect(() => extractResponseText("anthropic_messages", {
       type: "error",
       error: {
@@ -861,6 +869,15 @@ describe("provider adapters", () => {
         message: "Bearer routed-secret overloaded"
       }
     })).toThrow("overloaded_error - Bearer [redacted] overloaded");
+    expect(() => extractResponseText("anthropic_messages", {
+      payload: {
+        type: "error",
+        error: {
+          type: "authentication_error",
+          message: "Bearer routed-secret rejected"
+        }
+      }
+    } as any)).toThrow("authentication_error - Bearer [redacted] rejected");
   });
 
   it("normalizes provider token usage across OpenAI, Anthropic, Gemini-style, and wrapped responses", () => {
@@ -894,6 +911,20 @@ describe("provider adapters", () => {
       outputTokens: 4,
       totalTokens: 11,
       cachedInputTokens: 3
+    });
+
+    expect(extractProviderUsage({
+      body: {
+        usage: {
+          prompt_tokens: 4,
+          completion_tokens: 2,
+          total_tokens: 6
+        }
+      }
+    })).toEqual({
+      inputTokens: 4,
+      outputTokens: 2,
+      totalTokens: 6
     });
 
     expect(extractProviderUsage({

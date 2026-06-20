@@ -1629,6 +1629,33 @@ describe("bootstrap provider helpers", () => {
     }, "hash", true)).rejects.toThrow("rate_limit_exceeded - Too many requests for [redacted]");
   });
 
+  it("throws redacted errors from wrapped bootstrap non-stream response bodies", async () => {
+    const { helpers } = loadBootstrapProviderHelpers({
+      body: {
+        error: { code: "invalid_api_key", message: "Bad key sk-test-secret" }
+      }
+    });
+
+    await expect(helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false)).rejects.toThrow("invalid_api_key - Bad key [redacted]");
+  });
+
   it("does not retry non-retryable bootstrap provider HTTP errors", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       __status: 401,

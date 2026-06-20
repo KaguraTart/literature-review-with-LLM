@@ -1511,15 +1511,24 @@ function pushStreamPayload(payloads, buffer) {
   if (payload) payloads.push(payload);
 }
 
-function providerResponseErrorDetail(data) {
+function providerResponseErrorDetail(data, depth = 0) {
   if (!data || typeof data !== "object") return "";
   const error = data.error || (data.type === "error" ? data : null);
-  if (!error) return "";
-  if (typeof error === "string") return error;
-  const message = error.message || data.message || "";
-  const code = error.code || data.code || "";
-  const type = error.type || data.type || "";
-  return [code, type, message || JSON.stringify(error)].filter(Boolean).join(" - ");
+  if (error) {
+    if (typeof error === "string") return error;
+    const message = error.message || data.message || "";
+    const code = error.code || data.code || "";
+    const type = error.type || data.type || "";
+    return [code, type, message || JSON.stringify(error)].filter(Boolean).join(" - ");
+  }
+  if (depth >= 3 || Array.isArray(data)) return "";
+  for (const key of PREFERENCES_PROVIDER_RESPONSE_WRAPPER_KEYS) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const nested = providerResponseErrorDetail(value, depth + 1);
+    if (nested) return nested;
+  }
+  return "";
 }
 
 function providerTextFromResponse(protocol, data) {

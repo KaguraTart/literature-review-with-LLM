@@ -1977,10 +1977,12 @@ describe("preferences local-agent config helpers", () => {
     const { controller, elements } = loadPreferencesController({
       initialModel: "model-a",
       fetchResponse: {
-        error: {
-          code: "invalid_api_key",
-          type: "authentication_error",
-          message: "Invalid API key sk-test-secret"
+        body: {
+          error: {
+            code: "invalid_api_key",
+            type: "authentication_error",
+            message: "Invalid API key sk-test-secret"
+          }
         }
       }
     });
@@ -2044,6 +2046,9 @@ describe("preferences local-agent config helpers", () => {
     expect(() => helpers.extractProviderConnectionText("openai_chat", [
       "data: {\"type\":\"error\",\"error\":{\"code\":\"rate_limit\",\"message\":\"Too many requests for sk-test-secret\"}}"
     ].join("\n"))).toThrow("Too many requests for [redacted]");
+    expect(() => helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
+      completion: { error: { code: "invalid_api_key", message: "Bad key sk-test-secret" } }
+    }))).toThrow("invalid_api_key - Bad key [redacted]");
   });
 
   it("shows parsed provider errors when model listing fails", async () => {

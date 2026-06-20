@@ -1017,6 +1017,9 @@ describe("workbench writeback helpers", () => {
     expect(() => helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
       error: { code: "invalid_api_key", message: "Bad key sk-test-secret" }
     }))).toThrow("invalid_api_key - Bad key [redacted]");
+    expect(() => helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
+      body: { error: { code: "invalid_api_key", message: "Bad key sk-test-secret" } }
+    }))).toThrow("invalid_api_key - Bad key [redacted]");
 
     expect(() => helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({ content: [] })))
       .toThrow("No text returned from model");
@@ -1593,10 +1596,16 @@ describe("workbench writeback helpers", () => {
     expect(() => helpers.extractResponseText("openai_responses", {
       error: { code: "rate_limit_exceeded", message: "Too many requests for sk-test-secret" }
     })).toThrow("rate_limit_exceeded - Too many requests for [redacted]");
+    expect(() => helpers.extractResponseText("openai_chat", {
+      body: { error: { code: "invalid_api_key", message: "Bad key sk-test-secret" } }
+    })).toThrow("invalid_api_key - Bad key [redacted]");
     expect(() => helpers.extractResponseText("anthropic_messages", {
       type: "error",
       error: { type: "overloaded_error", message: "Bearer routed-secret overloaded" }
     })).toThrow("overloaded_error - Bearer [redacted] overloaded");
+    expect(() => helpers.extractResponseText("anthropic_messages", {
+      payload: { type: "error", error: { type: "authentication_error", message: "Bearer routed-secret rejected" } }
+    })).toThrow("authentication_error - Bearer [redacted] rejected");
   });
 
   it("extracts OpenAI-compatible non-stream response text variants in workbench", () => {

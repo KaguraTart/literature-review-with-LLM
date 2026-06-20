@@ -18,13 +18,22 @@ const MODEL_TEXT_CONTAINER_KEYS = [
   "completion"
 ];
 
-function streamErrorText(data) {
+function streamErrorText(data, depth = 0) {
   const error = data?.error || (data?.type === "error" ? data : null);
-  if (!error) return "";
-  if (typeof error === "string") return error;
-  const code = error.code || error.type || data?.code || data?.type || "";
-  const message = error.message || data?.message || "";
-  return [code, message || JSON.stringify(error)].filter(Boolean).join(" - ");
+  if (error) {
+    if (typeof error === "string") return error;
+    const code = error.code || error.type || data?.code || data?.type || "";
+    const message = error.message || data?.message || "";
+    return [code, message || JSON.stringify(error)].filter(Boolean).join(" - ");
+  }
+  if (depth >= 3 || !data || typeof data !== "object" || Array.isArray(data)) return "";
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const nested = streamErrorText(value, depth + 1);
+    if (nested) return nested;
+  }
+  return "";
 }
 
 function streamUsage(chunk, depth = 0) {

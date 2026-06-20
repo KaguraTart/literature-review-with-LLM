@@ -410,20 +410,29 @@ function safeParseJSON(raw: string): unknown | null {
   }
 }
 
-function streamErrorText(data: any): string {
+function streamErrorText(data: any, depth = 0): string {
   const error = data?.error || (data?.type === "error" ? data : null);
-  if (!error) return "";
-  if (typeof error === "string") return error;
-  const code = error.code || error.type || data?.code || data?.type || "";
-  const message = error.message || data?.message || "";
-  return [code, message || JSON.stringify(error)].filter(Boolean).join(" - ");
+  if (error) {
+    if (typeof error === "string") return error;
+    const code = error.code || error.type || data?.code || data?.type || "";
+    const message = error.message || data?.message || "";
+    return [code, message || JSON.stringify(error)].filter(Boolean).join(" - ");
+  }
+  if (depth >= 3 || !data || typeof data !== "object" || Array.isArray(data)) return "";
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const nested = streamErrorText(value, depth + 1);
+    if (nested) return nested;
+  }
+  return "";
 }
 
 function providerUsageFromValue(value: unknown, depth = 0): ProviderUsage | null {
   if (!value || typeof value !== "object" || depth > 3) return null;
   const data = value as any;
   const direct = normalizeProviderUsage(data?.usage || data?.token_usage || data?.tokenUsage || data?.usage_metadata);
-  const nested = ["response", "message", "result", "payload", "data"]
+  const nested = PROVIDER_RESPONSE_WRAPPER_KEYS
     .map((key) => providerUsageFromValue(data?.[key], depth + 1))
     .filter((usage): usage is ProviderUsage => !!usage)
     .reduce((merged, usage) => mergeProviderUsage(merged, usage), null as ProviderUsage | null);
