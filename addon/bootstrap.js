@@ -1045,11 +1045,13 @@ async function writeCrossCollectionSynthesisIndex(settings, collectionContext, r
   const previous = await readCrossCollectionIndex(indexPath);
   const entry = crossCollectionEntry(collectionContext, results, outputLanguage, summaryInsights, artifacts);
   const collections = upsertCrossCollectionEntry(previous.collections, entry);
+  const labels = collectionTemplateLabels(outputLanguage);
   const payload = {
     templateVersion: "cross-collection-index-v1",
     generatedAt: new Date().toISOString(),
     outputLanguage,
     stats: crossCollectionStats(collections),
+    gapBoard: crossCollectionGapEntries(collections, labels),
     collections
   };
   await writeText(indexPath, JSON.stringify(payload, null, 2));
@@ -1170,11 +1172,110 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
     "",
     renderCrossCollectionThemeRows(collections, labels),
     "",
+    `## ${labels.crossCollectionGapBoard}`,
+    "",
+    renderCrossCollectionGapRows(indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels),
+    "",
     `## ${labels.reportNextActions}`,
     "",
     labels.crossCollectionNextActions,
     ""
   ].join("\n");
+}
+
+function renderCrossCollectionGapRows(gapEntries, labels) {
+  const rows = (gapEntries || []).slice(0, 12)
+    .map((entry) => [
+      escapeMarkdownTable(entry.gap || labels.gapMatrixPendingEvidence),
+      escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
+      escapeMarkdownTable((entry.themes || []).join("; ") || labels.clusterOther),
+      escapeMarkdownTable((entry.candidateQueries || []).slice(0, 3).join("; ") || labels.roadmapCandidateQueryColumn),
+      escapeMarkdownTable(entry.nextAction || labels.crossCollectionGapAction?.(entry.collectionCount || 0, entry.gap || "") || labels.reviewActionColumn)
+    ].join(" | "))
+    .map((row) => `| ${row} |`);
+  return [
+    `| ${labels.gapSignalColumn} | ${labels.collectionColumn} | ${labels.clusterColumn} | ${labels.roadmapCandidateQueryColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | --- | --- | --- | --- |",
+    rows.join("\n") || "|  |  |  |  |  |"
+  ].join("\n");
+}
+
+function crossCollectionGapEntries(collections = [], labels = collectionTemplateLabels("zh-CN")) {
+  const byGap = new Map();
+  for (const collection of collections || []) {
+    const collectionName = collection?.name || collection?.key || "";
+    const signals = crossCollectionGapSignals(collection, labels);
+    for (const signal of signals) {
+      const key = normalizedCrossCollectionGapKey(signal.gap);
+      if (!key) continue;
+      if (!byGap.has(key)) {
+        byGap.set(key, {
+          gap: signal.gap,
+          collections: [],
+          themes: [],
+          candidateQueries: []
+        });
+      }
+      const entry = byGap.get(key);
+      entry.collections.push(collectionName);
+      entry.themes.push(signal.theme || labels.clusterOther);
+      entry.candidateQueries.push(...crossCollectionCandidateQueriesForGap(collection, signal, labels));
+    }
+  }
+  return Array.from(byGap.values())
+    .map((entry) => {
+      const collections = uniqueInsightLines(entry.collections).slice(0, 8);
+      const themes = uniqueInsightLines(entry.themes).slice(0, 8);
+      const candidateQueries = uniqueInsightLines(entry.candidateQueries).slice(0, 5);
+      return {
+        gap: entry.gap,
+        collectionCount: collections.length,
+        collections,
+        themes,
+        candidateQueries,
+        nextAction: labels.crossCollectionGapAction(collections.length, entry.gap)
+      };
+    })
+    .sort((left, right) => right.collectionCount - left.collectionCount || left.gap.localeCompare(right.gap))
+    .slice(0, 20);
+}
+
+function crossCollectionGapSignals(collection, labels) {
+  const rows = [];
+  for (const gap of collection?.openGaps || []) {
+    rows.push({ gap: crossCollectionGapText(gap), theme: "" });
+  }
+  for (const cluster of collection?.clusters || []) {
+    for (const gap of cluster?.gapSignals || []) {
+      rows.push({ gap: crossCollectionGapText(gap), theme: cluster.label || labels.clusterOther });
+    }
+  }
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = `${normalizedCrossCollectionGapKey(row.gap)}::${row.theme || ""}`;
+    if (!row.gap || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function crossCollectionCandidateQueriesForGap(collection, signal, labels) {
+  const direct = (collection?.candidateQueries || []).filter((query) => normalizedCrossCollectionGapKey(query).includes(normalizedCrossCollectionGapKey(signal.gap).slice(0, 48)));
+  const fallback = [signal.theme, signal.gap].filter(Boolean).join(" ");
+  return uniqueInsightLines([...direct, fallback || labels.roadmapCandidateQueryColumn]).slice(0, 3);
+}
+
+function crossCollectionGapText(value) {
+  return cleanupInsightLine(value).replace(/[.。．]+$/g, "").trim();
+}
+
+function normalizedCrossCollectionGapKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[`*_~[\](){}<>]/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function renderCrossCollectionThemeRows(collections, labels) {
@@ -1932,9 +2033,13 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionSynthesisNote: "Aggregates the latest collection workspaces into one review-planning surface. Use it to compare themes across collections before writing a broader review.",
       crossCollectionInventory: "Collection Inventory",
       crossCollectionThemeMap: "Cross-Collection Theme Map",
+      crossCollectionGapBoard: "Cross-Collection Gap Board",
       collectionColumn: "Collection",
       reportColumn: "Report",
       crossCollectionStatsLine: (stats) => `Collections ${stats.collections}, papers ${stats.totalPapers}, available summaries ${stats.availableSummaries}, skipped without PDF ${stats.skippedNoPdf}, failed ${stats.failed}.`,
+      crossCollectionGapAction: (count, gap) => count >= 2
+        ? `Prioritize candidate search; this gap recurs in ${count} collections: ${gap}`
+        : `Check whether this gap is collection-specific before broadening: ${gap}`,
       crossCollectionNextActions: [
         "- [ ] Check whether similar clusters across collections should be merged or kept as separate review scopes.",
         "- [ ] Open each collection's formal report before moving claims into a cross-collection manuscript.",
@@ -2094,9 +2199,13 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionSynthesisNote: "最新の collection workspace を横断的なレビュー計画面に集約します。より広いレビューを書く前に、collection 間のテーマを比較するために使います。",
       crossCollectionInventory: "Collection 一覧",
       crossCollectionThemeMap: "Collection 横断テーママップ",
+      crossCollectionGapBoard: "Collection 横断ギャップボード",
       collectionColumn: "Collection",
       reportColumn: "報告書",
       crossCollectionStatsLine: (stats) => `Collection ${stats.collections} 件、論文 ${stats.totalPapers} 件、利用可能な要約 ${stats.availableSummaries} 件、PDF なしスキップ ${stats.skippedNoPdf} 件、失敗 ${stats.failed} 件。`,
+      crossCollectionGapAction: (count, gap) => count >= 2
+        ? `候補論文検索を優先する。このギャップは ${count} 件の collection に反復している: ${gap}`
+        : `範囲を広げる前に、このギャップが collection 固有か確認する: ${gap}`,
       crossCollectionNextActions: [
         "- [ ] Collection 間で似たクラスタを統合すべきか、別々のレビュー範囲として残すべきか確認する。",
         "- [ ] 横断的な原稿へ主張を移す前に、各 collection の正式レビュー報告書を開いて確認する。",
@@ -2255,9 +2364,13 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionSynthesisNote: "把最近生成的 collection workspace 汇总为一个跨集合综述规划入口，用于在更大范围综述写作前比较不同集合之间的主题、证据和缺口。",
     crossCollectionInventory: "集合清单",
     crossCollectionThemeMap: "跨集合主题地图",
+    crossCollectionGapBoard: "跨集合缺口看板",
     collectionColumn: "集合",
     reportColumn: "报告",
     crossCollectionStatsLine: (stats) => `集合 ${stats.collections} 个，论文 ${stats.totalPapers} 篇，可用总结 ${stats.availableSummaries} 篇，无 PDF 跳过 ${stats.skippedNoPdf} 篇，失败 ${stats.failed} 篇。`,
+    crossCollectionGapAction: (count, gap) => count >= 2
+      ? `优先运行候选论文检索；该缺口在 ${count} 个集合中重复出现：${gap}`
+      : `扩大为跨集合主张前，先确认该缺口是否仅属于单个集合：${gap}`,
     crossCollectionNextActions: [
       "- [ ] 判断不同集合中的相似主题应合并，还是保留为独立综述范围。",
       "- [ ] 把主张迁移到跨集合综述正文前，先打开各集合正式综述报告核对证据。",

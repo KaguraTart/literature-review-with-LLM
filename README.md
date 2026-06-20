@@ -15,7 +15,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, GitHub Models, Fireworks AI, Cerebras, NVIDIA NIM, SambaNova, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page with an in-app setup guide and live-check command template.
 - **Provider diagnostics**: OpenAI-compatible, OpenAI Responses, Anthropic, and wrapped router responses are normalized for text, stream errors, model lists, and token usage metadata in saved sessions.
 - **Multi-paper comparison and literature matrix**: when multiple Zotero items are selected, the first item becomes the focal paper and the rest become comparison context; the workbench can export an evidence-labeled Markdown literature matrix, and the built-in `Literature Matrix` skill can continue the analysis with an LLM.
-- **Collection synthesis workspace**: collection batch runs write `papers.json`, paper-note indexes, method matrices, research-gap matrices, heuristic topic clusters, synthesis-claims matrices, synthesis-conflict ledgers, synthesis roadmaps, research-question cards, idea lists, a manual review draft scaffold, a formal review report scaffold, plus a global `collections/index.json` and cross-collection synthesis map.
+- **Collection synthesis workspace**: collection batch runs write `papers.json`, paper-note indexes, method matrices, research-gap matrices, heuristic topic clusters, synthesis-claims matrices, synthesis-conflict ledgers, synthesis roadmaps, research-question cards, idea lists, a manual review draft scaffold, a formal review report scaffold, plus a global `collections/index.json` and cross-collection synthesis map with a recurring-gap board.
 - **Image questions and figure extraction**: paste screenshots, drop images, or choose local image files; the built-in `Figure/Table Extractor` skill turns paper figures, tables, and result panels into structured Markdown with visual OCR text, reconstructed-data-table fields, evidence mapping, and a review checklist.
 - **Bring-your-own-key**: the plugin is free and open source; remote model providers require your own API keys.
 - **Local agent consultation**: optionally ask local Gemini, Claude, and opencode command-line tools for independent reading suggestions through the local bridge.
@@ -36,7 +36,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - Export proposal notes and journal/report outlines with evidence labels, writing-positioning fields, prompt-pack-specific domain writing checklists, and manual follow-up checklists.
 - Export a formal review-draft scaffold with positioning notes, taxonomy tables, evidence-backed draft sections, risk checks, and an evidence index.
 - Configure multiple model providers from Zotero preferences.
-- Generate collection workspace artifacts during collection batch runs, including method matrices, topic clusters, synthesis-claims matrices, synthesis-conflict ledgers, synthesis roadmaps, gap matrices, review-draft scaffolds, and a formal review report scaffold.
+- Generate collection workspace artifacts during collection batch runs, including method matrices, topic clusters, synthesis-claims matrices, synthesis-conflict ledgers, synthesis roadmaps, gap matrices, review-draft scaffolds, a cross-collection recurring-gap board, and a formal review report scaffold.
 - Use built-in skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation audit, and local-agent review.
 - Select a research-domain prompt pack from Zotero preferences or the workbench settings drawer.
 - Optional local-agent bridge for Gemini, Claude, and opencode CLI tools.
@@ -251,7 +251,7 @@ build/update.json
 
 ## Current Limitations
 
-- Multi-paper comparison is available as a first-pass workbench workflow, with up to 5 comparison papers by default and a reusable Markdown literature-matrix export. Collection batch runs now generate heuristic topic clusters, evidence-backed synthesis-claims matrices, synthesis-conflict ledgers, synthesis roadmaps, a formal review report scaffold, and a cross-collection synthesis map, but the clustering is deterministic and the reports still need human review before final writing.
+- Multi-paper comparison is available as a first-pass workbench workflow, with up to 5 comparison papers by default and a reusable Markdown literature-matrix export. Collection batch runs now generate heuristic topic clusters, evidence-backed synthesis-claims matrices, synthesis-conflict ledgers, synthesis roadmaps, a formal review report scaffold, and a cross-collection synthesis map with a recurring-gap board, but the clustering is deterministic and the reports still need human review before final writing.
 - Single-turn image attachments and the `Figure/Table Extractor` skill are supported, including a structured visual OCR / table-reconstruction output contract, but chart, table, and handwritten-note understanding still depends on the selected model. A local OCR engine and automatic chart-data reconstruction are not implemented yet.
 - Formula rendering is lightweight. It supports common inline/display math patterns, but it is not a full TeX engine.
 - Paper reading logs and formal review drafts are structured Markdown scaffolds with evidence excerpts and manual fields; they still need human editing before becoming polished long-form review reports.
@@ -264,7 +264,7 @@ build/update.json
 
 ## TODO
 
-- Improve cross-collection clustering and continue polishing the global synthesis map, collection-level synthesis claims, synthesis roadmaps, and report generation.
+- Improve cross-collection clustering and continue polishing the global synthesis map, recurring-gap board, collection-level synthesis claims, synthesis roadmaps, and report generation.
 - Replace the current prompt-level visual OCR/table-reconstruction contract with local OCR, table parsing, and chart-data reconstruction for screenshots, PDF figures, tables, and experimental results.
 - Add true page-accurate source-to-PDF evidence extraction for unannotated PDF text on top of the current screening stages, exclusion reasons, screening board, evidence-chain queue, source-evidence snippets, Zotero indexed full-text snippets with hit context, matched annotation page labels, best-effort form-feed/page-marker hints, locators and hashes, and configurable citation-network policies.
 - Add more per-provider screenshots and tutorial examples beyond the in-app setup guide.

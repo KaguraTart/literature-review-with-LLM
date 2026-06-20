@@ -198,6 +198,8 @@ const requiredMarkers = [
   [bootstrap, "writeCollectionWorkspace", "collection workspace writer"],
   [bootstrap, "writeCrossCollectionSynthesisIndex", "cross-collection synthesis index writer"],
   [bootstrap, "cross-collection-synthesis", "cross-collection synthesis path"],
+  [bootstrap, "crossCollectionGapEntries", "cross-collection gap board entries"],
+  [bootstrap, "Cross-Collection Gap Board", "cross-collection gap board heading"],
   [bootstrap, "collectionWorkspaceArtifactPaths", "localized collection artifact paths"],
   [bootstrap, "renderMethodMatrix", "collection method matrix writer"],
   [bootstrap, "renderResearchQuestionCards", "collection research question cards writer"],

@@ -435,9 +435,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "collection.workspace",
-    description: "Collection workspace artifacts, cross-collection synthesis index, topic clustering, synthesis claims, conflict ledger, synthesis roadmap, and summary insight extraction are wired",
+    description: "Collection workspace artifacts, cross-collection synthesis index, gap board, topic clustering, synthesis claims, conflict ledger, synthesis roadmap, and summary insight extraction are wired",
     files: ["addon/bootstrap.js"],
-    markers: ["writeCollectionWorkspace", "writeCrossCollectionSynthesisIndex", "cross-collection-synthesis", "loadBatchSummaryInsights", "extractSummaryInsights", "renderMethodMatrix", "renderResearchGapMatrix", "renderTopicClusters", "renderSynthesisClaimsMatrix", "renderSynthesisConflictLedger", "renderSynthesisRoadmap", "renderFormalReviewReport", "formal-review-report", "synthesis-claims", "synthesis-conflicts", "synthesis-roadmap", "topicClusterEntries", "synthesisClaimEntries", "synthesisConflictEntries", "synthesisRoadmapEntries"]
+    markers: ["writeCollectionWorkspace", "writeCrossCollectionSynthesisIndex", "cross-collection-synthesis", "crossCollectionGapEntries", "Cross-Collection Gap Board", "loadBatchSummaryInsights", "extractSummaryInsights", "renderMethodMatrix", "renderResearchGapMatrix", "renderTopicClusters", "renderSynthesisClaimsMatrix", "renderSynthesisConflictLedger", "renderSynthesisRoadmap", "renderFormalReviewReport", "formal-review-report", "synthesis-claims", "synthesis-conflicts", "synthesis-roadmap", "topicClusterEntries", "synthesisClaimEntries", "synthesisConflictEntries", "synthesisRoadmapEntries"]
   },
   {
     id: "markdown.writeback",

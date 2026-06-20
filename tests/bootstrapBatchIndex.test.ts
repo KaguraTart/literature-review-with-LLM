@@ -297,6 +297,7 @@ describe("batch papers index", () => {
     });
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合综合地图");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("Collection");
+    expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合缺口看板");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("支持强度");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("冲突审查清单");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("综合路线图");
@@ -486,7 +487,7 @@ describe("batch papers index", () => {
         "",
         "## Limitation",
         "",
-        "- No field deployment evidence."
+        "- No deployment evidence."
       ].join("\n")]
     ]);
     const { writes, helpers } = loadBootstrapHelpers(files);
@@ -503,11 +504,21 @@ describe("batch papers index", () => {
     expect(payload.collections.find((collection: any) => collection.key === "OLD").clusters[0].label).toBe("Safety / Risk");
     expect(payload.collections.find((collection: any) => collection.key === "NEW").artifacts.reviewReportPath)
       .toBe("/out/collections/NEW/writing/formal-review-report.en-US.md");
+    expect(payload.gapBoard).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        gap: "No deployment evidence",
+        collectionCount: 2,
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        candidateQueries: expect.arrayContaining(["Safety / Risk Bayesian risk model No deployment evidence"])
+      })
+    ]));
     const synthesis = writes.get(artifacts.crossCollectionSynthesisPath) || "";
     expect(synthesis).toContain("Cross-Collection Synthesis Map");
+    expect(synthesis).toContain("Cross-Collection Gap Board");
     expect(synthesis).toContain("Old Collection");
     expect(synthesis).toContain("New Collection");
     expect(synthesis).toContain("Urban Airspace");
+    expect(synthesis).toContain("Prioritize candidate search; this gap recurs in 2 collections");
   });
 
   it("localizes collection review and research question templates", async () => {
