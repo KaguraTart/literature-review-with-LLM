@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 function loadBootstrapProviderHelpers(fetchResponse: any = { output_text: "ok" }, prefOverrides: Record<string, any> = {}) {
   const fetchCalls: Array<{ url: string; body: any; headers: Record<string, string> }> = [];
+  const linkedAttachments: any[] = [];
   const zoteroItems = new Map<number, any>();
   const prefs: Record<string, any> = {
     provider: "minimax",
@@ -37,6 +38,12 @@ function loadBootstrapProviderHelpers(fetchResponse: any = { output_text: "ok" }
       Items: {
         get: (id: number) => zoteroItems.get(id)
       },
+      Attachments: {
+        linkFromFile: async (payload: any) => {
+          linkedAttachments.push(payload);
+          return payload;
+        }
+      },
       debug() {},
       Prefs: {
         get: (key: string) => {
@@ -64,6 +71,7 @@ function loadBootstrapProviderHelpers(fetchResponse: any = { output_text: "ok" }
       exists: async () => false,
       makeDirectory: async () => undefined,
       writeUTF8: async () => undefined,
+      move: async () => undefined,
       read: async () => new Uint8Array([37, 80, 68, 70])
     },
     fetch: async (url: string, init: any) => {
@@ -102,11 +110,13 @@ function loadBootstrapProviderHelpers(fetchResponse: any = { output_text: "ok" }
   runInContext(uiCode, context, { filename: "bootstrap-ui.js" });
   return {
     fetchCalls,
+    linkedAttachments,
     zoteroItems,
     helpers: context as {
       callOpenAICompatible: (summaryRequest: any, sourceHash: string, nativeOpenAI: boolean) => Promise<any>;
       callAnthropic: (summaryRequest: any, sourceHash: string) => Promise<any>;
       callProvider: (summaryRequest: any, sourceHash: string) => Promise<any>;
+      generateForItem: (item: any, settings: any, force: boolean) => Promise<any>;
       getSettings: () => any;
       normalizedActiveProfile: () => any;
       settingsRequiresModel: (settings: any) => boolean;
@@ -365,6 +375,92 @@ describe("bootstrap provider helpers", () => {
     })).resolves.toMatchObject({
       type: "text",
       text: "indexed text"
+    });
+
+    await expect(helpers.buildInput({
+      attachmentFilename: "memory.pdf",
+      getFilePathAsync: async () => "",
+      pdfBase64: "data:application/pdf;base64,JVBERi1kaXJlY3Q="
+    }, "", {
+      inputMode: "pdf_base64",
+      protocol: "anthropic_messages",
+      capabilities: { pdfBase64: true }
+    })).resolves.toMatchObject({
+      type: "pdf_base64",
+      filename: "memory.pdf",
+      base64: "JVBERi1kaXJlY3Q="
+    });
+
+    const bytes = new Uint8Array(Buffer.from("%PDF bytes"));
+    await expect(helpers.buildInput({
+      getFilePathAsync: async () => "",
+      getBytes: async () => bytes,
+      getField: (field: string) => field === "title" ? "bytes.pdf" : ""
+    }, "", {
+      inputMode: "pdf_base64",
+      protocol: "openai_responses",
+      capabilities: { pdfBase64: true }
+    })).resolves.toMatchObject({
+      type: "pdf_base64",
+      filename: "bytes.pdf",
+      base64: Buffer.from(bytes).toString("base64")
+    });
+  });
+
+  it("generates bootstrap summaries from indexed text when the PDF path is unavailable", async () => {
+    const { fetchCalls, helpers, linkedAttachments } = loadBootstrapProviderHelpers({
+      output_text: "summary from indexed text"
+    });
+    const pdf = {
+      key: "PDF1",
+      attachmentContentType: "application/pdf",
+      attachmentFilename: "paper.pdf",
+      attachmentText: "Indexed text is enough for direct summaries.",
+      getFilePathAsync: async () => ""
+    };
+    const item = {
+      id: 1,
+      key: "ITEM1",
+      getBestAttachment: async () => pdf,
+      getAttachments: () => [],
+      getField: (field: string) => {
+        if (field === "title") return "Pathless Paper";
+        if (field === "date") return "2026";
+        return "";
+      },
+      isRegularItem: () => true
+    };
+
+    const result = await helpers.generateForItem(item, {
+      provider: "openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      capabilities: { pdfBase64: true },
+      outputDir: "/out",
+      inputMode: "text",
+      maxOutputTokens: 1024,
+      temperature: 0.2,
+      stream: false,
+      summaryVersion: "1",
+      outputLanguage: "zh-CN",
+      systemPrompt: "system",
+      userPrompt: "user"
+    }, false);
+
+    expect(result).toMatchObject({ status: "generated", itemKey: "ITEM1", pdfKey: "PDF1" });
+    expect(fetchCalls[0].body.input[0].content).toEqual([
+      { type: "input_text", text: expect.stringContaining("user") },
+      { type: "input_text", text: "CONTEXT:\nIndexed text is enough for direct summaries." }
+    ]);
+    expect(linkedAttachments[0]).toMatchObject({
+      parentItemID: 1,
+      contentType: "text/markdown",
+      title: "Markdown 摘要 - ITEM1.md"
     });
   });
 

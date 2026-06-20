@@ -337,8 +337,7 @@ async function batchGenerateItems(items, force, collectionContext) {
 async function generateForItem(item, settings, force) {
   const pdf = await findPdfAttachment(item);
   if (!pdf) throw new Error(t("noPdf"));
-  const pdfPath = await pdf.getFilePathAsync();
-  if (!pdfPath) throw new Error(t("noPdfPath"));
+  const pdfPath = await attachmentFilePath(pdf);
   const input = await buildInput(pdf, pdfPath, settings);
   const sourceHash = hashString(`${item.key}:${pdf.key}:${input.text || input.base64 || ""}`);
   const outputPath = buildOutputPath(item, pdf, settings, sourceHash);
@@ -392,16 +391,108 @@ async function buildInput(pdf, pdfPath, settings) {
     if (!canUsePdfBase64Input(settings)) {
       throw new Error(t("pdfBase64Unsupported"));
     }
-    const bytes = await IOUtils.read(pdfPath);
+    const base64 = await pdfBase64Input(pdf, pdfPath);
+    if (!base64) throw new Error(t("noPdfPath"));
     return {
       type: "pdf_base64",
-      base64: bytesToBase64(bytes),
-      filename: pdf.attachmentFilename || "paper.pdf"
+      base64,
+      filename: attachmentDisplayName(pdf) || "paper.pdf"
     };
   }
   const text = (await pdf.attachmentText) || "";
   if (!text.trim()) throw new Error(t("emptyText"));
   return { type: "text", text };
+}
+
+async function attachmentFilePath(attachment) {
+  if (!attachment) return "";
+  try {
+    if (typeof attachment.getFilePathAsync === "function") return await attachment.getFilePathAsync();
+  } catch (_err) {
+    // Try the synchronous and direct path fallbacks below.
+  }
+  if (typeof attachment.getFilePath === "function") {
+    try {
+      return attachment.getFilePath();
+    } catch (_err) {
+      // Keep fallback fields.
+    }
+  }
+  return attachment.path || attachment.filePath || attachment.attachmentPath || "";
+}
+
+function attachmentDisplayName(attachment) {
+  return attachment?.getField?.("title") || attachment?.attachmentFilename || attachment?.filename || "";
+}
+
+async function pdfBase64Input(pdf, pdfPath) {
+  if (pdfPath) {
+    try {
+      const bytes = await IOUtils.read(pdfPath);
+      const encoded = pdfBytesToBase64(bytes);
+      if (encoded) return encoded;
+    } catch (_err) {
+      // Try in-memory attachment accessors below.
+    }
+  }
+  return attachmentPdfBase64(pdf);
+}
+
+async function attachmentPdfBase64(pdf) {
+  const direct = normalizedPdfBase64(
+    pdf?.pdfBase64
+    || pdf?.attachmentBase64
+    || pdf?.base64
+    || pdf?.data
+    || pdf?.dataURL
+  );
+  if (direct) return direct;
+  const directBytes = pdfBytesToBase64(pdf?.bytes || pdf?.fileBytes || pdf?.attachmentBytes);
+  if (directBytes) return directBytes;
+  for (const method of ["getPdfBase64", "getBase64", "getDataURL", "getData", "getFileDataAsync", "getBytes", "getArrayBuffer"]) {
+    if (typeof pdf?.[method] !== "function") continue;
+    try {
+      const value = await pdf[method]();
+      const encoded = normalizedPdfBase64(value) || pdfBytesToBase64(value);
+      if (encoded) return encoded;
+    } catch (_err) {
+      // Try the next accessor.
+    }
+  }
+  for (const method of ["getBlob", "getFile", "getFileAsync"]) {
+    if (typeof pdf?.[method] !== "function") continue;
+    try {
+      const blob = await pdf[method]();
+      if (blob && typeof blob.arrayBuffer === "function") {
+        const encoded = pdfBytesToBase64(await blob.arrayBuffer());
+        if (encoded) return encoded;
+      }
+    } catch (_err) {
+      // Try the next accessor.
+    }
+  }
+  return "";
+}
+
+function normalizedPdfBase64(value) {
+  if (typeof value !== "string") return "";
+  const text = value.replace(/^data:application\/pdf[^,]*,/i, "").trim();
+  if (!text || !/^[A-Za-z0-9+/=\r\n]+$/.test(text)) return "";
+  return text.replace(/\s+/g, "");
+}
+
+function pdfBytesToBase64(value) {
+  if (!value) return "";
+  if (Array.isArray(value)) return bytesToBase64(Uint8Array.from(value));
+  if (typeof ArrayBuffer !== "undefined") {
+    if (typeof ArrayBuffer.isView === "function" && ArrayBuffer.isView(value)) {
+      return bytesToBase64(new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength || value.length || 0));
+    }
+    if (value instanceof ArrayBuffer || Object.prototype.toString.call(value) === "[object ArrayBuffer]") {
+      return bytesToBase64(new Uint8Array(value));
+    }
+  }
+  return "";
 }
 
 function canUsePdfBase64Input(settings) {
