@@ -935,9 +935,10 @@ var ZoteroMarkdownSummaryWorkbench = {
       const reviewPath = candidateReviewMarkdownPath(this.state.outputDir, this.state.item);
       const ledgerPath = importLedgerJsonlPath(this.state.outputDir, this.state.item);
       this.setStatus(this.t("candidateReviewExporting"));
-      await saveCandidateRecords(this.state.candidatePath, candidates);
-      await appendImportLedgerEntries(ledgerPath, decisionLedgerEntries(candidates, previousReview, updates, now));
-      await writeTextAtomic(reviewPath, renderCandidateReviewMarkdown(candidates, {
+      const enrichedCandidates = await enrichCandidatesWithFullTextEvidence(candidates, this.state.item, now);
+      await saveCandidateRecords(this.state.candidatePath, enrichedCandidates);
+      await appendImportLedgerEntries(ledgerPath, decisionLedgerEntries(enrichedCandidates, previousReview, updates, now));
+      await writeTextAtomic(reviewPath, renderCandidateReviewMarkdown(enrichedCandidates, {
         item: this.state.item,
         outputLanguage: this.state.outputLanguage,
         generatedAt: now,
@@ -945,7 +946,7 @@ var ZoteroMarkdownSummaryWorkbench = {
         ledgerPath,
         reviewPath
       }), `${reviewPath}.${Date.now()}.tmp`);
-      this.state.candidates = candidates;
+      this.state.candidates = enrichedCandidates;
       this.renderCandidates();
       this.setStatus(`${this.t("candidateReviewDone")}: ${reviewPath}`);
     } catch (err) {
@@ -6787,6 +6788,15 @@ function candidateHasSourceEvidence(record) {
 function candidateSourceEvidenceForRecord(record, labels) {
   const title = `${record.title || record.candidateId}${record.year ? ` (${record.year})` : ""}`;
   const rows = [];
+  for (const evidence of candidateReviewFullTextEvidence(record)) {
+    rows.push({
+      title,
+      label: evidence.label || candidateSourceEvidenceLabel(record, `fulltext-${evidence.topic || "snippet"}`),
+      type: labels.sourceEvidenceTypeFullText,
+      snippet: truncateText(evidence.text || evidence.snippet || "", 320),
+      followUp: labels.sourceEvidenceFollowFullText
+    });
+  }
   const abstract = candidateReviewAbstract(record);
   if (abstract) {
     rows.push(candidateSourceEvidenceRow(record, title, "abstract", labels.sourceEvidenceTypeAbstract, truncateText(abstract, 260), labels.sourceEvidenceFollowAbstract));
@@ -6833,6 +6843,111 @@ function candidateSourceEvidenceLabel(record, type) {
 
 function candidateReviewAbstract(record) {
   return mdText(record?.abstract || record?.abstractNote || record?.summary || "");
+}
+
+function candidateReviewFullTextEvidence(record) {
+  const values = record?.review?.fullTextEvidence ?? record?.fullTextEvidence ?? [];
+  const items = Array.isArray(values) ? values : [values];
+  return items
+    .map((item) => {
+      if (typeof item === "string") return { topic: "snippet", text: mdText(item), label: "" };
+      if (!item || typeof item !== "object") return null;
+      const text = mdText(item.text || item.snippet || item.value || "");
+      if (!text) return null;
+      return {
+        topic: mdText(item.topic || "snippet").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 32) || "snippet",
+        text,
+        label: mdText(item.label || ""),
+        attachmentKey: mdText(item.attachmentKey || "")
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
+async function enrichCandidatesWithFullTextEvidence(records, contextItem, now = new Date().toISOString()) {
+  const enriched = [];
+  for (const record of records || []) {
+    enriched.push(await enrichCandidateWithFullTextEvidence(record, contextItem, now));
+  }
+  return enriched;
+}
+
+async function enrichCandidateWithFullTextEvidence(record, contextItem, now) {
+  if (!candidateShouldEnrichFullTextEvidence(record)) return record;
+  try {
+    const item = await candidateImportedZoteroItem(record, contextItem);
+    if (!item) return record;
+    const pdf = await findPdfAttachment(item);
+    const text = String((await pdf?.attachmentText) || "").trim();
+    const snippets = candidateFullTextEvidenceSnippets(text, record, pdf);
+    if (!snippets.length) return record;
+    return {
+      ...record,
+      review: {
+        ...(record.review || {}),
+        fullTextEvidence: snippets,
+        fullTextEvidenceUpdatedAt: now
+      }
+    };
+  } catch (_err) {
+    return record;
+  }
+}
+
+function candidateShouldEnrichFullTextEvidence(record) {
+  if (!record || record?.quality?.dedupeStatus === "duplicate" || record?.priority?.tier === "duplicate") return false;
+  if (!record.zoteroItemID && !record.zoteroItemKey) return false;
+  if (record.pdfAttachmentStatus && record.pdfAttachmentStatus !== "attached_pdf") return false;
+  return normalizeCandidateDecision(record.decision) !== "exclude";
+}
+
+function candidateFullTextEvidenceSnippets(text, record, pdf) {
+  const source = String(text || "").replace(/\s+/g, " ").trim();
+  if (!source) return [];
+  const topics = [
+    { id: "method", pattern: /\b(method|methods|methodology|approach|model|algorithm|framework|propose|proposed|方法|模型|算法|框架)\b/i },
+    { id: "experiment", pattern: /\b(experiment|evaluation|result|dataset|benchmark|metric|ablation|实验|结果|评估|数据集|指标|消融)\b/i },
+    { id: "limitation", pattern: /\b(limitation|limitations|threat|validity|future work|weakness|局限|不足|威胁|未来)\b/i },
+    { id: "contribution", pattern: /\b(contribution|contributions|finding|findings|conclusion|novel|贡献|发现|结论|创新)\b/i }
+  ];
+  const rows = [];
+  const used = new Set();
+  for (const topic of topics) {
+    const snippet = candidateSnippetForPattern(source, topic.pattern, used);
+    if (!snippet) continue;
+    rows.push({
+      topic: topic.id,
+      label: candidateSourceEvidenceLabel(record, `fulltext-${topic.id}`),
+      text: snippet,
+      attachmentKey: pdf?.key || record.pdfAttachmentKey || ""
+    });
+  }
+  if (!rows.length) {
+    const fallback = truncateText(source, 320);
+    if (fallback) {
+      rows.push({
+        topic: "snippet",
+        label: candidateSourceEvidenceLabel(record, "fulltext-snippet"),
+        text: fallback,
+        attachmentKey: pdf?.key || record.pdfAttachmentKey || ""
+      });
+    }
+  }
+  return rows.slice(0, 4);
+}
+
+function candidateSnippetForPattern(text, pattern, used) {
+  const match = pattern.exec(text);
+  if (!match) return "";
+  const center = match.index;
+  const start = Math.max(0, center - 140);
+  const end = Math.min(text.length, center + 260);
+  const snippet = text.slice(start, end).trim();
+  const key = `${center}:${snippet.slice(0, 80)}`;
+  if (!snippet || used.has(key)) return "";
+  used.add(key);
+  return snippet;
 }
 
 function candidateSourceEvidenceIdentifiers(record) {
@@ -7042,11 +7157,13 @@ function candidateReviewLabels(outputLanguage) {
       sourceEvidenceType: "类型",
       sourceEvidenceSnippet: "摘录",
       sourceEvidenceFollowUp: "下一步核验",
+      sourceEvidenceTypeFullText: "全文索引",
       sourceEvidenceTypeAbstract: "摘要",
       sourceEvidenceTypePdf: "PDF",
       sourceEvidenceTypeNetwork: "引用网络",
       sourceEvidenceTypeSource: "来源页",
       sourceEvidenceTypeIdentifier: "标识符",
+      sourceEvidenceFollowFullText: "回到 PDF 原文核对页码、上下文和表格/图示位置，再决定是否纳入综述证据。",
       sourceEvidenceFollowAbstract: "对照全文确认研究问题、方法、实验和局限是否被摘要充分覆盖。",
       sourceEvidenceFollowPdf: "打开 PDF 或已附加文件，摘录方法、实验指标和关键结论位置。",
       sourceEvidenceFollowNetwork: "回到种子论文上下文核对引用或被引关系是否真的支撑相关性。",
@@ -7188,11 +7305,13 @@ function candidateReviewLabels(outputLanguage) {
     sourceEvidenceType: "Type",
     sourceEvidenceSnippet: "Snippet",
     sourceEvidenceFollowUp: "Next check",
+    sourceEvidenceTypeFullText: "Full-text index",
     sourceEvidenceTypeAbstract: "Abstract",
     sourceEvidenceTypePdf: "PDF",
     sourceEvidenceTypeNetwork: "Citation network",
     sourceEvidenceTypeSource: "Source page",
     sourceEvidenceTypeIdentifier: "Identifier",
+    sourceEvidenceFollowFullText: "Return to the PDF and verify page, context, and table/figure location before using it as review evidence.",
     sourceEvidenceFollowAbstract: "Check full text to confirm whether the abstract covers question, method, experiments, and limitations.",
     sourceEvidenceFollowPdf: "Open the PDF or attached file and extract method, metric, and key-finding locations.",
     sourceEvidenceFollowNetwork: "Return to seed-paper context and verify whether the citation relation actually supports relevance.",

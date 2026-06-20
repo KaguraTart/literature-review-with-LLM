@@ -220,6 +220,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     candidateReviewScreeningRows: (records: any[], labels: any) => Array<{ metric: string; count: number; action: string }>;
     candidateReviewEvidenceRows: (records: any[], labels: any) => Array<{ title: string; state: string; gap: string; check: string; source: string }>;
     candidateReviewSourceEvidenceRows: (records: any[], labels: any) => Array<{ title: string; label: string; type: string; snippet: string; followUp: string }>;
+    enrichCandidatesWithFullTextEvidence: (records: any[], contextItem: any, now?: string) => Promise<any[]>;
+    candidateFullTextEvidenceSnippets: (text: string, record: any, pdf?: any) => any[];
     reviewDraftMarkdownPath: (outputDir: string, item: any) => string;
     renderReviewDraftMarkdown: (context: any, options?: any) => string;
     proposalNoteMarkdownPath: (outputDir: string, item: any) => string;
@@ -1742,6 +1744,59 @@ describe("workbench writeback helpers", () => {
     expect(rows[4].snippet).toContain("DOI: 10.1000/source; Semantic Scholar: S2-SOURCE");
   });
 
+  it("extracts candidate full-text evidence snippets from imported Zotero PDF text", async () => {
+    const loaded = loadWorkbenchHelpers();
+    loaded.__zoteroItems.set(42, {
+      id: 42,
+      key: "ITEM42",
+      getAttachments: () => [43]
+    });
+    loaded.__zoteroItems.set(43, {
+      id: 43,
+      key: "PDF43",
+      attachmentContentType: "application/pdf",
+      attachmentText: [
+        "The proposed method uses graph attention to model route conflicts and scheduler state.",
+        "Experiments evaluate benchmark scenarios with delay, conflict, and throughput metrics.",
+        "Limitations include synthetic traffic assumptions and missing weather robustness checks.",
+        "The main contribution is an evidence-backed workflow for reusable candidate screening."
+      ].join(" ")
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/full",
+        title: "Full Text Candidate",
+        decision: "include",
+        importStatus: "imported",
+        zoteroItemID: 42,
+        zoteroItemKey: "ITEM42",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new", isAbstractOnly: false },
+        priority: { tier: "high", score: 90, recommendedDecision: "include" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(enriched[0].review.fullTextEvidenceUpdatedAt).toBe("2026-06-20T00:00:00.000Z");
+    expect(enriched[0].review.fullTextEvidence.map((item: any) => item.label)).toEqual([
+      "[candidate:doi:10.1000:full:fulltext-method]",
+      "[candidate:doi:10.1000:full:fulltext-experiment]",
+      "[candidate:doi:10.1000:full:fulltext-limitation]",
+      "[candidate:doi:10.1000:full:fulltext-contribution]"
+    ]);
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      topic: "method",
+      attachmentKey: "PDF43"
+    });
+
+    const rows = loaded.candidateReviewSourceEvidenceRows(enriched, loaded.candidateReviewLabels("en-US"));
+    expect(rows[0]).toMatchObject({
+      label: "[candidate:doi:10.1000:full:fulltext-method]",
+      type: "Full-text index"
+    });
+    expect(rows[0].snippet).toContain("proposed method uses graph attention");
+  });
+
   it("persists candidate review notes with decisions and can clear old notes", () => {
     const records = [
       {
@@ -2100,10 +2155,35 @@ describe("workbench writeback helpers", () => {
         sourceUrl: "https://doi.org/10.1000/a",
         ids: { doi: "10.1000/a" },
         sources: ["semantic_scholar"],
+        importStatus: "imported",
+        zoteroItemID: 42,
+        zoteroItemKey: "ITEM42",
+        pdfAttachmentStatus: "attached_pdf",
         priority: { tier: "high", score: 81, recommendedDecision: "include", reasons: ["stable DOI or arXiv identifier"] },
+        quality: { dedupeStatus: "new", isAbstractOnly: false }
+      },
+      {
+        candidateId: "doi:10.1000/b",
+        title: "Candidate B",
+        year: 2024,
+        decision: "user_pending",
+        ids: { doi: "10.1000/b" },
+        sources: ["crossref"],
+        priority: { tier: "high", score: 77, recommendedDecision: "include", reasons: ["related method"] },
         quality: { dedupeStatus: "new", isAbstractOnly: false }
       }
     ];
+    loaded.__zoteroItems.set(42, {
+      id: 42,
+      key: "ITEM42",
+      getAttachments: () => [43]
+    });
+    loaded.__zoteroItems.set(43, {
+      id: 43,
+      key: "PDF43",
+      attachmentContentType: "application/pdf",
+      attachmentText: "The method uses graph attention. Experiments report delay metrics. Limitations include synthetic data."
+    });
     workbench.t = (key: string) => key;
 
     await (workbench as any).exportCandidateReview();
@@ -2116,6 +2196,8 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reviewPath)).toContain("| Review state | Count | Suggested handling |");
     expect(files.get(reviewPath)).toContain("## Evidence-chain Follow-up");
     expect(files.get(reviewPath)).toContain("## Source Evidence Snippets");
+    expect(files.get(reviewPath)).toContain("[candidate:doi:10.1000:a:fulltext-method]");
+    expect(files.get(candidatePath)).toContain("\"fullTextEvidence\"");
     expect(files.get(reviewPath)).toContain("## Screening Protocol");
     expect(files.get(reviewPath)).toContain("## Decision Action Queue");
     expect(files.get(reviewPath)).toContain("| Candidate paper | Decision | Recommended | Priority | Next action |");
