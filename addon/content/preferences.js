@@ -1445,11 +1445,19 @@ function directModelListItemsFromResponse(data) {
                 ? data.model_list
                 : Array.isArray(data?.modelList)
                   ? data.modelList
-                  : Array.isArray(data?.models?.data)
-                    ? data.models.data
-                    : Array.isArray(data?.models?.items)
-                      ? data.models.items
-                      : [];
+                  : Array.isArray(data?.available_models)
+                    ? data.available_models
+                    : Array.isArray(data?.availableModels)
+                      ? data.availableModels
+                      : Array.isArray(data?.model_names)
+                        ? data.model_names
+                        : Array.isArray(data?.modelNames)
+                          ? data.modelNames
+                          : Array.isArray(data?.models?.data)
+                            ? data.models.data
+                            : Array.isArray(data?.models?.items)
+                              ? data.models.items
+                              : [];
   return source;
 }
 
@@ -1477,8 +1485,8 @@ function modelOptionFromItem(item) {
     const id = item.trim();
     return { id, label: id };
   }
-  const id = stringField(item?.id, item?.model, item?.name);
-  const label = stringField(item?.display_name, item?.displayName, item?.label, item?.name, id);
+  const id = stringField(item?.id, item?.model, item?.model_id, item?.modelId, item?.model_name, item?.modelName, item?.name, item?.value, item?.slug);
+  const label = stringField(item?.display_name, item?.displayName, item?.label, item?.title, item?.model_name, item?.modelName, item?.name, id);
   return { id, label };
 }
 

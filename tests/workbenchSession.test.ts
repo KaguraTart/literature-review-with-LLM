@@ -188,14 +188,20 @@ describe("workbench session helpers", () => {
   it("normalizes model-list options for workbench settings", () => {
     expect(helpers.workbenchModelOptionsFromItems([
       { model: "router-model", displayName: "Router Model" },
+      { model_name: "model-name-field", title: "Model Name Field" },
+      { value: "value-field", label: "Value Field" },
+      { slug: "slug-field" },
       { id: "id-only-model" },
       { name: "name-only-model" },
       "string-model"
     ])).toEqual([
       { id: "id-only-model", label: "id-only-model" },
+      { id: "model-name-field", label: "Model Name Field" },
       { id: "name-only-model", label: "name-only-model" },
       { id: "router-model", label: "Router Model" },
-      { id: "string-model", label: "string-model" }
+      { id: "slug-field", label: "slug-field" },
+      { id: "string-model", label: "string-model" },
+      { id: "value-field", label: "Value Field" }
     ]);
   });
 

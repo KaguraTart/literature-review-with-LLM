@@ -784,16 +784,21 @@ describe("provider smoke verifier", () => {
       expect(report).toMatchObject({
         ok: true,
         models: true,
-        modelCount: 2,
-        modelIds: ["local-model-a", "local-model-b"]
+        modelCount: 5,
+        modelIds: ["local-model-a", "local-model-b", "local-model-name", "slug-model", "value-model"]
       });
       expect(report.modelOptions.find((option: any) => option.id === "local-model-a").label).toBe("Local Model A");
+      expect(report.modelOptions.find((option: any) => option.id === "local-model-name").label).toBe("Local Model Name");
+      expect(report.modelOptions.find((option: any) => option.id === "value-model").label).toBe("Value Model");
     }, {
       responseBody: {
         message: {
           list: [
             { id: "local-model-b" },
-            { id: "local-model-a", display_name: "Local Model A" }
+            { id: "local-model-a", display_name: "Local Model A" },
+            { model_name: "local-model-name", title: "Local Model Name" },
+            { value: "value-model", label: "Value Model" },
+            { slug: "slug-model" }
           ]
         }
       }

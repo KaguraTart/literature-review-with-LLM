@@ -769,6 +769,12 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.modelIdsFromResponse({
       completion: { list: [{ name: "completion-list-model" }] }
     })).toEqual(["completion-list-model"]);
+    expect(helpers.modelIdsFromResponse({
+      result: { available_models: [{ model_name: "router-model-name" }, { modelId: "router-model-id" }] }
+    })).toEqual(["router-model-id", "router-model-name"]);
+    expect(helpers.modelIdsFromResponse({
+      payload: { modelNames: ["string-model-name", { value: "value-model" }, { slug: "slug-model" }] }
+    })).toEqual(["slug-model", "string-model-name", "value-model"]);
     expect(helpers.modelIdsFromResponse({ data: [{ id: "same" }, { id: "same" }] })).toEqual(["same"]);
     expect(helpers.modelOptionsFromResponse({
       data: [
@@ -783,15 +789,21 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.modelOptionsFromResponse({
       data: [
         { model: "router-model", displayName: "Router Model" },
+        { model_name: "model-name-field", title: "Model Name Field" },
+        { value: "value-field", label: "Value Field" },
+        { slug: "slug-field" },
         { id: "id-only-model" },
         { name: "name-only-model" },
         "string-model"
       ]
     })).toEqual([
       { id: "id-only-model", label: "id-only-model" },
+      { id: "model-name-field", label: "Model Name Field" },
       { id: "name-only-model", label: "name-only-model" },
       { id: "router-model", label: "Router Model" },
-      { id: "string-model", label: "string-model" }
+      { id: "slug-field", label: "slug-field" },
+      { id: "string-model", label: "string-model" },
+      { id: "value-field", label: "Value Field" }
     ]);
   });
 

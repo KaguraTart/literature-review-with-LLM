@@ -11445,6 +11445,10 @@ function workbenchDirectModelListItemsFromResponse(data) {
   if (Array.isArray(data?.list)) return data.list;
   if (Array.isArray(data?.model_list)) return data.model_list;
   if (Array.isArray(data?.modelList)) return data.modelList;
+  if (Array.isArray(data?.available_models)) return data.available_models;
+  if (Array.isArray(data?.availableModels)) return data.availableModels;
+  if (Array.isArray(data?.model_names)) return data.model_names;
+  if (Array.isArray(data?.modelNames)) return data.modelNames;
   if (Array.isArray(data?.models?.data)) return data.models.data;
   if (Array.isArray(data?.models?.items)) return data.models.items;
   return [];
@@ -11498,8 +11502,8 @@ function workbenchModelOptionFromItem(item) {
     const id = item.trim();
     return { id, label: id };
   }
-  const id = workbenchStringField(item?.id, item?.model, item?.name);
-  const label = workbenchStringField(item?.display_name, item?.displayName, item?.label, item?.name, id);
+  const id = workbenchStringField(item?.id, item?.model, item?.model_id, item?.modelId, item?.model_name, item?.modelName, item?.name, item?.value, item?.slug);
+  const label = workbenchStringField(item?.display_name, item?.displayName, item?.label, item?.title, item?.model_name, item?.modelName, item?.name, id);
   return { id, label };
 }
 
