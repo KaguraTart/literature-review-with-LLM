@@ -679,8 +679,11 @@ function providerEnvTemplateForCase(entry) {
     profile: entry.profile,
     protocol: entry.protocol,
     requiredEnv,
+    requiredEnvValues: envTemplateValuesForCase(entry, requiredEnv),
     modelListRequiredEnv,
+    modelListRequiredEnvValues: envTemplateValuesForCase(entry, modelListRequiredEnv),
     optionalEnv,
+    optionalEnvValues: envTemplateValuesForCase(entry, optionalEnv),
     generationCommand: `npm run verify:provider:live -- --include ${entry.id}`,
     imageCommand: caseSupportsImageInput(entry)
       ? `npm run verify:provider:image:live -- --include ${entry.id}`
@@ -692,6 +695,22 @@ function providerEnvTemplateForCase(entry) {
       ? ""
       : `npm run verify:provider:models:live -- --include ${entry.id}`
   };
+}
+
+function envTemplateValuesForCase(entry, names) {
+  const values = {};
+  for (const name of names || []) {
+    values[name] = envTemplateValueForCase(entry, name);
+  }
+  return values;
+}
+
+function envTemplateValueForCase(entry, name) {
+  if (!name) return "...";
+  if (name === entry.modelEnv) return defaultModelForCase(entry) || "...";
+  if (name === entry.baseURLEnv) return defaultBaseURLForCase(entry) || "...";
+  if (name === entry.headersEnv || name === entry.bodyExtraEnv) return "{}";
+  return "...";
 }
 
 function caseSupportsImageInput(entry) {
@@ -974,12 +993,12 @@ function formatEnvTemplate(template) {
   for (const entry of template.cases || []) {
     lines.push("", `# ${entry.id} (${entry.protocol})`, "# Required for generation checks");
     for (const name of entry.requiredEnv || []) {
-      lines.push(`${name}=...`);
+      lines.push(`${name}=${entry.requiredEnvValues?.[name] || "..."}`);
     }
     if (entry.optionalEnv?.length) {
       lines.push("# Optional");
       for (const name of entry.optionalEnv) {
-        lines.push(`# ${name}=...`);
+        lines.push(`# ${name}=${entry.optionalEnvValues?.[name] || "..."}`);
       }
     }
     lines.push(entry.generationCommand);
@@ -994,7 +1013,7 @@ function formatEnvTemplate(template) {
     if (entry.modelListCommand && entry.modelListRequiredEnv?.length) {
       lines.push("# Required for model-list checks");
       for (const name of entry.modelListRequiredEnv) {
-        lines.push(`${name}=...`);
+        lines.push(`${name}=${entry.modelListRequiredEnvValues?.[name] || "..."}`);
       }
       lines.push(entry.modelListCommand);
     }
