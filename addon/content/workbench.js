@@ -178,6 +178,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-close-workbench": () => this.closeWorkbench(),
       "zms-save-profile-settings": () => this.saveProfileSettings(),
       "zms-test-profile-settings": () => this.testProfileSettings(),
+      "zms-export-provider-diagnostics": () => this.exportProviderDiagnostics(),
       "zms-attach-image": () => this.chooseImages(),
       "zms-load-models-workbench": () => this.loadModelsForWorkbench(),
       "zms-new-conversation": () => this.newConversation(),
@@ -413,6 +414,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-quick-settings-heading", this.t("quickSettings"));
     setText("zms-save-profile-settings", this.t("save"));
     setText("zms-test-profile-settings", this.t("saveAndTest"));
+    setText("zms-export-provider-diagnostics", this.t("exportProviderDiagnostics"));
     setText("zms-profile-name-label", this.t("profileName"));
     setText("zms-profile-base-url-label", this.t("baseURL"));
     setText("zms-profile-api-key-label", this.t("apiKey"));
@@ -647,6 +649,25 @@ var ZoteroMarkdownSummaryWorkbench = {
       }
     } catch (err) {
       this.setStatus(`${this.t("testFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async exportProviderDiagnostics() {
+    try {
+      const profile = this.saveProfileSettings({ status: false });
+      if (!profile) return;
+      const now = new Date().toISOString();
+      const reportPath = providerDiagnosticsMarkdownPath(this.state.outputDir, profile);
+      this.setStatus(this.t("providerDiagnosticsExporting"));
+      await writeTextAtomic(reportPath, renderProviderDiagnosticsMarkdown(profile, {
+        outputLanguage: this.state.outputLanguage,
+        generatedAt: now,
+        reportPath,
+        statusText: profileStatusText(profile, (key) => this.t(key))
+      }), `${reportPath}.${Date.now()}.tmp`);
+      this.setStatus(`${this.t("providerDiagnosticsDone")}: ${reportPath}`);
+    } catch (err) {
+      this.setStatus(`${this.t("providerDiagnosticsFailed")}: ${safeError(err)}`);
     }
   },
 
@@ -2166,6 +2187,355 @@ function profileStatusText(profile, translate = (key) => key) {
   ];
   if (isLocalAgent) parts.push(t("profileLocalAgentReady"));
   return parts.filter(Boolean).join("\n");
+}
+
+function renderProviderDiagnosticsMarkdown(profile, options = {}) {
+  const labels = providerDiagnosticsLabels(options.outputLanguage);
+  const endpoint = endpointForProfileSafe(profile);
+  const modelList = providerModelListGuideForWorkbench(profile);
+  const provider = workbenchProviderFromProfile(profile, profile?.id || "");
+  const defaults = workbenchProviderDefaults(provider);
+  const verify = providerLiveVerifyGuideForWorkbench(profile, provider);
+  const auth = providerAuthDiagnostics(profile, labels);
+  const capabilities = providerCapabilityRows(profile, labels);
+  const headerNames = diagnosticHeaderNamesForProfile(profile);
+  const generatedAt = options.generatedAt || new Date().toISOString();
+  const statusText = String(options.statusText || profileStatusText(profile)).trim();
+  const lines = [
+    "---",
+    "templateVersion: provider-diagnostics-v1",
+    `generatedAt: ${generatedAt}`,
+    `profileId: ${yamlScalar(profile?.id || "")}`,
+    `providerKey: ${yamlScalar(provider)}`,
+    `protocol: ${yamlScalar(profile?.protocol || "")}`,
+    `endpoint: ${yamlScalar(endpoint || "")}`,
+    `reportPath: ${yamlScalar(options.reportPath || "")}`,
+    "---",
+    "",
+    `# ${labels.title}`,
+    "",
+    `- ${labels.profile}: ${mdText(profile?.name || defaults.name || profile?.id || "")}`,
+    `- ${labels.profileId}: \`${mdText(profile?.id || "")}\``,
+    `- ${labels.providerKey}: \`${mdText(provider)}\``,
+    `- ${labels.protocol}: ${providerProtocolDiagnosticLabel(profile?.protocol, labels)}`,
+    `- ${labels.baseURL}: ${mdText(profile?.baseURL || defaults.baseURL || labels.notConfigured)}`,
+    `- ${labels.endpoint}: ${mdText(endpoint || labels.notConfigured)}`,
+    `- ${labels.model}: ${mdText(profile?.model || labels.modelMissing)}`,
+    `- ${labels.generatedAt}: ${generatedAt}`,
+    "",
+    `## ${labels.auth}`,
+    "",
+    `- ${labels.authConfigured}: ${auth.configured ? labels.yes : labels.no}`,
+    `- ${labels.authSource}: ${auth.source}`,
+    `- ${labels.authHeaders}: ${headerNames.length ? headerNames.map((name) => `\`${name}\``).join(", ") : labels.none}`,
+    `- ${labels.secretPolicy}: ${labels.secretPolicyValue}`,
+    "",
+    `## ${labels.capabilities}`,
+    "",
+    `| ${labels.capability} | ${labels.status} |`,
+    "| --- | --- |",
+    ...capabilities.map((row) => `| ${markdownTableCell(row.label)} | ${row.enabled ? labels.enabled : labels.disabled} |`),
+    "",
+    `## ${labels.endpoints}`,
+    "",
+    `- ${labels.requestEndpoint}: ${mdText(endpoint || labels.notConfigured)}`,
+    `- ${labels.modelListEndpoint}: ${mdText(modelList || labels.modelListUnavailable)}`,
+    `- ${labels.defaultBaseURL}: ${mdText(defaults.baseURL || labels.notConfigured)}`,
+    `- ${labels.baseURLDiffers}: ${providerBaseURLDiffersForWorkbench(profile, provider) ? labels.yes : labels.no}`,
+    "",
+    `## ${labels.liveChecks}`,
+    "",
+    `\`\`\`bash`,
+    verify.liveCommand || labels.notConfigured,
+    `\`\`\``,
+    "",
+    `\`\`\`bash`,
+    verify.modelsCommand || labels.notConfigured,
+    `\`\`\``,
+    "",
+    `## ${labels.statusSnapshot}`,
+    "",
+    "```text",
+    statusText || labels.none,
+    "```",
+    "",
+    `## ${labels.troubleshooting}`,
+    "",
+    `- [ ] ${labels.checkModel}`,
+    `- [ ] ${labels.checkEndpoint}`,
+    `- [ ] ${labels.checkAuth}`,
+    `- [ ] ${labels.checkCapabilities}`,
+    `- [ ] ${labels.checkLive}`,
+    ""
+  ];
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+function providerDiagnosticsLabels(outputLanguage) {
+  const zh = /^zh/i.test(String(outputLanguage || ""));
+  if (zh) {
+    return {
+      title: "模型厂商配置诊断",
+      profile: "档案",
+      profileId: "档案 ID",
+      providerKey: "厂商识别",
+      protocol: "协议",
+      baseURL: "Base URL",
+      endpoint: "请求 endpoint",
+      model: "模型",
+      generatedAt: "生成时间",
+      auth: "认证",
+      authConfigured: "认证是否已配置",
+      authSource: "认证来源",
+      authHeaders: "认证相关 header",
+      secretPolicy: "密钥处理",
+      secretPolicyValue: "报告只记录认证是否存在和 header 名称，不写入 API key 或自定义 header 值。",
+      capabilities: "能力声明",
+      capability: "能力",
+      status: "状态",
+      enabled: "启用",
+      disabled: "关闭",
+      capText: "文本",
+      capImage: "图片输入",
+      capPdf: "原始 PDF 输入",
+      capStreaming: "流式输出",
+      capJson: "JSON 模式",
+      capModelList: "模型列表",
+      capToolUse: "工具调用",
+      endpoints: "端点",
+      requestEndpoint: "生成请求 endpoint",
+      modelListEndpoint: "模型列表 endpoint",
+      defaultBaseURL: "默认 Base URL",
+      baseURLDiffers: "是否偏离默认值",
+      liveChecks: "终端 live 检查",
+      statusSnapshot: "当前状态快照",
+      troubleshooting: "排查清单",
+      checkModel: "确认模型名称真实存在，必要时先点击 Load models。",
+      checkEndpoint: "确认 Base URL 不重复包含 /chat/completions、/responses、/messages 或 /models。",
+      checkAuth: "确认 API key 或自定义认证 header 属于当前厂商。",
+      checkCapabilities: "图片/PDF/流式开关要和模型能力一致。",
+      checkLive: "在终端运行上面的 live-check 命令，比较报错和工作台报错。",
+      notConfigured: "未配置",
+      modelMissing: "未填写模型",
+      modelListUnavailable: "当前档案不支持或无法推导模型列表 endpoint",
+      yes: "是",
+      no: "否",
+      none: "无",
+      localEndpoint: "本地接口，通常不需要 API key",
+      localAgent: "本地 agent 桥接服务",
+      apiKey: "API key 字段",
+      explicitHeader: "自定义认证 header",
+      missing: "未配置认证"
+    };
+  }
+  return {
+    title: "Provider Configuration Diagnostics",
+    profile: "Profile",
+    profileId: "Profile ID",
+    providerKey: "Provider key",
+    protocol: "Protocol",
+    baseURL: "Base URL",
+    endpoint: "Request endpoint",
+    model: "Model",
+    generatedAt: "Generated at",
+    auth: "Authentication",
+    authConfigured: "Authentication configured",
+    authSource: "Authentication source",
+    authHeaders: "Authentication-related headers",
+    secretPolicy: "Secret handling",
+    secretPolicyValue: "This report records only whether authentication exists and header names. It does not write API keys or custom header values.",
+    capabilities: "Capability Declaration",
+    capability: "Capability",
+    status: "Status",
+    enabled: "enabled",
+    disabled: "disabled",
+    capText: "text",
+    capImage: "image input",
+    capPdf: "raw PDF input",
+    capStreaming: "streaming",
+    capJson: "JSON mode",
+    capModelList: "model list",
+    capToolUse: "tool use",
+    endpoints: "Endpoints",
+    requestEndpoint: "Generation request endpoint",
+    modelListEndpoint: "Model-list endpoint",
+    defaultBaseURL: "Default Base URL",
+    baseURLDiffers: "Differs from default",
+    liveChecks: "Terminal Live Checks",
+    statusSnapshot: "Current Status Snapshot",
+    troubleshooting: "Troubleshooting Checklist",
+    checkModel: "Confirm the model name exists. Use Load models first when available.",
+    checkEndpoint: "Confirm the Base URL does not duplicate /chat/completions, /responses, /messages, or /models.",
+    checkAuth: "Confirm the API key or custom authentication header belongs to the selected provider.",
+    checkCapabilities: "Keep image/PDF/streaming toggles aligned with the model's real capabilities.",
+    checkLive: "Run the live-check command in a terminal and compare the error with the workbench error.",
+    notConfigured: "not configured",
+    modelMissing: "model missing",
+    modelListUnavailable: "not available or cannot be inferred for this profile",
+    yes: "yes",
+    no: "no",
+    none: "none",
+    localEndpoint: "local endpoint, API key is usually optional",
+    localAgent: "local agent bridge service",
+    apiKey: "API key field",
+    explicitHeader: "custom authentication header",
+    missing: "missing authentication"
+  };
+}
+
+function providerCapabilityRows(profile, labels) {
+  const capabilities = profile?.capabilities || {};
+  return [
+    { label: labels.capText, enabled: capabilities.text !== false },
+    { label: labels.capImage, enabled: canUseImageInput(profile) },
+    { label: labels.capPdf, enabled: canUsePdfBase64Input(profile) },
+    { label: labels.capStreaming, enabled: capabilities.streaming === true },
+    { label: labels.capJson, enabled: capabilities.jsonMode === true },
+    { label: labels.capModelList, enabled: capabilities.modelList !== false },
+    { label: labels.capToolUse, enabled: capabilities.toolUse === true }
+  ];
+}
+
+function providerAuthDiagnostics(profile, labels = providerDiagnosticsLabels()) {
+  if (isLocalAgentProfile(profile)) return { configured: true, source: labels.localAgent };
+  const endpoint = endpointForProfileSafe(profile);
+  if (isLocalEndpoint(endpoint)) return { configured: true, source: labels.localEndpoint };
+  if (String(profile?.apiKey || "").trim()) return { configured: true, source: labels.apiKey };
+  if (hasExplicitAuthHeader(profile?.customHeaders || {})) return { configured: true, source: labels.explicitHeader };
+  return { configured: false, source: labels.missing };
+}
+
+function diagnosticHeaderNamesForProfile(profile) {
+  try {
+    return Object.keys(headersForProfile(profile || {}))
+      .filter((name) => /authorization|api-key|x-api-key|anthropic-version|anthropic-dangerous-direct-browser-access/i.test(name))
+      .sort((a, b) => a.localeCompare(b));
+  } catch (_err) {
+    return [];
+  }
+}
+
+function providerProtocolDiagnosticLabel(protocol, labels) {
+  if (protocol === "openai_responses") return "OpenAI Responses";
+  if (protocol === "anthropic_messages") return "Anthropic Messages";
+  if (protocol === "openai_chat") return "OpenAI Chat Completions";
+  return mdText(protocol || labels.notConfigured);
+}
+
+function providerModelListGuideForWorkbench(profile) {
+  try {
+    const request = workbenchModelListRequestForProfile(profile);
+    return request?.url || "";
+  } catch (_err) {
+    return "";
+  }
+}
+
+function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProviderFromProfile(profile, profile?.id || "")) {
+  if (isLocalAgentProfile(profile)) {
+    return {
+      include: "local-agents",
+      liveCommand: "npm run local-agent:service:check",
+      modelsCommand: "npm run local-agent:service:doctor"
+    };
+  }
+  const entry = providerLiveVerifyCaseForWorkbench(profile, provider);
+  const baseURL = String(profile?.baseURL || workbenchProviderDefaults(provider).baseURL || "").trim();
+  const model = String(profile?.model || "").trim();
+  const assignments = [];
+  if (!entry.apiKeyOptional) assignments.push(`${entry.apiKeyEnv}=...`);
+  if (entry.modelEnv) assignments.push(`${entry.modelEnv}=${providerGuideEnvValue(model || "...")}`);
+  if (entry.baseURLEnv && entry.includeBaseURL) assignments.push(`${entry.baseURLEnv}=${providerGuideEnvValue(baseURL || "...")}`);
+  const livePrefix = assignments.join(" ");
+  const modelAssignments = assignments.filter((item) => !entry.modelEnv || !item.startsWith(`${entry.modelEnv}=`));
+  const modelPrefix = modelAssignments.join(" ");
+  return {
+    ...entry,
+    liveCommand: `${livePrefix ? `${livePrefix} ` : ""}npm run verify:provider:live -- --include ${entry.include}`,
+    modelsCommand: `${modelPrefix ? `${modelPrefix} ` : ""}npm run verify:provider:models:live -- --include ${entry.include}`
+  };
+}
+
+function providerLiveVerifyCaseForWorkbench(profile, provider = workbenchProviderFromProfile(profile, profile?.id || "")) {
+  const endpoint = endpointForProfileSafe(profile);
+  const apiKeyOptional = isLocalEndpoint(endpoint);
+  const includeBaseURL = providerBaseURLDiffersForWorkbench(profile, provider);
+  const cases = {
+    openai: ["openai", "OPENAI"],
+    openai_compatible: ["openai-compatible", "OPENAI_COMPATIBLE", true],
+    "openai-compatible": ["openai-compatible", "OPENAI_COMPATIBLE", true],
+    openai_responses_compatible: ["openai-responses-compatible", "OPENAI_RESPONSES_COMPATIBLE", true],
+    "openai-responses-compatible": ["openai-responses-compatible", "OPENAI_RESPONSES_COMPATIBLE", true],
+    anthropic: ["anthropic", "ANTHROPIC"],
+    anthropic_compatible: ["anthropic-compatible", "ANTHROPIC_COMPATIBLE", true],
+    "anthropic-compatible": ["anthropic-compatible", "ANTHROPIC_COMPATIBLE", true],
+    minimax: ["minimax", "MINIMAX"],
+    gemini: ["gemini", "GEMINI"],
+    azure_openai: ["azure-openai", "AZURE_OPENAI", true],
+    "azure-openai": ["azure-openai", "AZURE_OPENAI", true],
+    github_models: ["github-models", "GITHUB_MODELS"],
+    "github-models": ["github-models", "GITHUB_MODELS"],
+    fireworks: ["fireworks", "FIREWORKS"],
+    cerebras: ["cerebras", "CEREBRAS"],
+    nvidia_nim: ["nvidia-nim", "NVIDIA_NIM"],
+    "nvidia-nim": ["nvidia-nim", "NVIDIA_NIM"],
+    sambanova: ["sambanova", "SAMBANOVA"],
+    sambanova_responses: ["sambanova-responses", "SAMBANOVA_RESPONSES"],
+    "sambanova-responses": ["sambanova-responses", "SAMBANOVA_RESPONSES"],
+    sambanova_anthropic: ["sambanova-anthropic", "SAMBANOVA_ANTHROPIC"],
+    "sambanova-anthropic": ["sambanova-anthropic", "SAMBANOVA_ANTHROPIC"],
+    xai: ["xai", "XAI"],
+    groq: ["groq", "GROQ"],
+    mistral: ["mistral", "MISTRAL"],
+    together: ["together", "TOGETHER"],
+    kimi: ["kimi", "KIMI"],
+    perplexity: ["perplexity", "PERPLEXITY"],
+    deepseek: ["deepseek", "DEEPSEEK"],
+    deepseek_anthropic: ["deepseek-anthropic", "DEEPSEEK_ANTHROPIC"],
+    "deepseek-anthropic": ["deepseek-anthropic", "DEEPSEEK_ANTHROPIC"],
+    zai_anthropic: ["zai-anthropic", "ZAI_ANTHROPIC"],
+    "zai-anthropic": ["zai-anthropic", "ZAI_ANTHROPIC"],
+    openrouter: ["openrouter", "OPENROUTER"],
+    dashscope: ["dashscope", "DASHSCOPE"],
+    siliconflow: ["siliconflow", "SILICONFLOW"],
+    zhipu: ["zhipu", "ZHIPU"],
+    volcengine: ["volcengine", "VOLCENGINE"],
+    qianfan: ["qianfan", "QIANFAN"],
+    hunyuan: ["hunyuan", "HUNYUAN"],
+    ollama: ["openai-compatible", "OPENAI_COMPATIBLE", true],
+    lm_studio: ["openai-compatible", "OPENAI_COMPATIBLE", true],
+    "lm-studio": ["openai-compatible", "OPENAI_COMPATIBLE", true]
+  };
+  const fallback = profile?.protocol === "anthropic_messages"
+    ? ["anthropic-compatible", "ANTHROPIC_COMPATIBLE", true]
+    : profile?.protocol === "openai_responses"
+      ? ["openai-responses-compatible", "OPENAI_RESPONSES_COMPATIBLE", true]
+      : ["openai-compatible", "OPENAI_COMPATIBLE", true];
+  const [include, envPrefix, alwaysIncludeBaseURL] = cases[provider] || fallback;
+  return {
+    include,
+    apiKeyEnv: `${envPrefix}_API_KEY`,
+    modelEnv: `${envPrefix}_MODEL`,
+    baseURLEnv: `${envPrefix}_BASE_URL`,
+    includeBaseURL: !!alwaysIncludeBaseURL || includeBaseURL,
+    apiKeyOptional
+  };
+}
+
+function providerBaseURLDiffersForWorkbench(profile, provider = workbenchProviderFromProfile(profile, profile?.id || "")) {
+  const current = String(profile?.baseURL || "").trim().replace(/\/+$/, "");
+  const defaults = workbenchProviderDefaults(provider);
+  const fallback = String(defaults?.baseURL || "").trim().replace(/\/+$/, "");
+  if (!current) return false;
+  if (!fallback || /^https:\/\/YOUR-/i.test(fallback)) return true;
+  return current !== fallback;
+}
+
+function providerGuideEnvValue(value) {
+  const text = String(value || "").trim();
+  if (!text) return "...";
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(text)) return text;
+  return JSON.stringify(text);
 }
 
 function endpointForProfileSafe(profile) {
@@ -6620,6 +6990,11 @@ function sessionMarkdownPath(outputDir, item, sessionId) {
   const safeKey = sanitizeFilename(item?.key || "unknown");
   const safeId = sanitizeFilename(sessionId || newSessionId());
   return PathUtils.join(outputDir || "", "sessions", safeKey, `${safeId}.md`);
+}
+
+function providerDiagnosticsMarkdownPath(outputDir, profile) {
+  const profileId = sanitizeFilename(profile?.id || profile?.name || "profile");
+  return PathUtils.join(outputDir || "", "diagnostics", `provider-${profileId}.md`);
 }
 
 function renderSessionAsMarkdown(messages, t, compactionSummary) {

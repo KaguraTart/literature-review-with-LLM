@@ -176,6 +176,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     writePreviewSummary: (preview: any, options?: any) => string;
     requestInputStatusText: (requestInput: any, translate?: (key: string) => string) => string;
     profileStatusText: (profile: any, translate?: (key: string) => string) => string;
+    renderProviderDiagnosticsMarkdown: (profile: any, options?: any) => string;
+    providerDiagnosticsMarkdownPath: (outputDir: string, profile: any) => string;
     profileMessageMetadata: (profile: any) => any;
     providerErrorText: (status: number, text: string) => string;
     extractResponseText: (protocol: string, data: any) => string;
@@ -1213,6 +1215,84 @@ describe("workbench writeback helpers", () => {
     expect(localAgentSummary).toContain("模型: 可选");
     expect(localAgentSummary).toContain("鉴权已配置");
     expect(localAgentSummary).toContain("本地代理已配置");
+  });
+
+  it("renders provider diagnostics without exposing credentials", () => {
+    const report = helpers.renderProviderDiagnosticsMarkdown({
+      id: "deepseek",
+      name: "DeepSeek",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepseek.com",
+      apiKey: "sk-test-secret",
+      model: "deepseek-chat",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: { Authorization: "Bearer routed-secret", "X-Trace": "trace-value" },
+      bodyExtra: {}
+    }, {
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      reportPath: "/tmp/out/diagnostics/provider-deepseek.md",
+      statusText: "Endpoint: https://api.deepseek.com/v1/chat/completions"
+    });
+
+    expect(report).toContain("templateVersion: provider-diagnostics-v1");
+    expect(report).toContain("# Provider Configuration Diagnostics");
+    expect(report).toContain("https://api.deepseek.com/v1/chat/completions");
+    expect(report).toContain("https://api.deepseek.com/v1/models");
+    expect(report).toContain("DEEPSEEK_API_KEY=...");
+    expect(report).toContain("DEEPSEEK_MODEL=deepseek-chat");
+    expect(report).toContain("npm run verify:provider:live -- --include deepseek");
+    expect(report).toContain("`Authorization`");
+    expect(report).not.toContain("sk-test-secret");
+    expect(report).not.toContain("routed-secret");
+    expect(report).not.toContain("trace-value");
+  });
+
+  it("exports provider diagnostics from the latest workbench settings", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument({
+      "zms-profile-name": "DeepSeek",
+      "zms-profile-base-url": "https://api.deepseek.com",
+      "zms-profile-api-key": "new-secret",
+      "zms-profile-model": "deepseek-chat"
+    });
+    (loaded as any).document = dom;
+    const imageInput = dom.elements.get("zms-profile-image-input") || dom.getElementById("zms-profile-image-input");
+    imageInput.checked = true;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    const profile = {
+      id: "deepseek",
+      name: "DeepSeek",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepseek.com",
+      apiKey: "old-secret",
+      model: "",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "zh-CN";
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportProviderDiagnostics();
+
+    const reportPath = "/tmp/out/diagnostics/provider-deepseek.md";
+    const report = files.get(reportPath) || "";
+    expect(report).toContain("# 模型厂商配置诊断");
+    expect(report).toContain("deepseek-chat");
+    expect(report).toContain("DEEPSEEK_API_KEY=...");
+    expect(report).toContain("DEEPSEEK_MODEL=deepseek-chat");
+    expect(report).not.toContain("new-secret");
+    expect(report).not.toContain("old-secret");
+    expect(workbench.state.profile.apiKey).toBe("new-secret");
+    expect(dom.elements.get("zms-status").textContent).toContain(`providerDiagnosticsDone: ${reportPath}`);
   });
 
   it("keeps custom auth headers when building workbench provider headers", () => {

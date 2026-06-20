@@ -251,6 +251,12 @@ const SOURCE_MARKERS = [
     markers: ["zms-providerGuide", "providerSetupGuide", "providerLiveVerifyGuide", "OPENAI_COMPATIBLE_BASE_URL", "ANTHROPIC_COMPATIBLE_BASE_URL", "not.toContain", "routed-secret", "providerGuide"]
   },
   {
+    id: "provider.workbench-diagnostics-report",
+    description: "Workbench can export a redacted provider diagnostics report with endpoint, auth, capability, model-list, and live-check details",
+    files: ["addon/content/workbench.xhtml", "addon/content/workbench.js", "addon/content/messages.js", "tests/workbenchWriteback.test.ts", "README.md", "README.zh-CN.md"],
+    markers: ["zms-export-provider-diagnostics", "renderProviderDiagnosticsMarkdown", "provider-diagnostics-v1", "providerDiagnosticsMarkdownPath", "DEEPSEEK_API_KEY=...", "exports provider diagnostics from the latest workbench settings", "renders provider diagnostics without exposing credentials", "redacted provider diagnostics"]
+  },
+  {
     id: "provider.retry-boundary",
     description: "Provider requests retry only retryable HTTP failures and fail fast on bad credentials or invalid requests",
     files: ["addon/bootstrap.js", "addon/content/workbench.js", "tests/bootstrapProvider.test.ts", "tests/workbenchWriteback.test.ts"],
