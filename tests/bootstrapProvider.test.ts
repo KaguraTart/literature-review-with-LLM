@@ -2323,6 +2323,7 @@ describe("bootstrap provider helpers", () => {
       "x-api-key": "anthropic-secret",
       "anthropic-version": "2023-06-01"
     });
+    expect(fetchCalls[0].headers).not.toHaveProperty("authorization");
   });
 
   it("uses Bearer auth for known Anthropic-compatible coding endpoints", async () => {
@@ -2362,8 +2363,8 @@ describe("bootstrap provider helpers", () => {
       baseURL: "https://anthropic-router.example/v1",
       apiKey: "routed-secret",
       model: "m",
-      customHeaders: {},
-      bodyExtra: { authHeader: "authorization", directBrowserAccess: true },
+      customHeaders: { "x-api-key": "" },
+      bodyExtra: {},
       request: {
         system: "system",
         prompt: "prompt",
@@ -2376,11 +2377,36 @@ describe("bootstrap provider helpers", () => {
 
     expect(fetchCalls[1].headers).toMatchObject({
       authorization: "Bearer routed-secret",
+      "anthropic-version": "2023-06-01"
+    });
+    expect(fetchCalls[1].headers).not.toHaveProperty("x-api-key");
+
+    await helpers.callAnthropic({
+      provider: "custom-anthropic",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://anthropic-router.example/v1",
+      apiKey: "routed-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: { authHeader: "authorization", directBrowserAccess: true },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+
+    expect(fetchCalls[2].headers).toMatchObject({
+      authorization: "Bearer routed-secret",
       "anthropic-version": "2023-06-01",
       "anthropic-dangerous-direct-browser-access": "true"
     });
-    expect(fetchCalls[1].body).not.toHaveProperty("authHeader");
-    expect(fetchCalls[1].body).not.toHaveProperty("directBrowserAccess");
+    expect(fetchCalls[2].body).not.toHaveProperty("authHeader");
+    expect(fetchCalls[2].body).not.toHaveProperty("directBrowserAccess");
   });
 
   it("parses Anthropic stream deltas in the bootstrap provider path", async () => {

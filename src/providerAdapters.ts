@@ -123,7 +123,7 @@ export function headersFor(profile: ProviderProfile): Record<string, string> {
   } else {
     if (!hasExplicitAuthHeader(headers)) setHeaderIfMissing(headers, "authorization", profile.apiKey ? `Bearer ${profile.apiKey}` : "");
   }
-  return headers;
+  return withoutBlankHeaders(headers);
 }
 
 export function bodyFor(request: ModelRequest): Record<string, unknown> {
@@ -555,6 +555,13 @@ function setHeaderIfMissing(headers: Record<string, string>, name: string, value
   headers[existingKey || name] = value;
 }
 
+function withoutBlankHeaders(headers: Record<string, string>): Record<string, string> {
+  for (const key of Object.keys(headers)) {
+    if (!String(headers[key] || "").trim()) delete headers[key];
+  }
+  return headers;
+}
+
 function usesAzureOpenAIAuth(profile: ProviderProfile): boolean {
   const id = String(profile?.id || "").toLowerCase();
   const baseURL = String(profile?.baseURL || "");
@@ -566,11 +573,18 @@ function anthropicAuthHeaderName(profile: ProviderProfile): "authorization" | "x
   if (explicit) return explicit;
   const id = String(profile?.id || "").toLowerCase();
   const baseURL = String(profile?.baseURL || "").replace(/\/+$/, "");
+  if (id === "anthropic") return "x-api-key";
   if (id === "anthropic-compatible" || id === "anthropic_compatible" || id === "deepseek-anthropic" || id === "deepseek_anthropic" || id === "zai-anthropic" || id === "zai_anthropic" || id === "sambanova-anthropic" || id === "sambanova_anthropic") return "authorization";
   if (baseURL === "https://api.deepseek.com/anthropic" || baseURL.startsWith("https://api.deepseek.com/anthropic/")) return "authorization";
   if (baseURL === "https://api.z.ai/api/anthropic" || baseURL.startsWith("https://api.z.ai/api/anthropic/")) return "authorization";
   if (baseURL === "https://api.sambanova.ai/v1" || baseURL.startsWith("https://api.sambanova.ai/v1/")) return "authorization";
+  if (!isOfficialAnthropicBaseURL(baseURL)) return "authorization";
   return "x-api-key";
+}
+
+function isOfficialAnthropicBaseURL(baseURL: string): boolean {
+  const normalized = stripKnownProviderEndpointPath(baseURL).replace(/\/+$/, "");
+  return normalized === "https://api.anthropic.com" || normalized.startsWith("https://api.anthropic.com/");
 }
 
 function shouldAddAnthropicDirectBrowserAccess(profile: ProviderProfile): boolean {

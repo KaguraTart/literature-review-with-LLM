@@ -155,6 +155,20 @@ describe("workbench session helpers", () => {
       capabilities: { modelList: true },
       customHeaders: {}
     })?.url).toBe("https://api.anthropic.com/v1/models");
+    const routedAnthropic = helpers.workbenchModelListRequestForProfile({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://anthropic-router.example/v1/models",
+      apiKey: "routed-secret",
+      capabilities: { modelList: true },
+      customHeaders: { "x-api-key": "" }
+    });
+    expect(routedAnthropic?.url).toBe("https://anthropic-router.example/v1/models");
+    expect(routedAnthropic?.headers).toMatchObject({
+      authorization: "Bearer routed-secret",
+      "anthropic-version": "2023-06-01"
+    });
+    expect(routedAnthropic?.headers).not.toHaveProperty("x-api-key");
   });
 
   it("normalizes model-list options for workbench settings", () => {

@@ -586,6 +586,27 @@ describe("preferences local-agent config helpers", () => {
       endpointMode: "base_url",
       baseURL: "https://anthropic-router.example/v1",
       apiKey: "routed-secret",
+      customHeaders: {}
+    })).toMatchObject({ authorization: "Bearer routed-secret", "anthropic-version": "2023-06-01" });
+    expect(helpers.headersForProfile({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://anthropic-router.example/v1",
+      apiKey: "routed-secret",
+      customHeaders: { "x-api-key": "" }
+    })).toMatchObject({ authorization: "Bearer routed-secret", "anthropic-version": "2023-06-01" });
+    expect(helpers.headersForProfile({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://anthropic-router.example/v1",
+      apiKey: "routed-secret",
+      customHeaders: { "x-api-key": "" }
+    })).not.toHaveProperty("x-api-key");
+    expect(helpers.headersForProfile({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://anthropic-router.example/v1",
+      apiKey: "routed-secret",
       customHeaders: {},
       bodyExtra: { authHeader: "authorization" }
     })).toMatchObject({ authorization: "Bearer routed-secret", "anthropic-version": "2023-06-01" });

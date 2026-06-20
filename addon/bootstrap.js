@@ -462,7 +462,7 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
   } else {
     if (!hasExplicitAuthHeader(headers)) setHeaderIfMissing(headers, "authorization", apiKey ? `Bearer ${apiKey}` : "");
   }
-  const data = await requestJSON(url, headers, merged, merged.stream === true, summaryRequest.protocol || protocol);
+  const data = await requestJSON(url, withoutBlankHeaders(headers), merged, merged.stream === true, summaryRequest.protocol || protocol);
   return {
     markdown: extractOpenAIText(data),
     usage: providerUsageFromResponse(data),
@@ -523,7 +523,7 @@ async function callAnthropic(summaryRequest, sourceHash) {
     max_tokens: request.maxOutputTokens,
     stream: request.stream
   });
-  const data = await requestJSON(messageUrl, headers, merged, merged.stream === true, "anthropic_messages");
+  const data = await requestJSON(messageUrl, withoutBlankHeaders(headers), merged, merged.stream === true, "anthropic_messages");
   return {
     markdown: extractAnthropicText(data),
     usage: providerUsageFromResponse(data),

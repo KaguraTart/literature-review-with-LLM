@@ -619,6 +619,27 @@ describe("provider adapters", () => {
       protocol: "anthropic_messages",
       baseURL: "https://anthropic-router.example/v1",
       apiKey: "routed-secret",
+      customHeaders: {}
+    })).toMatchObject({ authorization: "Bearer routed-secret", "anthropic-version": "2023-06-01" });
+    expect(headersFor({
+      ...profile,
+      protocol: "anthropic_messages",
+      baseURL: "https://anthropic-router.example/v1",
+      apiKey: "routed-secret",
+      customHeaders: { "x-api-key": "" }
+    })).toMatchObject({ authorization: "Bearer routed-secret", "anthropic-version": "2023-06-01" });
+    expect(headersFor({
+      ...profile,
+      protocol: "anthropic_messages",
+      baseURL: "https://anthropic-router.example/v1",
+      apiKey: "routed-secret",
+      customHeaders: { "x-api-key": "" }
+    })).not.toHaveProperty("x-api-key");
+    expect(headersFor({
+      ...profile,
+      protocol: "anthropic_messages",
+      baseURL: "https://anthropic-router.example/v1",
+      apiKey: "routed-secret",
       customHeaders: {},
       bodyExtra: { authHeader: "authorization" }
     })).toMatchObject({ authorization: "Bearer routed-secret", "anthropic-version": "2023-06-01" });
