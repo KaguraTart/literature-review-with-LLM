@@ -943,6 +943,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
   const gapMatrixPath = artifacts.gapMatrixPath;
   const topicClustersPath = artifacts.topicClustersPath;
   const synthesisClaimsPath = artifacts.synthesisClaimsPath;
+  const synthesisRoadmapPath = artifacts.synthesisRoadmapPath;
   const researchQuestionCardsPath = artifacts.researchQuestionCardsPath;
   const reviewDraftPath = artifacts.reviewDraftPath;
   const reviewReportPath = artifacts.reviewReportPath;
@@ -952,6 +953,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
   await writeText(gapMatrixPath, renderResearchGapMatrix(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(topicClustersPath, renderTopicClusters(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(synthesisClaimsPath, renderSynthesisClaimsMatrix(collectionContext, results, outputLanguage, summaryInsights));
+  await writeText(synthesisRoadmapPath, renderSynthesisRoadmap(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(researchQuestionCardsPath, renderResearchQuestionCards(collectionContext, results, outputLanguage));
   await writeText(reviewDraftPath, renderManualReviewDraft(collectionContext, results, outputLanguage));
   await writeText(reviewReportPath, renderFormalReviewReport(collectionContext, results, outputLanguage, summaryInsights));
@@ -964,6 +966,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
     gapMatrixPath,
     topicClustersPath,
     synthesisClaimsPath,
+    synthesisRoadmapPath,
     researchQuestionCardsPath,
     reviewDraftPath,
     reviewReportPath,
@@ -988,6 +991,7 @@ function collectionWorkspaceArtifactPaths(dirs, outputLanguage) {
     gapMatrixPath: PathUtils.join(dirs.knowledge, `research-gaps.${language}.md`),
     topicClustersPath: PathUtils.join(dirs.knowledge, `topic-clusters.${language}.md`),
     synthesisClaimsPath: PathUtils.join(dirs.knowledge, `synthesis-claims.${language}.md`),
+    synthesisRoadmapPath: PathUtils.join(dirs.knowledge, `synthesis-roadmap.${language}.md`),
     researchQuestionCardsPath: PathUtils.join(dirs.knowledge, `research-question-cards.${language}.md`),
     reviewDraftPath: PathUtils.join(dirs.writing, `manual-review-draft.${language}.md`),
     reviewReportPath: PathUtils.join(dirs.writing, `formal-review-report.${language}.md`),
@@ -1262,6 +1266,60 @@ function renderSynthesisClaimsMatrix(collectionContext, results, outputLanguage 
   ].join("\n");
 }
 
+function renderSynthesisRoadmap(collectionContext, results, outputLanguage = "zh-CN", summaryInsights = new Map()) {
+  const labels = collectionTemplateLabels(outputLanguage);
+  const entries = synthesisRoadmapEntries(results, summaryInsights, labels);
+  const items = batchReportItems(results).filter((item) => item.status === "generated" || item.status === "skipped_existing");
+  const routeRows = entries.map((entry) => [
+    escapeMarkdownTable(entry.cluster),
+    escapeMarkdownTable(entry.question),
+    escapeMarkdownTable(entry.supportingPapers.join("; ") || labels.noSummary),
+    escapeMarkdownTable(entry.methodSignal),
+    escapeMarkdownTable(entry.openGap),
+    escapeMarkdownTable(entry.nextValidation),
+    escapeMarkdownTable(entry.candidateQuery)
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |";
+  const outline = entries.map((entry, index) => `${index + 1}. ${entry.sectionPlan}`).join("\n") || `1. ${labels.roadmapSectionText(1, labels.clusterOther, labels.pendingInsight, labels.gapMatrixPendingEvidence)}`;
+  const evidenceRows = items.map((item) => {
+    const insight = summaryInsights.get(item.itemKey) || {};
+    const cluster = topicClusterEntries([item], summaryInsights, labels)[0]?.label || labels.clusterOther;
+    return [
+      escapeMarkdownTable(item.title || item.itemKey),
+      escapeMarkdownTable(item.year || ""),
+      escapeMarkdownTable(cluster),
+      escapeMarkdownTable(insight.method || labels.pendingInsight),
+      escapeMarkdownTable(insightValues(insight.limitations, insight.missingEvidence, insight.validationNeeds)[0] || labels.gapMatrixPendingEvidence),
+      escapeMarkdownTable(item.summaryPath || labels.pendingSummaryPath)
+    ].join(" | ");
+  }).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |";
+  return [
+    `# ${collectionContext.name || collectionContext.key} ${labels.synthesisRoadmap}`,
+    "",
+    labels.synthesisRoadmapNote,
+    "",
+    `## ${labels.roadmapEvidenceMap}`,
+    "",
+    `| ${labels.clusterColumn} | ${labels.roadmapQuestionColumn} | ${labels.supportingPapersColumn} | ${labels.methodSignalColumn} | ${labels.gapSignalColumn} | ${labels.validationColumn} | ${labels.roadmapCandidateQueryColumn} |`,
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    routeRows,
+    "",
+    `## ${labels.roadmapSectionPlan}`,
+    "",
+    outline,
+    "",
+    `## ${labels.roadmapEvidenceIndex}`,
+    "",
+    `| ${labels.paperColumn} | ${labels.yearColumn} | ${labels.clusterColumn} | ${labels.methodSignalColumn} | ${labels.gapSignalColumn} | ${labels.summaryColumn} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    evidenceRows,
+    "",
+    `## ${labels.reportRiskChecklist}`,
+    "",
+    labels.roadmapChecklistItems,
+    ""
+  ].join("\n");
+}
+
 function topicClusterEntries(results, summaryInsights = new Map(), labels = collectionTemplateLabels("zh-CN")) {
   const definitions = topicClusterDefinitions(labels);
   const clusters = new Map();
@@ -1291,6 +1349,38 @@ function synthesisClaimEntries(results, summaryInsights = new Map(), labels = co
       validations
     };
   });
+}
+
+function synthesisRoadmapEntries(results, summaryInsights = new Map(), labels = collectionTemplateLabels("zh-CN")) {
+  return topicClusterEntries(results, summaryInsights, labels).map((cluster, index) => {
+    const methods = uniqueInsightLines(cluster.items.map(({ insight }) => insight.method).filter(Boolean)).slice(0, 3);
+    const gaps = uniqueInsightLines(cluster.items.flatMap(({ insight }) => insightValues(insight.limitations, insight.missingEvidence))).slice(0, 3);
+    const validations = uniqueInsightLines(cluster.items.flatMap(({ insight }) => insightValues(insight.validationNeeds, insight.rejectConditions))).slice(0, 3);
+    const supportingPapers = cluster.items.map(({ item }) => `${item.title || item.itemKey} (${item.year || "n.d."})`).slice(0, 8);
+    const methodSignal = methods[0] || labels.pendingInsight;
+    const openGap = gaps[0] || labels.gapMatrixPendingEvidence;
+    const nextValidation = validations.join("; ") || labels.gapMatrixPendingValidation;
+    return {
+      cluster: cluster.label,
+      question: labels.roadmapQuestionText(cluster.label, methodSignal, openGap),
+      supportingPapers,
+      methodSignal,
+      openGap,
+      nextValidation,
+      candidateQuery: roadmapCandidateQuery(cluster.label, methods, gaps, validations),
+      sectionPlan: labels.roadmapSectionText(index + 1, cluster.label, methodSignal, openGap)
+    };
+  });
+}
+
+function roadmapCandidateQuery(clusterLabel, methods = [], gaps = [], validations = []) {
+  const terms = uniqueInsightLines([
+    clusterLabel,
+    ...methods,
+    ...gaps,
+    ...validations
+  ].filter(Boolean)).join(" ");
+  return terms.length > 180 ? `${terms.slice(0, 177)}...` : terms;
 }
 
 function topicClusterDefinitions(labels) {
@@ -1543,6 +1633,20 @@ function collectionTemplateLabels(outputLanguage) {
       topicClustersNote: "Heuristic collection-level clusters built from titles and extracted summary signals. Treat them as a review starting point, not final taxonomy.",
       synthesisClaims: "Synthesis Claims Matrix",
       synthesisClaimsNote: "Draft cross-paper claims from topic clusters and single-paper summaries. Use this as a controlled claim ledger before writing prose.",
+      synthesisRoadmap: "Synthesis Roadmap",
+      synthesisRoadmapNote: "Turns topic clusters, claim drafts, and evidence gaps into a section-level roadmap for the next review-writing pass.",
+      roadmapEvidenceMap: "Cross-theme Evidence Map",
+      roadmapQuestionColumn: "Review Question",
+      roadmapCandidateQueryColumn: "Candidate-search Query",
+      roadmapSectionPlan: "Section Plan",
+      roadmapEvidenceIndex: "Evidence Index",
+      roadmapQuestionText: (cluster, method, gap) => `How should ${cluster} papers be compared around ${method}, and what evidence is still missing around ${gap}?`,
+      roadmapSectionText: (index, cluster, method, gap) => `Section ${index}: use ${cluster} to compare ${method}; close or clearly mark ${gap}.`,
+      roadmapChecklistItems: [
+        "- [ ] Check whether each section has enough papers before writing synthesis prose.",
+        "- [ ] Run candidate-paper search with the suggested query when a cluster has weak evidence.",
+        "- [ ] Keep unresolved gaps visible instead of smoothing them into unsupported claims."
+      ].join("\n"),
       gapMatrix: "Research Gap Matrix",
       gapMatrixNote: "Use this matrix to consolidate limitations, missing evidence, and validation needs before moving claims into writing.",
       gapMatrixPendingLimitation: "Pending limitation extraction",
@@ -1662,6 +1766,20 @@ function collectionTemplateLabels(outputLanguage) {
       topicClustersNote: "タイトルと単一論文要約から抽出した手がかりに基づくヒューリスティックな collection レベルのクラスタです。最終分類ではなくレビューの出発点として扱ってください。",
       synthesisClaims: "統合主張マトリクス",
       synthesisClaimsNote: "トピッククラスタと単一論文要約から横断的な主張の草案を作ります。本文を書く前の管理された主張台帳として使ってください。",
+      synthesisRoadmap: "統合ロードマップ",
+      synthesisRoadmapNote: "トピッククラスタ、主張草案、証拠ギャップを次のレビュー執筆パスの節構成ロードマップへ変換します。",
+      roadmapEvidenceMap: "テーマ横断エビデンスマップ",
+      roadmapQuestionColumn: "レビュー問い",
+      roadmapCandidateQueryColumn: "候補検索クエリ",
+      roadmapSectionPlan: "節構成プラン",
+      roadmapEvidenceIndex: "エビデンス索引",
+      roadmapQuestionText: (cluster, method, gap) => `${cluster} の論文を ${method} を軸にどう比較し、${gap} に関する不足証拠をどう補うか。`,
+      roadmapSectionText: (index, cluster, method, gap) => `第 ${index} 節: ${cluster} で ${method} を比較し、${gap} を補うか明示する。`,
+      roadmapChecklistItems: [
+        "- [ ] 各節が統合的な文章を書くのに十分な論文数を持つか確認する。",
+        "- [ ] 証拠が弱いクラスタでは推奨クエリで候補論文検索を実行する。",
+        "- [ ] 未解決ギャップを根拠のない主張にせず、見える形で残す。"
+      ].join("\n"),
       gapMatrix: "研究ギャップマトリクス",
       gapMatrixNote: "執筆に入る前に、限界、不足している証拠、検証ニーズを整理するためのマトリクスです。",
       gapMatrixPendingLimitation: "限界の抽出待ち",
@@ -1780,6 +1898,20 @@ function collectionTemplateLabels(outputLanguage) {
     topicClustersNote: "基于标题和单篇总结抽取线索生成的启发式集合级聚类，用作综述起点，不等同于最终分类。",
     synthesisClaims: "综合主张矩阵",
     synthesisClaimsNote: "基于主题聚类和单篇总结形成跨论文主张草稿，用作正式写作前的受控主张台账。",
+    synthesisRoadmap: "综合路线图",
+    synthesisRoadmapNote: "把主题聚类、主张草稿和证据缺口组织成下一轮综述写作可直接使用的小节路线图。",
+    roadmapEvidenceMap: "跨主题证据地图",
+    roadmapQuestionColumn: "综述问题",
+    roadmapCandidateQueryColumn: "候选检索词",
+    roadmapSectionPlan: "小节计划",
+    roadmapEvidenceIndex: "证据索引",
+    roadmapQuestionText: (cluster, method, gap) => `如何围绕“${cluster}”比较 ${method}，并补齐 ${gap} 相关证据？`,
+    roadmapSectionText: (index, cluster, method, gap) => `第 ${index} 节：用“${cluster}”比较 ${method}，补齐或明确标注 ${gap}。`,
+    roadmapChecklistItems: [
+      "- [ ] 检查每个小节是否有足够论文支撑，再迁移到正文。",
+      "- [ ] 对证据薄弱的主题使用建议检索词继续运行候选论文检索。",
+      "- [ ] 保留未解决缺口，不要把证据不足的判断写成确定性结论。"
+    ].join("\n"),
     gapMatrix: "研究空白矩阵",
     gapMatrixNote: "此矩阵用于在进入写作前整理局限、缺失证据和验证需求。",
     gapMatrixPendingLimitation: "待抽取局限",
