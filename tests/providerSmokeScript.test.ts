@@ -225,6 +225,50 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("falls back across multiple Anthropic-compatible smoke optional-field errors", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "anthropic-compatible",
+        "--base-url", baseURL,
+        "--api-key", "smoke-secret",
+        "--model", "mock-anthropic",
+        "--body-extra-json", JSON.stringify({ metadata: { source: "zotero" } }),
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "anthropic_messages",
+        stream: false,
+        text: "OK anthropic fallback"
+      });
+      expect(requests).toHaveLength(3);
+      expect(requests[0].body).toMatchObject({
+        metadata: { source: "zotero" },
+        stream: false
+      });
+      expect(requests[1].body).not.toHaveProperty("metadata");
+      expect(requests[1].body).toMatchObject({ stream: false });
+      expect(requests[2].body).not.toHaveProperty("metadata");
+      expect(requests[2].body).not.toHaveProperty("stream");
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.body?.metadata) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: { message: "Unsupported parameter: metadata" } }));
+          return;
+        }
+        if (Object.prototype.hasOwnProperty.call(requestData.body || {}, "stream")) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: { message: "Unsupported parameter: stream" } }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ content: [{ type: "text", text: "OK anthropic fallback" }] }));
+      }
+    });
+  });
+
   it("rejects non-object provider body-extra JSON", async () => {
     await expect(execFileAsync(process.execPath, [
       "scripts/verify-provider-smoke.mjs",

@@ -97,6 +97,7 @@ Provider notes:
 - OpenAI-compatible Chat and Responses requests also retry with a narrower body when a provider explicitly rejects optional fields such as `stream_options`, JSON-mode formatting, token-limit fields, or `temperature`.
 - OpenAI Compatible Responses profiles use the Responses style endpoint. Use this when a provider or router exposes `/v1/responses`; this profile can declare raw PDF and image input when the model supports it.
 - Anthropic profiles use the messages endpoint. Use `Anthropic` for the official API key header, and `Anthropic Compatible Messages` for routers that expose Anthropic-style `/v1/messages` with bearer auth.
+- Anthropic-compatible requests also retry without optional body fields such as `stream`, `metadata`, `thinking`, `top_p`, `top_k`, `stop_sequences`, `tools`, or `tool_choice` when a router explicitly rejects them.
 - Gemini is currently configured through the OpenAI-compatible endpoint style.
 - GitHub Models uses `https://models.github.ai/inference` without an added `/v1` segment and includes the required GitHub API headers; use a PAT with Models access as the API key.
 - Fireworks AI, Cerebras, NVIDIA NIM, and SambaNova are available as named OpenAI-compatible presets. SambaNova also includes Responses and Anthropic-compatible presets.

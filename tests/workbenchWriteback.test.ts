@@ -4676,6 +4676,66 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[2].body).not.toHaveProperty("max_output_tokens");
   });
 
+  it("downgrades Anthropic-compatible optional fields across multiple workbench attempts", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      if (body.metadata) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              type: "invalid_request_error",
+              message: "Unsupported parameter: metadata"
+            }
+          })
+        };
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "stream")) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              type: "invalid_request_error",
+              message: "Unsupported parameter: stream"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ content: [{ type: "text", text: "ok" }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      id: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      baseURL: "https://router.example/v1",
+      capabilities: { ...providerProfile().capabilities, pdfBase64: false },
+      bodyExtra: { metadata: { source: "zotero" } }
+    }, [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "text", text: "context" }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(3);
+    expect(fetchCalls[0].body).toMatchObject({
+      metadata: { source: "zotero" },
+      stream: false
+    });
+    expect(fetchCalls[1].body).not.toHaveProperty("metadata");
+    expect(fetchCalls[1].body).toMatchObject({ stream: false });
+    expect(fetchCalls[2].body).not.toHaveProperty("metadata");
+    expect(fetchCalls[2].body).not.toHaveProperty("stream");
+  });
+
   it("falls back to non-streaming when an OpenAI Chat route rejects streaming", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: any[] = [];

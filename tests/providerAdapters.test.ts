@@ -373,6 +373,30 @@ describe("provider adapters", () => {
       "Unsupported parameter: max_output_tokens",
       ["max_output_tokens"]
     )).toEqual([]);
+    const anthropicBody = {
+      model: "claude-compatible",
+      system: "system",
+      messages: [],
+      max_tokens: 1024,
+      stream: false,
+      metadata: { source: "zotero" },
+      thinking: { type: "enabled", budget_tokens: 1024 },
+      top_p: 0.9,
+      stop_sequences: ["END"]
+    };
+    expect(providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      anthropicBody,
+      400,
+      "Unsupported parameters: stream, system prompt, metadata, thinking, top_p, stop_sequences"
+    )).toEqual(["stream", "system", "metadata", "thinking", "top_p", "stop_sequences"]);
+    expect(providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      anthropicBody,
+      400,
+      "Unsupported parameter: metadata",
+      ["metadata"]
+    )).toEqual([]);
     expect(providerCompatibilityFallbackFields("openai_chat", body, 401, "stream_options")).toEqual([]);
     expect(providerCompatibilityFallbackFields("openai_chat", body, 400, "stream_options", true)).toEqual([]);
   });

@@ -1935,6 +1935,54 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[1].url).toBe("https://api.anthropic.com/v1/messages");
   });
 
+  it("falls back across multiple bootstrap Anthropic-compatible optional-field errors", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 400,
+          error: { message: "Unsupported parameter: metadata" }
+        },
+        {
+          __status: 400,
+          error: { message: "Unsupported parameter: stream" }
+        },
+        {
+          content: [{ type: "text", text: "anthropic fallback summary" }]
+        }
+      ]
+    });
+
+    const result = await helpers.callAnthropic({
+      provider: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "routed-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: { metadata: { source: "zotero" } },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+
+    expect(result.markdown).toBe("anthropic fallback summary");
+    expect(fetchCalls).toHaveLength(3);
+    expect(fetchCalls[0].body).toMatchObject({
+      metadata: { source: "zotero" },
+      stream: false
+    });
+    expect(fetchCalls[1].body).not.toHaveProperty("metadata");
+    expect(fetchCalls[1].body).toMatchObject({ stream: false });
+    expect(fetchCalls[2].body).not.toHaveProperty("metadata");
+    expect(fetchCalls[2].body).not.toHaveProperty("stream");
+  });
+
   it("extracts wrapped Anthropic response text in the bootstrap provider path", async () => {
     const { helpers } = loadBootstrapProviderHelpers({
       result: { content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "wrapped anthropic summary" }] }

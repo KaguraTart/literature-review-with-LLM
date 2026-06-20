@@ -6199,7 +6199,7 @@ async function requestModelWithRetry(profile, messages, outputLanguage, systemPr
 }
 
 function providerCompatibilityFallback(profile, body, status, text, usedFallback, streamEnabled) {
-  if (!["openai_chat", "openai_responses"].includes(profile?.protocol) || ![400, 422].includes(Number(status))) return null;
+  if (!["openai_chat", "openai_responses", "anthropic_messages"].includes(profile?.protocol) || ![400, 422].includes(Number(status))) return null;
   const fields = providerUnsupportedOptionalFields(body, text, usedFallback);
   if (!fields.length) return null;
   const nextUsedFields = Array.from(new Set([...(Array.isArray(usedFallback) ? usedFallback : []), ...fields]));
@@ -6245,6 +6245,30 @@ function providerUnsupportedOptionalFields(body, text, usedFallback = []) {
   }
   if (body?.max_output_tokens !== undefined && /max_output_tokens|max output tokens|max output token/.test(detail)) {
     fields.push("max_output_tokens");
+  }
+  if (body?.system !== undefined && /(?:^|[^a-z0-9_])system(?:[^a-z0-9_]|$)|system prompt|system field/.test(detail)) {
+    fields.push("system");
+  }
+  if (body?.metadata !== undefined && /metadata/.test(detail)) {
+    fields.push("metadata");
+  }
+  if (body?.thinking !== undefined && /thinking|reasoning/.test(detail)) {
+    fields.push("thinking");
+  }
+  if (body?.top_p !== undefined && /top_p|top p/.test(detail)) {
+    fields.push("top_p");
+  }
+  if (body?.top_k !== undefined && /top_k|top k/.test(detail)) {
+    fields.push("top_k");
+  }
+  if (body?.stop_sequences !== undefined && /stop_sequences|stop sequences|stop sequence/.test(detail)) {
+    fields.push("stop_sequences");
+  }
+  if (body?.tools !== undefined && /(?:^|[^a-z0-9_])tools?(?:[^a-z0-9_]|$)/.test(detail)) {
+    fields.push("tools");
+  }
+  if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
+    fields.push("tool_choice");
   }
   return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
 }
