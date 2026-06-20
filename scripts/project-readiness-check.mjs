@@ -224,7 +224,7 @@ const SOURCE_MARKERS = [
     id: "provider.stream-smoke",
     description: "Provider smoke verification covers streaming OpenAI-compatible, Responses, and Anthropic text/event-stream output",
     files: ["scripts/verify-provider-smoke.mjs", "scripts/verify-provider-live.mjs", "package.json", "tests/providerSmokeScript.test.ts"],
-    markers: ["--stream", "verify:provider:stream:mock", "mockProviderStreamResponse", "streamTextFromBody", "streamUsageFromBody", "parseStreamChunk", "parseStreamUsage", "stream_options", "runs built-in mock stream checks", "runs live provider stream checks"]
+    markers: ["--stream", "verify:provider:stream:mock", "mockProviderStreamResponse", "streamTextFromBody", "streamUsageFromBody", "parseStreamChunk", "parseStreamUsage", "stream_options", "candidates", "runs built-in mock stream checks", "runs live provider stream checks"]
   },
   {
     id: "provider.multimodal-smoke",

@@ -987,7 +987,7 @@ function mockProviderStreamResponse(path) {
   }
   return [
     "data: {\"choices\":[{\"delta\":{\"content\":\"OK \"}}]}",
-    "data: {\"choices\":[{\"delta\":{\"content\":\"chat\"}}]}",
+    "data: {\"candidates\":[{\"content\":{\"parts\":[{\"type\":\"thinking\",\"text\":\"hidden\"},{\"text\":\"chat\"}]}}]}",
     "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}",
     "data: [DONE]",
     ""
