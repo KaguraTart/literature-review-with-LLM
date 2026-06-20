@@ -219,7 +219,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     candidateReviewLabels: (outputLanguage: string) => any;
     candidateReviewScreeningRows: (records: any[], labels: any) => Array<{ metric: string; count: number; action: string }>;
     candidateReviewEvidenceRows: (records: any[], labels: any) => Array<{ title: string; state: string; gap: string; check: string; source: string }>;
-    candidateReviewSourceEvidenceRows: (records: any[], labels: any) => Array<{ title: string; label: string; type: string; snippet: string; followUp: string }>;
+    candidateReviewSourceEvidenceRows: (records: any[], labels: any) => Array<{ title: string; label: string; type: string; locator: string; snippet: string; followUp: string }>;
     enrichCandidatesWithFullTextEvidence: (records: any[], contextItem: any, now?: string) => Promise<any[]>;
     candidateFullTextEvidenceSnippets: (text: string, record: any, pdf?: any) => any[];
     reviewDraftMarkdownPath: (outputDir: string, item: any) => string;
@@ -1732,11 +1732,13 @@ describe("workbench writeback helpers", () => {
     ]);
     expect(rows[0]).toMatchObject({
       type: "Abstract",
+      locator: "abstract",
       snippet: "This paper studies an evidence-backed method and reports evaluation metrics.",
       followUp: "Check full text to confirm whether the abstract covers question, method, experiments, and limitations."
     });
     expect(rows[1]).toMatchObject({
       type: "PDF",
+      locator: "pdf-url",
       snippet: "https://example.test/source.pdf"
     });
     expect(rows[2].snippet).toContain("citations from Seed Paper from hop 2");
@@ -1786,14 +1788,19 @@ describe("workbench writeback helpers", () => {
     ]);
     expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
       topic: "method",
+      locator: expect.stringMatching(/^indexed-text:\d+-\d+$/),
+      sourceHash: expect.stringMatching(/^[a-f0-9]{8,12}$/),
       attachmentKey: "PDF43"
     });
 
     const rows = loaded.candidateReviewSourceEvidenceRows(enriched, loaded.candidateReviewLabels("en-US"));
     expect(rows[0]).toMatchObject({
       label: "[candidate:doi:10.1000:full:fulltext-method]",
-      type: "Full-text index"
+      type: "Full-text index",
+      locator: expect.stringContaining("indexed-text:")
     });
+    expect(rows[0].locator).toContain("hash:");
+    expect(rows[0].locator).toContain("attachment:PDF43");
     expect(rows[0].snippet).toContain("proposed method uses graph attention");
   });
 
@@ -2108,9 +2115,10 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("Abstract Only Candidate (2024)");
     expect(report).toContain("需要全文后才能判断证据强度");
     expect(report).toContain("## 来源证据摘录");
-    expect(report).toContain("| 候选论文 | 证据标签 | 类型 | 摘录 | 下一步核验 |");
+    expect(report).toContain("| 候选论文 | 证据标签 | 类型 | 定位 | 摘录 | 下一步核验 |");
     expect(report).toContain("[candidate:doi:10.1000:a:abstract]");
     expect(report).toContain("[candidate:doi:10.1000:a:pdf]");
+    expect(report).toContain("| Candidate A (2025) | [candidate:doi:10.1000:a:pdf] | PDF | pdf-url |");
     expect(report).toContain("[candidate:doi:10.1000:a:network]");
     expect(report).toContain("对照全文确认研究问题、方法、实验和局限是否被摘要充分覆盖。");
     expect(report).toContain("## 人工复核清单");
@@ -2196,7 +2204,10 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reviewPath)).toContain("| Review state | Count | Suggested handling |");
     expect(files.get(reviewPath)).toContain("## Evidence-chain Follow-up");
     expect(files.get(reviewPath)).toContain("## Source Evidence Snippets");
+    expect(files.get(reviewPath)).toContain("| Candidate paper | Evidence label | Type | Locator | Snippet | Next check |");
     expect(files.get(reviewPath)).toContain("[candidate:doi:10.1000:a:fulltext-method]");
+    expect(files.get(reviewPath)).toContain("indexed-text:");
+    expect(files.get(reviewPath)).toContain("hash:");
     expect(files.get(candidatePath)).toContain("\"fullTextEvidence\"");
     expect(files.get(reviewPath)).toContain("## Screening Protocol");
     expect(files.get(reviewPath)).toContain("## Decision Action Queue");

@@ -6758,9 +6758,9 @@ function candidateReviewSourceEvidenceSnippets(records, labels) {
   const rows = candidateReviewSourceEvidenceRows(records, labels);
   if (!rows.length) return [`- ${labels.sourceEvidenceNone}`];
   return [
-    `| ${labels.paperColumn} | ${labels.sourceEvidenceLabel} | ${labels.sourceEvidenceType} | ${labels.sourceEvidenceSnippet} | ${labels.sourceEvidenceFollowUp} |`,
-    "| --- | --- | --- | --- | --- |",
-    ...rows.map((row) => `| ${mdTableCell(row.title)} | ${mdTableCell(row.label)} | ${mdTableCell(row.type)} | ${mdTableCell(row.snippet)} | ${mdTableCell(row.followUp)} |`)
+    `| ${labels.paperColumn} | ${labels.sourceEvidenceLabel} | ${labels.sourceEvidenceType} | ${labels.sourceEvidenceLocator} | ${labels.sourceEvidenceSnippet} | ${labels.sourceEvidenceFollowUp} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    ...rows.map((row) => `| ${mdTableCell(row.title)} | ${mdTableCell(row.label)} | ${mdTableCell(row.type)} | ${mdTableCell(row.locator)} | ${mdTableCell(row.snippet)} | ${mdTableCell(row.followUp)} |`)
   ];
 }
 
@@ -6775,7 +6775,8 @@ function candidateReviewSourceEvidenceRows(records, labels) {
 
 function candidateHasSourceEvidence(record) {
   if (record?.quality?.dedupeStatus === "duplicate" || record?.priority?.tier === "duplicate") return false;
-  return !!candidateReviewAbstract(record)
+  return !!candidateReviewFullTextEvidence(record).length
+    || !!candidateReviewAbstract(record)
     || !!record?.pdfUrl
     || record?.pdfAttachmentStatus === "attached_pdf"
     || !!record?.sourceUrl
@@ -6793,6 +6794,7 @@ function candidateSourceEvidenceForRecord(record, labels) {
       title,
       label: evidence.label || candidateSourceEvidenceLabel(record, `fulltext-${evidence.topic || "snippet"}`),
       type: labels.sourceEvidenceTypeFullText,
+      locator: candidateSourceEvidenceLocator(record, "fulltext", evidence),
       snippet: truncateText(evidence.text || evidence.snippet || "", 320),
       followUp: labels.sourceEvidenceFollowFullText
     });
@@ -6830,9 +6832,30 @@ function candidateSourceEvidenceRow(record, title, type, typeLabel, snippet, fol
     title,
     label: candidateSourceEvidenceLabel(record, type),
     type: typeLabel,
+    locator: candidateSourceEvidenceLocator(record, type),
     snippet,
     followUp
   };
+}
+
+function candidateSourceEvidenceLocator(record, type, evidence = {}) {
+  if (type === "fulltext") {
+    const parts = [
+      evidence.locator || "",
+      evidence.sourceHash ? `hash:${evidence.sourceHash}` : "",
+      evidence.attachmentKey || record?.pdfAttachmentKey ? `attachment:${evidence.attachmentKey || record?.pdfAttachmentKey}` : ""
+    ].filter(Boolean);
+    return parts.join("; ") || "indexed-text";
+  }
+  if (type === "abstract") return "abstract";
+  if (type === "pdf") {
+    if (record?.pdfAttachmentStatus === "attached_pdf") return record?.pdfAttachmentKey ? `attachment:${record.pdfAttachmentKey}` : "attached-pdf";
+    return record?.pdfUrl ? "pdf-url" : "pdf";
+  }
+  if (type === "network") return "citation-network";
+  if (type === "source") return record?.sourceUrl ? "source-url" : "source";
+  if (type === "identifier") return "identifier";
+  return type || "";
 }
 
 function candidateSourceEvidenceLabel(record, type) {
@@ -6858,6 +6881,8 @@ function candidateReviewFullTextEvidence(record) {
         topic: mdText(item.topic || "snippet").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 32) || "snippet",
         text,
         label: mdText(item.label || ""),
+        locator: mdText(item.locator || ""),
+        sourceHash: normalizeEvidenceHash(item.sourceHash || item.hash || ""),
         attachmentKey: mdText(item.attachmentKey || "")
       };
     })
@@ -6914,22 +6939,32 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
   const rows = [];
   const used = new Set();
   for (const topic of topics) {
-    const snippet = candidateSnippetForPattern(source, topic.pattern, used);
-    if (!snippet) continue;
+    const hit = candidateSnippetForPattern(source, topic.pattern, used);
+    if (!hit) continue;
     rows.push({
       topic: topic.id,
       label: candidateSourceEvidenceLabel(record, `fulltext-${topic.id}`),
-      text: snippet,
+      text: hit.text,
+      locator: candidateFullTextLocator(hit),
+      sourceHash: hit.sourceHash,
       attachmentKey: pdf?.key || record.pdfAttachmentKey || ""
     });
   }
   if (!rows.length) {
     const fallback = truncateText(source, 320);
     if (fallback) {
+      const hit = {
+        text: fallback,
+        start: 0,
+        end: Math.min(source.length, fallback.length),
+        sourceHash: shortEvidenceHash(fallback)
+      };
       rows.push({
         topic: "snippet",
         label: candidateSourceEvidenceLabel(record, "fulltext-snippet"),
-        text: fallback,
+        text: hit.text,
+        locator: candidateFullTextLocator(hit),
+        sourceHash: hit.sourceHash,
         attachmentKey: pdf?.key || record.pdfAttachmentKey || ""
       });
     }
@@ -6939,15 +6974,30 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
 
 function candidateSnippetForPattern(text, pattern, used) {
   const match = pattern.exec(text);
-  if (!match) return "";
+  if (!match) return null;
   const center = match.index;
   const start = Math.max(0, center - 140);
   const end = Math.min(text.length, center + 260);
   const snippet = text.slice(start, end).trim();
-  const key = `${center}:${snippet.slice(0, 80)}`;
-  if (!snippet || used.has(key)) return "";
+  const sourceHash = shortEvidenceHash(snippet);
+  const key = `${center}:${sourceHash}`;
+  if (!snippet || used.has(key)) return null;
   used.add(key);
-  return snippet;
+  return { text: snippet, start, end, sourceHash };
+}
+
+function candidateFullTextLocator(hit) {
+  const start = Number.isFinite(hit?.start) ? Math.max(0, Math.floor(hit.start)) : 0;
+  const end = Number.isFinite(hit?.end) ? Math.max(start, Math.floor(hit.end)) : start;
+  return `indexed-text:${start}-${end}`;
+}
+
+function shortEvidenceHash(value) {
+  return normalizeEvidenceHash(hashString(String(value || ""))).slice(0, 12);
+}
+
+function normalizeEvidenceHash(value) {
+  return String(value || "").replace(/^0x/i, "").replace(/[^a-f0-9]/gi, "").toLowerCase();
 }
 
 function candidateSourceEvidenceIdentifiers(record) {
@@ -7155,6 +7205,7 @@ function candidateReviewLabels(outputLanguage) {
       sourceEvidenceNone: "暂无可摘录的候选来源证据；请先检索候选论文或补充摘要、PDF、来源页和引用网络信息。",
       sourceEvidenceLabel: "证据标签",
       sourceEvidenceType: "类型",
+      sourceEvidenceLocator: "定位",
       sourceEvidenceSnippet: "摘录",
       sourceEvidenceFollowUp: "下一步核验",
       sourceEvidenceTypeFullText: "全文索引",
@@ -7303,6 +7354,7 @@ function candidateReviewLabels(outputLanguage) {
     sourceEvidenceNone: "No candidate source evidence is available yet; search candidates or add abstracts, PDFs, source pages, and citation-network metadata first.",
     sourceEvidenceLabel: "Evidence label",
     sourceEvidenceType: "Type",
+    sourceEvidenceLocator: "Locator",
     sourceEvidenceSnippet: "Snippet",
     sourceEvidenceFollowUp: "Next check",
     sourceEvidenceTypeFullText: "Full-text index",
