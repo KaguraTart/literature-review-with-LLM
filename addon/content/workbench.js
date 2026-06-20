@@ -155,6 +155,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-save-session": () => this.saveSession({ quiet: false }),
       "zms-export-reading-log": () => this.exportReadingLog(),
       "zms-export-comparison-report": () => this.exportComparisonReport(),
+      "zms-export-visual-report": () => this.exportVisualExtractionReport(),
       "zms-export-review-draft": () => this.exportReviewDraft(),
       "zms-export-proposal-note": () => this.exportProposalNote(),
       "zms-export-journal-outline": () => this.exportJournalOutline(),
@@ -451,6 +452,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-save-session", this.t("saveSession"));
     setText("zms-export-reading-log", this.t("exportReadingLog"));
     setText("zms-export-comparison-report", this.t("exportComparisonReport"));
+    setText("zms-export-visual-report", this.t("exportVisualReport"));
     setText("zms-export-review-draft", this.t("exportReviewDraft"));
     setText("zms-export-proposal-note", this.t("exportProposalNote"));
     setText("zms-export-journal-outline", this.t("exportJournalOutline"));
@@ -1437,6 +1439,32 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.setStatus(`${this.t("comparisonReportDone")}: ${reportPath}`);
     } catch (err) {
       this.setStatus(`${this.t("comparisonReportFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async exportVisualExtractionReport() {
+    try {
+      const exchange = latestVisualExtractionExchange(this.state.messages);
+      if (!exchange) {
+        this.setStatus(this.t("visualReportNone"));
+        return;
+      }
+      const now = new Date().toISOString();
+      const reportPath = visualExtractionReportMarkdownPath(this.state.outputDir, this.state.item);
+      this.setStatus(this.t("visualReportExporting"));
+      await writeTextAtomic(reportPath, renderVisualExtractionReportMarkdown({
+        context: this.state.context || {},
+        exchange,
+        item: this.state.item
+      }, {
+        outputLanguage: this.state.outputLanguage,
+        generatedAt: now,
+        reportPath,
+        contextSourceHash: this.state.contextSourceHash
+      }), `${reportPath}.${Date.now()}.tmp`);
+      this.setStatus(`${this.t("visualReportDone")}: ${reportPath}`);
+    } catch (err) {
+      this.setStatus(`${this.t("visualReportFailed")}: ${safeError(err)}`);
     }
   },
 
@@ -4631,6 +4659,227 @@ function journalOutlineLabels(outputLanguage) {
   };
 }
 
+function renderVisualExtractionReportMarkdown(payload, options = {}) {
+  const labels = visualExtractionReportLabels(options.outputLanguage);
+  const context = payload?.context || {};
+  const exchange = payload?.exchange || latestVisualExtractionExchange(payload?.messages || []);
+  const metadata = context?.metadata || {};
+  const item = options.item || payload?.item || {};
+  const itemKey = item?.key || "";
+  const collectionKey = workbenchCollectionKey(item);
+  const generatedAt = options.generatedAt || new Date().toISOString();
+  const assistant = exchange?.assistant || {};
+  const user = exchange?.user || {};
+  const answer = answerTextForMessage(assistant);
+  const sections = visualExtractionSections(answer);
+  const tables = visualExtractionTables(answer);
+  const evidenceLabels = visualExtractionEvidenceLabels(answer);
+  const images = Array.isArray(user?.images) ? user.images : [];
+  const imageInventory = images.length
+    ? [
+      `| ${labels.imageName} | ${labels.imageType} | ${labels.imageSize} |`,
+      "| --- | --- | --- |",
+      ...images.map((image) => `| ${markdownTableCell(image.name || "image")} | ${markdownTableCell(image.mimeType || "")} | ${Number(image.size) || 0} |`)
+    ].join("\n")
+    : `- ${labels.noImages}`;
+  const lines = [
+    "---",
+    "templateVersion: visual-extraction-report-v1",
+    `generatedAt: ${generatedAt}`,
+    `collectionKey: ${yamlScalar(collectionKey)}`,
+    `itemKey: ${yamlScalar(itemKey)}`,
+    `contextSourceHash: ${yamlScalar(options.contextSourceHash || "")}`,
+    `reportPath: ${yamlScalar(options.reportPath || "")}`,
+    `sourceAssistantMessageId: ${yamlScalar(assistant.id || "")}`,
+    `sourceUserMessageId: ${yamlScalar(user?.id || "")}`,
+    `imageCount: ${images.length}`,
+    "---",
+    "",
+    `# ${labels.title}`,
+    "",
+    `- ${labels.paperTitle}: ${mdText(metadata.title || itemKey || "")}`,
+    `- ${labels.generatedAt}: ${generatedAt}`,
+    `- ${labels.reportFile}: ${mdText(options.reportPath || "")}`,
+    `- ${labels.mode}: ${mdText(assistant.skillId || user?.skillId || "image-question")}`,
+    `- ${labels.model}: ${mdText(assistant.profileName || assistant.model || user?.profileName || user?.model || "")}`,
+    "",
+    `## ${labels.imageInventory}`,
+    "",
+    imageInventory,
+    "",
+    `## ${labels.sectionIndex}`,
+    "",
+    visualExtractionSectionTable(sections, labels),
+    "",
+    `## ${labels.reconstructedTables}`,
+    "",
+    tables.length ? tables.map((table, index) => [`### ${labels.table} ${index + 1}`, "", table].join("\n")).join("\n\n") : `- ${labels.noTables}`,
+    "",
+    `## ${labels.evidenceLabels}`,
+    "",
+    evidenceLabels.length ? evidenceLabels.map((label) => `- \`${label}\``).join("\n") : `- ${labels.noEvidenceLabels}`,
+    "",
+    `## ${labels.reviewChecklist}`,
+    "",
+    `- [ ] ${labels.checkReadableText}`,
+    `- [ ] ${labels.checkTableNumbers}`,
+    `- [ ] ${labels.checkImageEvidence}`,
+    `- [ ] ${labels.checkPdfLocation}`,
+    `- [ ] ${labels.checkReuse}`,
+    "",
+    `## ${labels.originalAnswer}`,
+    "",
+    answer || labels.noAnswer,
+    ""
+  ];
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+function latestVisualExtractionExchange(messages = []) {
+  for (let index = (messages || []).length - 1; index >= 0; index -= 1) {
+    const assistant = messages[index];
+    if (assistant?.role !== "assistant" || !answerTextForMessage(assistant).trim()) continue;
+    const user = previousUserMessage(messages, index);
+    if (isVisualExtractionAssistantMessage(assistant, user)) return { assistant, user, index };
+  }
+  return null;
+}
+
+function previousUserMessage(messages, beforeIndex) {
+  for (let index = beforeIndex - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") return messages[index];
+  }
+  return null;
+}
+
+function isVisualExtractionAssistantMessage(assistant, user) {
+  const skillId = assistant?.skillId || user?.skillId || "";
+  if (skillId === "figure-table-extractor") return true;
+  if (Array.isArray(user?.images) && user.images.length) return true;
+  const text = answerTextForMessage(assistant);
+  return /##\s*(Visual OCR Text|视觉 OCR 文本|視覚 OCR テキスト|Reconstructed Data Table|重建表格|再構成データ表)/i.test(text);
+}
+
+function visualExtractionSections(answer) {
+  const sections = [];
+  let current = null;
+  for (const line of String(answer || "").split(/\r?\n/)) {
+    const match = line.match(/^##+\s+(.+?)\s*$/);
+    if (match) {
+      if (current) sections.push(current);
+      current = { heading: mdText(match[1]), lines: [] };
+      continue;
+    }
+    if (current) current.lines.push(line);
+  }
+  if (current) sections.push(current);
+  return sections
+    .map((section) => ({
+      heading: section.heading,
+      text: section.lines.join("\n").trim(),
+      evidenceLabels: visualExtractionEvidenceLabels(section.lines.join("\n"))
+    }))
+    .filter((section) => section.heading || section.text);
+}
+
+function visualExtractionSectionTable(sections, labels) {
+  const rows = (sections || []).slice(0, 12).map((section) => [
+    markdownTableCell(section.heading || labels.unknown),
+    markdownTableCell(truncateText(section.text || labels.noAnswer, 220)),
+    markdownTableCell((section.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+  ]);
+  return [
+    `| ${labels.section} | ${labels.summary} | ${labels.evidenceLabels} |`,
+    "| --- | --- | --- |",
+    rows.length ? rows.map((cells) => `| ${cells.join(" | ")} |`).join("\n") : `| ${markdownTableCell(labels.noSections)} |  |  |`
+  ].join("\n");
+}
+
+function visualExtractionTables(answer) {
+  const tables = [];
+  const lines = String(answer || "").split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!/^\s*\|.*\|\s*$/.test(lines[index] || "")) continue;
+    const start = index;
+    while (index < lines.length && /^\s*\|.*\|\s*$/.test(lines[index] || "")) index += 1;
+    const block = lines.slice(start, index).join("\n").trim();
+    if (/\|\s*:?-{3,}:?\s*\|/.test(block)) tables.push(block);
+  }
+  return tables.slice(0, 8);
+}
+
+function visualExtractionEvidenceLabels(answer) {
+  return Array.from(new Set(String(answer || "").match(/\[(?:image|metadata|abstract|chunk:[^\]\s]+|paper\d+:[^\]\s]+)[^\]]*\]/g) || []));
+}
+
+function visualExtractionReportLabels(outputLanguage) {
+  const zh = /^zh/i.test(String(outputLanguage || ""));
+  if (zh) {
+    return {
+      title: "图表/截图解析报告",
+      paperTitle: "题名",
+      generatedAt: "生成时间",
+      reportFile: "报告文件",
+      mode: "解析模式",
+      model: "模型",
+      imageInventory: "图片清单",
+      imageName: "图片",
+      imageType: "类型",
+      imageSize: "字节",
+      noImages: "本次导出未记录图片附件；请核对原会话。",
+      sectionIndex: "结构化解析索引",
+      section: "章节",
+      summary: "摘要",
+      evidenceLabels: "证据标签",
+      noEvidenceLabels: "未标注",
+      noSections: "未检测到结构化二级标题，请回到原回答人工整理。",
+      reconstructedTables: "重建表格/数据",
+      table: "表格",
+      noTables: "未检测到 Markdown 表格；如原图含图表数据，请人工复核或重新使用图表解析模板提问。",
+      reviewChecklist: "复核清单",
+      checkReadableText: "核对 OCR 文本、标题、坐标轴、图例、表头和公式是否可读。",
+      checkTableNumbers: "核对重建表格中的数字、单位、指标和数据集名称。",
+      checkImageEvidence: "区分直接视觉观察、论文上下文推断和低置信判断。",
+      checkPdfLocation: "回到 PDF 原图位置核对页码、图号/表号和上下文。",
+      checkReuse: "标记可复用于综述、实验对比、方法复现或后续检索的条目。",
+      originalAnswer: "原始模型回答",
+      noAnswer: "没有可用回答。",
+      unknown: "未知"
+    };
+  }
+  return {
+    title: "Figure/Table Extraction Report",
+    paperTitle: "Title",
+    generatedAt: "Generated at",
+    reportFile: "Report file",
+    mode: "Extraction mode",
+    model: "Model",
+    imageInventory: "Image Inventory",
+    imageName: "Image",
+    imageType: "Type",
+    imageSize: "Bytes",
+    noImages: "No image attachment metadata was recorded for this export; check the original session.",
+    sectionIndex: "Structured Extraction Index",
+    section: "Section",
+    summary: "Summary",
+    evidenceLabels: "Evidence labels",
+    noEvidenceLabels: "not labeled",
+    noSections: "No structured H2 sections were detected; manually organize the original answer.",
+    reconstructedTables: "Reconstructed Tables / Data",
+    table: "Table",
+    noTables: "No Markdown table was detected. If the image contains chart data, verify manually or ask again with the figure/table extractor.",
+    reviewChecklist: "Review Checklist",
+    checkReadableText: "Check OCR text, titles, axes, legends, headers, and formulas.",
+    checkTableNumbers: "Verify reconstructed numbers, units, metrics, and dataset names.",
+    checkImageEvidence: "Separate direct visual observations, paper-context inference, and low-confidence judgments.",
+    checkPdfLocation: "Return to the PDF figure/table location and verify page, label, and context.",
+    checkReuse: "Mark items reusable for review writing, experiment comparison, reproduction, or follow-up search.",
+    originalAnswer: "Original Model Answer",
+    noAnswer: "No answer is available.",
+    unknown: "Unknown"
+  };
+}
+
 function markdownTableCell(value) {
   const text = mdText(value);
   return text ? text.replace(/\|/g, "\\|").replace(/\n/g, "<br>") : "";
@@ -6516,6 +6765,12 @@ function comparisonReportMarkdownPath(outputDir, item) {
   const collectionKey = workbenchCollectionKey(item);
   const itemKey = sanitizeFilename(item?.key || "focus");
   return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", `literature-matrix-${itemKey}.md`);
+}
+
+function visualExtractionReportMarkdownPath(outputDir, item) {
+  const collectionKey = workbenchCollectionKey(item);
+  const itemKey = sanitizeFilename(item?.key || "paper");
+  return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", `visual-extraction-${itemKey}.md`);
 }
 
 function reviewDraftMarkdownPath(outputDir, item) {

@@ -16,7 +16,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - **Provider diagnostics**: OpenAI-compatible, OpenAI Responses, Anthropic, and wrapped router responses are normalized for text, stream errors, model lists, and token usage metadata in saved sessions.
 - **Multi-paper comparison and literature matrix**: when multiple Zotero items are selected, the first item becomes the focal paper and the rest become comparison context; the workbench can export an evidence-labeled Markdown literature matrix, and the built-in `Literature Matrix` skill can continue the analysis with an LLM.
 - **Collection synthesis workspace**: collection batch runs write `papers.json`, paper-note indexes, method matrices, research-gap matrices, heuristic topic clusters, synthesis-claims matrices, synthesis-conflict ledgers, synthesis roadmaps, research-question cards, idea lists, a manual review draft scaffold, a formal review report scaffold, plus a global `collections/index.json` and cross-collection synthesis map with a recurring-gap board.
-- **Image questions and figure extraction**: paste screenshots, drop images, or choose local image files; the built-in `Figure/Table Extractor` skill turns paper figures, tables, and result panels into structured Markdown with visual OCR text, reconstructed-data-table fields, evidence mapping, and a review checklist.
+- **Image questions and figure extraction**: paste screenshots, drop images, or choose local image files; the built-in `Figure/Table Extractor` skill turns paper figures, tables, and result panels into structured Markdown with visual OCR text, reconstructed-data-table fields, evidence mapping, a review checklist, and a reusable Markdown extraction report export.
 - **Bring-your-own-key**: the plugin is free and open source; remote model providers require your own API keys.
 - **Local agent consultation**: optionally ask local Gemini, Claude, and opencode command-line tools for independent reading suggestions through the local bridge.
 - **Research workflow utilities**: includes skill prompts for deep summary, method extraction, experiment tables, figure/table extraction, literature matrix, citation checks, and candidate-paper discovery.
@@ -30,7 +30,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 - Stream assistant output into Markdown rendering, including common headings, lists, tables, code blocks, and lightweight formula display.
 - Preserve normalized provider usage metadata in saved chat sessions when the provider returns token counts.
 - Copy raw Markdown answers from the chat workbench.
-- Ask image-based questions by pasting screenshots, dropping images, or selecting local image files in the workbench; image-only sends use a default image-analysis prompt.
+- Ask image-based questions by pasting screenshots, dropping images, or selecting local image files in the workbench; image-only sends use a default image-analysis prompt, and visual extraction answers can be exported as Markdown reports.
 - Write selected answers back into the Markdown summary with a preview step and backup file.
 - Export a structured paper reading log with context-quality diagnostics, reading checklist, evidence snippets, and reuse-plan fields.
 - Export proposal notes and journal/report outlines with evidence labels, writing-positioning fields, prompt-pack-specific domain writing checklists, and manual follow-up checklists.
@@ -145,7 +145,7 @@ The workbench is designed as a compact paper chat surface:
 - Top bar: current paper title, active model profile, settings button.
 - Message area: rendered Markdown answers with raw Markdown copy support.
 - Composer: ask questions about the selected paper.
-- Image attachments: paste screenshots, drop images, or select local image files; requests are sent in the active provider protocol's image format. Image-only sends are converted into a default analysis request.
+- Image attachments: paste screenshots, drop images, or select local image files; requests are sent in the active provider protocol's image format. Image-only sends are converted into a default analysis request, and recent figure/table extraction answers can be exported from the Sessions and Files panel.
 - Settings drawer: model, consultation mode, paper metadata, session tools, reading-log/review-draft export, and candidate-paper utilities.
 
 Typical questions:
@@ -252,7 +252,7 @@ build/update.json
 ## Current Limitations
 
 - Multi-paper comparison is available as a first-pass workbench workflow, with up to 5 comparison papers by default and a reusable Markdown literature-matrix export. Collection batch runs now generate heuristic topic clusters, evidence-backed synthesis-claims matrices, synthesis-conflict ledgers, synthesis roadmaps, a formal review report scaffold, and a cross-collection synthesis map with a recurring-gap board, but the clustering is deterministic and the reports still need human review before final writing.
-- Single-turn image attachments and the `Figure/Table Extractor` skill are supported, including a structured visual OCR / table-reconstruction output contract, but chart, table, and handwritten-note understanding still depends on the selected model. A local OCR engine and automatic chart-data reconstruction are not implemented yet.
+- Single-turn image attachments and the `Figure/Table Extractor` skill are supported, including a structured visual OCR / table-reconstruction output contract and a reusable Markdown export for the latest visual extraction answer, but chart, table, and handwritten-note understanding still depends on the selected model. A local OCR engine and automatic chart-data reconstruction are not implemented yet.
 - Formula rendering is lightweight. It supports common inline/display math patterns, but it is not a full TeX engine.
 - Paper reading logs and formal review drafts are structured Markdown scaffolds with evidence excerpts and manual fields; they still need human editing before becoming polished long-form review reports.
 - Candidate-paper search now has explainable ranking, duplicate reconciliation, configurable bounded citation-network expansion, saved manual review notes, structured full-text screening stages, exclusion reasons, high-confidence recommendation application, a screening board, an evidence-chain follow-up queue, source-evidence snippets, Zotero indexed full-text evidence snippets with hit context, matched annotation page labels, indexed-text locators, repeated page-header/footer cleanup, simple line-break dehyphenation, best-effort page hints when indexed text preserves form-feed page breaks or standalone page markers such as `Page 12`, and short hashes for imported candidates with attached PDFs, plus a Markdown candidate-review report. True page-accurate source-to-PDF evidence extraction for unannotated PDF text still needs more work.

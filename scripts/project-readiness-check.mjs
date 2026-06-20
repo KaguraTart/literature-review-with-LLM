@@ -560,16 +560,21 @@ const SOURCE_MARKERS = [
   },
   {
     id: "workbench.figure-table-extraction-contract",
-    description: "Figure/table extraction uses a structured visual OCR, table reconstruction, evidence-map, and review-checklist output contract",
-    files: ["addon/content/workbench.js", "tests/workbenchWriteback.test.ts", "README.md", "README.zh-CN.md"],
+    description: "Figure/table extraction uses a structured visual OCR, table reconstruction, evidence-map, review-checklist output contract, and reusable Markdown export",
+    files: ["addon/content/workbench.xhtml", "addon/content/workbench.js", "tests/workbenchWriteback.test.ts", "README.md", "README.zh-CN.md"],
     markers: [
+      "zms-export-visual-report",
+      "renderVisualExtractionReportMarkdown",
+      "visual-extraction-report-v1",
       "Visual OCR Text",
       "Reconstructed Data Table",
       "项目、数值/文本、单位、来源、置信度、备注",
       "Interpretation And Evidence Map",
       "视觉 OCR 文本",
       "表格/数据重建",
-      "uses a structured visual OCR and table reconstruction contract"
+      "uses a structured visual OCR and table reconstruction contract",
+      "renders a figure/table extraction report",
+      "exports a figure/table extraction report"
     ]
   },
   {

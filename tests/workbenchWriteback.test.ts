@@ -235,6 +235,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     renderReadingLogMarkdown: (context: any, options?: any) => string;
     comparisonReportMarkdownPath: (outputDir: string, item: any) => string;
     renderComparisonReportMarkdown: (context: any, options?: any) => string;
+    visualExtractionReportMarkdownPath: (outputDir: string, item: any) => string;
+    renderVisualExtractionReportMarkdown: (payload: any, options?: any) => string;
     citationNetworkSeedsForWorkbench: (records: any[], item: any, limit?: number) => any[];
     citationNetworkMetaText: (record: any) => string;
     applyCandidateDecisions: (records: any[], decisions: Record<string, any>, now: string) => any[];
@@ -2554,6 +2556,111 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("Comparison Paper");
     expect(files.get(reportPath)).toContain("[paper2:summary-compare source=summary locator=summary:1 hash=comparehash]");
     expect(dom.elements.get("zms-status").textContent).toContain(`comparisonReportDone: ${reportPath}`);
+  });
+
+  it("renders a figure/table extraction report from the latest visual answer", () => {
+    const loaded = loadWorkbenchHelpers();
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const item = {
+      key: "IMG",
+      getCollections: () => [10]
+    };
+    const report = loaded.renderVisualExtractionReportMarkdown({
+      item,
+      context: {
+        metadata: { title: "Visual Paper" }
+      },
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          skillId: "figure-table-extractor",
+          content: "Analyze this image",
+          images: [{ name: "figure.png", mimeType: "image/png", size: 1234 }]
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          skillId: "figure-table-extractor",
+          profileName: "MiniMax",
+          content: [
+            "## Visual OCR Text",
+            "- Axis: Delay [image]",
+            "",
+            "## Reconstructed Data Table",
+            "| Item | Value | Source |",
+            "| --- | --- | --- |",
+            "| Delay | 12 ms | [image] |",
+            "",
+            "## Interpretation And Evidence Map",
+            "- Supported by [chunk:summary-method source=summary locator=summary:1 hash=abc123]"
+          ].join("\n")
+        }
+      ]
+    }, {
+      item,
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      reportPath: "/tmp/out/collections/COL/writing/visual-extraction-IMG.md",
+      contextSourceHash: "sourcehash"
+    });
+
+    expect(report).toContain("templateVersion: visual-extraction-report-v1");
+    expect(report).toContain("# Figure/Table Extraction Report");
+    expect(report).toContain("| figure.png | image/png | 1234 |");
+    expect(report).toContain("## Structured Extraction Index");
+    expect(report).toContain("Visual OCR Text");
+    expect(report).toContain("## Reconstructed Tables / Data");
+    expect(report).toContain("| Delay | 12 ms | [image] |");
+    expect(report).toContain("`[image]`");
+    expect(report).toContain("`[chunk:summary-method source=summary locator=summary:1 hash=abc123]`");
+    expect(report).toContain("## Original Model Answer");
+  });
+
+  it("exports a figure/table extraction report from workbench messages", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "zh-CN";
+    workbench.state.item = {
+      key: "IMG",
+      getCollections: () => [10]
+    };
+    workbench.state.contextSourceHash = "sourcehash";
+    workbench.state.context = {
+      metadata: { title: "视觉论文" }
+    };
+    workbench.state.messages = [
+      {
+        id: "user-visual",
+        role: "user",
+        skillId: "",
+        content: "请解析图片",
+        images: [{ name: "chart.png", mimeType: "image/png", size: 77 }]
+      },
+      {
+        id: "assistant-visual",
+        role: "assistant",
+        skillId: "",
+        profileName: "MiniMax",
+        content: "## 视觉 OCR 文本\n- 坐标轴: delay [image]\n\n## 重建表格\n| 指标 | 数值 |\n| --- | --- |\n| delay | 12 ms |"
+      }
+    ];
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportVisualExtractionReport();
+
+    const reportPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.md";
+    expect(files.get(reportPath)).toContain("# 图表/截图解析报告");
+    expect(files.get(reportPath)).toContain("视觉论文");
+    expect(files.get(reportPath)).toContain("| chart.png | image/png | 77 |");
+    expect(files.get(reportPath)).toContain("## 重建表格/数据");
+    expect(files.get(reportPath)).toContain("| delay | 12 ms |");
+    expect(dom.elements.get("zms-status").textContent).toContain(`visualReportDone: ${reportPath}`);
   });
 
   it("renders a formal review draft with evidence-backed writing sections", () => {
