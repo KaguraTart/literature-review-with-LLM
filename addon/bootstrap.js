@@ -961,6 +961,28 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
   await writeText(reviewDraftPath, renderManualReviewDraft(collectionContext, results, outputLanguage));
   await writeText(reviewReportPath, renderFormalReviewReport(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(ideaListPath, renderIdeaList(collectionContext, results, outputLanguage, summaryInsights));
+  const crossCollectionArtifacts = await writeCrossCollectionSynthesisIndex(
+    settings,
+    { ...collectionContext, outputDir: baseDir },
+    results,
+    outputLanguage,
+    summaryInsights,
+    {
+      baseDir,
+      papersIndexPath,
+      paperNotesIndexPath,
+      methodMatrixPath,
+      gapMatrixPath,
+      topicClustersPath,
+      synthesisClaimsPath,
+      synthesisConflictsPath,
+      synthesisRoadmapPath,
+      researchQuestionCardsPath,
+      reviewDraftPath,
+      reviewReportPath,
+      ideaListPath
+    }
+  );
   return {
     baseDir,
     papersIndexPath,
@@ -974,7 +996,8 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
     researchQuestionCardsPath,
     reviewDraftPath,
     reviewReportPath,
-    ideaListPath
+    ideaListPath,
+    ...crossCollectionArtifacts
   };
 }
 
@@ -1002,6 +1025,186 @@ function collectionWorkspaceArtifactPaths(dirs, outputLanguage) {
     reviewReportPath: PathUtils.join(dirs.writing, `formal-review-report.${language}.md`),
     ideaListPath: PathUtils.join(dirs.writing, `idea-list.${language}.md`)
   };
+}
+
+async function writeCrossCollectionSynthesisIndex(settings, collectionContext, results, outputLanguage, summaryInsights, artifacts) {
+  const indexPath = crossCollectionIndexPath(settings);
+  const synthesisPath = crossCollectionSynthesisPath(settings, outputLanguage);
+  const previous = await readCrossCollectionIndex(indexPath);
+  const entry = crossCollectionEntry(collectionContext, results, outputLanguage, summaryInsights, artifacts);
+  const collections = upsertCrossCollectionEntry(previous.collections, entry);
+  const payload = {
+    templateVersion: "cross-collection-index-v1",
+    generatedAt: new Date().toISOString(),
+    outputLanguage,
+    stats: crossCollectionStats(collections),
+    collections
+  };
+  await writeText(indexPath, JSON.stringify(payload, null, 2));
+  await writeText(synthesisPath, renderCrossCollectionSynthesis(payload, outputLanguage));
+  return {
+    crossCollectionIndexPath: indexPath,
+    crossCollectionSynthesisPath: synthesisPath
+  };
+}
+
+function crossCollectionIndexPath(settings) {
+  return PathUtils.join(settings.outputDir, "collections", "index.json");
+}
+
+function crossCollectionSynthesisPath(settings, outputLanguage) {
+  const language = collectionOutputLanguage({ outputLanguage });
+  return PathUtils.join(settings.outputDir, "collections", `cross-collection-synthesis.${language}.md`);
+}
+
+async function readCrossCollectionIndex(indexPath) {
+  try {
+    if (!await IOUtils.exists(indexPath)) return { collections: [] };
+    const parsed = JSON.parse(await readText(indexPath));
+    return {
+      collections: Array.isArray(parsed?.collections) ? parsed.collections : []
+    };
+  } catch (_err) {
+    return { collections: [] };
+  }
+}
+
+function crossCollectionEntry(collectionContext, results, outputLanguage, summaryInsights = new Map(), artifacts = {}) {
+  const labels = collectionTemplateLabels(outputLanguage);
+  const clusters = topicClusterEntries(results, summaryInsights, labels).slice(0, 8).map((cluster) => ({
+    label: cluster.label,
+    paperCount: cluster.items.length,
+    papers: cluster.items.map(({ item }) => item.title || item.itemKey).slice(0, 8),
+    methodSignals: uniqueInsightLines(cluster.items.map(({ insight }) => insight.method).filter(Boolean)).slice(0, 4),
+    gapSignals: uniqueInsightLines(cluster.items.flatMap(({ insight }) => insightValues(insight.limitations, insight.missingEvidence, insight.validationNeeds))).slice(0, 4)
+  }));
+  const claims = synthesisClaimEntries(results, summaryInsights, labels).slice(0, 6).map((entry) => ({
+    cluster: entry.cluster,
+    claim: entry.claim,
+    supportingPapers: entry.supportingPapers.slice(0, 6),
+    gaps: entry.gaps.slice(0, 4),
+    validations: entry.validations.slice(0, 4)
+  }));
+  const roadmap = synthesisRoadmapEntries(results, summaryInsights, labels).slice(0, 8);
+  return {
+    key: collectionContext.key,
+    name: collectionContext.name || collectionContext.key,
+    type: collectionContext.type || "collection",
+    parentLibraryID: collectionContext.parentLibraryID || null,
+    outputDir: collectionContext.outputDir || artifacts.baseDir || "",
+    outputLanguage,
+    generatedAt: new Date().toISOString(),
+    stats: batchStats(results),
+    artifacts: {
+      papersIndexPath: artifacts.papersIndexPath || "",
+      topicClustersPath: artifacts.topicClustersPath || "",
+      synthesisClaimsPath: artifacts.synthesisClaimsPath || "",
+      synthesisConflictsPath: artifacts.synthesisConflictsPath || "",
+      synthesisRoadmapPath: artifacts.synthesisRoadmapPath || "",
+      reviewReportPath: artifacts.reviewReportPath || "",
+      ideaListPath: artifacts.ideaListPath || ""
+    },
+    clusters,
+    claims,
+    openGaps: uniqueInsightLines(roadmap.map((entry) => entry.openGap).filter(Boolean)).slice(0, 8),
+    candidateQueries: uniqueInsightLines(roadmap.map((entry) => entry.candidateQuery).filter(Boolean)).slice(0, 8)
+  };
+}
+
+function upsertCrossCollectionEntry(collections = [], entry) {
+  const byKey = new Map((collections || [])
+    .filter((item) => item?.key && item.key !== entry.key)
+    .map((item) => [item.key, item]));
+  byKey.set(entry.key, entry);
+  return Array.from(byKey.values()).sort((left, right) => String(left.name || left.key).localeCompare(String(right.name || right.key)));
+}
+
+function crossCollectionStats(collections = []) {
+  return (collections || []).reduce((stats, collection) => {
+    const itemStats = collection?.stats || {};
+    stats.collections += 1;
+    stats.totalPapers += Number(itemStats.total || 0);
+    stats.availableSummaries += Number(itemStats.generated || 0) + Number(itemStats.skippedExisting || 0);
+    stats.skippedNoPdf += Number(itemStats.skippedNoPdf || 0);
+    stats.failed += Number(itemStats.failed || 0);
+    return stats;
+  }, { collections: 0, totalPapers: 0, availableSummaries: 0, skippedNoPdf: 0, failed: 0 });
+}
+
+function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") {
+  const labels = collectionTemplateLabels(outputLanguage);
+  const collections = Array.isArray(indexPayload?.collections) ? indexPayload.collections : [];
+  const inventoryRows = collections.map((collection) => [
+    escapeMarkdownTable(collection.name || collection.key),
+    escapeMarkdownTable(collection.stats?.total || 0),
+    escapeMarkdownTable((collection.clusters || []).map((cluster) => `${cluster.label} (${cluster.paperCount || 0})`).join("; ") || labels.noSummary),
+    escapeMarkdownTable((collection.openGaps || []).slice(0, 3).join("; ") || labels.gapMatrixPendingEvidence),
+    escapeMarkdownTable(collection.artifacts?.reviewReportPath || collection.outputDir || "")
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |";
+  return [
+    `# ${labels.crossCollectionSynthesis}`,
+    "",
+    labels.crossCollectionSynthesisNote,
+    "",
+    `## ${labels.crossCollectionInventory}`,
+    "",
+    labels.crossCollectionStatsLine(indexPayload?.stats || crossCollectionStats(collections)),
+    "",
+    `| ${labels.collectionColumn} | ${labels.paperColumn} | ${labels.clusterColumn} | ${labels.gapSignalColumn} | ${labels.reportColumn} |`,
+    "| --- | --- | --- | --- | --- |",
+    inventoryRows,
+    "",
+    `## ${labels.crossCollectionThemeMap}`,
+    "",
+    renderCrossCollectionThemeRows(collections, labels),
+    "",
+    `## ${labels.reportNextActions}`,
+    "",
+    labels.crossCollectionNextActions,
+    ""
+  ].join("\n");
+}
+
+function renderCrossCollectionThemeRows(collections, labels) {
+  const themes = new Map();
+  for (const collection of collections || []) {
+    for (const cluster of collection.clusters || []) {
+      const key = cluster.label || labels.clusterOther;
+      if (!themes.has(key)) {
+        themes.set(key, {
+          label: key,
+          collections: [],
+          papers: 0,
+          methods: [],
+          gaps: [],
+          queries: []
+        });
+      }
+      const theme = themes.get(key);
+      theme.collections.push(collection.name || collection.key);
+      theme.papers += Number(cluster.paperCount || 0);
+      theme.methods.push(...(cluster.methodSignals || []));
+      theme.gaps.push(...(cluster.gapSignals || []));
+      theme.queries.push(...(collection.candidateQueries || []));
+    }
+  }
+  const rows = Array.from(themes.values())
+    .sort((left, right) => right.papers - left.papers || left.label.localeCompare(right.label))
+    .slice(0, 12)
+    .map((theme) => [
+      escapeMarkdownTable(theme.label),
+      escapeMarkdownTable(uniqueInsightLines(theme.collections).join("; ")),
+      escapeMarkdownTable(theme.papers),
+      escapeMarkdownTable(uniqueInsightLines(theme.methods).slice(0, 4).join("; ") || labels.pendingInsight),
+      escapeMarkdownTable(uniqueInsightLines(theme.gaps).slice(0, 4).join("; ") || labels.gapMatrixPendingEvidence),
+      escapeMarkdownTable(uniqueInsightLines(theme.queries).slice(0, 3).join("; ") || labels.roadmapCandidateQueryColumn)
+    ].join(" | "))
+    .map((row) => `| ${row} |`);
+  return [
+    `| ${labels.clusterColumn} | ${labels.collectionColumn} | ${labels.paperColumn} | ${labels.methodSignalColumn} | ${labels.gapSignalColumn} | ${labels.roadmapCandidateQueryColumn} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    rows.join("\n") || "|  |  |  |  |  |  |"
+  ].join("\n");
 }
 
 async function loadBatchSummaryInsights(results) {
@@ -1713,6 +1916,18 @@ function collectionTemplateLabels(outputLanguage) {
       roadmapCandidateQueryColumn: "Candidate-search Query",
       roadmapSectionPlan: "Section Plan",
       roadmapEvidenceIndex: "Evidence Index",
+      crossCollectionSynthesis: "Cross-Collection Synthesis Map",
+      crossCollectionSynthesisNote: "Aggregates the latest collection workspaces into one review-planning surface. Use it to compare themes across collections before writing a broader review.",
+      crossCollectionInventory: "Collection Inventory",
+      crossCollectionThemeMap: "Cross-Collection Theme Map",
+      collectionColumn: "Collection",
+      reportColumn: "Report",
+      crossCollectionStatsLine: (stats) => `Collections ${stats.collections}, papers ${stats.totalPapers}, available summaries ${stats.availableSummaries}, skipped without PDF ${stats.skippedNoPdf}, failed ${stats.failed}.`,
+      crossCollectionNextActions: [
+        "- [ ] Check whether similar clusters across collections should be merged or kept as separate review scopes.",
+        "- [ ] Open each collection's formal report before moving claims into a cross-collection manuscript.",
+        "- [ ] Run candidate-paper search for recurring gaps that appear in more than one collection."
+      ].join("\n"),
       roadmapQuestionText: (cluster, method, gap) => `How should ${cluster} papers be compared around ${method}, and what evidence is still missing around ${gap}?`,
       roadmapSectionText: (index, cluster, method, gap) => `Section ${index}: use ${cluster} to compare ${method}; close or clearly mark ${gap}.`,
       roadmapChecklistItems: [
@@ -1863,6 +2078,18 @@ function collectionTemplateLabels(outputLanguage) {
       roadmapCandidateQueryColumn: "候補検索クエリ",
       roadmapSectionPlan: "節構成プラン",
       roadmapEvidenceIndex: "エビデンス索引",
+      crossCollectionSynthesis: "Collection 横断統合マップ",
+      crossCollectionSynthesisNote: "最新の collection workspace を横断的なレビュー計画面に集約します。より広いレビューを書く前に、collection 間のテーマを比較するために使います。",
+      crossCollectionInventory: "Collection 一覧",
+      crossCollectionThemeMap: "Collection 横断テーママップ",
+      collectionColumn: "Collection",
+      reportColumn: "報告書",
+      crossCollectionStatsLine: (stats) => `Collection ${stats.collections} 件、論文 ${stats.totalPapers} 件、利用可能な要約 ${stats.availableSummaries} 件、PDF なしスキップ ${stats.skippedNoPdf} 件、失敗 ${stats.failed} 件。`,
+      crossCollectionNextActions: [
+        "- [ ] Collection 間で似たクラスタを統合すべきか、別々のレビュー範囲として残すべきか確認する。",
+        "- [ ] 横断的な原稿へ主張を移す前に、各 collection の正式レビュー報告書を開いて確認する。",
+        "- [ ] 複数 collection にまたがる反復的なギャップには候補論文検索を実行する。"
+      ].join("\n"),
       roadmapQuestionText: (cluster, method, gap) => `${cluster} の論文を ${method} を軸にどう比較し、${gap} に関する不足証拠をどう補うか。`,
       roadmapSectionText: (index, cluster, method, gap) => `第 ${index} 節: ${cluster} で ${method} を比較し、${gap} を補うか明示する。`,
       roadmapChecklistItems: [
@@ -2012,6 +2239,18 @@ function collectionTemplateLabels(outputLanguage) {
     roadmapCandidateQueryColumn: "候选检索词",
     roadmapSectionPlan: "小节计划",
     roadmapEvidenceIndex: "证据索引",
+    crossCollectionSynthesis: "跨集合综合地图",
+    crossCollectionSynthesisNote: "把最近生成的 collection workspace 汇总为一个跨集合综述规划入口，用于在更大范围综述写作前比较不同集合之间的主题、证据和缺口。",
+    crossCollectionInventory: "集合清单",
+    crossCollectionThemeMap: "跨集合主题地图",
+    collectionColumn: "集合",
+    reportColumn: "报告",
+    crossCollectionStatsLine: (stats) => `集合 ${stats.collections} 个，论文 ${stats.totalPapers} 篇，可用总结 ${stats.availableSummaries} 篇，无 PDF 跳过 ${stats.skippedNoPdf} 篇，失败 ${stats.failed} 篇。`,
+    crossCollectionNextActions: [
+      "- [ ] 判断不同集合中的相似主题应合并，还是保留为独立综述范围。",
+      "- [ ] 把主张迁移到跨集合综述正文前，先打开各集合正式综述报告核对证据。",
+      "- [ ] 对多个集合中反复出现的缺口继续运行候选论文检索。"
+    ].join("\n"),
     roadmapQuestionText: (cluster, method, gap) => `如何围绕“${cluster}”比较 ${method}，并补齐 ${gap} 相关证据？`,
     roadmapSectionText: (index, cluster, method, gap) => `第 ${index} 节：用“${cluster}”比较 ${method}，补齐或明确标注 ${gap}。`,
     roadmapChecklistItems: [

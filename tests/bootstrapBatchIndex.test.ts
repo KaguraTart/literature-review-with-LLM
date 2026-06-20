@@ -74,6 +74,8 @@ function loadBootstrapHelpers(files = new Map<string, string>()) {
       writeCollectionWorkspace: (settings: any, collectionContext: any, results: any[]) => Promise<any>;
       writeBatchRunReport: (settings: any, collectionContext: any, results: any[], options?: any) => Promise<string>;
       batchRunReportPayload: (settings: any, collectionContext: any, results: any[], options?: any) => any;
+      crossCollectionIndexPath: (settings: any) => string;
+      crossCollectionSynthesisPath: (settings: any, outputLanguage: string) => string;
       renderMarkdown: (item: any, pdf: any, settings: any, result: any) => string;
       linkOrUpdateAttachment: (item: any, outputPath: string, existing?: any) => Promise<any>;
     }
@@ -260,7 +262,9 @@ describe("batch papers index", () => {
       researchQuestionCardsPath: "/out/collections/COL/knowledge/research-question-cards.zh-CN.md",
       reviewDraftPath: "/out/collections/COL/writing/manual-review-draft.zh-CN.md",
       reviewReportPath: "/out/collections/COL/writing/formal-review-report.zh-CN.md",
-      ideaListPath: "/out/collections/COL/writing/idea-list.zh-CN.md"
+      ideaListPath: "/out/collections/COL/writing/idea-list.zh-CN.md",
+      crossCollectionIndexPath: "/out/collections/index.json",
+      crossCollectionSynthesisPath: "/out/collections/cross-collection-synthesis.zh-CN.md"
     });
     expect(directories).toEqual(expect.arrayContaining([
       "/out/collections/COL",
@@ -278,6 +282,21 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("综合主张矩阵");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("主张风险检查清单");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("综合冲突与缺口台账");
+    expect(JSON.parse(writes.get(artifacts.crossCollectionIndexPath) || "{}")).toMatchObject({
+      templateVersion: "cross-collection-index-v1",
+      stats: { collections: 1, totalPapers: 2, availableSummaries: 1 },
+      collections: [
+        expect.objectContaining({
+          key: "COL",
+          name: "Collection",
+          artifacts: expect.objectContaining({
+            reviewReportPath: "/out/collections/COL/writing/formal-review-report.zh-CN.md"
+          })
+        })
+      ]
+    });
+    expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合综合地图");
+    expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("Collection");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("支持强度");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("冲突审查清单");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("综合路线图");
@@ -427,6 +446,68 @@ describe("batch papers index", () => {
     expect(clusters).toContain("Transformer baseline selection");
     expect(clusters).toContain("No field data from real flight operations");
     expect(clusters).toContain("Compute cost is not reported");
+  });
+
+  it("upserts collection entries into the cross-collection synthesis index", async () => {
+    const existingIndex = {
+      templateVersion: "cross-collection-index-v1",
+      generatedAt: "2026-06-19T00:00:00.000Z",
+      outputLanguage: "en-US",
+      stats: { collections: 1, totalPapers: 2, availableSummaries: 2, skippedNoPdf: 0, failed: 0 },
+      collections: [
+        {
+          key: "OLD",
+          name: "Old Collection",
+          type: "collection",
+          outputLanguage: "en-US",
+          stats: { total: 2, generated: 2, skippedExisting: 0, skippedNoPdf: 0, failed: 0 },
+          artifacts: { reviewReportPath: "/out/collections/OLD/writing/formal-review-report.en-US.md" },
+          clusters: [
+            {
+              label: "Safety / Risk",
+              paperCount: 2,
+              methodSignals: ["Bayesian risk model"],
+              gapSignals: ["No deployment evidence"]
+            }
+          ],
+          openGaps: ["No deployment evidence"],
+          candidateQueries: ["Safety / Risk Bayesian risk model No deployment evidence"]
+        }
+      ]
+    };
+    const files = new Map<string, string>([
+      ["/out/collections/index.json", JSON.stringify(existingIndex, null, 2)],
+      ["/out/new.md", [
+        "# Urban airspace conflict resolution",
+        "",
+        "## Method",
+        "",
+        "- PPO-based CTDE scheduler with safety constraints.",
+        "",
+        "## Limitation",
+        "",
+        "- No field deployment evidence."
+      ].join("\n")]
+    ]);
+    const { writes, helpers } = loadBootstrapHelpers(files);
+
+    const artifacts = await helpers.writeCollectionWorkspace(
+      { outputLanguage: "en-US", summaryVersion: "1", outputDir: "/out" },
+      { key: "NEW", name: "New Collection", type: "collection", parentLibraryID: 1, outputDir: "/out/collections/NEW" },
+      [{ status: "generated", itemKey: "N", title: "Urban airspace conflict resolution", year: "2026", summaryPath: "/out/new.md" }]
+    );
+
+    const payload = JSON.parse(writes.get(artifacts.crossCollectionIndexPath) || "{}");
+    expect(payload.stats).toMatchObject({ collections: 2, totalPapers: 3, availableSummaries: 3 });
+    expect(payload.collections.map((collection: any) => collection.key)).toEqual(["NEW", "OLD"]);
+    expect(payload.collections.find((collection: any) => collection.key === "OLD").clusters[0].label).toBe("Safety / Risk");
+    expect(payload.collections.find((collection: any) => collection.key === "NEW").artifacts.reviewReportPath)
+      .toBe("/out/collections/NEW/writing/formal-review-report.en-US.md");
+    const synthesis = writes.get(artifacts.crossCollectionSynthesisPath) || "";
+    expect(synthesis).toContain("Cross-Collection Synthesis Map");
+    expect(synthesis).toContain("Old Collection");
+    expect(synthesis).toContain("New Collection");
+    expect(synthesis).toContain("Urban Airspace");
   });
 
   it("localizes collection review and research question templates", async () => {

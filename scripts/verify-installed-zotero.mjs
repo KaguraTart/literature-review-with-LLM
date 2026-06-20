@@ -33,6 +33,8 @@ const REQUIRED_MARKERS = [
   ["bootstrap.js", "openEmbeddedWorkbench", "embedded workbench"],
   ["bootstrap.js", "writeBatchRunReport", "batch run report"],
   ["bootstrap.js", "writeCollectionWorkspace", "collection workspace"],
+  ["bootstrap.js", "writeCrossCollectionSynthesisIndex", "cross-collection synthesis index"],
+  ["bootstrap.js", "cross-collection-synthesis", "cross-collection synthesis report path"],
   ["bootstrap.js", "collectionWorkspaceArtifactPaths", "localized collection artifact paths"],
   ["bootstrap.js", "summaryPromptsForSettings", "localized direct summary prompts"],
   ["bootstrap.js", "renderMethodMatrix", "collection method matrix"],

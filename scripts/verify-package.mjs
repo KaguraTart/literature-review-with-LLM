@@ -196,6 +196,8 @@ const requiredMarkers = [
   [bootstrap, "checkLocalAgentBridge", "local agent bridge probe"],
   [bootstrap, "writeBatchRunReport", "per-run batch report writer"],
   [bootstrap, "writeCollectionWorkspace", "collection workspace writer"],
+  [bootstrap, "writeCrossCollectionSynthesisIndex", "cross-collection synthesis index writer"],
+  [bootstrap, "cross-collection-synthesis", "cross-collection synthesis path"],
   [bootstrap, "collectionWorkspaceArtifactPaths", "localized collection artifact paths"],
   [bootstrap, "renderMethodMatrix", "collection method matrix writer"],
   [bootstrap, "renderResearchQuestionCards", "collection research question cards writer"],
