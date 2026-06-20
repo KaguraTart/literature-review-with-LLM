@@ -397,6 +397,21 @@ describe("provider adapters", () => {
     )).toEqual(["stream", "temperature", "text", "max_output_tokens"]);
     expect(providerCompatibilityFallbackFields(
       "openai_responses",
+      responsesBody,
+      400,
+      JSON.stringify({
+        error: {
+          code: "unsupported_parameter",
+          message: "Unsupported request parameter",
+          param: "body.text.format"
+        },
+        details: {
+          parameters: ["max_output_tokens", "request.temperature", "stream"]
+        }
+      })
+    )).toEqual(["text", "max_output_tokens", "temperature", "stream"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_responses",
       {
         model: "responses-model",
         input: [],

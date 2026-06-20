@@ -823,7 +823,7 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   if (usedFallback === true || !["openai_chat", "openai_responses", "anthropic_messages"].includes(protocol) || ![400, 422].includes(Number(status))) return [];
   const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
   const detail = String(text || "").toLowerCase();
-  const fields: string[] = [];
+  const fields: string[] = providerStructuredUnsupportedFields(body, text);
   if (body?.stream_options !== undefined && /stream_options|stream options|stream option/.test(detail)) {
     fields.push("stream_options");
   }
@@ -910,6 +910,85 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
     fields.push("tool_choice");
   }
   return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
+}
+
+const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
+  "stream_options",
+  "stream",
+  "temperature",
+  "n",
+  "response_format",
+  "max_completion_tokens",
+  "max_tokens",
+  "text",
+  "max_output_tokens",
+  "instructions",
+  "reasoning",
+  "verbosity",
+  "system",
+  "metadata",
+  "thinking",
+  "top_p",
+  "presence_penalty",
+  "frequency_penalty",
+  "seed",
+  "top_logprobs",
+  "logprobs",
+  "parallel_tool_calls",
+  "reasoning_effort",
+  "stop",
+  "top_k",
+  "stop_sequences",
+  "tools",
+  "tool_choice"
+]);
+
+function providerStructuredUnsupportedFields(body: Record<string, unknown>, text: string): string[] {
+  const parsed = safeParseJSON(text);
+  if (!parsed) return [];
+  const hints: string[] = [];
+  collectProviderFieldHints(parsed, hints);
+  return hints
+    .map((value) => normalizeProviderFieldHint(value))
+    .filter((field) => field && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && body?.[field] !== undefined);
+}
+
+function collectProviderFieldHints(value: unknown, hints: string[]): void {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectProviderFieldHints(item, hints);
+    return;
+  }
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (isProviderFieldHintKey(key)) collectProviderFieldHintValue(entry, hints);
+    if (entry && typeof entry === "object") collectProviderFieldHints(entry, hints);
+  }
+}
+
+function collectProviderFieldHintValue(value: unknown, hints: string[]): void {
+  if (typeof value === "string") {
+    hints.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectProviderFieldHintValue(item, hints);
+  }
+}
+
+function isProviderFieldHintKey(key: string): boolean {
+  return /^(?:param|params|parameter|parameters|field|fields|property|properties|argument|arguments|unsupported_param|unsupported_params|unsupported_parameter|unsupported_parameters|invalid_param|invalid_params|invalid_parameter|invalid_parameters)$/i.test(key);
+}
+
+function normalizeProviderFieldHint(value: string): string {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/^\$\.?/, "")
+    .replace(/^(?:body|request|payload|params?|parameters?|input)\./i, "")
+    .replace(/\[[^\]]+\]/g, "")
+    .split(".")[0]
+    .trim();
+  return normalized;
 }
 
 export function omitProviderRequestBodyFields(body: Record<string, unknown>, fields: string[]): Record<string, unknown> {

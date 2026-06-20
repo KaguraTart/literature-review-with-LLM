@@ -59,6 +59,36 @@ const LOCAL_AGENT_AGGREGATE_SKILLS = ["ask-all-agents", "ask-gemini-claude", "ch
 const ZMS_PREF_PREFIX = "extensions.zoteroMarkdownSummary";
 const ZMS_CHROME_CONTENT_URL = "chrome://zotero-markdown-summary/content/";
 const MAX_COMPARISON_PAPERS = 5;
+const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
+  "stream_options",
+  "stream",
+  "temperature",
+  "n",
+  "response_format",
+  "max_completion_tokens",
+  "max_tokens",
+  "text",
+  "max_output_tokens",
+  "instructions",
+  "reasoning",
+  "verbosity",
+  "system",
+  "metadata",
+  "thinking",
+  "top_p",
+  "presence_penalty",
+  "frequency_penalty",
+  "seed",
+  "top_logprobs",
+  "logprobs",
+  "parallel_tool_calls",
+  "reasoning_effort",
+  "stop",
+  "top_k",
+  "stop_sequences",
+  "tools",
+  "tool_choice"
+]);
 
 function wbMessage(scope, key, settingOrLocale) {
   if (typeof zmsMessage !== "function") return key;
@@ -7333,7 +7363,7 @@ function providerUnsupportedOptionalFields(body, text, usedFallback = []) {
   if (usedFallback === true) return [];
   const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
   const detail = String(text || "").toLowerCase();
-  const fields = [];
+  const fields = providerStructuredUnsupportedFields(body, text);
   if (body?.stream_options !== undefined && /stream_options|stream options|stream option/.test(detail)) {
     fields.push("stream_options");
   }
@@ -7420,6 +7450,61 @@ function providerUnsupportedOptionalFields(body, text, usedFallback = []) {
     fields.push("tool_choice");
   }
   return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
+}
+
+function providerStructuredUnsupportedFields(body, text) {
+  const parsed = parseProviderFallbackJSON(text);
+  if (!parsed) return [];
+  const hints = [];
+  collectProviderFieldHints(parsed, hints);
+  return hints
+    .map((value) => normalizeProviderFieldHint(value))
+    .filter((field) => field && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && body?.[field] !== undefined);
+}
+
+function parseProviderFallbackJSON(text) {
+  try {
+    return JSON.parse(String(text || ""));
+  } catch (_err) {
+    return null;
+  }
+}
+
+function collectProviderFieldHints(value, hints) {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectProviderFieldHints(item, hints);
+    return;
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (isProviderFieldHintKey(key)) collectProviderFieldHintValue(entry, hints);
+    if (entry && typeof entry === "object") collectProviderFieldHints(entry, hints);
+  }
+}
+
+function collectProviderFieldHintValue(value, hints) {
+  if (typeof value === "string") {
+    hints.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectProviderFieldHintValue(item, hints);
+  }
+}
+
+function isProviderFieldHintKey(key) {
+  return /^(?:param|params|parameter|parameters|field|fields|property|properties|argument|arguments|unsupported_param|unsupported_params|unsupported_parameter|unsupported_parameters|invalid_param|invalid_params|invalid_parameter|invalid_parameters)$/i.test(key);
+}
+
+function normalizeProviderFieldHint(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/^\$\.?/, "")
+    .replace(/^(?:body|request|payload|params?|parameters?|input)\./i, "")
+    .replace(/\[[^\]]+\]/g, "")
+    .split(".")[0]
+    .trim();
 }
 
 function mergeProviderBodyOmitFields(bodyExtra, fields) {

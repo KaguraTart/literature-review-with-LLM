@@ -181,6 +181,48 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("falls back when a provider returns structured unsupported-parameter fields", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-chat",
+        "--body-extra-json", JSON.stringify({ response_format: { type: "json_object" } }),
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_chat",
+        text: "OK structured fallback"
+      });
+      expect(requests).toHaveLength(2);
+      expect(requests[0].body).toMatchObject({
+        response_format: { type: "json_object" },
+        max_tokens: 64
+      });
+      expect(requests[1].body).not.toHaveProperty("response_format");
+      expect(requests[1].body).toMatchObject({ max_tokens: 64 });
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.body?.response_format) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "Unsupported request parameter",
+              param: "response_format"
+            }
+          }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ choices: [{ message: { content: "OK structured fallback" } }] }));
+      }
+    });
+  });
+
   it("falls back across multiple OpenAI Responses-compatible smoke optional-field errors", async () => {
     await withMockProvider(async (baseURL, requests) => {
       const report = await runSmoke([
