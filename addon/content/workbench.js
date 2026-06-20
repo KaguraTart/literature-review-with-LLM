@@ -1472,17 +1472,26 @@ var ZoteroMarkdownSummaryWorkbench = {
       }
       const now = new Date().toISOString();
       const reportPath = visualExtractionReportMarkdownPath(this.state.outputDir, this.state.item);
-      this.setStatus(this.t("visualReportExporting"));
-      await writeTextAtomic(reportPath, renderVisualExtractionReportMarkdown({
+      const jsonPath = visualExtractionReportJsonPath(this.state.outputDir, this.state.item);
+      const csvPath = visualExtractionReportCsvPath(this.state.outputDir, this.state.item);
+      const payload = {
         context: this.state.context || {},
         exchange,
         item: this.state.item
-      }, {
+      };
+      const options = {
         outputLanguage: this.state.outputLanguage,
         generatedAt: now,
         reportPath,
+        jsonPath,
+        csvPath,
         contextSourceHash: this.state.contextSourceHash
-      }), `${reportPath}.${Date.now()}.tmp`);
+      };
+      const reportData = visualExtractionReportData(payload, options);
+      this.setStatus(this.t("visualReportExporting"));
+      await writeTextAtomic(reportPath, renderVisualExtractionReportMarkdownFromData(reportData, options), `${reportPath}.${Date.now()}.tmp`);
+      await writeTextAtomic(jsonPath, renderVisualExtractionReportJson(reportData), `${jsonPath}.${Date.now()}.tmp`);
+      await writeTextAtomic(csvPath, renderVisualExtractionReportCsv(reportData), `${csvPath}.${Date.now()}.tmp`);
       this.setStatus(`${this.t("visualReportDone")}: ${reportPath}`);
     } catch (err) {
       this.setStatus(`${this.t("visualReportFailed")}: ${safeError(err)}`);
@@ -5136,6 +5145,10 @@ function journalOutlineLabels(outputLanguage) {
 }
 
 function renderVisualExtractionReportMarkdown(payload, options = {}) {
+  return renderVisualExtractionReportMarkdownFromData(visualExtractionReportData(payload, options), options);
+}
+
+function visualExtractionReportData(payload, options = {}) {
   const labels = visualExtractionReportLabels(options.outputLanguage);
   const context = payload?.context || {};
   const exchange = payload?.exchange || latestVisualExtractionExchange(payload?.messages || []);
@@ -5148,9 +5161,44 @@ function renderVisualExtractionReportMarkdown(payload, options = {}) {
   const user = exchange?.user || {};
   const answer = answerTextForMessage(assistant);
   const sections = visualExtractionSections(answer);
-  const tables = visualExtractionTables(answer);
+  const tables = visualExtractionParsedTables(answer);
   const evidenceLabels = visualExtractionEvidenceLabels(answer);
   const images = Array.isArray(user?.images) ? user.images : [];
+  return {
+    templateVersion: "visual-extraction-report-v2",
+    generatedAt,
+    collectionKey,
+    itemKey,
+    contextSourceHash: mdText(options.contextSourceHash || ""),
+    reportPath: mdText(options.reportPath || ""),
+    jsonPath: mdText(options.jsonPath || ""),
+    csvPath: mdText(options.csvPath || ""),
+    sourceAssistantMessageId: mdText(assistant.id || ""),
+    sourceUserMessageId: mdText(user?.id || ""),
+    metadata: {
+      title: mdText(metadata.title || itemKey || "")
+    },
+    mode: mdText(assistant.skillId || user?.skillId || "image-question"),
+    model: mdText(assistant.profileName || assistant.model || user?.profileName || user?.model || ""),
+    images: images.map((image) => ({
+      name: mdText(image.name || "image"),
+      mimeType: mdText(image.mimeType || ""),
+      size: Number(image.size) || 0
+    })),
+    sections,
+    tables,
+    evidenceLabels,
+    originalAnswer: answer || "",
+    labels
+  };
+}
+
+function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
+  const labels = data?.labels || visualExtractionReportLabels(options.outputLanguage);
+  const images = Array.isArray(data?.images) ? data.images : [];
+  const sections = Array.isArray(data?.sections) ? data.sections : [];
+  const tables = Array.isArray(data?.tables) ? data.tables : [];
+  const reconstructedRows = visualExtractionStructuredRows(tables);
   const imageInventory = images.length
     ? [
       `| ${labels.imageName} | ${labels.imageType} | ${labels.imageSize} |`,
@@ -5160,24 +5208,30 @@ function renderVisualExtractionReportMarkdown(payload, options = {}) {
     : `- ${labels.noImages}`;
   const lines = [
     "---",
-    "templateVersion: visual-extraction-report-v1",
-    `generatedAt: ${generatedAt}`,
-    `collectionKey: ${yamlScalar(collectionKey)}`,
-    `itemKey: ${yamlScalar(itemKey)}`,
-    `contextSourceHash: ${yamlScalar(options.contextSourceHash || "")}`,
-    `reportPath: ${yamlScalar(options.reportPath || "")}`,
-    `sourceAssistantMessageId: ${yamlScalar(assistant.id || "")}`,
-    `sourceUserMessageId: ${yamlScalar(user?.id || "")}`,
+    `templateVersion: ${yamlScalar(data?.templateVersion || "visual-extraction-report-v2")}`,
+    `generatedAt: ${data?.generatedAt || ""}`,
+    `collectionKey: ${yamlScalar(data?.collectionKey || "")}`,
+    `itemKey: ${yamlScalar(data?.itemKey || "")}`,
+    `contextSourceHash: ${yamlScalar(data?.contextSourceHash || "")}`,
+    `reportPath: ${yamlScalar(data?.reportPath || options.reportPath || "")}`,
+    `jsonPath: ${yamlScalar(data?.jsonPath || options.jsonPath || "")}`,
+    `csvPath: ${yamlScalar(data?.csvPath || options.csvPath || "")}`,
+    `sourceAssistantMessageId: ${yamlScalar(data?.sourceAssistantMessageId || "")}`,
+    `sourceUserMessageId: ${yamlScalar(data?.sourceUserMessageId || "")}`,
     `imageCount: ${images.length}`,
+    `reconstructedTableCount: ${tables.length}`,
+    `reconstructedDataRowCount: ${reconstructedRows.length}`,
     "---",
     "",
     `# ${labels.title}`,
     "",
-    `- ${labels.paperTitle}: ${mdText(metadata.title || itemKey || "")}`,
-    `- ${labels.generatedAt}: ${generatedAt}`,
-    `- ${labels.reportFile}: ${mdText(options.reportPath || "")}`,
-    `- ${labels.mode}: ${mdText(assistant.skillId || user?.skillId || "image-question")}`,
-    `- ${labels.model}: ${mdText(assistant.profileName || assistant.model || user?.profileName || user?.model || "")}`,
+    `- ${labels.paperTitle}: ${mdText(data?.metadata?.title || data?.itemKey || "")}`,
+    `- ${labels.generatedAt}: ${data?.generatedAt || ""}`,
+    `- ${labels.reportFile}: ${mdText(data?.reportPath || options.reportPath || "")}`,
+    `- ${labels.jsonFile}: ${mdText(data?.jsonPath || options.jsonPath || "")}`,
+    `- ${labels.csvFile}: ${mdText(data?.csvPath || options.csvPath || "")}`,
+    `- ${labels.mode}: ${mdText(data?.mode || "image-question")}`,
+    `- ${labels.model}: ${mdText(data?.model || "")}`,
     "",
     `## ${labels.imageInventory}`,
     "",
@@ -5189,11 +5243,17 @@ function renderVisualExtractionReportMarkdown(payload, options = {}) {
     "",
     `## ${labels.reconstructedTables}`,
     "",
-    tables.length ? tables.map((table, index) => [`### ${labels.table} ${index + 1}`, "", table].join("\n")).join("\n\n") : `- ${labels.noTables}`,
+    tables.length ? tables.map((table) => [`### ${labels.table} ${table.tableIndex}`, "", table.markdown].join("\n")).join("\n\n") : `- ${labels.noTables}`,
+    "",
+    `## ${labels.structuredData}`,
+    "",
+    reconstructedRows.length
+      ? visualExtractionStructuredDataTable(reconstructedRows, labels)
+      : `- ${labels.noStructuredRows}`,
     "",
     `## ${labels.evidenceLabels}`,
     "",
-    evidenceLabels.length ? evidenceLabels.map((label) => `- \`${label}\``).join("\n") : `- ${labels.noEvidenceLabels}`,
+    data?.evidenceLabels?.length ? data.evidenceLabels.map((label) => `- \`${label}\``).join("\n") : `- ${labels.noEvidenceLabels}`,
     "",
     `## ${labels.reviewChecklist}`,
     "",
@@ -5205,10 +5265,34 @@ function renderVisualExtractionReportMarkdown(payload, options = {}) {
     "",
     `## ${labels.originalAnswer}`,
     "",
-    answer || labels.noAnswer,
+    data?.originalAnswer || labels.noAnswer,
     ""
   ];
   return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+function renderVisualExtractionReportJson(data) {
+  const { labels: _labels, ...payload } = data || {};
+  return `${JSON.stringify(payload, null, 2)}\n`;
+}
+
+function renderVisualExtractionReportCsv(data) {
+  const rows = visualExtractionStructuredRows(data?.tables || []);
+  const header = ["tableIndex", "rowIndex", "column", "value", "evidenceLabels", "sourceAssistantMessageId", "imageNames"];
+  const imageNames = (data?.images || []).map((image) => image.name).filter(Boolean).join("; ");
+  const lines = [header.map(csvCell).join(",")];
+  for (const row of rows) {
+    lines.push([
+      row.tableIndex,
+      row.rowIndex,
+      row.column,
+      row.value,
+      row.evidenceLabels.join("; "),
+      data?.sourceAssistantMessageId || "",
+      imageNames
+    ].map(csvCell).join(","));
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 function latestVisualExtractionExchange(messages = []) {
@@ -5284,6 +5368,117 @@ function visualExtractionTables(answer) {
   return tables.slice(0, 8);
 }
 
+function visualExtractionParsedTables(answer) {
+  return visualExtractionTables(answer)
+    .map((markdown, index) => ({
+      tableIndex: index + 1,
+      markdown,
+      ...parseVisualExtractionMarkdownTable(markdown),
+      evidenceLabels: visualExtractionEvidenceLabels(markdown)
+    }))
+    .filter((table) => table.columns.length || table.rows.length);
+}
+
+function parseVisualExtractionMarkdownTable(markdown) {
+  const lines = String(markdown || "").split(/\r?\n/).filter((line) => /^\s*\|.*\|\s*$/.test(line));
+  if (lines.length < 2) return { columns: [], rows: [] };
+  const separatorIndex = lines.findIndex((line) => markdownTableRowCells(line).every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, ""))));
+  if (separatorIndex <= 0) return { columns: [], rows: [] };
+  const columns = uniqueVisualExtractionColumns(markdownTableRowCells(lines[separatorIndex - 1]));
+  const rows = lines.slice(separatorIndex + 1)
+    .map((line) => visualExtractionDataRow(columns, markdownTableRowCells(line)))
+    .filter((row) => Object.values(row).some((value) => mdText(value)));
+  return { columns, rows };
+}
+
+function markdownTableRowCells(line) {
+  const source = String(line || "").trim().replace(/^\|/, "").replace(/\|$/, "");
+  const cells = [];
+  let current = "";
+  let escaping = false;
+  for (const char of source) {
+    if (escaping) {
+      current += char;
+      escaping = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaping = true;
+      continue;
+    }
+    if (char === "|") {
+      cells.push(mdText(current));
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  cells.push(mdText(current));
+  return cells.map((cell) => cell.replace(/\\\|/g, "|"));
+}
+
+function uniqueVisualExtractionColumns(cells) {
+  const seen = new Map();
+  return (cells || []).map((cell, index) => {
+    const base = mdText(cell || `column_${index + 1}`) || `column_${index + 1}`;
+    const count = seen.get(base) || 0;
+    seen.set(base, count + 1);
+    return count ? `${base}_${count + 1}` : base;
+  });
+}
+
+function visualExtractionDataRow(columns, cells) {
+  const row = {};
+  (columns || []).forEach((column, index) => {
+    row[column] = mdText(cells[index] || "");
+  });
+  if ((cells || []).length > (columns || []).length) {
+    row._extra = cells.slice(columns.length).map(mdText).filter(Boolean).join(" | ");
+  }
+  return row;
+}
+
+function visualExtractionStructuredRows(tables) {
+  const rows = [];
+  for (const table of tables || []) {
+    for (const [rowIndex, row] of (table.rows || []).entries()) {
+      for (const column of table.columns || []) {
+        rows.push({
+          tableIndex: table.tableIndex,
+          rowIndex: rowIndex + 1,
+          column,
+          value: mdText(row[column] || ""),
+          evidenceLabels: visualExtractionEvidenceLabels(row[column] || "")
+        });
+      }
+      if (row._extra) {
+        rows.push({
+          tableIndex: table.tableIndex,
+          rowIndex: rowIndex + 1,
+          column: "_extra",
+          value: mdText(row._extra),
+          evidenceLabels: visualExtractionEvidenceLabels(row._extra)
+        });
+      }
+    }
+  }
+  return rows.filter((row) => row.value);
+}
+
+function visualExtractionStructuredDataTable(rows, labels) {
+  return [
+    `| ${labels.table} | ${labels.row} | ${labels.column} | ${labels.value} | ${labels.evidenceLabels} |`,
+    "| --- | --- | --- | --- | --- |",
+    ...rows.slice(0, 120).map((row) => [
+      row.tableIndex,
+      row.rowIndex,
+      markdownTableCell(row.column),
+      markdownTableCell(row.value),
+      markdownTableCell(row.evidenceLabels.join(", ") || labels.noEvidenceLabels)
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
 function visualExtractionEvidenceLabels(answer) {
   return Array.from(new Set(String(answer || "").match(/\[(?:image|metadata|abstract|chunk:[^\]\s]+|paper\d+:[^\]\s]+)[^\]]*\]/g) || []));
 }
@@ -5296,6 +5491,8 @@ function visualExtractionReportLabels(outputLanguage) {
       paperTitle: "题名",
       generatedAt: "生成时间",
       reportFile: "报告文件",
+      jsonFile: "结构化 JSON",
+      csvFile: "结构化 CSV",
       mode: "解析模式",
       model: "模型",
       imageInventory: "图片清单",
@@ -5312,6 +5509,11 @@ function visualExtractionReportLabels(outputLanguage) {
       reconstructedTables: "重建表格/数据",
       table: "表格",
       noTables: "未检测到 Markdown 表格；如原图含图表数据，请人工复核或重新使用图表解析模板提问。",
+      structuredData: "机器可读数据",
+      row: "行",
+      column: "字段",
+      value: "值",
+      noStructuredRows: "未能从重建表格解析出机器可读数据行。",
       reviewChecklist: "复核清单",
       checkReadableText: "核对 OCR 文本、标题、坐标轴、图例、表头和公式是否可读。",
       checkTableNumbers: "核对重建表格中的数字、单位、指标和数据集名称。",
@@ -5328,6 +5530,8 @@ function visualExtractionReportLabels(outputLanguage) {
     paperTitle: "Title",
     generatedAt: "Generated at",
     reportFile: "Report file",
+    jsonFile: "Structured JSON",
+    csvFile: "Structured CSV",
     mode: "Extraction mode",
     model: "Model",
     imageInventory: "Image Inventory",
@@ -5344,6 +5548,11 @@ function visualExtractionReportLabels(outputLanguage) {
     reconstructedTables: "Reconstructed Tables / Data",
     table: "Table",
     noTables: "No Markdown table was detected. If the image contains chart data, verify manually or ask again with the figure/table extractor.",
+    structuredData: "Machine-Readable Data",
+    row: "Row",
+    column: "Column",
+    value: "Value",
+    noStructuredRows: "No machine-readable data rows could be parsed from reconstructed tables.",
     reviewChecklist: "Review Checklist",
     checkReadableText: "Check OCR text, titles, axes, legends, headers, and formulas.",
     checkTableNumbers: "Verify reconstructed numbers, units, metrics, and dataset names.",
@@ -5359,6 +5568,11 @@ function visualExtractionReportLabels(outputLanguage) {
 function markdownTableCell(value) {
   const text = mdText(value);
   return text ? text.replace(/\|/g, "\\|").replace(/\n/g, "<br>") : "";
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, "\"\"")}"` : text;
 }
 
 function contextDiagnosticsText(diagnostics, translate = (key) => key) {
@@ -7353,6 +7567,18 @@ function visualExtractionReportMarkdownPath(outputDir, item) {
   const collectionKey = workbenchCollectionKey(item);
   const itemKey = sanitizeFilename(item?.key || "paper");
   return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", `visual-extraction-${itemKey}.md`);
+}
+
+function visualExtractionReportJsonPath(outputDir, item) {
+  const collectionKey = workbenchCollectionKey(item);
+  const itemKey = sanitizeFilename(item?.key || "paper");
+  return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", `visual-extraction-${itemKey}.json`);
+}
+
+function visualExtractionReportCsvPath(outputDir, item) {
+  const collectionKey = workbenchCollectionKey(item);
+  const itemKey = sanitizeFilename(item?.key || "paper");
+  return PathUtils.join(outputDir || "", "collections", sanitizeFilename(collectionKey), "writing", `visual-extraction-${itemKey}.csv`);
 }
 
 function reviewDraftMarkdownPath(outputDir, item) {

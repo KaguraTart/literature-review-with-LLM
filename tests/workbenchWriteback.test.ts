@@ -2870,13 +2870,15 @@ describe("workbench writeback helpers", () => {
       contextSourceHash: "sourcehash"
     });
 
-    expect(report).toContain("templateVersion: visual-extraction-report-v1");
+    expect(report).toContain('templateVersion: "visual-extraction-report-v2"');
     expect(report).toContain("# Figure/Table Extraction Report");
     expect(report).toContain("| figure.png | image/png | 1234 |");
     expect(report).toContain("## Structured Extraction Index");
     expect(report).toContain("Visual OCR Text");
     expect(report).toContain("## Reconstructed Tables / Data");
     expect(report).toContain("| Delay | 12 ms | [image] |");
+    expect(report).toContain("## Machine-Readable Data");
+    expect(report).toContain("| 1 | 1 | Value | 12 ms | not labeled |");
     expect(report).toContain("`[image]`");
     expect(report).toContain("`[chunk:summary-method source=summary locator=summary:1 hash=abc123]`");
     expect(report).toContain("## Original Model Answer");
@@ -2925,6 +2927,27 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("| chart.png | image/png | 77 |");
     expect(files.get(reportPath)).toContain("## 重建表格/数据");
     expect(files.get(reportPath)).toContain("| delay | 12 ms |");
+    expect(files.get(reportPath)).toContain("## 机器可读数据");
+    expect(files.get(reportPath)).toContain("| 1 | 1 | 指标 | delay | 未标注 |");
+    const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.json";
+    const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.csv";
+    const parsed = JSON.parse(files.get(jsonPath) || "{}");
+    expect(parsed).toMatchObject({
+      templateVersion: "visual-extraction-report-v2",
+      itemKey: "IMG",
+      reportPath,
+      jsonPath,
+      csvPath,
+      images: [{ name: "chart.png", mimeType: "image/png", size: 77 }]
+    });
+    expect(parsed.tables[0]).toMatchObject({
+      tableIndex: 1,
+      columns: ["指标", "数值"],
+      rows: [{ "指标": "delay", "数值": "12 ms" }]
+    });
+    expect(files.get(csvPath)).toContain("tableIndex,rowIndex,column,value,evidenceLabels,sourceAssistantMessageId,imageNames");
+    expect(files.get(csvPath)).toContain("1,1,指标,delay,,assistant-visual,chart.png");
+    expect(files.get(csvPath)).toContain("1,1,数值,12 ms,,assistant-visual,chart.png");
     expect(dom.elements.get("zms-status").textContent).toContain(`visualReportDone: ${reportPath}`);
   });
 
