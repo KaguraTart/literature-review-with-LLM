@@ -836,6 +836,37 @@ describe("provider smoke verifier", () => {
     expect(report.results.find((result: any) => result.id === "sambanova-anthropic").missing).toEqual(["SAMBANOVA_ANTHROPIC_API_KEY"]);
   });
 
+  it("lists live provider cases and environment variables", async () => {
+    const report = await runLive(["--list", "--json"], scrubProviderEnv());
+
+    expect(report).toMatchObject({
+      liveProviderCases: true,
+      count: ALL_LIVE_CASE_IDS.length
+    });
+    expect(report.cases.map((entry: any) => entry.id)).toEqual(ALL_LIVE_CASE_IDS);
+    expect(report.cases.find((entry: any) => entry.id === "openai-compatible")).toMatchObject({
+      profile: "openai-compatible",
+      protocol: "openai_chat",
+      apiKeyEnv: "OPENAI_COMPATIBLE_API_KEY",
+      modelEnv: "OPENAI_COMPATIBLE_MODEL",
+      baseURLEnv: "OPENAI_COMPATIBLE_BASE_URL",
+      headersEnv: "OPENAI_COMPATIBLE_HEADERS_JSON",
+      bodyExtraEnv: "OPENAI_COMPATIBLE_BODY_EXTRA_JSON",
+      requireBaseURL: true,
+      allowLocalNoAuth: true,
+      modelList: true
+    });
+    expect(report.cases.find((entry: any) => entry.id === "anthropic-compatible")).toMatchObject({
+      protocol: "anthropic_messages",
+      apiKeyEnv: "ANTHROPIC_COMPATIBLE_API_KEY",
+      modelEnv: "ANTHROPIC_COMPATIBLE_MODEL",
+      baseURLEnv: "ANTHROPIC_COMPATIBLE_BASE_URL"
+    });
+    expect(report.cases.find((entry: any) => entry.id === "github-models")).toMatchObject({
+      modelList: false
+    });
+  });
+
   it("runs live provider env checks against mock endpoints without leaking secrets", async () => {
     await withLiveMockProvider(async (baseURL, requests) => {
       const report = await runLive(["--include", BASIC_LIVE_CASES, "--json"], scrubProviderEnv({

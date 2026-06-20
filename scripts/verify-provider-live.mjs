@@ -418,6 +418,11 @@ if (isMainModule()) {
       process.stdout.write(usage());
       process.exit(0);
     }
+    if (options.list) {
+      const catalog = providerLiveCaseCatalog(options.include || "");
+      process.stdout.write(options.json ? `${JSON.stringify(catalog, null, 2)}\n` : formatCaseCatalog(catalog));
+      process.exit(0);
+    }
     const report = await runProviderLive(options, process.env);
     process.stdout.write(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report));
     if (!report.ok) process.exit(1);
@@ -532,6 +537,7 @@ function parseArgs(args) {
     customHeaders: {},
     bodyExtra: {},
     json: false,
+    list: false,
     help: false
   };
   for (let index = 0; index < args.length; index += 1) {
@@ -569,6 +575,8 @@ function parseArgs(args) {
       options.dryRun = true;
     } else if (key === "--fail-on-skip") {
       options.failOnSkip = true;
+    } else if (key === "--list") {
+      options.list = true;
     } else if (key === "--header" && value) {
       const [name, headerValue] = splitAssignment(value, "--header");
       options.customHeaders[name] = headerValue;
@@ -584,6 +592,28 @@ function parseArgs(args) {
   }
   validateLiveOptions(options);
   return options;
+}
+
+export function providerLiveCaseCatalog(include = "") {
+  const cases = selectedCases(include);
+  return {
+    liveProviderCases: true,
+    count: cases.length,
+    cases: cases.map((entry) => ({
+      id: entry.id,
+      label: entry.label,
+      profile: entry.profile,
+      protocol: entry.protocol,
+      apiKeyEnv: entry.apiKeyEnv,
+      modelEnv: entry.modelEnv,
+      baseURLEnv: entry.baseURLEnv,
+      headersEnv: entry.headersEnv,
+      bodyExtraEnv: entry.bodyExtraEnv,
+      requireBaseURL: Boolean(entry.requireBaseURL),
+      allowLocalNoAuth: Boolean(entry.allowLocalNoAuth),
+      modelList: entry.modelList !== false
+    }))
+  };
 }
 
 function validateLiveOptions(options) {
@@ -814,11 +844,31 @@ function formatReport(report) {
   return `${lines.join("\n")}\n`;
 }
 
+function formatCaseCatalog(catalog) {
+  const lines = [
+    "Provider live verification cases:",
+    "id\tprotocol\tapiKeyEnv\tmodelEnv\tbaseURLEnv\theadersEnv\tbodyExtraEnv"
+  ];
+  for (const entry of catalog.cases || []) {
+    lines.push([
+      entry.id,
+      entry.protocol,
+      entry.apiKeyEnv || "-",
+      entry.modelEnv || "-",
+      entry.baseURLEnv || "-",
+      entry.headersEnv || "-",
+      entry.bodyExtraEnv || "-"
+    ].join("\t"));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 function usage() {
   return [
     "Usage:",
     "  npm run verify:provider:live -- --json",
     "  npm run verify:provider:models:live -- --json",
+    "  npm run verify:provider:live -- --list",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai",
     "  OPENAI_API_KEY=... npm run verify:provider:models:live -- --include openai",
     "  OPENAI_RESPONSES_COMPATIBLE_API_KEY=... OPENAI_RESPONSES_COMPATIBLE_MODEL=... OPENAI_RESPONSES_COMPATIBLE_BASE_URL=... npm run verify:provider:live -- --include openai-responses-compatible",
@@ -852,6 +902,7 @@ function usage() {
     "",
     "Options:",
     "  --include LIST           Comma-separated live case ids; named cases include built-in provider ids such as minimax, gemini, azure-openai, deepseek, openrouter, groq, github-models, fireworks, cerebras, nvidia-nim, sambanova, sambanova-responses, and sambanova-anthropic",
+    "  --list                   Print available live case ids and environment variable names, then exit",
     "  --prompt TEXT            Override the smoke prompt",
     "  --context TEXT           Override the smoke context",
     "  --timeout-ms NUMBER      Per-provider timeout",

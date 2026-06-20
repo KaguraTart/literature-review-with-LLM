@@ -177,6 +177,7 @@ npm run check
 可选的真实厂商接口检查需要使用你自己的 API credentials：
 
 ```bash
+npm run verify:provider:live -- --list
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --stream
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:image:live -- --include openai
@@ -211,6 +212,8 @@ SILICONFLOW_API_KEY=... SILICONFLOW_MODEL=... npm run verify:provider:live -- --
 ```
 
 同样的命名规则也适用于 `XAI_*`、`TOGETHER_*`、`KIMI_*`、`PERPLEXITY_*`、`DEEPSEEK_ANTHROPIC_*`、`ZAI_ANTHROPIC_*`、`ZHIPU_*`、`VOLCENGINE_*`、`QIANFAN_*` 和 `HUNYUAN_*`。只有覆盖内置 endpoint 或使用代理时，才需要额外设置对应的 `*_BASE_URL`。
+
+运行 `npm run verify:provider:live -- --list --json` 可以直接列出全部 live-check case、协议、profile id 和对应环境变量名。
 
 live 检查也支持请求头和请求体覆盖。自定义网关可使用重复的 `--header name=value`，或使用更细的环境变量，例如 `OPENAI_COMPATIBLE_HEADERS_JSON`、`OPENAI_RESPONSES_COMPATIBLE_HEADERS_JSON`、`ANTHROPIC_COMPATIBLE_HEADERS_JSON`。`--body-extra-json` 会作用于本次选择的所有 case；也可以使用 `OPENAI_COMPATIBLE_BODY_EXTRA_JSON`、`OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON`、`ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON`、`OPENAI_BODY_EXTRA_JSON`、`ANTHROPIC_BODY_EXTRA_JSON`。
 
