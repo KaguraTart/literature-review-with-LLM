@@ -125,7 +125,7 @@ function settingsProviderDefaults(provider) {
     return { ...common, protocol: "openai_responses", baseURL: "https://api.sambanova.ai/v1", capabilities: commonCapabilities };
   }
   if (id === "sambanova_anthropic" || id === "sambanova-anthropic") {
-    return { ...common, protocol: "anthropic_messages", baseURL: "https://api.sambanova.ai/v1", capabilities: commonCapabilities };
+    return { ...common, protocol: "anthropic_messages", baseURL: "https://api.sambanova.ai/v1", capabilities: commonCapabilities, bodyExtra: { authHeader: "authorization" } };
   }
   if (id === "minimax") {
     return { ...common, protocol: "openai_chat", baseURL: "https://api.minimaxi.com/v1", model: "MiniMax-M2.7", capabilities: commonCapabilities, bodyExtra: { extra_body: { reasoning_split: true } } };

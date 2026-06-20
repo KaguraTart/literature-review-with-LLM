@@ -143,6 +143,7 @@ const REQUIRED_MARKERS = [
   ["prefs.js", "\"id\":\"sambanova\"", "default SambaNova profile"],
   ["prefs.js", "\"id\":\"sambanova-responses\"", "default SambaNova Responses profile"],
   ["prefs.js", "\"id\":\"sambanova-anthropic\"", "default SambaNova Anthropic profile"],
+  ["prefs.js", "\"bodyExtra\":{\"authHeader\":\"authorization\"}", "default Bearer auth for Anthropic-compatible profiles"],
   ["prefs.js", "\"id\":\"openrouter\"", "default OpenRouter profile"],
   ["prefs.js", "\"id\":\"dashscope\"", "default DashScope profile"],
   ["prefs.js", "\"id\":\"siliconflow\"", "default SiliconFlow profile"],

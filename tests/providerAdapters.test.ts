@@ -456,6 +456,22 @@ describe("provider adapters", () => {
     })).not.toHaveProperty("anthropic-dangerous-direct-browser-access");
     expect(headersFor({
       ...profile,
+      id: "sambanova-anthropic",
+      protocol: "anthropic_messages",
+      baseURL: "https://api.sambanova.ai/v1",
+      apiKey: "sambanova-secret",
+      customHeaders: {}
+    })).toMatchObject({ authorization: "Bearer sambanova-secret", "anthropic-version": "2023-06-01" });
+    expect(headersFor({
+      ...profile,
+      id: "sambanova-anthropic",
+      protocol: "anthropic_messages",
+      baseURL: "https://api.sambanova.ai/v1",
+      apiKey: "sambanova-secret",
+      customHeaders: {}
+    })).not.toHaveProperty("anthropic-dangerous-direct-browser-access");
+    expect(headersFor({
+      ...profile,
       protocol: "anthropic_messages",
       baseURL: "https://anthropic-router.example/v1",
       apiKey: "routed-secret",

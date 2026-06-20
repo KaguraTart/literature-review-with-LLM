@@ -4,6 +4,8 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
+const BASIC_LIVE_CASES = "openai,openai-responses-compatible,anthropic,anthropic-compatible,openai-compatible";
+const NAMED_LIVE_CASES = "github-models,fireworks,cerebras,nvidia-nim,sambanova,sambanova-responses,sambanova-anthropic";
 
 describe("provider smoke verifier", () => {
   it("calls an OpenAI-compatible chat endpoint with the expected request shape", async () => {
@@ -569,7 +571,7 @@ describe("provider smoke verifier", () => {
       live: true,
       counts: {
         passed: 0,
-        skipped: 5,
+        skipped: 12,
         failed: 0
       }
     });
@@ -578,11 +580,20 @@ describe("provider smoke verifier", () => {
       ["openai-responses-compatible", "skipped"],
       ["anthropic", "skipped"],
       ["anthropic-compatible", "skipped"],
-      ["openai-compatible", "skipped"]
+      ["openai-compatible", "skipped"],
+      ["github-models", "skipped"],
+      ["fireworks", "skipped"],
+      ["cerebras", "skipped"],
+      ["nvidia-nim", "skipped"],
+      ["sambanova", "skipped"],
+      ["sambanova-responses", "skipped"],
+      ["sambanova-anthropic", "skipped"]
     ]);
     expect(report.results[1].missing).toContain("OPENAI_RESPONSES_COMPATIBLE_BASE_URL");
     expect(report.results[3].missing).toContain("ANTHROPIC_COMPATIBLE_BASE_URL");
     expect(report.results[4].missing).toContain("OPENAI_COMPATIBLE_BASE_URL");
+    expect(report.results[5].missing).toContain("GITHUB_MODELS_API_KEY");
+    expect(report.results[11].missing).toContain("SAMBANOVA_ANTHROPIC_API_KEY");
   });
 
   it("skips live provider model-list checks without requiring model names", async () => {
@@ -594,7 +605,7 @@ describe("provider smoke verifier", () => {
       models: true,
       counts: {
         passed: 0,
-        skipped: 5,
+        skipped: 12,
         failed: 0
       }
     });
@@ -603,13 +614,21 @@ describe("provider smoke verifier", () => {
       ["openai-responses-compatible", ["OPENAI_RESPONSES_COMPATIBLE_API_KEY", "OPENAI_RESPONSES_COMPATIBLE_BASE_URL"]],
       ["anthropic", ["ANTHROPIC_API_KEY"]],
       ["anthropic-compatible", ["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_BASE_URL"]],
-      ["openai-compatible", ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"]]
+      ["openai-compatible", ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"]],
+      ["github-models", []],
+      ["fireworks", ["FIREWORKS_API_KEY"]],
+      ["cerebras", ["CEREBRAS_API_KEY"]],
+      ["nvidia-nim", ["NVIDIA_NIM_API_KEY"]],
+      ["sambanova", ["SAMBANOVA_API_KEY"]],
+      ["sambanova-responses", ["SAMBANOVA_RESPONSES_API_KEY"]],
+      ["sambanova-anthropic", ["SAMBANOVA_ANTHROPIC_API_KEY"]]
     ]);
+    expect(report.results[5].reason).toContain("Model-list checks are not supported");
   });
 
   it("runs live provider env checks against mock endpoints without leaking secrets", async () => {
     await withLiveMockProvider(async (baseURL, requests) => {
-      const report = await runLive(["--json"], scrubProviderEnv({
+      const report = await runLive(["--include", BASIC_LIVE_CASES, "--json"], scrubProviderEnv({
         OPENAI_API_KEY: "live-openai-secret",
         OPENAI_MODEL: "live-responses",
         OPENAI_BASE_URL: `${baseURL}/v1`,
@@ -664,9 +683,77 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("runs named mainstream provider live checks against mock endpoints", async () => {
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--include", NAMED_LIVE_CASES, "--json"], scrubProviderEnv({
+        GITHUB_MODELS_API_KEY: "live-github-secret",
+        GITHUB_MODELS_MODEL: "github/model",
+        GITHUB_MODELS_BASE_URL: `${baseURL}/inference`,
+        FIREWORKS_API_KEY: "live-fireworks-secret",
+        FIREWORKS_MODEL: "accounts/fireworks/models/llama-v3p1-8b-instruct",
+        FIREWORKS_BASE_URL: `${baseURL}/fireworks/v1`,
+        CEREBRAS_API_KEY: "live-cerebras-secret",
+        CEREBRAS_MODEL: "llama3.1-8b",
+        CEREBRAS_BASE_URL: `${baseURL}/cerebras/v1`,
+        NVIDIA_NIM_API_KEY: "live-nvidia-secret",
+        NVIDIA_NIM_MODEL: "meta/llama-3.1-8b-instruct",
+        NVIDIA_NIM_BASE_URL: `${baseURL}/nvidia/v1`,
+        SAMBANOVA_API_KEY: "live-sambanova-secret",
+        SAMBANOVA_MODEL: "Meta-Llama-3.1-8B-Instruct",
+        SAMBANOVA_BASE_URL: `${baseURL}/sambanova/v1`,
+        SAMBANOVA_RESPONSES_API_KEY: "live-sambanova-responses-secret",
+        SAMBANOVA_RESPONSES_MODEL: "Meta-Llama-3.1-8B-Instruct",
+        SAMBANOVA_RESPONSES_BASE_URL: `${baseURL}/sambanova-responses/v1`,
+        SAMBANOVA_ANTHROPIC_API_KEY: "live-sambanova-anthropic-secret",
+        SAMBANOVA_ANTHROPIC_MODEL: "Meta-Llama-3.1-8B-Instruct",
+        SAMBANOVA_ANTHROPIC_BASE_URL: `${baseURL}/sambanova-anthropic`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        counts: {
+          passed: 7,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results.map((result: any) => [result.id, result.report.protocol, result.report.text])).toEqual([
+        ["github-models", "openai_chat", "OK live chat"],
+        ["fireworks", "openai_chat", "OK live chat"],
+        ["cerebras", "openai_chat", "OK live chat"],
+        ["nvidia-nim", "openai_chat", "OK live chat"],
+        ["sambanova", "openai_chat", "OK live chat"],
+        ["sambanova-responses", "openai_responses", "OK live responses"],
+        ["sambanova-anthropic", "anthropic_messages", "OK live anthropic"]
+      ]);
+      expect(requests.map((request) => request.path)).toEqual([
+        "/inference/v1/chat/completions",
+        "/fireworks/v1/chat/completions",
+        "/cerebras/v1/chat/completions",
+        "/nvidia/v1/chat/completions",
+        "/sambanova/v1/chat/completions",
+        "/sambanova-responses/v1/responses",
+        "/sambanova-anthropic/v1/messages"
+      ]);
+      expect(requests[0].authorization).toBe("Bearer live-github-secret");
+      expect(requests[0].accept).toBe("application/vnd.github+json");
+      expect(requests[0].githubApiVersion).toBe("2022-11-28");
+      expect(requests[6].authorization).toBe("Bearer live-sambanova-anthropic-secret");
+      expect(requests[6].xApiKey).toBeUndefined();
+      expect(JSON.stringify(report)).not.toContain("live-github-secret");
+      expect(JSON.stringify(report)).not.toContain("live-fireworks-secret");
+      expect(JSON.stringify(report)).not.toContain("live-cerebras-secret");
+      expect(JSON.stringify(report)).not.toContain("live-nvidia-secret");
+      expect(JSON.stringify(report)).not.toContain("live-sambanova-secret");
+      expect(JSON.stringify(report)).not.toContain("live-sambanova-responses-secret");
+      expect(JSON.stringify(report)).not.toContain("live-sambanova-anthropic-secret");
+    });
+  });
+
   it("runs live provider stream checks against mock endpoints", async () => {
     await withLiveMockProvider(async (baseURL, requests) => {
-      const report = await runLive(["--stream", "--json"], scrubProviderEnv({
+      const report = await runLive(["--include", BASIC_LIVE_CASES, "--stream", "--json"], scrubProviderEnv({
         OPENAI_API_KEY: "live-openai-stream-secret",
         OPENAI_MODEL: "live-responses-stream",
         OPENAI_BASE_URL: `${baseURL}/v1`,
@@ -716,7 +803,7 @@ describe("provider smoke verifier", () => {
 
   it("runs live provider image checks against mock endpoints", async () => {
     await withLiveMockProvider(async (baseURL, requests) => {
-      const report = await runLive(["--image", "--json"], scrubProviderEnv({
+      const report = await runLive(["--include", BASIC_LIVE_CASES, "--image", "--json"], scrubProviderEnv({
         OPENAI_API_KEY: "live-openai-image-secret",
         OPENAI_MODEL: "live-responses-image",
         OPENAI_BASE_URL: `${baseURL}/v1`,
@@ -765,7 +852,7 @@ describe("provider smoke verifier", () => {
 
   it("runs live provider PDF checks against raw-document protocols and skips OpenAI Chat", async () => {
     await withLiveMockProvider(async (baseURL, requests) => {
-      const report = await runLive(["--pdf", "--json"], scrubProviderEnv({
+      const report = await runLive(["--include", BASIC_LIVE_CASES, "--pdf", "--json"], scrubProviderEnv({
         OPENAI_API_KEY: "live-openai-pdf-secret",
         OPENAI_MODEL: "live-responses-pdf",
         OPENAI_BASE_URL: `${baseURL}/v1`,
@@ -850,7 +937,7 @@ describe("provider smoke verifier", () => {
 
   it("runs live provider model-list env checks against mock endpoints without model env vars", async () => {
     await withLiveMockProvider(async (baseURL, requests) => {
-      const report = await runLive(["--models", "--json"], scrubProviderEnv({
+      const report = await runLive(["--include", BASIC_LIVE_CASES, "--models", "--json"], scrubProviderEnv({
         OPENAI_API_KEY: "live-openai-models-secret",
         OPENAI_BASE_URL: `${baseURL}/v1`,
         OPENAI_RESPONSES_COMPATIBLE_API_KEY: "live-responses-compatible-models-secret",
@@ -1155,16 +1242,51 @@ function scrubProviderEnv(overrides: NodeJS.ProcessEnv = {}) {
     OPENAI_COMPATIBLE_API_KEY: "",
     OPENAI_COMPATIBLE_MODEL: "",
     OPENAI_COMPATIBLE_BASE_URL: "",
+    GITHUB_MODELS_API_KEY: "",
+    GITHUB_MODELS_MODEL: "",
+    GITHUB_MODELS_BASE_URL: "",
+    FIREWORKS_API_KEY: "",
+    FIREWORKS_MODEL: "",
+    FIREWORKS_BASE_URL: "",
+    CEREBRAS_API_KEY: "",
+    CEREBRAS_MODEL: "",
+    CEREBRAS_BASE_URL: "",
+    NVIDIA_NIM_API_KEY: "",
+    NVIDIA_NIM_MODEL: "",
+    NVIDIA_NIM_BASE_URL: "",
+    SAMBANOVA_API_KEY: "",
+    SAMBANOVA_MODEL: "",
+    SAMBANOVA_BASE_URL: "",
+    SAMBANOVA_RESPONSES_API_KEY: "",
+    SAMBANOVA_RESPONSES_MODEL: "",
+    SAMBANOVA_RESPONSES_BASE_URL: "",
+    SAMBANOVA_ANTHROPIC_API_KEY: "",
+    SAMBANOVA_ANTHROPIC_MODEL: "",
+    SAMBANOVA_ANTHROPIC_BASE_URL: "",
     OPENAI_HEADERS_JSON: "",
     OPENAI_RESPONSES_COMPATIBLE_HEADERS_JSON: "",
     ANTHROPIC_HEADERS_JSON: "",
     ANTHROPIC_COMPATIBLE_HEADERS_JSON: "",
     OPENAI_COMPATIBLE_HEADERS_JSON: "",
+    GITHUB_MODELS_HEADERS_JSON: "",
+    FIREWORKS_HEADERS_JSON: "",
+    CEREBRAS_HEADERS_JSON: "",
+    NVIDIA_NIM_HEADERS_JSON: "",
+    SAMBANOVA_HEADERS_JSON: "",
+    SAMBANOVA_RESPONSES_HEADERS_JSON: "",
+    SAMBANOVA_ANTHROPIC_HEADERS_JSON: "",
     OPENAI_BODY_EXTRA_JSON: "",
     OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON: "",
     ANTHROPIC_BODY_EXTRA_JSON: "",
     ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON: "",
     OPENAI_COMPATIBLE_BODY_EXTRA_JSON: "",
+    GITHUB_MODELS_BODY_EXTRA_JSON: "",
+    FIREWORKS_BODY_EXTRA_JSON: "",
+    CEREBRAS_BODY_EXTRA_JSON: "",
+    NVIDIA_NIM_BODY_EXTRA_JSON: "",
+    SAMBANOVA_BODY_EXTRA_JSON: "",
+    SAMBANOVA_RESPONSES_BODY_EXTRA_JSON: "",
+    SAMBANOVA_ANTHROPIC_BODY_EXTRA_JSON: "",
     ...overrides
   };
 }
@@ -1212,6 +1334,8 @@ async function withLiveMockProvider(
       path,
       authorization: request.headers.authorization,
       xApiKey: request.headers["x-api-key"],
+      accept: request.headers.accept,
+      githubApiVersion: request.headers["x-github-api-version"],
       xRouter: request.headers["x-router"],
       xGlobal: request.headers["x-global"],
       body

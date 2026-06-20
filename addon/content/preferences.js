@@ -772,9 +772,10 @@ function anthropicAuthHeaderName(profile) {
   if (explicit) return explicit;
   const id = String(profile?.id || "").toLowerCase();
   const baseURL = String(profile?.baseURL || "").replace(/\/+$/, "");
-  if (id === "anthropic-compatible" || id === "anthropic_compatible" || id === "deepseek-anthropic" || id === "deepseek_anthropic" || id === "zai-anthropic" || id === "zai_anthropic") return "authorization";
+  if (id === "anthropic-compatible" || id === "anthropic_compatible" || id === "deepseek-anthropic" || id === "deepseek_anthropic" || id === "zai-anthropic" || id === "zai_anthropic" || id === "sambanova-anthropic" || id === "sambanova_anthropic") return "authorization";
   if (baseURL === "https://api.deepseek.com/anthropic" || baseURL.startsWith("https://api.deepseek.com/anthropic/")) return "authorization";
   if (baseURL === "https://api.z.ai/api/anthropic" || baseURL.startsWith("https://api.z.ai/api/anthropic/")) return "authorization";
+  if (baseURL === "https://api.sambanova.ai/v1" || baseURL.startsWith("https://api.sambanova.ai/v1/")) return "authorization";
   return "x-api-key";
 }
 
@@ -934,11 +935,33 @@ function providerLiveVerifyGuide(profile, provider = providerFromProfile(profile
 function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)) {
   const endpoint = endpointForProfileSafe(profile);
   const apiKeyOptional = isLocalAgentProfile(profile) || isLocalEndpoint(endpoint);
+  const includeNamedBaseURL = providerBaseURLDiffers(profile, provider);
   if (provider === "openai") {
     return { include: "openai", apiKeyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL", baseURLEnv: "OPENAI_BASE_URL", includeBaseURL: false, apiKeyOptional };
   }
   if (provider === "anthropic") {
     return { include: "anthropic", apiKeyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL", baseURLEnv: "ANTHROPIC_BASE_URL", includeBaseURL: false, apiKeyOptional };
+  }
+  if (provider === "github_models") {
+    return { include: "github-models", apiKeyEnv: "GITHUB_MODELS_API_KEY", modelEnv: "GITHUB_MODELS_MODEL", baseURLEnv: "GITHUB_MODELS_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "fireworks") {
+    return { include: "fireworks", apiKeyEnv: "FIREWORKS_API_KEY", modelEnv: "FIREWORKS_MODEL", baseURLEnv: "FIREWORKS_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "cerebras") {
+    return { include: "cerebras", apiKeyEnv: "CEREBRAS_API_KEY", modelEnv: "CEREBRAS_MODEL", baseURLEnv: "CEREBRAS_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "nvidia_nim") {
+    return { include: "nvidia-nim", apiKeyEnv: "NVIDIA_NIM_API_KEY", modelEnv: "NVIDIA_NIM_MODEL", baseURLEnv: "NVIDIA_NIM_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "sambanova") {
+    return { include: "sambanova", apiKeyEnv: "SAMBANOVA_API_KEY", modelEnv: "SAMBANOVA_MODEL", baseURLEnv: "SAMBANOVA_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "sambanova_responses") {
+    return { include: "sambanova-responses", apiKeyEnv: "SAMBANOVA_RESPONSES_API_KEY", modelEnv: "SAMBANOVA_RESPONSES_MODEL", baseURLEnv: "SAMBANOVA_RESPONSES_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "sambanova_anthropic") {
+    return { include: "sambanova-anthropic", apiKeyEnv: "SAMBANOVA_ANTHROPIC_API_KEY", modelEnv: "SAMBANOVA_ANTHROPIC_MODEL", baseURLEnv: "SAMBANOVA_ANTHROPIC_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
   }
   if (profile?.protocol === "openai_responses") {
     return { include: "openai-responses-compatible", apiKeyEnv: "OPENAI_RESPONSES_COMPATIBLE_API_KEY", modelEnv: "OPENAI_RESPONSES_COMPATIBLE_MODEL", baseURLEnv: "OPENAI_RESPONSES_COMPATIBLE_BASE_URL", includeBaseURL: true, apiKeyOptional };
@@ -947,6 +970,19 @@ function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)
     return { include: "anthropic-compatible", apiKeyEnv: "ANTHROPIC_COMPATIBLE_API_KEY", modelEnv: "ANTHROPIC_COMPATIBLE_MODEL", baseURLEnv: "ANTHROPIC_COMPATIBLE_BASE_URL", includeBaseURL: true, apiKeyOptional };
   }
   return { include: "openai-compatible", apiKeyEnv: "OPENAI_COMPATIBLE_API_KEY", modelEnv: "OPENAI_COMPATIBLE_MODEL", baseURLEnv: "OPENAI_COMPATIBLE_BASE_URL", includeBaseURL: true, apiKeyOptional };
+}
+
+function providerBaseURLDiffers(profile, provider) {
+  const value = normalizeEndpointRoot(profile?.baseURL || "");
+  const defaults = providerDefaults(provider);
+  const defaultValue = normalizeEndpointRoot(defaults?.baseURL || "");
+  if (!value) return false;
+  if (!defaultValue) return true;
+  return value !== defaultValue;
+}
+
+function normalizeEndpointRoot(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
 }
 
 function providerGuideEnvValue(value) {
@@ -1981,7 +2017,7 @@ function providerDefaults(provider) {
       fullURL: "",
       model: "",
       capabilities: { ...commonCapabilities, pdfBase64: false },
-      bodyExtra: {}
+      bodyExtra: { authHeader: "authorization" }
     };
   }
   if (id === "xai") {

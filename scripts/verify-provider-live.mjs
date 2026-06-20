@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { runProviderModels, runProviderSmoke } from "./verify-provider-smoke.mjs";
 
@@ -64,6 +65,98 @@ const DEFAULT_CASES = [
     headersEnv: "OPENAI_COMPATIBLE_HEADERS_JSON",
     bodyExtraEnv: "OPENAI_COMPATIBLE_BODY_EXTRA_JSON",
     requireBaseURL: true,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "github-models",
+    label: "GitHub Models",
+    profile: "github-models",
+    protocol: "openai_chat",
+    apiKeyEnv: "GITHUB_MODELS_API_KEY",
+    modelEnv: "GITHUB_MODELS_MODEL",
+    baseURLEnv: "GITHUB_MODELS_BASE_URL",
+    headersEnv: "GITHUB_MODELS_HEADERS_JSON",
+    bodyExtraEnv: "GITHUB_MODELS_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true,
+    modelList: false
+  },
+  {
+    id: "fireworks",
+    label: "Fireworks AI",
+    profile: "fireworks",
+    protocol: "openai_chat",
+    apiKeyEnv: "FIREWORKS_API_KEY",
+    modelEnv: "FIREWORKS_MODEL",
+    baseURLEnv: "FIREWORKS_BASE_URL",
+    headersEnv: "FIREWORKS_HEADERS_JSON",
+    bodyExtraEnv: "FIREWORKS_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "cerebras",
+    label: "Cerebras",
+    profile: "cerebras",
+    protocol: "openai_chat",
+    apiKeyEnv: "CEREBRAS_API_KEY",
+    modelEnv: "CEREBRAS_MODEL",
+    baseURLEnv: "CEREBRAS_BASE_URL",
+    headersEnv: "CEREBRAS_HEADERS_JSON",
+    bodyExtraEnv: "CEREBRAS_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "nvidia-nim",
+    label: "NVIDIA NIM",
+    profile: "nvidia-nim",
+    protocol: "openai_chat",
+    apiKeyEnv: "NVIDIA_NIM_API_KEY",
+    modelEnv: "NVIDIA_NIM_MODEL",
+    baseURLEnv: "NVIDIA_NIM_BASE_URL",
+    headersEnv: "NVIDIA_NIM_HEADERS_JSON",
+    bodyExtraEnv: "NVIDIA_NIM_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "sambanova",
+    label: "SambaNova Chat",
+    profile: "sambanova",
+    protocol: "openai_chat",
+    apiKeyEnv: "SAMBANOVA_API_KEY",
+    modelEnv: "SAMBANOVA_MODEL",
+    baseURLEnv: "SAMBANOVA_BASE_URL",
+    headersEnv: "SAMBANOVA_HEADERS_JSON",
+    bodyExtraEnv: "SAMBANOVA_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "sambanova-responses",
+    label: "SambaNova Responses",
+    profile: "sambanova-responses",
+    protocol: "openai_responses",
+    apiKeyEnv: "SAMBANOVA_RESPONSES_API_KEY",
+    modelEnv: "SAMBANOVA_RESPONSES_MODEL",
+    baseURLEnv: "SAMBANOVA_RESPONSES_BASE_URL",
+    headersEnv: "SAMBANOVA_RESPONSES_HEADERS_JSON",
+    bodyExtraEnv: "SAMBANOVA_RESPONSES_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "sambanova-anthropic",
+    label: "SambaNova Anthropic",
+    profile: "sambanova-anthropic",
+    protocol: "anthropic_messages",
+    apiKeyEnv: "SAMBANOVA_ANTHROPIC_API_KEY",
+    modelEnv: "SAMBANOVA_ANTHROPIC_MODEL",
+    baseURLEnv: "SAMBANOVA_ANTHROPIC_BASE_URL",
+    headersEnv: "SAMBANOVA_ANTHROPIC_HEADERS_JSON",
+    bodyExtraEnv: "SAMBANOVA_ANTHROPIC_BODY_EXTRA_JSON",
+    requireBaseURL: false,
     allowLocalNoAuth: true
   }
 ];
@@ -271,7 +364,7 @@ function selectedCases(include) {
 
 function missingRequirements(entry, env, options = {}) {
   const missing = [];
-  const baseURL = String(env[entry.baseURLEnv] || "").trim();
+  const baseURL = String(env[entry.baseURLEnv] || (entry.requireBaseURL ? "" : defaultBaseURLForCase(entry)) || "").trim();
   const localNoAuth = entry.allowLocalNoAuth && isLocalEndpoint(baseURL);
   const customAuth = hasAuthHeader(options.customHeaders || {});
   if (!localNoAuth && !String(env[entry.apiKeyEnv] || "").trim() && !customAuth) missing.push(entry.apiKeyEnv);
@@ -281,10 +374,39 @@ function missingRequirements(entry, env, options = {}) {
 }
 
 function unsupportedInputReason(entry, options = {}) {
+  if (options.models && entry.modelList === false) {
+    return "Model-list checks are not supported for this provider profile";
+  }
   if (options.pdf && entry.protocol === "openai_chat") {
     return "OpenAI-compatible Chat profiles use extracted text input; choose a Responses or Anthropic profile for raw PDF input";
   }
   return "";
+}
+
+function defaultBaseURLForCase(entry) {
+  try {
+    return entry?.profile ? runProfileDefault(entry.profile)?.baseURL || "" : "";
+  } catch (_err) {
+    return "";
+  }
+}
+
+function runProfileDefault(id) {
+  const profiles = readDefaultProfiles();
+  const normalized = providerCaseKey(id);
+  return profiles.find((profile) => providerCaseKey(profile?.id) === normalized) || null;
+}
+
+function readDefaultProfiles() {
+  const prefsPath = new URL("../addon/prefs.js", import.meta.url);
+  const prefs = readFileSync(fileURLToPath(prefsPath), "utf8");
+  const match = prefs.match(/pref\("profilesJson",\s*"((?:\\.|[^"\\])*)"\);/);
+  if (!match) throw new Error("profilesJson preference is missing");
+  return JSON.parse(JSON.parse(`"${match[1]}"`));
+}
+
+function providerCaseKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/_/g, "-");
 }
 
 function isLocalEndpoint(url) {
@@ -303,16 +425,37 @@ function redactKnownSecrets(text, env) {
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_COMPATIBLE_API_KEY",
     "OPENAI_COMPATIBLE_API_KEY",
+    "GITHUB_MODELS_API_KEY",
+    "FIREWORKS_API_KEY",
+    "CEREBRAS_API_KEY",
+    "NVIDIA_NIM_API_KEY",
+    "SAMBANOVA_API_KEY",
+    "SAMBANOVA_RESPONSES_API_KEY",
+    "SAMBANOVA_ANTHROPIC_API_KEY",
     "OPENAI_HEADERS_JSON",
     "OPENAI_RESPONSES_COMPATIBLE_HEADERS_JSON",
     "ANTHROPIC_HEADERS_JSON",
     "ANTHROPIC_COMPATIBLE_HEADERS_JSON",
     "OPENAI_COMPATIBLE_HEADERS_JSON",
+    "GITHUB_MODELS_HEADERS_JSON",
+    "FIREWORKS_HEADERS_JSON",
+    "CEREBRAS_HEADERS_JSON",
+    "NVIDIA_NIM_HEADERS_JSON",
+    "SAMBANOVA_HEADERS_JSON",
+    "SAMBANOVA_RESPONSES_HEADERS_JSON",
+    "SAMBANOVA_ANTHROPIC_HEADERS_JSON",
     "OPENAI_BODY_EXTRA_JSON",
     "OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON",
     "ANTHROPIC_BODY_EXTRA_JSON",
     "ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON",
-    "OPENAI_COMPATIBLE_BODY_EXTRA_JSON"
+    "OPENAI_COMPATIBLE_BODY_EXTRA_JSON",
+    "GITHUB_MODELS_BODY_EXTRA_JSON",
+    "FIREWORKS_BODY_EXTRA_JSON",
+    "CEREBRAS_BODY_EXTRA_JSON",
+    "NVIDIA_NIM_BODY_EXTRA_JSON",
+    "SAMBANOVA_BODY_EXTRA_JSON",
+    "SAMBANOVA_RESPONSES_BODY_EXTRA_JSON",
+    "SAMBANOVA_ANTHROPIC_BODY_EXTRA_JSON"
   ]) {
     const value = String(env[key] || "");
     for (const secret of redactionCandidates(value, key.includes("HEADERS_JSON"))) {
@@ -462,12 +605,19 @@ function usage() {
     "  OPENAI_COMPATIBLE_API_KEY=... OPENAI_COMPATIBLE_BASE_URL=... npm run verify:provider:models:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_MODEL=... OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:models:live -- --include openai-compatible",
+    "  GITHUB_MODELS_API_KEY=... GITHUB_MODELS_MODEL=... npm run verify:provider:live -- --include github-models",
+    "  FIREWORKS_API_KEY=... FIREWORKS_MODEL=... npm run verify:provider:live -- --include fireworks",
+    "  CEREBRAS_API_KEY=... CEREBRAS_MODEL=... npm run verify:provider:live -- --include cerebras",
+    "  NVIDIA_NIM_API_KEY=... NVIDIA_NIM_MODEL=... npm run verify:provider:live -- --include nvidia-nim",
+    "  SAMBANOVA_API_KEY=... SAMBANOVA_MODEL=... npm run verify:provider:live -- --include sambanova",
+    "  SAMBANOVA_RESPONSES_API_KEY=... SAMBANOVA_RESPONSES_MODEL=... npm run verify:provider:live -- --include sambanova-responses",
+    "  SAMBANOVA_ANTHROPIC_API_KEY=... SAMBANOVA_ANTHROPIC_MODEL=... npm run verify:provider:live -- --include sambanova-anthropic",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --image",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --pdf",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --stream",
     "",
     "Options:",
-    "  --include LIST           Comma-separated cases: openai, openai-responses-compatible, anthropic, anthropic-compatible, openai-compatible",
+    "  --include LIST           Comma-separated cases: openai, openai-responses-compatible, anthropic, anthropic-compatible, openai-compatible, github-models, fireworks, cerebras, nvidia-nim, sambanova, sambanova-responses, sambanova-anthropic",
     "  --prompt TEXT            Override the smoke prompt",
     "  --context TEXT           Override the smoke context",
     "  --timeout-ms NUMBER      Per-provider timeout",

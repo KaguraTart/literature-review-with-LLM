@@ -830,7 +830,8 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.providerDefaults("sambanova_anthropic")).toMatchObject({
       id: "sambanova-anthropic",
       protocol: "anthropic_messages",
-      baseURL: "https://api.sambanova.ai/v1"
+      baseURL: "https://api.sambanova.ai/v1",
+      bodyExtra: { authHeader: "authorization" }
     });
     expect(helpers.providerDefaults("xai")).toMatchObject({
       id: "xai",
@@ -1070,7 +1071,8 @@ describe("preferences local-agent config helpers", () => {
     expect(profiles.find((profile) => profile.id === "sambanova-anthropic")).toMatchObject({
       protocol: "anthropic_messages",
       endpointMode: "base_url",
-      baseURL: "https://api.sambanova.ai/v1"
+      baseURL: "https://api.sambanova.ai/v1",
+      bodyExtra: { authHeader: "authorization" }
     });
     expect(profiles.find((profile) => profile.id === "xai")).toMatchObject({
       protocol: "openai_chat",
@@ -1488,6 +1490,50 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).toContain("OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1");
     expect(guide).toContain("--include openai-compatible");
     expect(guide).not.toContain("OPENAI_COMPATIBLE_API_KEY=...");
+  });
+
+  it("uses named live-check variables for GitHub Models setup guides", () => {
+    const helpers = loadPreferencesHelpers();
+    const guide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("github_models"),
+      apiKey: "github-model-secret",
+      model: "openai/gpt-4.1-mini"
+    }, "en-US");
+
+    expect(guide).toContain("Active profile: GitHub Models");
+    expect(guide).toContain("GITHUB_MODELS_API_KEY=...");
+    expect(guide).toContain("GITHUB_MODELS_MODEL=openai/gpt-4.1-mini");
+    expect(guide).toContain("--include github-models");
+    expect(guide).not.toContain("GITHUB_MODELS_BASE_URL=");
+    expect(guide).not.toContain("github-model-secret");
+  });
+
+  it("includes edited Base URL for named provider live-check commands", () => {
+    const helpers = loadPreferencesHelpers();
+    const guide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("github_models"),
+      baseURL: "https://router.example/github/inference",
+      model: "openai/gpt-4.1-mini"
+    }, "en-US");
+
+    expect(guide).toContain("GITHUB_MODELS_BASE_URL=https://router.example/github/inference");
+    expect(guide).toContain("--include github-models");
+  });
+
+  it("uses named live-check variables and bearer auth for SambaNova Anthropic guides", () => {
+    const helpers = loadPreferencesHelpers();
+    const guide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("sambanova_anthropic"),
+      apiKey: "sambanova-anthropic-secret",
+      model: "Meta-Llama-3.1-8B-Instruct"
+    }, "en-US");
+
+    expect(guide).toContain("Protocol: Anthropic Messages");
+    expect(guide).toContain("Auth: API key is sent as Authorization: Bearer.");
+    expect(guide).toContain("SAMBANOVA_ANTHROPIC_API_KEY=...");
+    expect(guide).toContain("SAMBANOVA_ANTHROPIC_MODEL=Meta-Llama-3.1-8B-Instruct");
+    expect(guide).toContain("--include sambanova-anthropic");
+    expect(guide).not.toContain("sambanova-anthropic-secret");
   });
 
   it("updates the settings provider guide from edited fields", () => {

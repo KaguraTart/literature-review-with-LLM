@@ -1929,7 +1929,7 @@ function workbenchProviderDefaults(provider) {
     return { id: "sambanova-responses", name: "SambaNova Responses", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://api.sambanova.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
   }
   if (id === "sambanova_anthropic" || id === "sambanova-anthropic") {
-    return { id: "sambanova-anthropic", name: "SambaNova Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.sambanova.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+    return { id: "sambanova-anthropic", name: "SambaNova Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.sambanova.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: { authHeader: "authorization" } };
   }
   if (id === "xai") {
     return { id: "xai", name: "xAI", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.x.ai/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
@@ -4935,9 +4935,10 @@ function anthropicAuthHeaderName(profile) {
   if (explicit) return explicit;
   const id = String(profile?.id || "").toLowerCase();
   const baseURL = String(profile?.baseURL || "").replace(/\/+$/, "");
-  if (id === "anthropic-compatible" || id === "anthropic_compatible" || id === "deepseek-anthropic" || id === "deepseek_anthropic" || id === "zai-anthropic" || id === "zai_anthropic") return "authorization";
+  if (id === "anthropic-compatible" || id === "anthropic_compatible" || id === "deepseek-anthropic" || id === "deepseek_anthropic" || id === "zai-anthropic" || id === "zai_anthropic" || id === "sambanova-anthropic" || id === "sambanova_anthropic") return "authorization";
   if (baseURL === "https://api.deepseek.com/anthropic" || baseURL.startsWith("https://api.deepseek.com/anthropic/")) return "authorization";
   if (baseURL === "https://api.z.ai/api/anthropic" || baseURL.startsWith("https://api.z.ai/api/anthropic/")) return "authorization";
+  if (baseURL === "https://api.sambanova.ai/v1" || baseURL.startsWith("https://api.sambanova.ai/v1/")) return "authorization";
   return "x-api-key";
 }
 

@@ -124,7 +124,8 @@ describe("default provider profiles", () => {
     });
     expect(profiles.find((profile: any) => profile.id === "sambanova-anthropic")).toMatchObject({
       protocol: "anthropic_messages",
-      baseURL: "https://api.sambanova.ai/v1"
+      baseURL: "https://api.sambanova.ai/v1",
+      bodyExtra: { authHeader: "authorization" }
     });
     expect(profiles.find((profile: any) => profile.id === "xai")).toMatchObject({
       protocol: "openai_chat",
