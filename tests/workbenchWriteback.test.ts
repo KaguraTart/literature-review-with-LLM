@@ -4123,6 +4123,92 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls).toHaveLength(2);
   });
 
+  it("downgrades unsupported OpenAI Chat stream options once in the workbench request path", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ url, body });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              code: "invalid_request_error",
+              message: "Unrecognized request argument supplied: stream_options"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        body: {},
+        json: async () => ({ choices: [{ message: { content: "ok" } }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      protocol: "openai_chat",
+      capabilities: { ...providerProfile().capabilities, streaming: true }
+    }, [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "text", text: "context" }, true);
+
+    expect(response.ok).toBe(true);
+    expect(response.zmsRequestedStream).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true }
+    });
+    expect(fetchCalls[1].body).toMatchObject({ stream: true });
+    expect(fetchCalls[1].body).not.toHaveProperty("stream_options");
+  });
+
+  it("falls back to non-streaming when an OpenAI Chat route rejects streaming", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 422,
+          text: async () => JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "stream is not supported by this model"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "ok" } }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      protocol: "openai_chat",
+      capabilities: { ...providerProfile().capabilities, streaming: true }
+    }, [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "text", text: "context" }, true);
+
+    expect(response.ok).toBe(true);
+    expect(response.zmsRequestedStream).toBe(false);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({ stream: true });
+    expect(fetchCalls[1].body).not.toHaveProperty("stream");
+    expect(fetchCalls[1].body).not.toHaveProperty("stream_options");
+  });
+
   it("builds request messages from recent conversation without duplicating the latest user message", () => {
     const requestMessages = helpers.requestMessagesWithHistory([
       { role: "system", content: "ignored" },

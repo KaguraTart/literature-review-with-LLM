@@ -482,6 +482,7 @@ const requiredMarkers = [
   [workbenchJs, "promptTextForRequest", "workbench prompt pack request composition"],
   [workbenchJs, "promptPackInstructionBlock", "workbench prompt pack instructions"],
   [workbenchJs, "providerBodyExtra", "provider body extra filtering in workbench"],
+  [workbenchJs, "providerCompatibilityFallback", "workbench provider optional-field fallback"],
   [workbenchJs, "openAIChatTokenLimit", "OpenAI Chat token limit field selection in workbench"],
   [workbenchJs, "openAIChatOptionalDefaults", "OpenAI Chat optional reasoning defaults in workbench"],
   [workbenchJs, "openAIChatStreamOptions", "OpenAI Chat stream usage options in workbench"],

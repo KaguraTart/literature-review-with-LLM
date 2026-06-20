@@ -5242,17 +5242,27 @@ function prependOpenAIResponsesPart(input, lastUserIndex, part) {
 
 async function requestModelWithRetry(profile, messages, outputLanguage, systemPrompt, requestInput, streamEnabled, signal) {
   let lastError;
+  let requestProfile = profile;
+  let requestStreamEnabled = streamEnabled;
+  let usedCompatibilityFallback = false;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      const body = bodyForProfile(profile, messages, outputLanguage, systemPrompt, requestInput, streamEnabled);
+      const body = bodyForProfile(requestProfile, messages, outputLanguage, systemPrompt, requestInput, requestStreamEnabled);
       const response = await fetch(endpointForProfile(profile), {
         method: "POST",
-        headers: headersForProfile(profile),
+        headers: headersForProfile(requestProfile),
         body: JSON.stringify(body),
         signal
       });
       if (!response.ok) {
         const text = await response.text();
+        const fallback = providerCompatibilityFallback(requestProfile, body, response.status, text, usedCompatibilityFallback, requestStreamEnabled);
+        if (fallback && attempt < 3) {
+          requestProfile = fallback.profile;
+          requestStreamEnabled = fallback.streamEnabled;
+          usedCompatibilityFallback = true;
+          continue;
+        }
         const error = providerHTTPError(response.status, text);
         if (error.retryableProviderError && attempt < 3) {
           await delay(500 * 2 ** attempt);
@@ -5273,6 +5283,42 @@ async function requestModelWithRetry(profile, messages, outputLanguage, systemPr
     }
   }
   throw lastError;
+}
+
+function providerCompatibilityFallback(profile, body, status, text, usedFallback, streamEnabled) {
+  if (usedFallback || profile?.protocol !== "openai_chat" || ![400, 422].includes(Number(status))) return null;
+  const fields = providerUnsupportedOptionalFields(body, text);
+  if (!fields.length) return null;
+  return {
+    profile: {
+      ...profile,
+      bodyExtra: mergeProviderBodyOmitFields(profile?.bodyExtra, fields)
+    },
+    streamEnabled: fields.includes("stream") ? false : streamEnabled
+  };
+}
+
+function providerUnsupportedOptionalFields(body, text) {
+  const detail = String(text || "").toLowerCase();
+  const fields = [];
+  if (body?.stream_options !== undefined && /stream_options|stream options|stream option/.test(detail)) {
+    fields.push("stream_options");
+  }
+  if (body?.stream === true && /\bstream\b|streaming/.test(detail)) {
+    fields.push("stream", "stream_options");
+  }
+  if (body?.temperature !== undefined && /temperature/.test(detail)) {
+    fields.push("temperature");
+  }
+  if (body?.n !== undefined && /(?:^|[^a-z0-9_])n(?:[^a-z0-9_]|$)|number of completions|multiple completions/.test(detail)) {
+    fields.push("n");
+  }
+  return Array.from(new Set(fields));
+}
+
+function mergeProviderBodyOmitFields(bodyExtra, fields) {
+  const current = Array.from(providerBodyOmitFields(bodyExtra));
+  return { ...(bodyExtra || {}), omitFields: Array.from(new Set([...current, ...fields])) };
 }
 
 function providerHTTPError(status, text) {
