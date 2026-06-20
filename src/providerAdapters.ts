@@ -127,16 +127,8 @@ export function extractResponseText(protocol: ProviderProtocol, data: unknown): 
   const errorText = streamErrorText(value);
   if (errorText) throw new Error(`Provider error: ${redact(errorText)}`);
   const text = protocol === "anthropic_messages"
-    ? extractAnthropicContent(value)
-    : value?.output_text
-      || extractMessageContent(value?.choices?.[0]?.message?.content)
-      || extractMessageContent(value?.choices?.[0]?.delta?.content)
-      || value?.choices?.[0]?.text
-      || value?.choices?.[0]?.delta?.text
-      || extractOutputContent(value?.output)
-      || extractMessageContent(value?.content)
-      || extractOpenAIEventContainer(value)
-      || "";
+    ? extractAnthropicResponseContent(value)
+    : extractOpenAIResponseContent(value);
   if (!text) throw new Error("No text returned from model");
   return String(text).trim();
 }
@@ -286,6 +278,18 @@ function extractOpenAIEventContainer(data: any): string {
     || "";
 }
 
+function extractOpenAIResponseContent(data: any, depth = 0): string {
+  return data?.output_text
+    || extractMessageContent(data?.choices?.[0]?.message?.content)
+    || extractMessageContent(data?.choices?.[0]?.delta?.content)
+    || data?.choices?.[0]?.text
+    || data?.choices?.[0]?.delta?.text
+    || extractOutputContent(data?.output)
+    || extractMessageContent(data?.content)
+    || extractOpenAIEventContainer(data)
+    || extractWrappedResponseContent("openai", data, depth);
+}
+
 function extractAnthropicContent(data: any): string {
   const content = data?.content;
   if (typeof content === "string") return content;
@@ -300,6 +304,23 @@ function extractAnthropicContent(data: any): string {
       .join("\n");
   }
   return typeof data?.text === "string" ? data.text : "";
+}
+
+function extractAnthropicResponseContent(data: any, depth = 0): string {
+  return extractAnthropicContent(data) || extractWrappedResponseContent("anthropic", data, depth);
+}
+
+function extractWrappedResponseContent(protocol: "openai" | "anthropic", data: any, depth: number): string {
+  if (depth >= 2 || !data || typeof data !== "object") return "";
+  for (const key of ["data", "result", "payload", "response"]) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object") continue;
+    const text = protocol === "anthropic"
+      ? extractAnthropicResponseContent(value, depth + 1)
+      : extractOpenAIResponseContent(value, depth + 1);
+    if (text) return text;
+  }
+  return "";
 }
 
 function isReasoningContent(record: Record<string, unknown>): boolean {

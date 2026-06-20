@@ -45,6 +45,7 @@ function loadWorkbenchHelpers() {
     sessionIdFromPath: (path: string) => string;
     sessionLabelFromPath: (path: string) => string;
     workbenchModelListRequestForProfile: (profile: any) => { url: string; headers: Record<string, string> } | null;
+    extractResponseText: (protocol: string, data: any) => string;
   };
 }
 
@@ -136,6 +137,18 @@ describe("workbench session helpers", () => {
       capabilities: { modelList: true },
       customHeaders: {}
     })?.url).toBe("https://api.anthropic.com/v1/models");
+  });
+
+  it("extracts model text from wrapped provider responses in the workbench", () => {
+    expect(helpers.extractResponseText("openai_chat", {
+      data: { choices: [{ message: { content: "wrapped chat text" } }] }
+    })).toBe("wrapped chat text");
+    expect(helpers.extractResponseText("openai_responses", {
+      result: { output_text: "wrapped responses text" }
+    })).toBe("wrapped responses text");
+    expect(helpers.extractResponseText("anthropic_messages", {
+      data: { content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "wrapped anthropic text" }] }
+    })).toBe("wrapped anthropic text");
   });
 
   it("extracts a sessionId from a session file path", () => {

@@ -4836,14 +4836,7 @@ function extractResponseText(protocol, data) {
   if (errorText) throw new Error(`Provider error: ${redact(errorText)}`);
   const text = protocol === "anthropic_messages"
     ? anthropicTextFromResponse(data)
-    : data?.output_text
-      || modelTextFromValue(data?.choices?.[0]?.message?.content)
-      || modelTextFromValue(data?.choices?.[0]?.delta?.content)
-      || data?.choices?.[0]?.text
-      || data?.choices?.[0]?.delta?.text
-      || modelTextFromValue(data?.output)
-      || modelTextFromValue(data?.content)
-      || modelTextFromStreamContainer(data);
+    : openAITextFromResponse(data);
   if (!text) throw new Error("No text returned from model");
   return String(text).trim();
 }
@@ -4997,7 +4990,19 @@ function modelTextFromStreamContainer(value) {
     || "";
 }
 
-function anthropicTextFromResponse(data) {
+function openAITextFromResponse(data, depth = 0) {
+  return data?.output_text
+    || modelTextFromValue(data?.choices?.[0]?.message?.content)
+    || modelTextFromValue(data?.choices?.[0]?.delta?.content)
+    || data?.choices?.[0]?.text
+    || data?.choices?.[0]?.delta?.text
+    || modelTextFromValue(data?.output)
+    || modelTextFromValue(data?.content)
+    || modelTextFromStreamContainer(data)
+    || wrappedProviderTextFromResponse("openai", data, depth);
+}
+
+function anthropicTextFromResponse(data, depth = 0) {
   const content = data?.content;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -5010,7 +5015,20 @@ function anthropicTextFromResponse(data) {
       .filter(Boolean)
       .join("\n");
   }
-  return typeof data?.text === "string" ? data.text : "";
+  return typeof data?.text === "string" ? data.text : wrappedProviderTextFromResponse("anthropic", data, depth);
+}
+
+function wrappedProviderTextFromResponse(protocol, data, depth) {
+  if (depth >= 2 || !data || typeof data !== "object") return "";
+  for (const key of ["data", "result", "payload", "response"]) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object") continue;
+    const text = protocol === "anthropic"
+      ? anthropicTextFromResponse(value, depth + 1)
+      : openAITextFromResponse(value, depth + 1);
+    if (text) return text;
+  }
+  return "";
 }
 
 function isStreamSnapshot(protocol, value) {

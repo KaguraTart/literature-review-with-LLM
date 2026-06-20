@@ -23,16 +23,21 @@ function isProviderStreamSnapshot(protocol, chunk) {
 function extractOpenAIText(data) {
   const errorText = streamErrorText(data);
   if (errorText) throw new Error(`Provider error: ${redact(errorText)}`);
-  const text = data.output_text
+  const text = extractOpenAITextValue(data);
+  if (!text) throw new Error("模型没有返回正文");
+  return stripThink(String(text).trim());
+}
+
+function extractOpenAITextValue(data, depth = 0) {
+  return data?.output_text
     || extractOpenAIMessageContent(data?.choices?.[0]?.message?.content)
     || extractOpenAIMessageContent(data?.choices?.[0]?.delta?.content)
     || data?.choices?.[0]?.text
     || data?.choices?.[0]?.delta?.text
     || extractOpenAIContentArray(data?.output)
     || extractOpenAIMessageContent(data?.content)
-    || extractOpenAIEventContainer(data);
-  if (!text) throw new Error("模型没有返回正文");
-  return stripThink(String(text).trim());
+    || extractOpenAIEventContainer(data)
+    || extractWrappedResponseContent("openai", data, depth);
 }
 
 function extractOpenAIStreamText(chunk) {
@@ -191,7 +196,7 @@ function extractAnthropicText(data) {
   return stripThink(text.trim());
 }
 
-function extractAnthropicContent(data) {
+function extractAnthropicContent(data, depth = 0) {
   const content = data?.content;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -204,7 +209,20 @@ function extractAnthropicContent(data) {
       .filter(Boolean)
       .join("\n");
   }
-  return typeof data?.text === "string" ? data.text : "";
+  return typeof data?.text === "string" ? data.text : extractWrappedResponseContent("anthropic", data, depth);
+}
+
+function extractWrappedResponseContent(protocol, data, depth) {
+  if (depth >= 2 || !data || typeof data !== "object") return "";
+  for (const key of ["data", "result", "payload", "response"]) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object") continue;
+    const text = protocol === "anthropic"
+      ? extractAnthropicContent(value, depth + 1)
+      : extractOpenAITextValue(value, depth + 1);
+    if (text) return text;
+  }
+  return "";
 }
 
 function hasHeader(headers, name) {

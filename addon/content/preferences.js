@@ -1197,6 +1197,10 @@ function providerResponseErrorDetail(data) {
 
 function providerTextFromResponse(protocol, data) {
   if (protocol === "anthropic_messages") return anthropicTextFromResponse(data);
+  return openAITextFromResponse(data);
+}
+
+function openAITextFromResponse(data, depth = 0) {
   return data?.output_text
     || modelTextFromValue(data?.choices?.[0]?.message?.content)
     || modelTextFromValue(data?.choices?.[0]?.delta?.content)
@@ -1208,10 +1212,11 @@ function providerTextFromResponse(protocol, data) {
     || modelTextFromValue(data?.item)
     || modelTextFromValue(data?.message)
     || modelTextFromValue(data?.response)
+    || wrappedProviderTextFromResponse("openai", data, depth)
     || "";
 }
 
-function anthropicTextFromResponse(data) {
+function anthropicTextFromResponse(data, depth = 0) {
   const content = data?.content;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -1224,7 +1229,20 @@ function anthropicTextFromResponse(data) {
       .filter(Boolean)
       .join("\n");
   }
-  return typeof data?.text === "string" ? data.text : "";
+  return typeof data?.text === "string" ? data.text : wrappedProviderTextFromResponse("anthropic", data, depth);
+}
+
+function wrappedProviderTextFromResponse(protocol, data, depth) {
+  if (depth >= 2 || !data || typeof data !== "object") return "";
+  for (const key of ["data", "result", "payload", "response"]) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object") continue;
+    const text = protocol === "anthropic"
+      ? anthropicTextFromResponse(value, depth + 1)
+      : openAITextFromResponse(value, depth + 1);
+    if (text) return text;
+  }
+  return "";
 }
 
 function modelTextFromValue(value) {

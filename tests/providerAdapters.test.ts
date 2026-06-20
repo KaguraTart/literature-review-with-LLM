@@ -754,8 +754,17 @@ describe("provider adapters", () => {
     expect(extractResponseText("openai_responses", {
       response: { output_text: "wrapped response text" }
     } as any)).toBe("wrapped response text");
+    expect(extractResponseText("openai_chat", {
+      data: { choices: [{ message: { content: "wrapped chat text" } }] }
+    } as any)).toBe("wrapped chat text");
+    expect(extractResponseText("openai_responses", {
+      result: { output: [{ content: [{ type: "output_text", text: "wrapped result text" }] }] }
+    } as any)).toBe("wrapped result text");
     expect(extractResponseText("anthropic_messages", {
       content: "compatible anthropic text"
     } as any)).toBe("compatible anthropic text");
+    expect(extractResponseText("anthropic_messages", {
+      data: { content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "wrapped anthropic text" }] }
+    } as any)).toBe("wrapped anthropic text");
   });
 });

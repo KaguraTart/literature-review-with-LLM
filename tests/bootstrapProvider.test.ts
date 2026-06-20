@@ -1291,6 +1291,29 @@ describe("bootstrap provider helpers", () => {
         stream: false
       }
     }, "hash", false)).resolves.toMatchObject({ markdown: "delta content" });
+
+    const wrapped = loadBootstrapProviderHelpers({
+      data: { choices: [{ message: { content: "wrapped chat summary" } }] }
+    });
+    await expect(wrapped.helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false)).resolves.toMatchObject({ markdown: "wrapped chat summary" });
   });
 
   it("adds JSON mode defaults in bootstrap OpenAI provider requests", async () => {
@@ -1605,6 +1628,30 @@ describe("bootstrap provider helpers", () => {
       }
     }, "hash");
     expect(fetchCalls[1].url).toBe("https://api.anthropic.com/v1/messages");
+  });
+
+  it("extracts wrapped Anthropic response text in the bootstrap provider path", async () => {
+    const { helpers } = loadBootstrapProviderHelpers({
+      result: { content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "wrapped anthropic summary" }] }
+    });
+    await expect(helpers.callAnthropic({
+      provider: "anthropic",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash")).resolves.toMatchObject({ markdown: "wrapped anthropic summary" });
   });
 
   it("allows disabling official Anthropic direct browser access in the bootstrap provider path", async () => {
