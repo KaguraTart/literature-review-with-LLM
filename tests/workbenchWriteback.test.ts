@@ -212,6 +212,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     candidateDecisionCounts: (records: any[]) => any;
     candidateStatusText: (records: any[], path: string, translate?: (key: string) => string) => string;
     candidateRecommendationUpdates: (records: any[], currentUpdates?: Record<string, any>) => Record<string, any>;
+    candidateReviewUpdateMapFromDom: () => Record<string, any>;
+    candidateElement: (record: any, translate?: (key: string) => string) => any;
     candidateReviewMarkdownPath: (outputDir: string, item: any) => string;
     renderCandidateReviewMarkdown: (records: any[], options?: any) => string;
     candidateReviewLabels: (outputLanguage: string) => any;
@@ -1636,21 +1638,37 @@ describe("workbench writeback helpers", () => {
         candidateId: "doi:10.1000/b",
         title: "Candidate B",
         decision: "include",
-        review: { note: "Old inclusion note", updatedAt: "2026-06-13T00:00:00.000Z" },
+        review: {
+          note: "Old inclusion note",
+          screeningStage: "full_text_screened",
+          exclusionReason: "off_topic",
+          updatedAt: "2026-06-13T00:00:00.000Z"
+        },
         sources: ["semantic_scholar"],
         quality: { dedupeStatus: "new" }
       }
     ];
 
     const updated = helpers.applyCandidateDecisions(records, {
-      "doi:10.1000/a": { decision: "include", note: "Include because it shares the evaluation scenario." },
-      "doi:10.1000/b": { decision: "exclude", note: "" }
+      "doi:10.1000/a": {
+        decision: "include",
+        note: "Include because it shares the evaluation scenario.",
+        screeningStage: "abstract_screened",
+        exclusionReason: ""
+      },
+      "doi:10.1000/b": {
+        decision: "exclude",
+        note: "",
+        screeningStage: "not_started",
+        exclusionReason: ""
+      }
     }, "2026-06-13T00:01:00.000Z");
 
     expect(updated[0]).toMatchObject({
       decision: "include",
       review: {
         note: "Include because it shares the evaluation scenario.",
+        screeningStage: "abstract_screened",
         updatedAt: "2026-06-13T00:01:00.000Z"
       },
       updatedAt: "2026-06-13T00:01:00.000Z"
@@ -1660,6 +1678,8 @@ describe("workbench writeback helpers", () => {
       updatedAt: "2026-06-13T00:01:00.000Z"
     });
     expect(updated[1].review?.note).toBeUndefined();
+    expect(updated[1].review?.screeningStage).toBeUndefined();
+    expect(updated[1].review?.exclusionReason).toBeUndefined();
   });
 
   it("creates import ledger entries for discovery and decision changes", () => {
@@ -1735,6 +1755,74 @@ describe("workbench writeback helpers", () => {
     ]);
   });
 
+  it("records candidate screening-stage and exclusion-reason changes in the import ledger", () => {
+    const record = {
+      candidateId: "doi:10.1000/a",
+      title: "Candidate A",
+      decision: "exclude",
+      review: {
+        screeningStage: "full_text_screened",
+        exclusionReason: "weak_evidence"
+      },
+      sources: ["semantic_scholar"],
+      quality: { dedupeStatus: "new" }
+    };
+
+    const entries = helpers.decisionLedgerEntries(
+      [record],
+      new Map([["doi:10.1000/a", {
+        decision: "exclude",
+        note: "",
+        screeningStage: "abstract_screened",
+        exclusionReason: "off_topic"
+      }]]),
+      { "doi:10.1000/a": { screeningStage: "full_text_screened", exclusionReason: "weak_evidence" } },
+      "2026-06-13T00:04:00.000Z"
+    );
+
+    expect(entries).toEqual([
+      expect.objectContaining({
+        id: "doi:10.1000/a:review_screening:2026-06-13T00:04:00.000Z",
+        action: "review_screening",
+        screeningStage: "full_text_screened",
+        previousScreeningStage: "abstract_screened",
+        exclusionReason: "weak_evidence",
+        previousExclusionReason: "off_topic",
+        decisionChanged: false,
+        screeningChanged: true,
+        exclusionReasonChanged: true
+      })
+    ]);
+  });
+
+  it("reads candidate decision, screening stage, exclusion reason, and note updates from the DOM", () => {
+    const loaded = loadWorkbenchHelpers();
+    const nodes = [
+      { dataset: { candidateDecision: "doi:10.1000/a" }, value: "exclude" },
+      { dataset: { candidateScreening: "doi:10.1000/a" }, value: "full_text_screened" },
+      { dataset: { candidateExclusionReason: "doi:10.1000/a" }, value: "weak_evidence" },
+      { dataset: { candidateNote: "doi:10.1000/a" }, value: "Too weak after full-text review." }
+    ];
+    (loaded as any).document = {
+      querySelectorAll(selector: string) {
+        if (selector === "[data-candidate-decision]") return [nodes[0]];
+        if (selector === "[data-candidate-screening]") return [nodes[1]];
+        if (selector === "[data-candidate-exclusion-reason]") return [nodes[2]];
+        if (selector === "[data-candidate-note]") return [nodes[3]];
+        return [];
+      }
+    };
+
+    expect(loaded.candidateReviewUpdateMapFromDom()).toEqual({
+      "doi:10.1000/a": {
+        decision: "exclude",
+        screeningStage: "full_text_screened",
+        exclusionReason: "weak_evidence",
+        note: "Too weak after full-text review."
+      }
+    });
+  });
+
   it("applies candidate recommendations from the workbench and records ledger changes", async () => {
     const files = new Map<string, string>();
     const loaded = loadWorkbenchHelpers(files);
@@ -1802,7 +1890,10 @@ describe("workbench writeback helpers", () => {
         priority: { tier: "high", score: 82, recommendedDecision: "include", reasons: ["PDF available", "citation-network relation"] },
         networkOrigins: [{ direction: "citations", seedId: "S2-Seed", seedTitle: "Seed Paper" }],
         quality: { dedupeStatus: "new", isAbstractOnly: false },
-        review: { note: "Read first for shared datasets and metrics." }
+        review: {
+          note: "Read first for shared datasets and metrics.",
+          screeningStage: "full_text_screened"
+        }
       },
       {
         candidateId: "doi:10.1000/dup",
@@ -1811,7 +1902,8 @@ describe("workbench writeback helpers", () => {
         ids: { doi: "10.1000/dup" },
         sources: ["crossref"],
         priority: { tier: "duplicate", score: 0, recommendedDecision: "exclude", reasons: ["duplicate candidate"] },
-        quality: { dedupeStatus: "duplicate", isAbstractOnly: false }
+        quality: { dedupeStatus: "duplicate", isAbstractOnly: false },
+        review: { exclusionReason: "duplicate" }
       }
     ], {
       item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
@@ -1837,11 +1929,13 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("**Candidate A** (2025)");
     expect(report).toContain("优先级: high 82");
     expect(report).toContain("引用网络来源: citations from Seed Paper");
+    expect(report).toContain("筛选阶段: 已筛全文");
     expect(report).toContain("[PDF](https://example.test/a.pdf)");
     expect(report).toContain("已保存备注: Read first for shared datasets and metrics.");
     expect(report).toContain("下一步: 无需立即处理");
     expect(report).toContain("### 重复项");
     expect(report).toContain("Duplicate Candidate");
+    expect(report).toContain("排除理由: 重复项");
     expect(report).toContain("核对重复项");
   });
 
@@ -2980,6 +3074,12 @@ describe("workbench writeback helpers", () => {
     expect(dom.elements.get("zms-status").textContent).toContain("candidateSearchDone: 1");
     expect(dom.elements.get("zms-candidate-list").children).toHaveLength(1);
     const renderedCandidate = dom.elements.get("zms-candidate-list").children[0];
+    const reviewControls = renderedCandidate.children.find((child: any) => child.className === "zms-candidate-review-controls");
+    expect(reviewControls.children.map((child: any) => child.dataset)).toEqual([
+      { candidateDecision: "doi:10.1000/uav" },
+      { candidateScreening: "doi:10.1000/uav" },
+      { candidateExclusionReason: "doi:10.1000/uav" }
+    ]);
     const noteInput = renderedCandidate.children.find((child: any) => child.dataset?.candidateNote === "doi:10.1000/uav");
     expect(noteInput).toMatchObject({
       className: "zms-candidate-note",

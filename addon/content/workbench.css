@@ -956,8 +956,15 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.zms-candidate-review-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
 .zms-candidate select {
   min-height: 28px;
+  min-width: 0;
 }
 
 .zms-candidate-note {

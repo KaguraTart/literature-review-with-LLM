@@ -28,6 +28,22 @@ const ZMS_PROMPT_PACK_IDS = [
   "social-science",
   "review-writing"
 ];
+const ZMS_CANDIDATE_SCREENING_STAGES = [
+  "not_started",
+  "abstract_screened",
+  "full_text_needed",
+  "full_text_screened"
+];
+const ZMS_CANDIDATE_EXCLUSION_REASONS = [
+  "",
+  "off_topic",
+  "duplicate",
+  "no_full_text",
+  "weak_evidence",
+  "wrong_document_type",
+  "not_peer_reviewed",
+  "other"
+];
 const LOCAL_AGENT_SUBSKILLS = ["ask-gemini", "ask-claude", "ask-opencode"];
 const LOCAL_AGENT_SKILLS = {
   "ask-gemini": "ask_gemini",
@@ -6721,6 +6737,8 @@ function candidateReviewRecordLines(record, index, labels) {
     record.sources?.length ? `   - ${labels.sources}: ${mdText(record.sources.join(", "))}` : "",
     record.priority?.reasons?.length ? `   - ${labels.reasons}: ${mdText(record.priority.reasons.join("; "))}` : "",
     record.networkOrigins?.length ? `   - ${labels.network}: ${mdText(candidateReviewNetworkOrigins(record.networkOrigins))}` : "",
+    `   - ${labels.screeningStage}: ${mdText(candidateReviewScreeningStageText(record, labels))}`,
+    candidateReviewExclusionReason(record) ? `   - ${labels.exclusionReason}: ${mdText(candidateReviewExclusionReasonText(record, labels))}` : "",
     links ? `   - ${labels.links}: ${links}` : "",
     record.abstract ? `   - ${labels.abstract}: ${mdText(truncateText(record.abstract, 500))}` : "",
     candidateReviewNote(record) ? `   - ${labels.savedNote}: ${mdText(candidateReviewNote(record))}` : "",
@@ -6735,6 +6753,29 @@ function candidatePriorityTierCounts(records) {
     counts[tier] = (counts[tier] || 0) + 1;
     return counts;
   }, { high: 0, medium: 0, low: 0, duplicate: 0 });
+}
+
+function candidateReviewScreeningStageText(record, labels) {
+  const stage = candidateReviewScreeningStage(record);
+  return {
+    not_started: labels.screeningStageNotStarted,
+    abstract_screened: labels.screeningStageAbstractScreened,
+    full_text_needed: labels.screeningStageFullTextNeeded,
+    full_text_screened: labels.screeningStageFullTextScreened
+  }[stage] || stage;
+}
+
+function candidateReviewExclusionReasonText(record, labels) {
+  const reason = candidateReviewExclusionReason(record);
+  return {
+    off_topic: labels.exclusionReasonOffTopic,
+    duplicate: labels.exclusionReasonDuplicate,
+    no_full_text: labels.exclusionReasonNoFullText,
+    weak_evidence: labels.exclusionReasonWeakEvidence,
+    wrong_document_type: labels.exclusionReasonWrongDocumentType,
+    not_peer_reviewed: labels.exclusionReasonNotPeerReviewed,
+    other: labels.exclusionReasonOther
+  }[reason] || "";
 }
 
 function candidateReviewDecisionLabel(labels) {
@@ -6838,6 +6879,19 @@ function candidateReviewLabels(outputLanguage) {
       sources: "来源",
       reasons: "排序理由",
       network: "引用网络来源",
+      screeningStage: "筛选阶段",
+      screeningStageNotStarted: "未开始",
+      screeningStageAbstractScreened: "已筛摘要",
+      screeningStageFullTextNeeded: "需要全文",
+      screeningStageFullTextScreened: "已筛全文",
+      exclusionReason: "排除理由",
+      exclusionReasonOffTopic: "主题不相关",
+      exclusionReasonDuplicate: "重复项",
+      exclusionReasonNoFullText: "无法获取全文",
+      exclusionReasonWeakEvidence: "证据不足",
+      exclusionReasonWrongDocumentType: "文献类型不合适",
+      exclusionReasonNotPeerReviewed: "非同行评议或来源不足",
+      exclusionReasonOther: "其他",
       links: "链接",
       source: "来源页",
       abstract: "摘要",
@@ -6927,6 +6981,19 @@ function candidateReviewLabels(outputLanguage) {
     sources: "Sources",
     reasons: "Ranking reasons",
     network: "Citation network",
+    screeningStage: "Screening stage",
+    screeningStageNotStarted: "Not started",
+    screeningStageAbstractScreened: "Abstract screened",
+    screeningStageFullTextNeeded: "Full text needed",
+    screeningStageFullTextScreened: "Full text screened",
+    exclusionReason: "Exclusion reason",
+    exclusionReasonOffTopic: "Off topic",
+    exclusionReasonDuplicate: "Duplicate",
+    exclusionReasonNoFullText: "No full text",
+    exclusionReasonWeakEvidence: "Weak evidence",
+    exclusionReasonWrongDocumentType: "Wrong document type",
+    exclusionReasonNotPeerReviewed: "Not peer reviewed or weak source",
+    exclusionReasonOther: "Other",
     links: "Links",
     source: "Source",
     abstract: "Abstract",
@@ -6979,13 +7046,37 @@ function candidateElement(record, translate = (key) => key) {
     option.selected = normalizeCandidateDecision(record.decision) === decision;
     select.appendChild(option);
   }
+  select.setAttribute?.("aria-label", translate("candidateDecisionLabel"));
+  const reviewControls = document.createElement("div");
+  reviewControls.className = "zms-candidate-review-controls";
+  const screening = document.createElement("select");
+  screening.dataset.candidateScreening = record.candidateId;
+  screening.setAttribute?.("aria-label", translate("candidateScreeningStageLabel"));
+  for (const stage of ZMS_CANDIDATE_SCREENING_STAGES) {
+    const option = document.createElement("option");
+    option.value = stage;
+    option.textContent = candidateScreeningStageLabel(stage, translate);
+    option.selected = candidateReviewScreeningStage(record) === stage;
+    screening.appendChild(option);
+  }
+  const exclusion = document.createElement("select");
+  exclusion.dataset.candidateExclusionReason = record.candidateId;
+  exclusion.setAttribute?.("aria-label", translate("candidateExclusionReasonLabel"));
+  for (const reason of ZMS_CANDIDATE_EXCLUSION_REASONS) {
+    const option = document.createElement("option");
+    option.value = reason;
+    option.textContent = candidateExclusionReasonLabel(reason, translate);
+    option.selected = candidateReviewExclusionReason(record) === reason;
+    exclusion.appendChild(option);
+  }
+  reviewControls.append(select, screening, exclusion);
   const note = document.createElement("textarea");
   note.className = "zms-candidate-note";
   note.dataset.candidateNote = record.candidateId;
   note.value = candidateReviewNote(record);
   note.placeholder = translate("candidateReviewNotePlaceholder");
   note.setAttribute?.("aria-label", translate("candidateReviewNoteLabel"));
-  wrapper.append(title, meta, select, note);
+  wrapper.append(title, meta, reviewControls, note);
   return wrapper;
 }
 
@@ -7032,6 +7123,30 @@ function candidateDecisionLabel(decision, translate = (key) => key) {
   return translate(key);
 }
 
+function candidateScreeningStageLabel(stage, translate = (key) => key) {
+  const key = {
+    not_started: "candidateScreeningStageNotStarted",
+    abstract_screened: "candidateScreeningStageAbstractScreened",
+    full_text_needed: "candidateScreeningStageFullTextNeeded",
+    full_text_screened: "candidateScreeningStageFullTextScreened"
+  }[normalizeCandidateScreeningStage(stage)];
+  return translate(key);
+}
+
+function candidateExclusionReasonLabel(reason, translate = (key) => key) {
+  const key = {
+    "": "candidateExclusionReasonNone",
+    off_topic: "candidateExclusionReasonOffTopic",
+    duplicate: "candidateExclusionReasonDuplicate",
+    no_full_text: "candidateExclusionReasonNoFullText",
+    weak_evidence: "candidateExclusionReasonWeakEvidence",
+    wrong_document_type: "candidateExclusionReasonWrongDocumentType",
+    not_peer_reviewed: "candidateExclusionReasonNotPeerReviewed",
+    other: "candidateExclusionReasonOther"
+  }[normalizeCandidateExclusionReason(reason)];
+  return translate(key || "candidateExclusionReasonNone");
+}
+
 function candidateDecisionMapFromDom() {
   if (typeof document === "undefined") return {};
   const decisions = {};
@@ -7061,6 +7176,22 @@ function candidateReviewUpdateMapFromDom() {
       note: normalizeCandidateReviewNote(element.value)
     };
   }
+  for (const element of document.querySelectorAll("[data-candidate-screening]")) {
+    const candidateId = element.dataset?.candidateScreening || "";
+    if (!candidateId) continue;
+    updates[candidateId] = {
+      ...(updates[candidateId] || {}),
+      screeningStage: normalizeCandidateScreeningStage(element.value)
+    };
+  }
+  for (const element of document.querySelectorAll("[data-candidate-exclusion-reason]")) {
+    const candidateId = element.dataset?.candidateExclusionReason || "";
+    if (!candidateId) continue;
+    updates[candidateId] = {
+      ...(updates[candidateId] || {}),
+      exclusionReason: normalizeCandidateExclusionReason(element.value)
+    };
+  }
   return updates;
 }
 
@@ -7070,25 +7201,52 @@ function applyCandidateDecisions(records, updates, now) {
     if (!update) return record;
     const nextDecision = update.decision ? normalizeCandidateDecision(update.decision) : normalizeCandidateDecision(record.decision);
     const currentNote = candidateReviewNote(record);
+    const currentScreeningStage = candidateReviewScreeningStage(record);
+    const currentExclusionReason = candidateReviewExclusionReason(record);
     const hasNoteUpdate = Object.prototype.hasOwnProperty.call(update, "note");
+    const hasScreeningUpdate = Object.prototype.hasOwnProperty.call(update, "screeningStage");
+    const hasExclusionReasonUpdate = Object.prototype.hasOwnProperty.call(update, "exclusionReason");
     const nextNote = hasNoteUpdate ? normalizeCandidateReviewNote(update.note) : currentNote;
+    const nextScreeningStage = hasScreeningUpdate ? normalizeCandidateScreeningStage(update.screeningStage) : currentScreeningStage;
+    const nextExclusionReason = hasExclusionReasonUpdate ? normalizeCandidateExclusionReason(update.exclusionReason) : currentExclusionReason;
     const decisionChanged = nextDecision !== normalizeCandidateDecision(record.decision);
     const noteChanged = hasNoteUpdate && nextNote !== currentNote;
-    if (!decisionChanged && !noteChanged) return record;
+    const screeningChanged = hasScreeningUpdate && nextScreeningStage !== currentScreeningStage;
+    const exclusionReasonChanged = hasExclusionReasonUpdate && nextExclusionReason !== currentExclusionReason;
+    if (!decisionChanged && !noteChanged && !screeningChanged && !exclusionReasonChanged) return record;
     const review = { ...(record.review || {}) };
+    const reviewUpdatedAt = now || new Date().toISOString();
     if (hasNoteUpdate) {
       if (nextNote) {
         review.note = nextNote;
-        review.updatedAt = now || new Date().toISOString();
+        review.updatedAt = reviewUpdatedAt;
       } else {
         delete review.note;
-        if (Object.keys(review).length) review.updatedAt = now || new Date().toISOString();
+        if (Object.keys(review).length) review.updatedAt = reviewUpdatedAt;
+      }
+    }
+    if (hasScreeningUpdate) {
+      if (nextScreeningStage && nextScreeningStage !== "not_started") {
+        review.screeningStage = nextScreeningStage;
+        review.updatedAt = reviewUpdatedAt;
+      } else {
+        delete review.screeningStage;
+        if (Object.keys(review).length) review.updatedAt = reviewUpdatedAt;
+      }
+    }
+    if (hasExclusionReasonUpdate) {
+      if (nextExclusionReason) {
+        review.exclusionReason = nextExclusionReason;
+        review.updatedAt = reviewUpdatedAt;
+      } else {
+        delete review.exclusionReason;
+        if (Object.keys(review).length) review.updatedAt = reviewUpdatedAt;
       }
     }
     const nextRecord = {
       ...record,
       decision: nextDecision,
-      updatedAt: now || new Date().toISOString()
+      updatedAt: reviewUpdatedAt
     };
     if (Object.keys(review).length) nextRecord.review = review;
     else delete nextRecord.review;
@@ -7144,6 +7302,24 @@ function candidateReviewNote(record) {
 
 function normalizeCandidateReviewNote(value) {
   return String(value ?? "").replace(/\r\n?/g, "\n").trim().slice(0, 2000);
+}
+
+function candidateReviewScreeningStage(record) {
+  return normalizeCandidateScreeningStage(record?.review?.screeningStage ?? record?.screeningStage ?? "");
+}
+
+function normalizeCandidateScreeningStage(value) {
+  const stage = String(value || "").trim();
+  return ZMS_CANDIDATE_SCREENING_STAGES.includes(stage) ? stage : "not_started";
+}
+
+function candidateReviewExclusionReason(record) {
+  return normalizeCandidateExclusionReason(record?.review?.exclusionReason ?? record?.exclusionReason ?? "");
+}
+
+function normalizeCandidateExclusionReason(value) {
+  const reason = String(value || "").trim();
+  return ZMS_CANDIDATE_EXCLUSION_REASONS.includes(reason) ? reason : "";
 }
 
 function importableCandidateRecords(records) {
@@ -7564,7 +7740,9 @@ function candidatePreviousDecisionMap(records) {
 function candidatePreviousReviewMap(records) {
   return new Map((records || []).map((record) => [record.candidateId, {
     decision: normalizeCandidateDecision(record.decision),
-    note: candidateReviewNote(record)
+    note: candidateReviewNote(record),
+    screeningStage: candidateReviewScreeningStage(record),
+    exclusionReason: candidateReviewExclusionReason(record)
   }]));
 }
 
@@ -7581,18 +7759,28 @@ function decisionLedgerEntries(records, previousDecisions, changedDecisions, now
       const previous = candidatePreviousReviewValue(previousDecisions?.get(record.candidateId));
       const current = {
         decision: normalizeCandidateDecision(record.decision),
-        note: candidateReviewNote(record)
+        note: candidateReviewNote(record),
+        screeningStage: candidateReviewScreeningStage(record),
+        exclusionReason: candidateReviewExclusionReason(record)
       };
       const decisionChanged = previous.decision !== current.decision;
       const noteChanged = previous.note !== current.note;
-      if (!decisionChanged && !noteChanged) return null;
-      const action = decisionChanged ? decisionLedgerAction(record.decision) : "review_note";
+      const screeningChanged = previous.screeningStage !== current.screeningStage;
+      const exclusionReasonChanged = previous.exclusionReason !== current.exclusionReason;
+      if (!decisionChanged && !noteChanged && !screeningChanged && !exclusionReasonChanged) return null;
+      const action = decisionChanged ? decisionLedgerAction(record.decision) : (screeningChanged || exclusionReasonChanged ? "review_screening" : "review_note");
       return importLedgerEntryForCandidate(record, action, now, {
         reviewNote: current.note,
+        screeningStage: current.screeningStage,
+        exclusionReason: current.exclusionReason,
         previousDecision: previous.decision,
         previousReviewNote: previous.note,
+        previousScreeningStage: previous.screeningStage,
+        previousExclusionReason: previous.exclusionReason,
         decisionChanged,
-        noteChanged
+        noteChanged,
+        screeningChanged,
+        exclusionReasonChanged
       });
     })
     .filter((entry) => !!entry?.action);
@@ -7602,12 +7790,16 @@ function candidatePreviousReviewValue(value) {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return {
       decision: normalizeCandidateDecision(value.decision),
-      note: normalizeCandidateReviewNote(value.note)
+      note: normalizeCandidateReviewNote(value.note),
+      screeningStage: normalizeCandidateScreeningStage(value.screeningStage),
+      exclusionReason: normalizeCandidateExclusionReason(value.exclusionReason)
     };
   }
   return {
     decision: normalizeCandidateDecision(value),
-    note: ""
+    note: "",
+    screeningStage: "not_started",
+    exclusionReason: ""
   };
 }
 
@@ -7635,10 +7827,16 @@ function importLedgerEntryForCandidate(record, action, at, extra = {}) {
     zoteroItemKey: extra.zoteroItemKey,
     attachmentKey: extra.attachmentKey,
     reviewNote: extra.reviewNote ?? candidateReviewNote(record),
+    screeningStage: extra.screeningStage ?? candidateReviewScreeningStage(record),
+    exclusionReason: extra.exclusionReason ?? candidateReviewExclusionReason(record),
     previousDecision: extra.previousDecision,
     previousReviewNote: extra.previousReviewNote,
+    previousScreeningStage: extra.previousScreeningStage,
+    previousExclusionReason: extra.previousExclusionReason,
     decisionChanged: extra.decisionChanged,
     noteChanged: extra.noteChanged,
+    screeningChanged: extra.screeningChanged,
+    exclusionReasonChanged: extra.exclusionReasonChanged,
     message: extra.message,
     error: extra.error
   };
