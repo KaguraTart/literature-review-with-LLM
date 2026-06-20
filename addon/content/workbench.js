@@ -8266,39 +8266,90 @@ function normalizeIndexedText(text) {
 }
 
 function candidateSnippetForPattern(indexed, pattern, used, topicId = "") {
+  const candidates = [];
   for (const page of indexed.pages || []) {
-    pattern.lastIndex = 0;
-    const match = pattern.exec(page.text);
-    if (!match) continue;
-    const localCenter = match.index;
-    const quoteRange = candidateSentenceRange(page.text, localCenter);
-    const contextStart = Math.max(0, quoteRange.start - 180);
-    const contextEnd = Math.min(page.text.length, quoteRange.end + 220);
-    const contextBefore = page.text.slice(contextStart, quoteRange.start).trim();
-    const quote = page.text.slice(quoteRange.start, quoteRange.end).trim();
-    const contextAfter = page.text.slice(quoteRange.end, contextEnd).trim();
-    const snippet = [contextBefore, quote, contextAfter].filter(Boolean).join(" ").trim();
-    const start = page.start + contextStart;
-    const end = page.start + contextEnd;
-    const sourceHash = shortEvidenceHash(snippet);
-    const key = `${topicId}:${start}:${sourceHash}`;
-    if (!snippet || used.has(key)) continue;
-    used.add(key);
-    return {
-      text: snippet,
-      quote,
-      contextBefore,
-      contextAfter,
-      start,
-      end,
-      page: page.page,
-      pageLabel: page.pageLabel || "",
-      pageStart: contextStart,
-      pageEnd: contextEnd,
-      sourceHash
-    };
+    for (const match of candidatePatternMatches(page.text, pattern)) {
+      const hit = candidateSnippetHitForMatch(page, match.index, topicId);
+      if (!hit || used.has(hit.key)) continue;
+      candidates.push({
+        hit,
+        score: candidateSnippetEvidenceScore(hit, topicId)
+      });
+    }
   }
-  return null;
+  candidates.sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score;
+    return left.hit.start - right.hit.start;
+  });
+  const selected = candidates[0]?.hit;
+  if (!selected) return null;
+  used.add(selected.key);
+  const { key: _key, ...hit } = selected;
+  return hit;
+}
+
+function candidatePatternMatches(text, pattern) {
+  const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+  const regex = new RegExp(pattern.source, flags);
+  const matches = [];
+  let match;
+  while ((match = regex.exec(String(text || ""))) !== null) {
+    matches.push({ index: match.index, text: match[0] || "" });
+    if (!match[0]) regex.lastIndex += 1;
+  }
+  return matches.slice(0, 80);
+}
+
+function candidateSnippetHitForMatch(page, localCenter, topicId = "") {
+  const quoteRange = candidateSentenceRange(page.text, localCenter);
+  const contextStart = Math.max(0, quoteRange.start - 180);
+  const contextEnd = Math.min(page.text.length, quoteRange.end + 220);
+  const contextBefore = page.text.slice(contextStart, quoteRange.start).trim();
+  const quote = page.text.slice(quoteRange.start, quoteRange.end).trim();
+  const contextAfter = page.text.slice(quoteRange.end, contextEnd).trim();
+  const snippet = [contextBefore, quote, contextAfter].filter(Boolean).join(" ").trim();
+  if (!snippet) return null;
+  const start = page.start + contextStart;
+  const end = page.start + contextEnd;
+  const sourceHash = shortEvidenceHash(snippet);
+  return {
+    key: `${topicId}:${start}:${sourceHash}`,
+    text: snippet,
+    quote,
+    contextBefore,
+    contextAfter,
+    start,
+    end,
+    page: page.page,
+    pageLabel: page.pageLabel || "",
+    pageStart: contextStart,
+    pageEnd: contextEnd,
+    sourceHash
+  };
+}
+
+function candidateSnippetEvidenceScore(hit, topicId = "") {
+  const snippet = normalizeEvidenceMatchText(hit?.text || "");
+  const quote = normalizeEvidenceMatchText(hit?.quote || "");
+  let score = 0;
+  if (hit?.page) score += 1;
+  if (quote.length >= 60) score += 2;
+  else if (quote.length >= 30) score += 1;
+  if (/\b(propos(?:e|ed|es|ing)|use[sd]?|based|derive[sd]?|train(?:ed|ing)?|evaluate[sd]?|compare[sd]?|show[sn]?|demonstrate[sd]?)\b/i.test(hit?.text || "")) score += 2;
+  if (candidateSnippetTopicSignal(snippet, topicId)) score += 2;
+  if (/\b(?:contents|table of contents|toc|index)\b/i.test(hit?.text || "")) score -= 4;
+  if (/\.{3,}\s*\d{1,4}\b/.test(hit?.text || "")) score -= 3;
+  if (/\b(?:references|bibliography|acknowledg(?:e)?ments?)\b/i.test(hit?.text || "")) score -= 3;
+  if (quote.length < 24) score -= 2;
+  return score;
+}
+
+function candidateSnippetTopicSignal(normalizedSnippet, topicId = "") {
+  if (topicId === "method") return /\b(method|approach|framework|algorithm|model|architecture|graph attention|方法|模型|算法|框架)\b/i.test(normalizedSnippet);
+  if (topicId === "experiment") return /\b(experiment|evaluation|result|dataset|benchmark|metric|ablation|实验|结果|评估|数据集|指标|消融)\b/i.test(normalizedSnippet);
+  if (topicId === "limitation") return /\b(limitation|threat|validity|future work|weakness|局限|不足|威胁|未来)\b/i.test(normalizedSnippet);
+  if (topicId === "contribution") return /\b(contribution|finding|conclusion|novel|state of the art|贡献|发现|结论|创新)\b/i.test(normalizedSnippet);
+  return false;
 }
 
 function candidateSentenceRange(text, center) {

@@ -2143,6 +2143,35 @@ describe("workbench writeback helpers", () => {
     });
   });
 
+  it("prefers substantive indexed-text evidence over table-of-contents keyword hits", () => {
+    const loaded = loadWorkbenchHelpers();
+    const snippets = loaded.candidateFullTextEvidenceSnippets([
+      "Page 1",
+      "Table of contents",
+      "1 Introduction ........ 1",
+      "2 Methods ........ 3",
+      "3 Experiments ........ 7",
+      "Page 3",
+      "The proposed method uses graph attention to model route conflicts and update route-choice states.",
+      "The framework then estimates delay propagation across benchmark scenarios."
+    ].join("\n"), {
+      candidateId: "doi:10.1000/toc-noise",
+      title: "TOC Noise Candidate",
+      decision: "include",
+      quality: { dedupeStatus: "new" }
+    }, { key: "PDFTOC" });
+
+    expect(snippets[0]).toMatchObject({
+      topic: "method",
+      page: 3,
+      locator: expect.stringContaining("page:3"),
+      quote: expect.stringContaining("proposed method uses graph attention"),
+      attachmentKey: "PDFTOC"
+    });
+    expect(snippets[0].text).not.toContain("Table of contents");
+    expect(snippets[0].text).not.toContain("Methods ........ 3");
+  });
+
   it("cleans repeated PDF page headers, footers, and line-break hyphenation from indexed evidence", () => {
     const loaded = loadWorkbenchHelpers();
     const snippets = loaded.candidateFullTextEvidenceSnippets([
