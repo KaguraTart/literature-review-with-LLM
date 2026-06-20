@@ -528,6 +528,20 @@ const SOURCE_MARKERS = [
     ]
   },
   {
+    id: "workbench.figure-table-extraction-contract",
+    description: "Figure/table extraction uses a structured visual OCR, table reconstruction, evidence-map, and review-checklist output contract",
+    files: ["addon/content/workbench.js", "tests/workbenchWriteback.test.ts", "README.md", "README.zh-CN.md"],
+    markers: [
+      "Visual OCR Text",
+      "Reconstructed Data Table",
+      "项目、数值/文本、单位、来源、置信度、备注",
+      "Interpretation And Evidence Map",
+      "视觉 OCR 文本",
+      "表格/数据重建",
+      "uses a structured visual OCR and table reconstruction contract"
+    ]
+  },
+  {
     id: "runtime.zotero-verifier",
     description: "Installed package and live Zotero local runtime can be verified separately from build checks",
     files: ["scripts/verify-zotero-runtime.mjs"],

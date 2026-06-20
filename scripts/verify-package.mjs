@@ -470,6 +470,8 @@ const requiredMarkers = [
   [workbenchJs, "readPdfAnnotations", "annotation context"],
   [workbenchJs, "availableSkillIds", "local skill discovery"],
   [workbenchJs, "figureTableTemplate", "workbench figure/table extraction skill template"],
+  [workbenchJs, "Visual OCR Text", "figure/table extraction visual OCR section"],
+  [workbenchJs, "Reconstructed Data Table", "figure/table extraction table reconstruction section"],
   [workbenchJs, "defaultImageQuestion", "image-only default prompt"],
   [workbenchJs, "literatureMatrixTemplate", "workbench literature matrix skill template"],
   [workbenchJs, "promptTextForRequest", "workbench prompt pack request composition"],

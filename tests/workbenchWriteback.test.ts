@@ -159,6 +159,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     commitWritePreview: (summaryPath: string, preview: any) => Promise<void>;
     assertRemoteProfileReady: (profile: any, translate?: (key: string) => string) => void;
     normalizeSkillId: (value: string) => string;
+    builtInSkillTemplate: (skillId: string, outputLanguage: string) => string;
     defaultImageQuestion: (outputLanguage: string) => string;
     normalizePromptPackId: (value: string) => string;
     promptPackInstruction: (promptPackId: string, outputLanguage: string) => string;
@@ -875,6 +876,25 @@ describe("workbench writeback helpers", () => {
     expect(helpers.userTextForSend("", "figure-table-extractor", 1, "zh-CN")).toBe("");
     expect(helpers.displayTextForSend("", "figure-table-extractor", 1, "zh-CN", (id) => `label:${id}`))
       .toBe("label:figure-table-extractor");
+  });
+
+  it("uses a structured visual OCR and table reconstruction contract for figure/table extraction", () => {
+    const zh = helpers.builtInSkillTemplate("figure-table-extractor", "zh-CN");
+    expect(zh).toContain("## 视觉 OCR 文本");
+    expect(zh).toContain("## 表格/数据重建");
+    expect(zh).toContain("项目、数值/文本、单位、来源、置信度、备注");
+    expect(zh).toContain("不要把文本上下文推断伪装成图片观察");
+
+    const en = helpers.builtInSkillTemplate("figure-table-extractor", "en-US");
+    expect(en).toContain("## Visual OCR Text");
+    expect(en).toContain("## Reconstructed Data Table");
+    expect(en).toContain("Item, Value/Text, Unit, Source, Confidence, Notes");
+    expect(en).toContain("do not present text-context inference as direct image observation");
+
+    const ja = helpers.builtInSkillTemplate("figure-table-extractor", "ja-JP");
+    expect(ja).toContain("視覚 OCR テキスト");
+    expect(ja).toContain("表/データ再構成");
+    expect(ja).toContain("[illegible]");
   });
 
   it("builds domain-specific prompt pack instructions for workbench requests", () => {
