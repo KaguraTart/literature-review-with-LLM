@@ -6847,7 +6847,7 @@ function candidateSourceEvidenceForRecord(record, labels) {
       label: evidence.label || candidateSourceEvidenceLabel(record, `fulltext-${evidence.topic || "snippet"}`),
       type: labels.sourceEvidenceTypeFullText,
       locator: candidateSourceEvidenceLocator(record, "fulltext", evidence),
-      snippet: truncateText(evidence.text || evidence.snippet || "", 320),
+      snippet: truncateText(candidateFullTextEvidenceDisplayText(evidence), 420),
       followUp: labels.sourceEvidenceFollowFullText
     });
   }
@@ -6925,21 +6925,37 @@ function candidateReviewFullTextEvidence(record) {
   const items = Array.isArray(values) ? values : [values];
   return items
     .map((item) => {
-      if (typeof item === "string") return { topic: "snippet", text: mdText(item), label: "" };
+      if (typeof item === "string") return { topic: "snippet", text: mdText(item), quote: mdText(item), label: "" };
       if (!item || typeof item !== "object") return null;
       const text = mdText(item.text || item.snippet || item.value || "");
       if (!text) return null;
       return {
         topic: mdText(item.topic || "snippet").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 32) || "snippet",
         text,
+        quote: mdText(item.quote || ""),
+        contextBefore: mdText(item.contextBefore || item.before || ""),
+        contextAfter: mdText(item.contextAfter || item.after || ""),
         label: mdText(item.label || ""),
         locator: mdText(item.locator || ""),
         sourceHash: normalizeEvidenceHash(item.sourceHash || item.hash || ""),
-        attachmentKey: mdText(item.attachmentKey || "")
+        attachmentKey: mdText(item.attachmentKey || ""),
+        page: candidateEvidencePage(item.page)
       };
     })
     .filter(Boolean)
     .slice(0, 6);
+}
+
+function candidateFullTextEvidenceDisplayText(evidence) {
+  const quote = mdText(evidence?.quote || evidence?.text || evidence?.snippet || "");
+  const before = mdText(evidence?.contextBefore || "");
+  const after = mdText(evidence?.contextAfter || "");
+  if (!before && !after) return quote;
+  return [
+    before ? `Context before: ${before}` : "",
+    quote ? `Hit: ${quote}` : "",
+    after ? `Context after: ${after}` : ""
+  ].filter(Boolean).join(" / ");
 }
 
 async function enrichCandidatesWithFullTextEvidence(records, contextItem, now = new Date().toISOString()) {
@@ -6980,8 +6996,8 @@ function candidateShouldEnrichFullTextEvidence(record) {
 }
 
 function candidateFullTextEvidenceSnippets(text, record, pdf) {
-  const source = String(text || "").replace(/\s+/g, " ").trim();
-  if (!source) return [];
+  const indexed = indexedTextForEvidence(text);
+  if (!indexed.text) return [];
   const topics = [
     { id: "method", pattern: /\b(method|methods|methodology|approach|model|algorithm|framework|propose|proposed|方法|模型|算法|框架)\b/i },
     { id: "experiment", pattern: /\b(experiment|evaluation|result|dataset|benchmark|metric|ablation|实验|结果|评估|数据集|指标|消融)\b/i },
@@ -6991,57 +7007,140 @@ function candidateFullTextEvidenceSnippets(text, record, pdf) {
   const rows = [];
   const used = new Set();
   for (const topic of topics) {
-    const hit = candidateSnippetForPattern(source, topic.pattern, used);
+    const hit = candidateSnippetForPattern(indexed, topic.pattern, used, topic.id);
     if (!hit) continue;
     rows.push({
       topic: topic.id,
       label: candidateSourceEvidenceLabel(record, `fulltext-${topic.id}`),
       text: hit.text,
+      quote: hit.quote,
+      contextBefore: hit.contextBefore,
+      contextAfter: hit.contextAfter,
       locator: candidateFullTextLocator(hit),
       sourceHash: hit.sourceHash,
-      attachmentKey: pdf?.key || record.pdfAttachmentKey || ""
+      attachmentKey: pdf?.key || record.pdfAttachmentKey || "",
+      page: hit.page
     });
   }
   if (!rows.length) {
-    const fallback = truncateText(source, 320);
+    const fallback = truncateText(indexed.text, 320);
     if (fallback) {
       const hit = {
         text: fallback,
+        quote: fallback,
+        contextBefore: "",
+        contextAfter: "",
         start: 0,
-        end: Math.min(source.length, fallback.length),
+        end: Math.min(indexed.text.length, fallback.length),
+        page: indexed.pages[0]?.page,
+        pageStart: 0,
+        pageEnd: Math.min(indexed.pages[0]?.text?.length || fallback.length, fallback.length),
         sourceHash: shortEvidenceHash(fallback)
       };
       rows.push({
         topic: "snippet",
         label: candidateSourceEvidenceLabel(record, "fulltext-snippet"),
         text: hit.text,
+        quote: hit.quote,
+        contextBefore: hit.contextBefore,
+        contextAfter: hit.contextAfter,
         locator: candidateFullTextLocator(hit),
         sourceHash: hit.sourceHash,
-        attachmentKey: pdf?.key || record.pdfAttachmentKey || ""
+        attachmentKey: pdf?.key || record.pdfAttachmentKey || "",
+        page: hit.page
       });
     }
   }
   return rows.slice(0, 4);
 }
 
-function candidateSnippetForPattern(text, pattern, used) {
-  const match = pattern.exec(text);
-  if (!match) return null;
-  const center = match.index;
-  const start = Math.max(0, center - 140);
-  const end = Math.min(text.length, center + 260);
-  const snippet = text.slice(start, end).trim();
-  const sourceHash = shortEvidenceHash(snippet);
-  const key = `${center}:${sourceHash}`;
-  if (!snippet || used.has(key)) return null;
-  used.add(key);
-  return { text: snippet, start, end, sourceHash };
+function indexedTextForEvidence(text) {
+  const rawPages = String(text || "")
+    .split(/\f+/)
+    .map((pageText) => normalizeIndexedText(pageText))
+    .filter(Boolean);
+  const normalizedPages = rawPages.length ? rawPages : [normalizeIndexedText(text)].filter(Boolean);
+  const pages = [];
+  let cursor = 0;
+  normalizedPages.forEach((pageText, index) => {
+    const start = cursor;
+    const end = start + pageText.length;
+    pages.push({ page: normalizedPages.length > 1 ? index + 1 : undefined, text: pageText, start, end });
+    cursor = end + 1;
+  });
+  return { text: pages.map((page) => page.text).join(" "), pages };
+}
+
+function normalizeIndexedText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function candidateSnippetForPattern(indexed, pattern, used, topicId = "") {
+  for (const page of indexed.pages || []) {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(page.text);
+    if (!match) continue;
+    const localCenter = match.index;
+    const quoteRange = candidateSentenceRange(page.text, localCenter);
+    const contextStart = Math.max(0, quoteRange.start - 180);
+    const contextEnd = Math.min(page.text.length, quoteRange.end + 220);
+    const contextBefore = page.text.slice(contextStart, quoteRange.start).trim();
+    const quote = page.text.slice(quoteRange.start, quoteRange.end).trim();
+    const contextAfter = page.text.slice(quoteRange.end, contextEnd).trim();
+    const snippet = [contextBefore, quote, contextAfter].filter(Boolean).join(" ").trim();
+    const start = page.start + contextStart;
+    const end = page.start + contextEnd;
+    const sourceHash = shortEvidenceHash(snippet);
+    const key = `${topicId}:${start}:${sourceHash}`;
+    if (!snippet || used.has(key)) continue;
+    used.add(key);
+    return {
+      text: snippet,
+      quote,
+      contextBefore,
+      contextAfter,
+      start,
+      end,
+      page: page.page,
+      pageStart: contextStart,
+      pageEnd: contextEnd,
+      sourceHash
+    };
+  }
+  return null;
+}
+
+function candidateSentenceRange(text, center) {
+  const source = String(text || "");
+  const safeCenter = Math.max(0, Math.min(source.length, Number(center) || 0));
+  const before = source.slice(0, safeCenter);
+  const after = source.slice(safeCenter);
+  const beforeBreak = Math.max(before.lastIndexOf(". "), before.lastIndexOf("。"), before.lastIndexOf("; "), before.lastIndexOf("；"));
+  const afterBreakCandidates = [after.indexOf(". "), after.indexOf("。"), after.indexOf("; "), after.indexOf("；")]
+    .filter((index) => index >= 0);
+  const start = beforeBreak >= 0 ? beforeBreak + 1 : Math.max(0, safeCenter - 120);
+  const end = afterBreakCandidates.length ? safeCenter + Math.min(...afterBreakCandidates) + 1 : Math.min(source.length, safeCenter + 180);
+  return {
+    start: Math.max(0, start),
+    end: Math.max(start, Math.min(source.length, end))
+  };
 }
 
 function candidateFullTextLocator(hit) {
   const start = Number.isFinite(hit?.start) ? Math.max(0, Math.floor(hit.start)) : 0;
   const end = Number.isFinite(hit?.end) ? Math.max(start, Math.floor(hit.end)) : start;
-  return `indexed-text:${start}-${end}`;
+  const parts = [`indexed-text:${start}-${end}`];
+  const page = candidateEvidencePage(hit?.page);
+  if (page) parts.push(`page:${page}`);
+  if (page && Number.isFinite(hit?.pageStart) && Number.isFinite(hit?.pageEnd)) {
+    parts.push(`page-span:${Math.max(0, Math.floor(hit.pageStart))}-${Math.max(0, Math.floor(hit.pageEnd))}`);
+  }
+  return parts.join("; ");
+}
+
+function candidateEvidencePage(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : undefined;
 }
 
 function shortEvidenceHash(value) {

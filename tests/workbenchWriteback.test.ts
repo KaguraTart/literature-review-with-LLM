@@ -1816,7 +1816,38 @@ describe("workbench writeback helpers", () => {
     });
     expect(rows[0].locator).toContain("hash:");
     expect(rows[0].locator).toContain("attachment:PDF43");
-    expect(rows[0].snippet).toContain("proposed method uses graph attention");
+    expect(rows[0].snippet).toContain("Hit: The proposed method uses graph attention");
+    expect(rows[0].snippet).toContain("Context after:");
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      quote: expect.stringContaining("proposed method uses graph attention"),
+      contextAfter: expect.stringContaining("Experiments evaluate")
+    });
+  });
+
+  it("adds best-effort page hints for candidate evidence extracted from paged indexed text", () => {
+    const loaded = loadWorkbenchHelpers();
+    const snippets = loaded.candidateFullTextEvidenceSnippets([
+      "Opening context without the target terms.",
+      "A baseline paragraph remains on page one.",
+      "\f",
+      "The proposed method uses graph attention to model route conflicts.",
+      "Experiments evaluate benchmark scenarios with delay and throughput metrics."
+    ].join(" "), {
+      candidateId: "doi:10.1000/paged",
+      title: "Paged Candidate",
+      decision: "include",
+      quality: { dedupeStatus: "new" }
+    }, { key: "PDFPAGE" });
+
+    expect(snippets[0]).toMatchObject({
+      topic: "method",
+      page: 2,
+      locator: expect.stringContaining("page:2"),
+      quote: expect.stringContaining("proposed method uses graph attention"),
+      contextAfter: expect.stringContaining("Experiments evaluate"),
+      attachmentKey: "PDFPAGE"
+    });
+    expect(snippets[0].locator).toContain("page-span:");
   });
 
   it("persists candidate review notes with decisions and can clear old notes", () => {
