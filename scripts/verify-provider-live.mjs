@@ -950,12 +950,15 @@ function formatReport(report) {
 function formatCaseCatalog(catalog) {
   const lines = [
     "Provider live verification cases:",
-    "id\tprotocol\tapiKeyEnv\tmodelEnv\tbaseURLEnv\theadersEnv\tbodyExtraEnv"
+    "id\tprotocol\timageInput\tpdfInput\tmodelList\tapiKeyEnv\tmodelEnv\tbaseURLEnv\theadersEnv\tbodyExtraEnv"
   ];
   for (const entry of catalog.cases || []) {
     lines.push([
       entry.id,
       entry.protocol,
+      entry.imageInput ? "yes" : "no",
+      entry.pdfInput ? "yes" : "no",
+      entry.modelList ? "yes" : "no",
       entry.apiKeyEnv || "-",
       entry.modelEnv || "-",
       entry.baseURLEnv || "-",

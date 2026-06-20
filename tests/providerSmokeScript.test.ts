@@ -1009,6 +1009,20 @@ describe("provider smoke verifier", () => {
       requireBaseURL: true,
       allowLocalNoAuth: true
     });
+
+    const { stdout } = await execFileAsync(process.execPath, [
+      "scripts/verify-provider-live.mjs",
+      "--list",
+      "--include",
+      "openai,gemini,anthropic-compatible"
+    ], {
+      cwd: process.cwd(),
+      env: scrubProviderEnv()
+    });
+    expect(stdout).toContain("id\tprotocol\timageInput\tpdfInput\tmodelList\tapiKeyEnv\tmodelEnv\tbaseURLEnv\theadersEnv\tbodyExtraEnv");
+    expect(stdout).toContain("openai\topenai_responses\tyes\tyes\tyes\tOPENAI_API_KEY\tOPENAI_MODEL\tOPENAI_BASE_URL\tOPENAI_HEADERS_JSON\tOPENAI_BODY_EXTRA_JSON");
+    expect(stdout).toContain("gemini\topenai_chat\tyes\tno\tyes\tGEMINI_API_KEY\tGEMINI_MODEL\tGEMINI_BASE_URL\tGEMINI_HEADERS_JSON\tGEMINI_BODY_EXTRA_JSON");
+    expect(stdout).toContain("anthropic-compatible\tanthropic_messages\tyes\tno\tyes\tANTHROPIC_COMPATIBLE_API_KEY\tANTHROPIC_COMPATIBLE_MODEL\tANTHROPIC_COMPATIBLE_BASE_URL\tANTHROPIC_COMPATIBLE_HEADERS_JSON\tANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON");
   });
 
   it("prints live provider environment templates", async () => {
