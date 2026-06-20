@@ -6515,6 +6515,16 @@ function renderCandidateReviewMarkdown(records, options = {}) {
     `- [ ] ${labels.checkRelevance}`,
     `- [ ] ${labels.checkImport}`,
     "",
+    `## ${labels.screeningProtocol}`,
+    "",
+    `- ${labels.inclusionCriteria}: ${labels.inclusionCriteriaText}`,
+    `- ${labels.exclusionCriteria}: ${labels.exclusionCriteriaText}`,
+    `- ${labels.decisionRules}: ${labels.decisionRulesText}`,
+    "",
+    `## ${labels.actionQueue}`,
+    "",
+    ...candidateReviewActionQueue(candidates, labels),
+    "",
     `## ${labels.queue}`,
     ""
   ];
@@ -6543,6 +6553,66 @@ function candidateReviewGroupRecords(records, predicate) {
   return (records || [])
     .filter(predicate)
     .sort((left, right) => (right.priority?.score || 0) - (left.priority?.score || 0) || Number(right.year || 0) - Number(left.year || 0));
+}
+
+function candidateReviewActionQueue(records, labels) {
+  const rows = candidateReviewActionRows(records, labels);
+  if (!rows.length) return [`- ${labels.noImmediateActions}`];
+  return [
+    `| ${labels.paperColumn} | ${labels.decision} | ${labels.recommended} | ${labels.priority} | ${labels.nextAction} |`,
+    "| --- | --- | --- | --- | --- |",
+    ...rows.map((row) => `| ${mdTableCell(row.title)} | ${mdTableCell(row.decision)} | ${mdTableCell(row.recommended)} | ${mdTableCell(row.priority)} | ${mdTableCell(row.action)} |`)
+  ];
+}
+
+function candidateReviewActionRows(records, labels) {
+  return candidateReviewGroupRecords(records, candidateNeedsReviewAction)
+    .slice(0, 20)
+    .map((record) => {
+      const title = `${record.title || record.candidateId}${record.year ? ` (${record.year})` : ""}`;
+      return {
+        title,
+        decision: candidateDecisionLabel(record.decision, candidateReviewDecisionLabel(labels)),
+        recommended: record.priority?.recommendedDecision
+          ? candidateDecisionLabel(record.priority.recommendedDecision, candidateReviewDecisionLabel(labels))
+          : labels.noRecommendation,
+        priority: candidateReviewPriorityText(record, labels),
+        action: candidateReviewNextAction(record, labels)
+      };
+    });
+}
+
+function candidateNeedsReviewAction(record) {
+  const decision = normalizeCandidateDecision(record?.decision);
+  const recommended = record?.priority?.recommendedDecision ? normalizeCandidateDecision(record.priority.recommendedDecision) : "";
+  if (record?.quality?.dedupeStatus === "duplicate" || record?.priority?.tier === "duplicate") return true;
+  if (recommended && recommended !== decision) return true;
+  if (decision === "user_pending" && ["high", "medium"].includes(record?.priority?.tier)) return true;
+  if (record?.importStatus && record.importStatus !== "imported" && record.importStatus !== "skipped_duplicate") return true;
+  if (decision === "include" && !record?.pdfUrl && record?.pdfAttachmentStatus !== "attached_pdf") return true;
+  return false;
+}
+
+function candidateReviewPriorityText(record, labels) {
+  const tier = record?.priority?.tier || "";
+  const score = Number.isFinite(record?.priority?.score) ? record.priority.score : "";
+  return [tier, score].filter((value) => value !== "").join(" ") || labels.noPriority;
+}
+
+function candidateReviewNextAction(record, labels) {
+  const decision = normalizeCandidateDecision(record?.decision);
+  const recommended = record?.priority?.recommendedDecision ? normalizeCandidateDecision(record.priority.recommendedDecision) : "";
+  if (record?.quality?.dedupeStatus === "duplicate" || record?.priority?.tier === "duplicate") return labels.actionResolveDuplicate;
+  if (recommended && recommended !== decision) {
+    return labels.actionApplyRecommendation.replace("{decision}", candidateDecisionLabel(recommended, candidateReviewDecisionLabel(labels)));
+  }
+  if (decision === "user_pending" && record?.priority?.tier === "high") return labels.actionScreenHigh;
+  if (decision === "user_pending" && record?.priority?.tier === "medium") return labels.actionScreenMedium;
+  if (record?.importStatus && record.importStatus !== "imported" && record.importStatus !== "skipped_duplicate") return labels.actionCheckImport;
+  if (decision === "include" && !record?.pdfUrl && record?.pdfAttachmentStatus !== "attached_pdf") return labels.actionFindPdf;
+  if (decision === "to_read") return labels.actionReadAbstract;
+  if (decision === "exclude") return labels.actionKeepExcluded;
+  return labels.actionNoImmediate;
 }
 
 function candidateReviewRecordLines(record, index, labels) {
@@ -6575,6 +6645,7 @@ function candidateReviewRecordLines(record, index, labels) {
     links ? `   - ${labels.links}: ${links}` : "",
     record.abstract ? `   - ${labels.abstract}: ${mdText(truncateText(record.abstract, 500))}` : "",
     candidateReviewNote(record) ? `   - ${labels.savedNote}: ${mdText(candidateReviewNote(record))}` : "",
+    `   - ${labels.nextAction}: ${mdText(candidateReviewNextAction(record, labels))}`,
     `   - ${labels.notesLine}: `
   ].filter(Boolean);
 }
@@ -6629,6 +6700,28 @@ function candidateReviewLabels(outputLanguage) {
       checkDuplicates: "检查重复项和疑似重复项，避免重复导入 Zotero。",
       checkRelevance: "判断与当前研究问题、方法或综述分类是否相关。",
       checkImport: "只把确认纳入的条目导入 Zotero，并在必要时补全 PDF。",
+      screeningProtocol: "筛选协议",
+      inclusionCriteria: "纳入标准",
+      inclusionCriteriaText: "优先保留与当前论文的问题、方法、数据、评价指标或引用网络直接相关，且具备稳定 DOI/arXiv/Semantic Scholar 标识或可追溯来源的论文。",
+      exclusionCriteria: "排除标准",
+      exclusionCriteriaText: "排除重复项、无可靠标识且无法追溯来源的记录、明显偏离主题的论文，以及只有摘要且暂时无法获取全文的低优先级记录。",
+      decisionRules: "决策规则",
+      decisionRulesText: "先处理高优先级和重复项；建议与当前决策不一致时必须人工确认；纳入后再执行导入 Zotero 和 PDF 补全。",
+      actionQueue: "决策行动队列",
+      paperColumn: "候选论文",
+      nextAction: "下一步",
+      noImmediateActions: "暂无需要立即处理的候选项；可按审阅队列继续检查摘要、全文和人工备注。",
+      noRecommendation: "无建议",
+      noPriority: "未排序",
+      actionResolveDuplicate: "核对重复项，确认后排除或合并到已有条目",
+      actionApplyRecommendation: "人工复核后按建议改为{decision}",
+      actionScreenHigh: "优先阅读摘要和全文，确认是否纳入",
+      actionScreenMedium: "检查相关性，必要时放入待读",
+      actionFindPdf: "查找或补全 PDF，再导入 Zotero",
+      actionCheckImport: "检查导入状态和错误信息",
+      actionReadAbstract: "阅读摘要和关键结论后决定纳入或排除",
+      actionKeepExcluded: "保留排除理由，必要时补充备注",
+      actionNoImmediate: "无需立即处理",
       queue: "审阅队列",
       notes: "人工备注",
       notesPlaceholder: "在这里记录纳入理由、排除理由、待读顺序或后续检索式。",
@@ -6674,6 +6767,28 @@ function candidateReviewLabels(outputLanguage) {
     checkDuplicates: "Check duplicates and possible duplicates before importing into Zotero.",
     checkRelevance: "Judge relevance to the current question, method, or review taxonomy.",
     checkImport: "Import only confirmed items into Zotero and attach PDFs when needed.",
+    screeningProtocol: "Screening Protocol",
+    inclusionCriteria: "Inclusion criteria",
+    inclusionCriteriaText: "Prioritize papers directly related to the current paper's question, method, data, evaluation metrics, or citation network, with stable DOI/arXiv/Semantic Scholar identifiers or traceable source links.",
+    exclusionCriteria: "Exclusion criteria",
+    exclusionCriteriaText: "Exclude duplicates, records without reliable identifiers or traceable sources, clearly off-topic papers, and low-priority abstract-only records when full text is unavailable.",
+    decisionRules: "Decision rules",
+    decisionRulesText: "Handle high-priority items and duplicates first; manually confirm any mismatch between the current decision and recommendation; import to Zotero and attach PDFs only after inclusion is confirmed.",
+    actionQueue: "Decision Action Queue",
+    paperColumn: "Candidate paper",
+    nextAction: "Next action",
+    noImmediateActions: "No candidates need immediate action; continue reviewing abstracts, full text, and manual notes from the queue.",
+    noRecommendation: "No recommendation",
+    noPriority: "Unranked",
+    actionResolveDuplicate: "Resolve duplicate status, then exclude or merge with the existing item",
+    actionApplyRecommendation: "Manually review, then change to {decision} if appropriate",
+    actionScreenHigh: "Review abstract and full text first, then confirm inclusion",
+    actionScreenMedium: "Check relevance and move to To Read when needed",
+    actionFindPdf: "Find or attach a PDF before Zotero import",
+    actionCheckImport: "Check import status and error details",
+    actionReadAbstract: "Read abstract and key findings, then include or exclude",
+    actionKeepExcluded: "Keep the exclusion reason and add notes when needed",
+    actionNoImmediate: "No immediate action",
     queue: "Review Queue",
     notes: "Manual Notes",
     notesPlaceholder: "Record inclusion reasons, exclusion reasons, reading order, or follow-up search queries here.",
@@ -6699,6 +6814,10 @@ function candidateReviewLabels(outputLanguage) {
 
 function mdText(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function mdTableCell(value) {
+  return mdText(value).replace(/\|/g, "\\|");
 }
 
 function yamlScalar(value) {

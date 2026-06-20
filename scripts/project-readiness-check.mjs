@@ -339,6 +339,8 @@ const SOURCE_MARKERS = [
       "citationNetworkPolicyDefaults",
       "exportCandidateReview",
       "renderCandidateReviewMarkdown",
+      "candidateReviewActionQueue",
+      "candidateReviewNextAction",
       "attachCandidatePdfs",
       "reconcileCandidateDuplicates"
     ]

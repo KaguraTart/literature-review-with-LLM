@@ -1651,14 +1651,20 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("templateVersion: candidate-review-v1");
     expect(report).toContain("# 候选论文审阅报告");
     expect(report).toContain("## 人工复核清单");
+    expect(report).toContain("## 筛选协议");
+    expect(report).toContain("纳入标准");
+    expect(report).toContain("## 决策行动队列");
+    expect(report).toContain("| 候选论文 | 决策 | 建议 | 优先级 | 下一步 |");
     expect(report).toContain("### 纳入");
     expect(report).toContain("**Candidate A** (2025)");
     expect(report).toContain("优先级: high 82");
     expect(report).toContain("引用网络来源: citations from Seed Paper");
     expect(report).toContain("[PDF](https://example.test/a.pdf)");
     expect(report).toContain("已保存备注: Read first for shared datasets and metrics.");
+    expect(report).toContain("下一步: 无需立即处理");
     expect(report).toContain("### 重复项");
     expect(report).toContain("Duplicate Candidate");
+    expect(report).toContain("核对重复项");
   });
 
   it("exports a candidate review report from the workbench queue", async () => {
@@ -1696,6 +1702,9 @@ describe("workbench writeback helpers", () => {
     const reviewPath = "/tmp/out/collections/COL/writing/candidate-review.md";
     expect(files.get(candidatePath)).toContain("\"candidateId\":\"doi:10.1000/a\"");
     expect(files.get(reviewPath)).toContain("# Candidate Paper Review");
+    expect(files.get(reviewPath)).toContain("## Screening Protocol");
+    expect(files.get(reviewPath)).toContain("## Decision Action Queue");
+    expect(files.get(reviewPath)).toContain("| Candidate paper | Decision | Recommended | Priority | Next action |");
     expect(files.get(reviewPath)).toContain("**Candidate A** (2025)");
     expect(dom.elements.get("zms-status").textContent).toContain(`candidateReviewDone: ${reviewPath}`);
   });
