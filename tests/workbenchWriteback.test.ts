@@ -3246,6 +3246,11 @@ describe("workbench writeback helpers", () => {
             "| --- | --- | --- |",
             "| Delay | 12 ms | [image] |",
             "",
+            "## Pixel / Coordinate Data Draft",
+            "| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] |",
+            "",
             "## Interpretation And Evidence Map",
             "- Supported by [chunk:summary-method source=summary locator=summary:1 hash=abc123]"
           ].join("\n")
@@ -3267,13 +3272,19 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("Visual OCR Text");
     expect(report).toContain("## Reconstructed Tables / Data");
     expect(report).toContain("| Delay | 12 ms | [image] |");
-    expect(report).toContain("chartDataDraftCount: 2");
+    expect(report).toContain("chartDataDraftCount: 3");
     expect(report).toContain("## Chart Data Drafts");
     expect(report).toContain("| 1 | reconstructed-table | Item | Value |");
-    expect(report).toContain("| 2 | local-ocr | OCR line | recognized numeric value | image | 1 | needs-review | [image], [metadata] |");
+    expect(report).toContain("| 2 | reconstructed-table | Axis X | Axis Y | Series | 1 | needs-review | [image] |");
+    expect(report).toContain("| 3 | local-ocr | OCR line | recognized numeric value | image | 1 | needs-review | [image], [metadata] |");
+    expect(report).toContain("pixelDataDraftCount: 1");
+    expect(report).toContain("## Pixel / Coordinate Data Drafts");
+    expect(report).toContain("| 1 | pixel-coordinate-table | figure.png | 1 | needs-review | [image] |");
+    expect(report).toContain("| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] | [image] |");
     expect(report).toContain("## Machine-Readable Data");
     expect(report).toContain("| 1 | 1 | Value | 12 ms | not labeled |");
     expect(report).toContain("| chart:1 | 1 | yNumber | 12 | [image] |");
+    expect(report).toContain("| pixel:1 | 1 | pixelX | 120 | [image] |");
     expect(report).toContain("`[image]`");
     expect(report).toContain("`[chunk:summary-method source=summary locator=summary:1 hash=abc123]`");
     expect(report).toContain("## Original Model Answer");
@@ -3309,7 +3320,7 @@ describe("workbench writeback helpers", () => {
         role: "assistant",
         skillId: "",
         profileName: "MiniMax",
-        content: "## 视觉 OCR 文本\n- 坐标轴: delay [image]\n\n## 重建表格\n| 指标 | 数值 |\n| --- | --- |\n| delay | 12 ms |"
+        content: "## 视觉 OCR 文本\n- 坐标轴: delay [image]\n\n## 重建表格\n| 指标 | 数值 |\n| --- | --- |\n| delay | 12 ms |\n\n## 像素/坐标数据草稿\n| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] |"
       }
     ];
     workbench.t = (key: string) => key;
@@ -3324,6 +3335,8 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("| delay | 12 ms |");
     expect(files.get(reportPath)).toContain("## 图表数据草稿");
     expect(files.get(reportPath)).toContain("| 1 | reconstructed-table | 指标 | 数值 |");
+    expect(files.get(reportPath)).toContain("## 像素/坐标数据草稿");
+    expect(files.get(reportPath)).toContain("| 1 | pixel-coordinate-table | chart.png | 1 | needs-review | [image] |");
     expect(files.get(reportPath)).toContain("## 机器可读数据");
     expect(files.get(reportPath)).toContain("| 1 | 1 | 指标 | delay | 未标注 |");
     const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.json";
@@ -3348,10 +3361,25 @@ describe("workbench writeback helpers", () => {
       yAxis: "数值",
       points: [{ x: "delay", y: "12 ms", yNumber: 12 }]
     });
+    expect(parsed.pixelDataDrafts[0]).toMatchObject({
+      source: "pixel-coordinate-table",
+      imageName: "chart.png",
+      points: [{
+        series: "baseline",
+        point: "p1",
+        pixelX: 120,
+        pixelY: 340,
+        axisX: "0.1",
+        axisY: "12 ms",
+        confidence: "low"
+      }]
+    });
     expect(files.get(csvPath)).toContain("tableIndex,rowIndex,column,value,evidenceLabels,sourceAssistantMessageId,imageNames");
     expect(files.get(csvPath)).toContain("1,1,指标,delay,,assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("1,1,数值,12 ms,,assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("chart:1,1,yNumber,12,,assistant-visual,chart.png");
+    expect(files.get(csvPath)).toContain("pixel:1,1,pixelX,120,[image],assistant-visual,chart.png");
+    expect(files.get(csvPath)).toContain("pixel:1,1,axisY,12 ms,[image],assistant-visual,chart.png");
     expect(dom.elements.get("zms-status").textContent).toContain(`visualReportDone: ${reportPath}`);
   });
 

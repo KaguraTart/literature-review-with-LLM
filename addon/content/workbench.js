@@ -5491,6 +5491,7 @@ function visualExtractionReportData(payload, options = {}) {
   const evidenceLabels = visualExtractionEvidenceLabels(answer);
   const images = Array.isArray(user?.images) ? user.images : [];
   const chartDataDrafts = visualExtractionChartDataDrafts(answer, tables, images);
+  const pixelDataDrafts = visualExtractionPixelDataDrafts(answer, tables, images);
   return {
     templateVersion: "visual-extraction-report-v2",
     generatedAt,
@@ -5516,6 +5517,7 @@ function visualExtractionReportData(payload, options = {}) {
     sections,
     tables,
     chartDataDrafts,
+    pixelDataDrafts,
     evidenceLabels,
     originalAnswer: answer || "",
     labels
@@ -5528,7 +5530,8 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
   const sections = Array.isArray(data?.sections) ? data.sections : [];
   const tables = Array.isArray(data?.tables) ? data.tables : [];
   const chartDataDrafts = Array.isArray(data?.chartDataDrafts) ? data.chartDataDrafts : [];
-  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts);
+  const pixelDataDrafts = Array.isArray(data?.pixelDataDrafts) ? data.pixelDataDrafts : [];
+  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts);
   const imageInventory = images.length
     ? [
       `| ${labels.imageName} | ${labels.imageType} | ${labels.imageSize} | ${labels.localOcr} |`,
@@ -5551,6 +5554,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `imageCount: ${images.length}`,
     `reconstructedTableCount: ${tables.length}`,
     `chartDataDraftCount: ${chartDataDrafts.length}`,
+    `pixelDataDraftCount: ${pixelDataDrafts.length}`,
     `reconstructedDataRowCount: ${reconstructedRows.length}`,
     "---",
     "",
@@ -5580,6 +5584,10 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     "",
     chartDataDrafts.length ? visualExtractionChartDataDraftsMarkdown(chartDataDrafts, labels) : `- ${labels.noChartDataDrafts}`,
     "",
+    `## ${labels.pixelDataDrafts}`,
+    "",
+    pixelDataDrafts.length ? visualExtractionPixelDataDraftsMarkdown(pixelDataDrafts, labels) : `- ${labels.noPixelDataDrafts}`,
+    "",
     `## ${labels.structuredData}`,
     "",
     reconstructedRows.length
@@ -5595,6 +5603,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `- [ ] ${labels.checkReadableText}`,
     `- [ ] ${labels.checkTableNumbers}`,
     `- [ ] ${labels.checkChartDataDrafts}`,
+    `- [ ] ${labels.checkPixelDataDrafts}`,
     `- [ ] ${labels.checkImageEvidence}`,
     `- [ ] ${labels.checkPdfLocation}`,
     `- [ ] ${labels.checkReuse}`,
@@ -5613,7 +5622,7 @@ function renderVisualExtractionReportJson(data) {
 }
 
 function renderVisualExtractionReportCsv(data) {
-  const rows = visualExtractionStructuredRows(data?.tables || [], data?.chartDataDrafts || []);
+  const rows = visualExtractionStructuredRows(data?.tables || [], data?.chartDataDrafts || [], data?.pixelDataDrafts || []);
   const header = ["tableIndex", "rowIndex", "column", "value", "evidenceLabels", "sourceAssistantMessageId", "imageNames"];
   const imageNames = (data?.images || []).map((image) => image.name).filter(Boolean).join("; ");
   const lines = [header.map(csvCell).join(",")];
@@ -5804,7 +5813,7 @@ function visualExtractionDataRow(columns, cells) {
   return row;
 }
 
-function visualExtractionStructuredRows(tables, chartDataDrafts = []) {
+function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataDrafts = []) {
   const rows = [];
   for (const table of tables || []) {
     for (const [rowIndex, row] of (table.rows || []).entries()) {
@@ -5843,6 +5852,30 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = []) {
         ["y", point.y || ""],
         ["yNumber", point.yNumber === null || point.yNumber === undefined ? "" : point.yNumber],
         ["unit", point.unit || ""],
+        ["confidence", point.confidence || ""],
+        ["basis", point.basis || ""]
+      ]) {
+        if (value === "") continue;
+        rows.push({ ...base, column, value: mdText(value) });
+      }
+    }
+  }
+  for (const draft of pixelDataDrafts || []) {
+    for (const [pointIndex, point] of (draft.points || []).entries()) {
+      const draftLabel = `pixel:${draft.pixelDraftIndex || ""}`;
+      const base = {
+        tableIndex: draftLabel,
+        rowIndex: pointIndex + 1,
+        evidenceLabels: Array.from(new Set([...(draft.evidenceLabels || []), ...(point.evidenceLabels || [])]))
+      };
+      for (const [column, value] of [
+        ["source", draft.source || ""],
+        ["series", point.series || ""],
+        ["point", point.point || ""],
+        ["pixelX", point.pixelX === null || point.pixelX === undefined ? "" : point.pixelX],
+        ["pixelY", point.pixelY === null || point.pixelY === undefined ? "" : point.pixelY],
+        ["axisX", point.axisX || ""],
+        ["axisY", point.axisY || ""],
         ["confidence", point.confidence || ""],
         ["basis", point.basis || ""]
       ]) {
@@ -5960,6 +5993,105 @@ function visualExtractionChartDraftFromText(answer) {
   };
 }
 
+function visualExtractionPixelDataDrafts(answer, tables = [], images = []) {
+  const drafts = [];
+  for (const table of tables || []) {
+    const draft = visualExtractionPixelDraftFromTable(table, images);
+    if (draft) drafts.push({ ...draft, pixelDraftIndex: drafts.length + 1 });
+  }
+  if (!drafts.length) {
+    const draft = visualExtractionPixelDraftFromText(answer, images);
+    if (draft) drafts.push({ ...draft, pixelDraftIndex: 1 });
+  }
+  return drafts.slice(0, 12);
+}
+
+function visualExtractionPixelDraftFromTable(table, images = []) {
+  const rows = Array.isArray(table?.rows) ? table.rows : [];
+  if (!rows.length) return null;
+  const columns = Array.isArray(table?.columns) ? table.columns : [];
+  const pixelXColumn = visualExtractionFindColumn(columns, [
+    /^(pixel\s*x|x\s*pixel|px\s*x|image\s*x|screen\s*x|像素\s*x|x\s*像素)$/i
+  ]);
+  const pixelYColumn = visualExtractionFindColumn(columns, [
+    /^(pixel\s*y|y\s*pixel|px\s*y|image\s*y|screen\s*y|像素\s*y|y\s*像素)$/i
+  ]);
+  if (!pixelXColumn && !pixelYColumn) return null;
+  const axisXColumn = visualExtractionFindColumn(columns, [
+    /^(axis\s*x|x\s*value|data\s*x|chart\s*x|横轴|x\s*轴值|数据\s*x)$/i
+  ]);
+  const axisYColumn = visualExtractionFindColumn(columns, [
+    /^(axis\s*y|y\s*value|data\s*y|chart\s*y|纵轴|y\s*轴值|数据\s*y)$/i
+  ]);
+  const pointColumn = visualExtractionFindColumn(columns, [
+    /^(point|point\s*label|label|item|category|点|点位|标签|项目)$/i
+  ]);
+  const seriesColumn = visualExtractionFindColumn(columns, [
+    /^(series|legend|group|baseline|line|bar|系列|图例|分组|基线|线|柱)$/i
+  ]);
+  const confidenceColumn = visualExtractionFindColumn(columns, [/^(confidence|置信度|certainty)$/i]);
+  const sourceColumn = visualExtractionFindColumn(columns, [/^(source|来源|evidence|证据|basis|依据)$/i]);
+  const notesColumn = visualExtractionFindColumn(columns, [/^(note|notes|备注|说明)$/i]);
+  const points = rows.map((row) => {
+    const basis = mdText([row[sourceColumn], row[notesColumn]].filter(Boolean).join(" · "));
+    return {
+      series: mdText(row[seriesColumn] || ""),
+      point: mdText(row[pointColumn] || ""),
+      pixelX: visualExtractionNumber(row[pixelXColumn] || ""),
+      pixelY: visualExtractionNumber(row[pixelYColumn] || ""),
+      axisX: mdText(row[axisXColumn] || ""),
+      axisY: mdText(row[axisYColumn] || ""),
+      confidence: visualExtractionConfidence(row[confidenceColumn] || row[sourceColumn] || ""),
+      basis,
+      evidenceLabels: visualExtractionEvidenceLabels(Object.values(row).join(" "))
+    };
+  }).filter((point) => point.pixelX !== null || point.pixelY !== null);
+  if (!points.length) return null;
+  return {
+    source: "pixel-coordinate-table",
+    tableIndex: table.tableIndex,
+    imageName: visualExtractionPixelDraftImageName(images),
+    reviewStatus: "needs-review",
+    evidenceLabels: table.evidenceLabels || [],
+    points: points.slice(0, 200)
+  };
+}
+
+function visualExtractionPixelDraftFromText(answer, images = []) {
+  const points = String(answer || "").split(/\r?\n/)
+    .map((line) => mdText(line.replace(/^[-*]\s*/, "")))
+    .map((line) => {
+      const match = line.match(/(?:pixel|px|像素)[^\d-]*x\s*[:=]?\s*(-?\d+(?:\.\d+)?)[^\d-]+y\s*[:=]?\s*(-?\d+(?:\.\d+)?)/i)
+        || line.match(/x\s*[:=]?\s*(-?\d+(?:\.\d+)?)[^\d-]+y\s*[:=]?\s*(-?\d+(?:\.\d+)?)[^\n]*(?:pixel|px|像素)/i);
+      if (!match) return null;
+      return {
+        series: "",
+        point: truncateText(line.replace(/\[(?:image|metadata|abstract|chunk:[^\]\s]+|paper\d+:[^\]\s]+)[^\]]*\]/g, "").trim(), 80),
+        pixelX: Number(match[1]),
+        pixelY: Number(match[2]),
+        axisX: "",
+        axisY: "",
+        confidence: "low",
+        basis: truncateText(line, 180),
+        evidenceLabels: visualExtractionEvidenceLabels(line)
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 80);
+  if (!points.length) return null;
+  return {
+    source: "pixel-coordinate-text",
+    imageName: visualExtractionPixelDraftImageName(images),
+    reviewStatus: "needs-review",
+    evidenceLabels: visualExtractionEvidenceLabels(answer),
+    points
+  };
+}
+
+function visualExtractionPixelDraftImageName(images = []) {
+  return (images || []).map((image) => image?.name).filter(Boolean).join("; ");
+}
+
 function visualExtractionNumericTextPoints(text) {
   return String(text || "").split(/\r?\n/)
     .map((line) => mdText(line.replace(/^[-*]\s*/, "")))
@@ -6050,6 +6182,42 @@ function visualExtractionChartDataDraftsMarkdown(drafts, labels) {
   return lines.join("\n");
 }
 
+function visualExtractionPixelDataDraftsMarkdown(drafts, labels) {
+  const lines = [
+    `| ${labels.pixelDraft} | ${labels.source} | ${labels.imageName} | ${labels.pointCount} | ${labels.reviewStatus} | ${labels.evidenceLabels} |`,
+    "| --- | --- | --- | ---: | --- | --- |"
+  ];
+  for (const draft of drafts || []) {
+    lines.push([
+      draft.pixelDraftIndex,
+      markdownTableCell(draft.source || ""),
+      markdownTableCell(draft.imageName || ""),
+      (draft.points || []).length,
+      markdownTableCell(draft.reviewStatus || ""),
+      markdownTableCell((draft.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+  }
+  for (const draft of drafts || []) {
+    lines.push("", `### ${labels.pixelDraft} ${draft.pixelDraftIndex}`, "");
+    lines.push(`| ${labels.series} | ${labels.point} | ${labels.pixelX} | ${labels.pixelY} | ${labels.axisXValue} | ${labels.axisYValue} | ${labels.confidence} | ${labels.source} | ${labels.evidenceLabels} |`);
+    lines.push("| --- | --- | ---: | ---: | --- | --- | --- | --- | --- |");
+    for (const point of (draft.points || []).slice(0, 80)) {
+      lines.push([
+        markdownTableCell(point.series || ""),
+        markdownTableCell(point.point || ""),
+        point.pixelX === null || point.pixelX === undefined ? "" : point.pixelX,
+        point.pixelY === null || point.pixelY === undefined ? "" : point.pixelY,
+        markdownTableCell(point.axisX || ""),
+        markdownTableCell(point.axisY || ""),
+        markdownTableCell(point.confidence || ""),
+        markdownTableCell(point.basis || draft.source || ""),
+        markdownTableCell((point.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+      ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+    }
+  }
+  return lines.join("\n");
+}
+
 function visualExtractionStructuredDataTable(rows, labels) {
   return [
     `| ${labels.table} | ${labels.row} | ${labels.column} | ${labels.value} | ${labels.evidenceLabels} |`,
@@ -6102,7 +6270,9 @@ function visualExtractionReportLabels(outputLanguage) {
       table: "表格",
       noTables: "未检测到 Markdown 表格；如原图含图表数据，请人工复核或重新使用图表解析模板提问。",
       chartDataDrafts: "图表数据草稿",
+      pixelDataDrafts: "像素/坐标数据草稿",
       chart: "图表",
+      pixelDraft: "像素草稿",
       source: "来源",
       xAxis: "X 轴/项目",
       yAxis: "Y 轴/数值",
@@ -6111,9 +6281,15 @@ function visualExtractionReportLabels(outputLanguage) {
       reviewStatus: "复核状态",
       xValue: "X/项目",
       yValue: "Y/数值",
+      point: "点位",
+      pixelX: "Pixel X",
+      pixelY: "Pixel Y",
+      axisXValue: "X 轴值",
+      axisYValue: "Y 轴值",
       unit: "单位",
       confidence: "置信度",
       noChartDataDrafts: "未能从重建表格、可校正 OCR 或回答文本中抽取图表数据草稿；需要人工放大原图或重新提问。",
+      noPixelDataDrafts: "未能从回答中抽取像素/坐标数据草稿；需要使用多模态模型重新输出 Pixel X、Pixel Y、轴值和置信度。",
       structuredData: "机器可读数据",
       row: "行",
       column: "字段",
@@ -6123,6 +6299,7 @@ function visualExtractionReportLabels(outputLanguage) {
       checkReadableText: "核对 OCR 文本、标题、坐标轴、图例、表头和公式是否可读。",
       checkTableNumbers: "核对重建表格中的数字、单位、指标和数据集名称。",
       checkChartDataDrafts: "核对图表数据草稿的轴、系列、单位、读数和置信度，不能直接作为最终数据。",
+      checkPixelDataDrafts: "核对像素/坐标草稿中的点位、像素坐标、轴值映射和置信度；必要时回到原图校准坐标轴。",
       checkImageEvidence: "区分直接视觉观察、论文上下文推断和低置信判断。",
       checkPdfLocation: "回到 PDF 原图位置核对页码、图号/表号和上下文。",
       checkReuse: "标记可复用于综述、实验对比、方法复现或后续检索的条目。",
@@ -6162,7 +6339,9 @@ function visualExtractionReportLabels(outputLanguage) {
     table: "Table",
     noTables: "No Markdown table was detected. If the image contains chart data, verify manually or ask again with the figure/table extractor.",
     chartDataDrafts: "Chart Data Drafts",
+    pixelDataDrafts: "Pixel / Coordinate Data Drafts",
     chart: "Chart",
+    pixelDraft: "Pixel draft",
     source: "Source",
     xAxis: "X axis / item",
     yAxis: "Y axis / value",
@@ -6171,9 +6350,15 @@ function visualExtractionReportLabels(outputLanguage) {
     reviewStatus: "Review status",
     xValue: "X / item",
     yValue: "Y / value",
+    point: "Point",
+    pixelX: "Pixel X",
+    pixelY: "Pixel Y",
+    axisXValue: "Axis X value",
+    axisYValue: "Axis Y value",
     unit: "Unit",
     confidence: "Confidence",
     noChartDataDrafts: "No chart data draft could be extracted from reconstructed tables, editable OCR, or answer text; zoom the original image or ask again.",
+    noPixelDataDrafts: "No pixel / coordinate data draft could be extracted; ask a multimodal model to return Pixel X, Pixel Y, axis values, and confidence.",
     structuredData: "Machine-Readable Data",
     row: "Row",
     column: "Column",
@@ -6183,6 +6368,7 @@ function visualExtractionReportLabels(outputLanguage) {
     checkReadableText: "Check OCR text, titles, axes, legends, headers, and formulas.",
     checkTableNumbers: "Verify reconstructed numbers, units, metrics, and dataset names.",
     checkChartDataDrafts: "Verify chart-data draft axes, series, units, readings, and confidence before reuse.",
+    checkPixelDataDrafts: "Verify pixel / coordinate drafts, point labels, pixel coordinates, axis-value mapping, and confidence; recalibrate against the original image when needed.",
     checkImageEvidence: "Separate direct visual observations, paper-context inference, and low-confidence judgments.",
     checkPdfLocation: "Return to the PDF figure/table location and verify page, label, and context.",
     checkReuse: "Mark items reusable for review writing, experiment comparison, reproduction, or follow-up search.",
@@ -6377,12 +6563,12 @@ function builtInSkillTemplate(skillId, outputLanguage) {
 
 function figureTableTemplate(common, outputLanguage) {
   if (outputLanguage === "zh-CN") {
-    return `${common}\n\n请结构化解析论文中的截图、图表、表格、公式截图或实验结果。优先结合图片附件、PDF/摘要上下文和用户问题；若没有图片附件，则只从文本上下文中抽取。输出 Markdown，并固定使用以下章节：\n\n## 对象识别\n- 类型：图、表、流程图、公式截图、实验结果、消融结果或其他。\n- 所属位置：如果能判断，写 Figure/Table 编号、标题、页码或上下文证据。\n- 研究作用：这张图/表在论文中承担的问题、方法、实验或结论角色。\n\n## 视觉 OCR 文本\n- 逐项转录能看清的标题、坐标轴、图例、表头、指标、数据集、模型名、公式符号和关键数值。\n- 看不清的内容写 [illegible]；可能识别错的内容标注 低置信度。\n- 保留原始单位、大小写、缩写和符号，不要自动改写。\n\n## 表格/数据重建\n- 如果图片中有表格或可读数值，用 Markdown 表格重建：字段至少包括 项目、数值/文本、单位、来源、置信度、备注。\n- 如果是折线图、柱状图或散点图，只重建能可靠读出的点或区间，并写明坐标轴、图例和读数依据。\n- 如果无法可靠重建，明确写“无法可靠重建”，不要补不存在的数据。\n\n## 结论与证据映射\n- 解释图/表想证明什么，以及它如何支持或限制论文主张。\n- 每条解释都标注证据来源：[image]、[metadata]、[abstract] 或 [chunk:<id>]。\n- 区分图片直接观察、文本上下文推断和低置信度判断。\n\n## 综述/复现可复用信息\n- 给出适合写进文献综述、实验对比、方法复现或后续问题的要点。\n- 明确可比较指标、实验条件、baseline、公平性风险和需要补查的原文位置。\n\n## 不确定性与复核清单\n- 列出模糊、遮挡、缺少上下文、模型无法可靠识别、需要人工放大或回到 PDF 原图核对的部分。\n\n不要编造看不清的数字；不要把文本上下文推断伪装成图片观察。`;
+    return `${common}\n\n请结构化解析论文中的截图、图表、表格、公式截图或实验结果。优先结合图片附件、PDF/摘要上下文和用户问题；若没有图片附件，则只从文本上下文中抽取。输出 Markdown，并固定使用以下章节：\n\n## 对象识别\n- 类型：图、表、流程图、公式截图、实验结果、消融结果或其他。\n- 所属位置：如果能判断，写 Figure/Table 编号、标题、页码或上下文证据。\n- 研究作用：这张图/表在论文中承担的问题、方法、实验或结论角色。\n\n## 视觉 OCR 文本\n- 逐项转录能看清的标题、坐标轴、图例、表头、指标、数据集、模型名、公式符号和关键数值。\n- 看不清的内容写 [illegible]；可能识别错的内容标注 低置信度。\n- 保留原始单位、大小写、缩写和符号，不要自动改写。\n\n## 表格/数据重建\n- 如果图片中有表格或可读数值，用 Markdown 表格重建：字段至少包括 项目、数值/文本、单位、来源、置信度、备注。\n- 如果是折线图、柱状图或散点图，只重建能可靠读出的点或区间，并写明坐标轴、图例和读数依据。\n- 如果无法可靠重建，明确写“无法可靠重建”，不要补不存在的数据。\n\n## 像素/坐标数据草稿\n- 若图中有折线、柱状或散点，请在可见范围内给出可复核的 Markdown 表格，字段包括 Series、Point、Pixel X、Pixel Y、Axis X、Axis Y、Confidence、Source、Notes。\n- Pixel X/Y 是图像中的估计像素位置；Axis X/Y 是按坐标轴读出的数据值。读不准时留空或标低置信度。\n- 只输出能从图像直接观察或明确估计的点，不要为了凑完整曲线而补点。\n\n## 结论与证据映射\n- 解释图/表想证明什么，以及它如何支持或限制论文主张。\n- 每条解释都标注证据来源：[image]、[metadata]、[abstract] 或 [chunk:<id>]。\n- 区分图片直接观察、文本上下文推断和低置信度判断。\n\n## 综述/复现可复用信息\n- 给出适合写进文献综述、实验对比、方法复现或后续问题的要点。\n- 明确可比较指标、实验条件、baseline、公平性风险和需要补查的原文位置。\n\n## 不确定性与复核清单\n- 列出模糊、遮挡、缺少上下文、模型无法可靠识别、需要人工放大或回到 PDF 原图核对的部分。\n\n不要编造看不清的数字；不要把文本上下文推断伪装成图片观察。`;
   }
   if (outputLanguage === "ja-JP") {
-    return `${common}\n\n論文中のスクリーンショット、図、表、数式画像、実験結果を構造化して解析してください。画像添付、PDF/要約コンテキスト、ユーザー質問を優先し、画像がない場合はテキスト根拠だけで抽出してください。Markdown で次の章を固定して使ってください: 対象識別、視覚 OCR テキスト、表/データ再構成、結論と根拠マッピング、レビュー/再現に使える情報、不確実性と確認リスト。読めない数値は [illegible] とし、推測しないでください。表や数値は、項目、値/テキスト、単位、出典、信頼度、備考を持つ Markdown 表として再構成してください。各解釈には [image]、[metadata]、[abstract]、[chunk:<id>] の根拠を付け、画像観察、テキスト推論、低信頼判断を区別してください。`;
+    return `${common}\n\n論文中のスクリーンショット、図、表、数式画像、実験結果を構造化して解析してください。画像添付、PDF/要約コンテキスト、ユーザー質問を優先し、画像がない場合はテキスト根拠だけで抽出してください。Markdown で次の章を固定して使ってください: 対象識別、視覚 OCR テキスト、表/データ再構成、ピクセル/座標データ下書き、結論と根拠マッピング、レビュー/再現に使える情報、不確実性と確認リスト。読めない数値は [illegible] とし、推測しないでください。表や数値は、項目、値/テキスト、単位、出典、信頼度、備考を持つ Markdown 表として再構成してください。グラフでは可能な場合だけ Series、Point、Pixel X、Pixel Y、Axis X、Axis Y、Confidence、Source、Notes を持つ表を追加してください。各解釈には [image]、[metadata]、[abstract]、[chunk:<id>] の根拠を付け、画像観察、テキスト推論、低信頼判断を区別してください。`;
   }
-  return `${common}\n\nExtract structured information from screenshots, figures, tables, formula captures, or experimental-result panels. Prefer attached images plus the provided paper/PDF context and the user question; if no image is attached, extract only from the text context. Use Markdown with these exact sections:\n\n## Object Identification\n- Type: figure, table, flow chart, formula capture, experiment result, ablation result, or other.\n- Location: Figure/Table number, title, page, or contextual evidence when available.\n- Research role: problem, method, experiment, or conclusion role in the paper.\n\n## Visual OCR Text\n- Transcribe readable titles, axes, legends, headers, metrics, datasets, model names, formula symbols, and key numbers.\n- Write [illegible] for unreadable content and mark uncertain recognition as low-confidence.\n- Preserve original units, capitalization, abbreviations, and symbols.\n\n## Reconstructed Data Table\n- For tables or readable numbers, reconstruct a Markdown table with at least: Item, Value/Text, Unit, Source, Confidence, Notes.\n- For line/bar/scatter charts, reconstruct only reliably readable points or ranges, and state the axis, legend, and reading basis.\n- If reconstruction is unreliable, say so explicitly instead of filling missing values.\n\n## Interpretation And Evidence Map\n- Explain what the visual tries to prove and how it supports or limits the paper's claims.\n- Mark every interpretation with [image], [metadata], [abstract], or [chunk:<id>].\n- Separate direct visual observation, text-context inference, and low-confidence judgment.\n\n## Reusable Review Or Reproduction Notes\n- Extract points useful for a literature review, experiment comparison, method reproduction, or follow-up question.\n- Call out comparable metrics, experimental conditions, baselines, fairness risks, and original-PDF locations to verify.\n\n## Uncertainty And Review Checklist\n- List blur, occlusion, missing context, unreliable recognition, and items that need manual zooming or checking against the original PDF.\n\nDo not invent unreadable numbers, and do not present text-context inference as direct image observation.`;
+  return `${common}\n\nExtract structured information from screenshots, figures, tables, formula captures, or experimental-result panels. Prefer attached images plus the provided paper/PDF context and the user question; if no image is attached, extract only from the text context. Use Markdown with these exact sections:\n\n## Object Identification\n- Type: figure, table, flow chart, formula capture, experiment result, ablation result, or other.\n- Location: Figure/Table number, title, page, or contextual evidence when available.\n- Research role: problem, method, experiment, or conclusion role in the paper.\n\n## Visual OCR Text\n- Transcribe readable titles, axes, legends, headers, metrics, datasets, model names, formula symbols, and key numbers.\n- Write [illegible] for unreadable content and mark uncertain recognition as low-confidence.\n- Preserve original units, capitalization, abbreviations, and symbols.\n\n## Reconstructed Data Table\n- For tables or readable numbers, reconstruct a Markdown table with at least: Item, Value/Text, Unit, Source, Confidence, Notes.\n- For line/bar/scatter charts, reconstruct only reliably readable points or ranges, and state the axis, legend, and reading basis.\n- If reconstruction is unreliable, say so explicitly instead of filling missing values.\n\n## Pixel / Coordinate Data Draft\n- For visible line, bar, or scatter charts, add a reviewable Markdown table when possible with: Series, Point, Pixel X, Pixel Y, Axis X, Axis Y, Confidence, Source, Notes.\n- Pixel X/Y are estimated image coordinates; Axis X/Y are values read from the chart scale. Leave fields blank or mark low-confidence when unsure.\n- Include only directly visible or explicitly estimated points; do not fabricate a complete series.\n\n## Interpretation And Evidence Map\n- Explain what the visual tries to prove and how it supports or limits the paper's claims.\n- Mark every interpretation with [image], [metadata], [abstract], or [chunk:<id>].\n- Separate direct visual observation, text-context inference, and low-confidence judgment.\n\n## Reusable Review Or Reproduction Notes\n- Extract points useful for a literature review, experiment comparison, method reproduction, or follow-up question.\n- Call out comparable metrics, experimental conditions, baselines, fairness risks, and original-PDF locations to verify.\n\n## Uncertainty And Review Checklist\n- List blur, occlusion, missing context, unreliable recognition, and items that need manual zooming or checking against the original PDF.\n\nDo not invent unreadable numbers, and do not present text-context inference as direct image observation.`;
 }
 
 function literatureMatrixTemplate(common, outputLanguage) {
