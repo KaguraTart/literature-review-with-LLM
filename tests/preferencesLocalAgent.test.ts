@@ -1536,6 +1536,75 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).not.toContain("sambanova-anthropic-secret");
   });
 
+  it("uses named live-check variables for older built-in OpenAI-compatible providers", () => {
+    const helpers = loadPreferencesHelpers();
+    const deepseekGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("deepseek"),
+      apiKey: "deepseek-secret",
+      model: "deepseek-chat"
+    }, "en-US");
+    const openrouterGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("openrouter"),
+      apiKey: "openrouter-secret",
+      model: "openai/gpt-4.1-mini"
+    }, "en-US");
+    const groqGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("groq"),
+      apiKey: "groq-secret",
+      model: "llama-3.3-70b-versatile"
+    }, "en-US");
+
+    expect(deepseekGuide).toContain("DEEPSEEK_API_KEY=...");
+    expect(deepseekGuide).toContain("DEEPSEEK_MODEL=deepseek-chat");
+    expect(deepseekGuide).toContain("--include deepseek");
+    expect(deepseekGuide).not.toContain("OPENAI_COMPATIBLE_API_KEY");
+    expect(deepseekGuide).not.toContain("deepseek-secret");
+    expect(openrouterGuide).toContain("OPENROUTER_API_KEY=...");
+    expect(openrouterGuide).toContain("OPENROUTER_MODEL=openai/gpt-4.1-mini");
+    expect(openrouterGuide).toContain("--include openrouter");
+    expect(openrouterGuide).not.toContain("OPENAI_COMPATIBLE_API_KEY");
+    expect(openrouterGuide).not.toContain("openrouter-secret");
+    expect(groqGuide).toContain("GROQ_API_KEY=...");
+    expect(groqGuide).toContain("GROQ_MODEL=llama-3.3-70b-versatile");
+    expect(groqGuide).toContain("--include groq");
+    expect(groqGuide).not.toContain("OPENAI_COMPATIBLE_API_KEY");
+    expect(groqGuide).not.toContain("groq-secret");
+  });
+
+  it("uses named live-check variables for MiniMax, Gemini, and Azure guides", () => {
+    const helpers = loadPreferencesHelpers();
+    const minimaxGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("minimax"),
+      apiKey: "minimax-secret",
+      model: "MiniMax-M2.7-highspeed"
+    }, "en-US");
+    const geminiGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("gemini"),
+      apiKey: "gemini-secret",
+      model: "gemini-2.5-flash"
+    }, "en-US");
+    const azureGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("azure_openai"),
+      baseURL: "https://example-resource.openai.azure.com/openai/v1",
+      apiKey: "azure-secret",
+      model: "gpt-4.1"
+    }, "en-US");
+
+    expect(minimaxGuide).toContain("MINIMAX_API_KEY=...");
+    expect(minimaxGuide).toContain("MINIMAX_MODEL=MiniMax-M2.7-highspeed");
+    expect(minimaxGuide).toContain("--include minimax");
+    expect(minimaxGuide).not.toContain("minimax-secret");
+    expect(geminiGuide).toContain("GEMINI_API_KEY=...");
+    expect(geminiGuide).toContain("GEMINI_MODEL=gemini-2.5-flash");
+    expect(geminiGuide).toContain("--include gemini");
+    expect(geminiGuide).not.toContain("gemini-secret");
+    expect(azureGuide).toContain("AZURE_OPENAI_API_KEY=...");
+    expect(azureGuide).toContain("AZURE_OPENAI_MODEL=gpt-4.1");
+    expect(azureGuide).toContain("AZURE_OPENAI_BASE_URL=https://example-resource.openai.azure.com/openai/v1");
+    expect(azureGuide).toContain("--include azure-openai");
+    expect(azureGuide).not.toContain("azure-secret");
+  });
+
   it("updates the settings provider guide from edited fields", () => {
     const { controller, elements } = loadPreferencesController({ initialModel: "gpt-4.1" });
     elements.get("zms-profileCustomHeaders").value = "{\"Authorization\":\"Bearer routed-secret\"}";

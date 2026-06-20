@@ -942,6 +942,15 @@ function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)
   if (provider === "anthropic") {
     return { include: "anthropic", apiKeyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL", baseURLEnv: "ANTHROPIC_BASE_URL", includeBaseURL: false, apiKeyOptional };
   }
+  if (provider === "minimax") {
+    return { include: "minimax", apiKeyEnv: "MINIMAX_API_KEY", modelEnv: "MINIMAX_MODEL", baseURLEnv: "MINIMAX_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "gemini") {
+    return { include: "gemini", apiKeyEnv: "GEMINI_API_KEY", modelEnv: "GEMINI_MODEL", baseURLEnv: "GEMINI_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "azure_openai") {
+    return { include: "azure-openai", apiKeyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_MODEL", baseURLEnv: "AZURE_OPENAI_BASE_URL", includeBaseURL: true, apiKeyOptional };
+  }
   if (provider === "github_models") {
     return { include: "github-models", apiKeyEnv: "GITHUB_MODELS_API_KEY", modelEnv: "GITHUB_MODELS_MODEL", baseURLEnv: "GITHUB_MODELS_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
   }
@@ -962,6 +971,54 @@ function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)
   }
   if (provider === "sambanova_anthropic") {
     return { include: "sambanova-anthropic", apiKeyEnv: "SAMBANOVA_ANTHROPIC_API_KEY", modelEnv: "SAMBANOVA_ANTHROPIC_MODEL", baseURLEnv: "SAMBANOVA_ANTHROPIC_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "xai") {
+    return { include: "xai", apiKeyEnv: "XAI_API_KEY", modelEnv: "XAI_MODEL", baseURLEnv: "XAI_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "groq") {
+    return { include: "groq", apiKeyEnv: "GROQ_API_KEY", modelEnv: "GROQ_MODEL", baseURLEnv: "GROQ_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "mistral") {
+    return { include: "mistral", apiKeyEnv: "MISTRAL_API_KEY", modelEnv: "MISTRAL_MODEL", baseURLEnv: "MISTRAL_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "together") {
+    return { include: "together", apiKeyEnv: "TOGETHER_API_KEY", modelEnv: "TOGETHER_MODEL", baseURLEnv: "TOGETHER_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "kimi") {
+    return { include: "kimi", apiKeyEnv: "KIMI_API_KEY", modelEnv: "KIMI_MODEL", baseURLEnv: "KIMI_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "perplexity") {
+    return { include: "perplexity", apiKeyEnv: "PERPLEXITY_API_KEY", modelEnv: "PERPLEXITY_MODEL", baseURLEnv: "PERPLEXITY_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "deepseek") {
+    return { include: "deepseek", apiKeyEnv: "DEEPSEEK_API_KEY", modelEnv: "DEEPSEEK_MODEL", baseURLEnv: "DEEPSEEK_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "deepseek_anthropic") {
+    return { include: "deepseek-anthropic", apiKeyEnv: "DEEPSEEK_ANTHROPIC_API_KEY", modelEnv: "DEEPSEEK_ANTHROPIC_MODEL", baseURLEnv: "DEEPSEEK_ANTHROPIC_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "zai_anthropic") {
+    return { include: "zai-anthropic", apiKeyEnv: "ZAI_ANTHROPIC_API_KEY", modelEnv: "ZAI_ANTHROPIC_MODEL", baseURLEnv: "ZAI_ANTHROPIC_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "openrouter") {
+    return { include: "openrouter", apiKeyEnv: "OPENROUTER_API_KEY", modelEnv: "OPENROUTER_MODEL", baseURLEnv: "OPENROUTER_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "dashscope") {
+    return { include: "dashscope", apiKeyEnv: "DASHSCOPE_API_KEY", modelEnv: "DASHSCOPE_MODEL", baseURLEnv: "DASHSCOPE_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "siliconflow") {
+    return { include: "siliconflow", apiKeyEnv: "SILICONFLOW_API_KEY", modelEnv: "SILICONFLOW_MODEL", baseURLEnv: "SILICONFLOW_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "zhipu") {
+    return { include: "zhipu", apiKeyEnv: "ZHIPU_API_KEY", modelEnv: "ZHIPU_MODEL", baseURLEnv: "ZHIPU_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "volcengine") {
+    return { include: "volcengine", apiKeyEnv: "VOLCENGINE_API_KEY", modelEnv: "VOLCENGINE_MODEL", baseURLEnv: "VOLCENGINE_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "qianfan") {
+    return { include: "qianfan", apiKeyEnv: "QIANFAN_API_KEY", modelEnv: "QIANFAN_MODEL", baseURLEnv: "QIANFAN_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "hunyuan") {
+    return { include: "hunyuan", apiKeyEnv: "HUNYUAN_API_KEY", modelEnv: "HUNYUAN_MODEL", baseURLEnv: "HUNYUAN_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
   }
   if (profile?.protocol === "openai_responses") {
     return { include: "openai-responses-compatible", apiKeyEnv: "OPENAI_RESPONSES_COMPATIBLE_API_KEY", modelEnv: "OPENAI_RESPONSES_COMPATIBLE_MODEL", baseURLEnv: "OPENAI_RESPONSES_COMPATIBLE_BASE_URL", includeBaseURL: true, apiKeyOptional };

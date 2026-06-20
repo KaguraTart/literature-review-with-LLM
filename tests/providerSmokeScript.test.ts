@@ -4,8 +4,39 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
-const BASIC_LIVE_CASES = "openai,openai-responses-compatible,anthropic,anthropic-compatible,openai-compatible";
-const NAMED_LIVE_CASES = "github-models,fireworks,cerebras,nvidia-nim,sambanova,sambanova-responses,sambanova-anthropic";
+const BASIC_LIVE_CASE_IDS = ["openai", "openai-responses-compatible", "anthropic", "anthropic-compatible", "openai-compatible"];
+const NAMED_LIVE_SPECS = [
+  { id: "minimax", envPrefix: "MINIMAX", protocol: "openai_chat", basePath: "/minimax/v1", model: "MiniMax-M2.7-highspeed", secret: "live-minimax-secret" },
+  { id: "gemini", envPrefix: "GEMINI", protocol: "openai_chat", basePath: "/gemini/v1beta/openai", model: "gemini-2.5-flash", secret: "live-gemini-secret" },
+  { id: "azure-openai", envPrefix: "AZURE_OPENAI", protocol: "openai_responses", basePath: "/azure/openai/v1", model: "azure-gpt-4.1", secret: "live-azure-secret" },
+  { id: "github-models", envPrefix: "GITHUB_MODELS", protocol: "openai_chat", basePath: "/inference", model: "github/model", secret: "live-github-secret" },
+  { id: "fireworks", envPrefix: "FIREWORKS", protocol: "openai_chat", basePath: "/fireworks/v1", model: "accounts/fireworks/models/llama-v3p1-8b-instruct", secret: "live-fireworks-secret" },
+  { id: "cerebras", envPrefix: "CEREBRAS", protocol: "openai_chat", basePath: "/cerebras/v1", model: "llama3.1-8b", secret: "live-cerebras-secret" },
+  { id: "nvidia-nim", envPrefix: "NVIDIA_NIM", protocol: "openai_chat", basePath: "/nvidia/v1", model: "meta/llama-3.1-8b-instruct", secret: "live-nvidia-secret" },
+  { id: "sambanova", envPrefix: "SAMBANOVA", protocol: "openai_chat", basePath: "/sambanova/v1", model: "Meta-Llama-3.1-8B-Instruct", secret: "live-sambanova-secret" },
+  { id: "sambanova-responses", envPrefix: "SAMBANOVA_RESPONSES", protocol: "openai_responses", basePath: "/sambanova-responses/v1", model: "Meta-Llama-3.1-8B-Instruct", secret: "live-sambanova-responses-secret" },
+  { id: "sambanova-anthropic", envPrefix: "SAMBANOVA_ANTHROPIC", protocol: "anthropic_messages", basePath: "/sambanova-anthropic", model: "Meta-Llama-3.1-8B-Instruct", secret: "live-sambanova-anthropic-secret" },
+  { id: "xai", envPrefix: "XAI", protocol: "openai_chat", basePath: "/xai/v1", model: "grok-4", secret: "live-xai-secret" },
+  { id: "groq", envPrefix: "GROQ", protocol: "openai_chat", basePath: "/groq/openai/v1", model: "llama-3.3-70b-versatile", secret: "live-groq-secret" },
+  { id: "mistral", envPrefix: "MISTRAL", protocol: "openai_chat", basePath: "/mistral/v1", model: "mistral-large-latest", secret: "live-mistral-secret" },
+  { id: "together", envPrefix: "TOGETHER", protocol: "openai_chat", basePath: "/together/v1", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", secret: "live-together-secret" },
+  { id: "kimi", envPrefix: "KIMI", protocol: "openai_chat", basePath: "/moonshot/v1", model: "kimi-k2-0711-preview", secret: "live-kimi-secret" },
+  { id: "perplexity", envPrefix: "PERPLEXITY", protocol: "openai_chat", basePath: "/perplexity", model: "sonar-pro", secret: "live-perplexity-secret" },
+  { id: "deepseek", envPrefix: "DEEPSEEK", protocol: "openai_chat", basePath: "/deepseek", model: "deepseek-chat", secret: "live-deepseek-secret" },
+  { id: "deepseek-anthropic", envPrefix: "DEEPSEEK_ANTHROPIC", protocol: "anthropic_messages", basePath: "/deepseek-anthropic", model: "deepseek-chat", secret: "live-deepseek-anthropic-secret" },
+  { id: "zai-anthropic", envPrefix: "ZAI_ANTHROPIC", protocol: "anthropic_messages", basePath: "/zai-anthropic", model: "glm-4.5", secret: "live-zai-anthropic-secret" },
+  { id: "openrouter", envPrefix: "OPENROUTER", protocol: "openai_chat", basePath: "/openrouter/api/v1", model: "openai/gpt-4.1-mini", secret: "live-openrouter-secret" },
+  { id: "dashscope", envPrefix: "DASHSCOPE", protocol: "openai_chat", basePath: "/dashscope/compatible-mode/v1", model: "qwen-plus", secret: "live-dashscope-secret" },
+  { id: "siliconflow", envPrefix: "SILICONFLOW", protocol: "openai_chat", basePath: "/siliconflow/v1", model: "Qwen/Qwen3-32B", secret: "live-siliconflow-secret" },
+  { id: "zhipu", envPrefix: "ZHIPU", protocol: "openai_chat", basePath: "/zhipu/api/paas/v4", model: "glm-4.5", secret: "live-zhipu-secret" },
+  { id: "volcengine", envPrefix: "VOLCENGINE", protocol: "openai_chat", basePath: "/volcengine/api/v3", model: "doubao-seed-1-6-250615", secret: "live-volcengine-secret" },
+  { id: "qianfan", envPrefix: "QIANFAN", protocol: "openai_chat", basePath: "/qianfan/v2", model: "ernie-x1-turbo-32k", secret: "live-qianfan-secret" },
+  { id: "hunyuan", envPrefix: "HUNYUAN", protocol: "openai_chat", basePath: "/hunyuan/v1", model: "hunyuan-turbos-latest", secret: "live-hunyuan-secret" }
+];
+const NAMED_LIVE_CASE_IDS = NAMED_LIVE_SPECS.map((entry) => entry.id);
+const BASIC_LIVE_CASES = BASIC_LIVE_CASE_IDS.join(",");
+const NAMED_LIVE_CASES = NAMED_LIVE_CASE_IDS.join(",");
+const ALL_LIVE_CASE_IDS = [...BASIC_LIVE_CASE_IDS, ...NAMED_LIVE_CASE_IDS];
 
 describe("provider smoke verifier", () => {
   it("calls an OpenAI-compatible chat endpoint with the expected request shape", async () => {
@@ -571,29 +602,22 @@ describe("provider smoke verifier", () => {
       live: true,
       counts: {
         passed: 0,
-        skipped: 12,
+        skipped: ALL_LIVE_CASE_IDS.length,
         failed: 0
       }
     });
-    expect(report.results.map((result: any) => [result.id, result.status])).toEqual([
-      ["openai", "skipped"],
-      ["openai-responses-compatible", "skipped"],
-      ["anthropic", "skipped"],
-      ["anthropic-compatible", "skipped"],
-      ["openai-compatible", "skipped"],
-      ["github-models", "skipped"],
-      ["fireworks", "skipped"],
-      ["cerebras", "skipped"],
-      ["nvidia-nim", "skipped"],
-      ["sambanova", "skipped"],
-      ["sambanova-responses", "skipped"],
-      ["sambanova-anthropic", "skipped"]
-    ]);
-    expect(report.results[1].missing).toContain("OPENAI_RESPONSES_COMPATIBLE_BASE_URL");
-    expect(report.results[3].missing).toContain("ANTHROPIC_COMPATIBLE_BASE_URL");
-    expect(report.results[4].missing).toContain("OPENAI_COMPATIBLE_BASE_URL");
-    expect(report.results[5].missing).toContain("GITHUB_MODELS_API_KEY");
-    expect(report.results[11].missing).toContain("SAMBANOVA_ANTHROPIC_API_KEY");
+    expect(report.results.map((result: any) => [result.id, result.status])).toEqual(
+      ALL_LIVE_CASE_IDS.map((id) => [id, "skipped"])
+    );
+    expect(report.results.find((result: any) => result.id === "openai-responses-compatible").missing).toContain("OPENAI_RESPONSES_COMPATIBLE_BASE_URL");
+    expect(report.results.find((result: any) => result.id === "anthropic-compatible").missing).toContain("ANTHROPIC_COMPATIBLE_BASE_URL");
+    expect(report.results.find((result: any) => result.id === "openai-compatible").missing).toContain("OPENAI_COMPATIBLE_BASE_URL");
+    expect(report.results.find((result: any) => result.id === "github-models").missing).toContain("GITHUB_MODELS_API_KEY");
+    expect(report.results.find((result: any) => result.id === "minimax").missing).toEqual(["MINIMAX_API_KEY"]);
+    expect(report.results.find((result: any) => result.id === "azure-openai").missing).toEqual(["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_MODEL", "AZURE_OPENAI_BASE_URL"]);
+    expect(report.results.find((result: any) => result.id === "deepseek").missing).toContain("DEEPSEEK_API_KEY");
+    expect(report.results.find((result: any) => result.id === "openrouter").missing).toContain("OPENROUTER_API_KEY");
+    expect(report.results.find((result: any) => result.id === "sambanova-anthropic").missing).toContain("SAMBANOVA_ANTHROPIC_API_KEY");
   });
 
   it("skips live provider model-list checks without requiring model names", async () => {
@@ -605,25 +629,21 @@ describe("provider smoke verifier", () => {
       models: true,
       counts: {
         passed: 0,
-        skipped: 12,
+        skipped: ALL_LIVE_CASE_IDS.length,
         failed: 0
       }
     });
-    expect(report.results.map((result: any) => [result.id, result.missing])).toEqual([
-      ["openai", ["OPENAI_API_KEY"]],
-      ["openai-responses-compatible", ["OPENAI_RESPONSES_COMPATIBLE_API_KEY", "OPENAI_RESPONSES_COMPATIBLE_BASE_URL"]],
-      ["anthropic", ["ANTHROPIC_API_KEY"]],
-      ["anthropic-compatible", ["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_BASE_URL"]],
-      ["openai-compatible", ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"]],
-      ["github-models", []],
-      ["fireworks", ["FIREWORKS_API_KEY"]],
-      ["cerebras", ["CEREBRAS_API_KEY"]],
-      ["nvidia-nim", ["NVIDIA_NIM_API_KEY"]],
-      ["sambanova", ["SAMBANOVA_API_KEY"]],
-      ["sambanova-responses", ["SAMBANOVA_RESPONSES_API_KEY"]],
-      ["sambanova-anthropic", ["SAMBANOVA_ANTHROPIC_API_KEY"]]
-    ]);
-    expect(report.results[5].reason).toContain("Model-list checks are not supported");
+    expect(report.results.map((result: any) => result.id)).toEqual(ALL_LIVE_CASE_IDS);
+    expect(report.results.find((result: any) => result.id === "openai").missing).toEqual(["OPENAI_API_KEY"]);
+    expect(report.results.find((result: any) => result.id === "openai-responses-compatible").missing).toEqual(["OPENAI_RESPONSES_COMPATIBLE_API_KEY", "OPENAI_RESPONSES_COMPATIBLE_BASE_URL"]);
+    expect(report.results.find((result: any) => result.id === "anthropic-compatible").missing).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
+    expect(report.results.find((result: any) => result.id === "openai-compatible").missing).toEqual(["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"]);
+    expect(report.results.find((result: any) => result.id === "github-models").missing).toEqual([]);
+    expect(report.results.find((result: any) => result.id === "github-models").reason).toContain("Model-list checks are not supported");
+    expect(report.results.find((result: any) => result.id === "minimax").missing).toEqual(["MINIMAX_API_KEY"]);
+    expect(report.results.find((result: any) => result.id === "azure-openai").missing).toEqual(["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_BASE_URL"]);
+    expect(report.results.find((result: any) => result.id === "deepseek").missing).toEqual(["DEEPSEEK_API_KEY"]);
+    expect(report.results.find((result: any) => result.id === "sambanova-anthropic").missing).toEqual(["SAMBANOVA_ANTHROPIC_API_KEY"]);
   });
 
   it("runs live provider env checks against mock endpoints without leaking secrets", async () => {
@@ -685,69 +705,35 @@ describe("provider smoke verifier", () => {
 
   it("runs named mainstream provider live checks against mock endpoints", async () => {
     await withLiveMockProvider(async (baseURL, requests) => {
-      const report = await runLive(["--include", NAMED_LIVE_CASES, "--json"], scrubProviderEnv({
-        GITHUB_MODELS_API_KEY: "live-github-secret",
-        GITHUB_MODELS_MODEL: "github/model",
-        GITHUB_MODELS_BASE_URL: `${baseURL}/inference`,
-        FIREWORKS_API_KEY: "live-fireworks-secret",
-        FIREWORKS_MODEL: "accounts/fireworks/models/llama-v3p1-8b-instruct",
-        FIREWORKS_BASE_URL: `${baseURL}/fireworks/v1`,
-        CEREBRAS_API_KEY: "live-cerebras-secret",
-        CEREBRAS_MODEL: "llama3.1-8b",
-        CEREBRAS_BASE_URL: `${baseURL}/cerebras/v1`,
-        NVIDIA_NIM_API_KEY: "live-nvidia-secret",
-        NVIDIA_NIM_MODEL: "meta/llama-3.1-8b-instruct",
-        NVIDIA_NIM_BASE_URL: `${baseURL}/nvidia/v1`,
-        SAMBANOVA_API_KEY: "live-sambanova-secret",
-        SAMBANOVA_MODEL: "Meta-Llama-3.1-8B-Instruct",
-        SAMBANOVA_BASE_URL: `${baseURL}/sambanova/v1`,
-        SAMBANOVA_RESPONSES_API_KEY: "live-sambanova-responses-secret",
-        SAMBANOVA_RESPONSES_MODEL: "Meta-Llama-3.1-8B-Instruct",
-        SAMBANOVA_RESPONSES_BASE_URL: `${baseURL}/sambanova-responses/v1`,
-        SAMBANOVA_ANTHROPIC_API_KEY: "live-sambanova-anthropic-secret",
-        SAMBANOVA_ANTHROPIC_MODEL: "Meta-Llama-3.1-8B-Instruct",
-        SAMBANOVA_ANTHROPIC_BASE_URL: `${baseURL}/sambanova-anthropic`
-      }));
+      const report = await runLive(["--include", NAMED_LIVE_CASES, "--json"], scrubProviderEnv(namedProviderEnv(baseURL)));
 
       expect(report).toMatchObject({
         ok: true,
         live: true,
         counts: {
-          passed: 7,
+          passed: NAMED_LIVE_CASE_IDS.length,
           skipped: 0,
           failed: 0
         }
       });
       expect(report.results.map((result: any) => [result.id, result.report.protocol, result.report.text])).toEqual([
-        ["github-models", "openai_chat", "OK live chat"],
-        ["fireworks", "openai_chat", "OK live chat"],
-        ["cerebras", "openai_chat", "OK live chat"],
-        ["nvidia-nim", "openai_chat", "OK live chat"],
-        ["sambanova", "openai_chat", "OK live chat"],
-        ["sambanova-responses", "openai_responses", "OK live responses"],
-        ["sambanova-anthropic", "anthropic_messages", "OK live anthropic"]
+        ...NAMED_LIVE_SPECS.map((entry) => [entry.id, entry.protocol, liveTextForProtocol(entry.protocol)])
       ]);
-      expect(requests.map((request) => request.path)).toEqual([
-        "/inference/v1/chat/completions",
-        "/fireworks/v1/chat/completions",
-        "/cerebras/v1/chat/completions",
-        "/nvidia/v1/chat/completions",
-        "/sambanova/v1/chat/completions",
-        "/sambanova-responses/v1/responses",
-        "/sambanova-anthropic/v1/messages"
-      ]);
-      expect(requests[0].authorization).toBe("Bearer live-github-secret");
-      expect(requests[0].accept).toBe("application/vnd.github+json");
-      expect(requests[0].githubApiVersion).toBe("2022-11-28");
-      expect(requests[6].authorization).toBe("Bearer live-sambanova-anthropic-secret");
-      expect(requests[6].xApiKey).toBeUndefined();
-      expect(JSON.stringify(report)).not.toContain("live-github-secret");
-      expect(JSON.stringify(report)).not.toContain("live-fireworks-secret");
-      expect(JSON.stringify(report)).not.toContain("live-cerebras-secret");
-      expect(JSON.stringify(report)).not.toContain("live-nvidia-secret");
-      expect(JSON.stringify(report)).not.toContain("live-sambanova-secret");
-      expect(JSON.stringify(report)).not.toContain("live-sambanova-responses-secret");
-      expect(JSON.stringify(report)).not.toContain("live-sambanova-anthropic-secret");
+      expect(requests.map((request) => request.path)).toEqual(
+        NAMED_LIVE_SPECS.map((entry) => namedLiveRequestPath(entry))
+      );
+      const githubRequest = requests[NAMED_LIVE_CASE_IDS.indexOf("github-models")];
+      expect(githubRequest.authorization).toBe("Bearer live-github-secret");
+      expect(githubRequest.accept).toBe("application/vnd.github+json");
+      expect(githubRequest.githubApiVersion).toBe("2022-11-28");
+      for (const entry of NAMED_LIVE_SPECS.filter((item) => item.protocol === "anthropic_messages")) {
+        const request = requests[NAMED_LIVE_CASE_IDS.indexOf(entry.id)];
+        expect(request.authorization).toBe(`Bearer ${entry.secret}`);
+        expect(request.xApiKey).toBeUndefined();
+      }
+      for (const entry of NAMED_LIVE_SPECS) {
+        expect(JSON.stringify(report)).not.toContain(entry.secret);
+      }
     });
   });
 
@@ -1224,71 +1210,49 @@ async function runLive(args: string[], env: NodeJS.ProcessEnv) {
   return JSON.parse(stdout);
 }
 
+function namedProviderEnv(baseURL: string) {
+  const env: NodeJS.ProcessEnv = {};
+  for (const entry of NAMED_LIVE_SPECS) {
+    env[`${entry.envPrefix}_API_KEY`] = entry.secret;
+    env[`${entry.envPrefix}_MODEL`] = entry.model;
+    env[`${entry.envPrefix}_BASE_URL`] = `${baseURL}${entry.basePath}`;
+  }
+  return env;
+}
+
+function namedLiveRequestPath(entry: { id: string; protocol: string; basePath: string }) {
+  if (entry.protocol === "openai_responses") return `${entry.basePath}/responses`;
+  if (entry.protocol === "anthropic_messages") return `${entry.basePath}/v1/messages`;
+  if (["github-models", "perplexity", "deepseek"].includes(entry.id)) {
+    return `${entry.basePath}/v1/chat/completions`;
+  }
+  return `${entry.basePath}/chat/completions`;
+}
+
+function liveTextForProtocol(protocol: string) {
+  if (protocol === "openai_responses") return "OK live responses";
+  if (protocol === "anthropic_messages") return "OK live anthropic";
+  return "OK live chat";
+}
+
 function scrubProviderEnv(overrides: NodeJS.ProcessEnv = {}) {
-  return {
-    ...process.env,
-    OPENAI_API_KEY: "",
-    OPENAI_MODEL: "",
-    OPENAI_BASE_URL: "",
-    OPENAI_RESPONSES_COMPATIBLE_API_KEY: "",
-    OPENAI_RESPONSES_COMPATIBLE_MODEL: "",
-    OPENAI_RESPONSES_COMPATIBLE_BASE_URL: "",
-    ANTHROPIC_API_KEY: "",
-    ANTHROPIC_MODEL: "",
-    ANTHROPIC_BASE_URL: "",
-    ANTHROPIC_COMPATIBLE_API_KEY: "",
-    ANTHROPIC_COMPATIBLE_MODEL: "",
-    ANTHROPIC_COMPATIBLE_BASE_URL: "",
-    OPENAI_COMPATIBLE_API_KEY: "",
-    OPENAI_COMPATIBLE_MODEL: "",
-    OPENAI_COMPATIBLE_BASE_URL: "",
-    GITHUB_MODELS_API_KEY: "",
-    GITHUB_MODELS_MODEL: "",
-    GITHUB_MODELS_BASE_URL: "",
-    FIREWORKS_API_KEY: "",
-    FIREWORKS_MODEL: "",
-    FIREWORKS_BASE_URL: "",
-    CEREBRAS_API_KEY: "",
-    CEREBRAS_MODEL: "",
-    CEREBRAS_BASE_URL: "",
-    NVIDIA_NIM_API_KEY: "",
-    NVIDIA_NIM_MODEL: "",
-    NVIDIA_NIM_BASE_URL: "",
-    SAMBANOVA_API_KEY: "",
-    SAMBANOVA_MODEL: "",
-    SAMBANOVA_BASE_URL: "",
-    SAMBANOVA_RESPONSES_API_KEY: "",
-    SAMBANOVA_RESPONSES_MODEL: "",
-    SAMBANOVA_RESPONSES_BASE_URL: "",
-    SAMBANOVA_ANTHROPIC_API_KEY: "",
-    SAMBANOVA_ANTHROPIC_MODEL: "",
-    SAMBANOVA_ANTHROPIC_BASE_URL: "",
-    OPENAI_HEADERS_JSON: "",
-    OPENAI_RESPONSES_COMPATIBLE_HEADERS_JSON: "",
-    ANTHROPIC_HEADERS_JSON: "",
-    ANTHROPIC_COMPATIBLE_HEADERS_JSON: "",
-    OPENAI_COMPATIBLE_HEADERS_JSON: "",
-    GITHUB_MODELS_HEADERS_JSON: "",
-    FIREWORKS_HEADERS_JSON: "",
-    CEREBRAS_HEADERS_JSON: "",
-    NVIDIA_NIM_HEADERS_JSON: "",
-    SAMBANOVA_HEADERS_JSON: "",
-    SAMBANOVA_RESPONSES_HEADERS_JSON: "",
-    SAMBANOVA_ANTHROPIC_HEADERS_JSON: "",
-    OPENAI_BODY_EXTRA_JSON: "",
-    OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON: "",
-    ANTHROPIC_BODY_EXTRA_JSON: "",
-    ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON: "",
-    OPENAI_COMPATIBLE_BODY_EXTRA_JSON: "",
-    GITHUB_MODELS_BODY_EXTRA_JSON: "",
-    FIREWORKS_BODY_EXTRA_JSON: "",
-    CEREBRAS_BODY_EXTRA_JSON: "",
-    NVIDIA_NIM_BODY_EXTRA_JSON: "",
-    SAMBANOVA_BODY_EXTRA_JSON: "",
-    SAMBANOVA_RESPONSES_BODY_EXTRA_JSON: "",
-    SAMBANOVA_ANTHROPIC_BODY_EXTRA_JSON: "",
-    ...overrides
-  };
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const prefixes = [
+    "OPENAI",
+    "OPENAI_RESPONSES_COMPATIBLE",
+    "ANTHROPIC",
+    "ANTHROPIC_COMPATIBLE",
+    "OPENAI_COMPATIBLE",
+    ...NAMED_LIVE_SPECS.map((entry) => entry.envPrefix)
+  ];
+  for (const prefix of prefixes) {
+    env[`${prefix}_API_KEY`] = "";
+    env[`${prefix}_MODEL`] = "";
+    env[`${prefix}_BASE_URL`] = "";
+    env[`${prefix}_HEADERS_JSON`] = "";
+    env[`${prefix}_BODY_EXTRA_JSON`] = "";
+  }
+  return { ...env, ...overrides };
 }
 
 async function withMockProvider(

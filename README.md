@@ -202,6 +202,9 @@ For router or local endpoints, set the matching `*_BASE_URL` variable and use `o
 Named provider live checks use provider-specific environment variables:
 
 ```bash
+MINIMAX_API_KEY=... MINIMAX_MODEL=... npm run verify:provider:live -- --include minimax
+GEMINI_API_KEY=... GEMINI_MODEL=... npm run verify:provider:live -- --include gemini
+AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=... AZURE_OPENAI_BASE_URL=... npm run verify:provider:live -- --include azure-openai
 GITHUB_MODELS_API_KEY=... GITHUB_MODELS_MODEL=... npm run verify:provider:live -- --include github-models
 FIREWORKS_API_KEY=... FIREWORKS_MODEL=... npm run verify:provider:live -- --include fireworks
 CEREBRAS_API_KEY=... CEREBRAS_MODEL=... npm run verify:provider:live -- --include cerebras
@@ -209,7 +212,15 @@ NVIDIA_NIM_API_KEY=... NVIDIA_NIM_MODEL=... npm run verify:provider:live -- --in
 SAMBANOVA_API_KEY=... SAMBANOVA_MODEL=... npm run verify:provider:live -- --include sambanova
 SAMBANOVA_RESPONSES_API_KEY=... SAMBANOVA_RESPONSES_MODEL=... npm run verify:provider:live -- --include sambanova-responses
 SAMBANOVA_ANTHROPIC_API_KEY=... SAMBANOVA_ANTHROPIC_MODEL=... npm run verify:provider:live -- --include sambanova-anthropic
+DEEPSEEK_API_KEY=... DEEPSEEK_MODEL=... npm run verify:provider:live -- --include deepseek
+OPENROUTER_API_KEY=... OPENROUTER_MODEL=... npm run verify:provider:live -- --include openrouter
+GROQ_API_KEY=... GROQ_MODEL=... npm run verify:provider:live -- --include groq
+MISTRAL_API_KEY=... MISTRAL_MODEL=... npm run verify:provider:live -- --include mistral
+DASHSCOPE_API_KEY=... DASHSCOPE_MODEL=... npm run verify:provider:live -- --include dashscope
+SILICONFLOW_API_KEY=... SILICONFLOW_MODEL=... npm run verify:provider:live -- --include siliconflow
 ```
+
+The same naming pattern is available for `XAI_*`, `TOGETHER_*`, `KIMI_*`, `PERPLEXITY_*`, `DEEPSEEK_ANTHROPIC_*`, `ZAI_ANTHROPIC_*`, `ZHIPU_*`, `VOLCENGINE_*`, `QIANFAN_*`, and `HUNYUAN_*`. Add the matching `*_BASE_URL` only when you override the built-in endpoint or use a proxy.
 
 Live checks also accept request headers and request-body overrides. Use repeated `--header name=value` or per-case env vars such as `OPENAI_COMPATIBLE_HEADERS_JSON`, `OPENAI_RESPONSES_COMPATIBLE_HEADERS_JSON`, and `ANTHROPIC_COMPATIBLE_HEADERS_JSON` for custom gateways. Use `--body-extra-json` for all selected cases, or per-case env vars such as `OPENAI_COMPATIBLE_BODY_EXTRA_JSON`, `OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON`, `ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON`, `OPENAI_BODY_EXTRA_JSON`, and `ANTHROPIC_BODY_EXTRA_JSON`.
 

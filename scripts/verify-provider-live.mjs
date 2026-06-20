@@ -68,6 +68,45 @@ const DEFAULT_CASES = [
     allowLocalNoAuth: true
   },
   {
+    id: "minimax",
+    label: "MiniMax",
+    profile: "minimax",
+    protocol: "openai_chat",
+    apiKeyEnv: "MINIMAX_API_KEY",
+    modelEnv: "MINIMAX_MODEL",
+    baseURLEnv: "MINIMAX_BASE_URL",
+    headersEnv: "MINIMAX_HEADERS_JSON",
+    bodyExtraEnv: "MINIMAX_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "gemini",
+    label: "Gemini OpenAI-compatible",
+    profile: "gemini",
+    protocol: "openai_chat",
+    apiKeyEnv: "GEMINI_API_KEY",
+    modelEnv: "GEMINI_MODEL",
+    baseURLEnv: "GEMINI_BASE_URL",
+    headersEnv: "GEMINI_HEADERS_JSON",
+    bodyExtraEnv: "GEMINI_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "azure-openai",
+    label: "Azure OpenAI",
+    profile: "azure-openai",
+    protocol: "openai_responses",
+    apiKeyEnv: "AZURE_OPENAI_API_KEY",
+    modelEnv: "AZURE_OPENAI_MODEL",
+    baseURLEnv: "AZURE_OPENAI_BASE_URL",
+    headersEnv: "AZURE_OPENAI_HEADERS_JSON",
+    bodyExtraEnv: "AZURE_OPENAI_BODY_EXTRA_JSON",
+    requireBaseURL: true,
+    allowLocalNoAuth: true
+  },
+  {
     id: "github-models",
     label: "GitHub Models",
     profile: "github-models",
@@ -156,6 +195,214 @@ const DEFAULT_CASES = [
     baseURLEnv: "SAMBANOVA_ANTHROPIC_BASE_URL",
     headersEnv: "SAMBANOVA_ANTHROPIC_HEADERS_JSON",
     bodyExtraEnv: "SAMBANOVA_ANTHROPIC_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "xai",
+    label: "xAI",
+    profile: "xai",
+    protocol: "openai_chat",
+    apiKeyEnv: "XAI_API_KEY",
+    modelEnv: "XAI_MODEL",
+    baseURLEnv: "XAI_BASE_URL",
+    headersEnv: "XAI_HEADERS_JSON",
+    bodyExtraEnv: "XAI_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "groq",
+    label: "Groq",
+    profile: "groq",
+    protocol: "openai_chat",
+    apiKeyEnv: "GROQ_API_KEY",
+    modelEnv: "GROQ_MODEL",
+    baseURLEnv: "GROQ_BASE_URL",
+    headersEnv: "GROQ_HEADERS_JSON",
+    bodyExtraEnv: "GROQ_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "mistral",
+    label: "Mistral AI",
+    profile: "mistral",
+    protocol: "openai_chat",
+    apiKeyEnv: "MISTRAL_API_KEY",
+    modelEnv: "MISTRAL_MODEL",
+    baseURLEnv: "MISTRAL_BASE_URL",
+    headersEnv: "MISTRAL_HEADERS_JSON",
+    bodyExtraEnv: "MISTRAL_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "together",
+    label: "Together AI",
+    profile: "together",
+    protocol: "openai_chat",
+    apiKeyEnv: "TOGETHER_API_KEY",
+    modelEnv: "TOGETHER_MODEL",
+    baseURLEnv: "TOGETHER_BASE_URL",
+    headersEnv: "TOGETHER_HEADERS_JSON",
+    bodyExtraEnv: "TOGETHER_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "kimi",
+    label: "Kimi / Moonshot",
+    profile: "kimi",
+    protocol: "openai_chat",
+    apiKeyEnv: "KIMI_API_KEY",
+    modelEnv: "KIMI_MODEL",
+    baseURLEnv: "KIMI_BASE_URL",
+    headersEnv: "KIMI_HEADERS_JSON",
+    bodyExtraEnv: "KIMI_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "perplexity",
+    label: "Perplexity Sonar",
+    profile: "perplexity",
+    protocol: "openai_chat",
+    apiKeyEnv: "PERPLEXITY_API_KEY",
+    modelEnv: "PERPLEXITY_MODEL",
+    baseURLEnv: "PERPLEXITY_BASE_URL",
+    headersEnv: "PERPLEXITY_HEADERS_JSON",
+    bodyExtraEnv: "PERPLEXITY_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    profile: "deepseek",
+    protocol: "openai_chat",
+    apiKeyEnv: "DEEPSEEK_API_KEY",
+    modelEnv: "DEEPSEEK_MODEL",
+    baseURLEnv: "DEEPSEEK_BASE_URL",
+    headersEnv: "DEEPSEEK_HEADERS_JSON",
+    bodyExtraEnv: "DEEPSEEK_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "deepseek-anthropic",
+    label: "DeepSeek Anthropic",
+    profile: "deepseek-anthropic",
+    protocol: "anthropic_messages",
+    apiKeyEnv: "DEEPSEEK_ANTHROPIC_API_KEY",
+    modelEnv: "DEEPSEEK_ANTHROPIC_MODEL",
+    baseURLEnv: "DEEPSEEK_ANTHROPIC_BASE_URL",
+    headersEnv: "DEEPSEEK_ANTHROPIC_HEADERS_JSON",
+    bodyExtraEnv: "DEEPSEEK_ANTHROPIC_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "zai-anthropic",
+    label: "Z.AI Anthropic",
+    profile: "zai-anthropic",
+    protocol: "anthropic_messages",
+    apiKeyEnv: "ZAI_ANTHROPIC_API_KEY",
+    modelEnv: "ZAI_ANTHROPIC_MODEL",
+    baseURLEnv: "ZAI_ANTHROPIC_BASE_URL",
+    headersEnv: "ZAI_ANTHROPIC_HEADERS_JSON",
+    bodyExtraEnv: "ZAI_ANTHROPIC_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    profile: "openrouter",
+    protocol: "openai_chat",
+    apiKeyEnv: "OPENROUTER_API_KEY",
+    modelEnv: "OPENROUTER_MODEL",
+    baseURLEnv: "OPENROUTER_BASE_URL",
+    headersEnv: "OPENROUTER_HEADERS_JSON",
+    bodyExtraEnv: "OPENROUTER_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "dashscope",
+    label: "Qwen / DashScope",
+    profile: "dashscope",
+    protocol: "openai_chat",
+    apiKeyEnv: "DASHSCOPE_API_KEY",
+    modelEnv: "DASHSCOPE_MODEL",
+    baseURLEnv: "DASHSCOPE_BASE_URL",
+    headersEnv: "DASHSCOPE_HEADERS_JSON",
+    bodyExtraEnv: "DASHSCOPE_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "siliconflow",
+    label: "SiliconFlow",
+    profile: "siliconflow",
+    protocol: "openai_chat",
+    apiKeyEnv: "SILICONFLOW_API_KEY",
+    modelEnv: "SILICONFLOW_MODEL",
+    baseURLEnv: "SILICONFLOW_BASE_URL",
+    headersEnv: "SILICONFLOW_HEADERS_JSON",
+    bodyExtraEnv: "SILICONFLOW_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "zhipu",
+    label: "Zhipu / GLM",
+    profile: "zhipu",
+    protocol: "openai_chat",
+    apiKeyEnv: "ZHIPU_API_KEY",
+    modelEnv: "ZHIPU_MODEL",
+    baseURLEnv: "ZHIPU_BASE_URL",
+    headersEnv: "ZHIPU_HEADERS_JSON",
+    bodyExtraEnv: "ZHIPU_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "volcengine",
+    label: "Volcengine Ark / Doubao",
+    profile: "volcengine",
+    protocol: "openai_chat",
+    apiKeyEnv: "VOLCENGINE_API_KEY",
+    modelEnv: "VOLCENGINE_MODEL",
+    baseURLEnv: "VOLCENGINE_BASE_URL",
+    headersEnv: "VOLCENGINE_HEADERS_JSON",
+    bodyExtraEnv: "VOLCENGINE_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "qianfan",
+    label: "Baidu Qianfan",
+    profile: "qianfan",
+    protocol: "openai_chat",
+    apiKeyEnv: "QIANFAN_API_KEY",
+    modelEnv: "QIANFAN_MODEL",
+    baseURLEnv: "QIANFAN_BASE_URL",
+    headersEnv: "QIANFAN_HEADERS_JSON",
+    bodyExtraEnv: "QIANFAN_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
+    id: "hunyuan",
+    label: "Tencent Hunyuan",
+    profile: "hunyuan",
+    protocol: "openai_chat",
+    apiKeyEnv: "HUNYUAN_API_KEY",
+    modelEnv: "HUNYUAN_MODEL",
+    baseURLEnv: "HUNYUAN_BASE_URL",
+    headersEnv: "HUNYUAN_HEADERS_JSON",
+    bodyExtraEnv: "HUNYUAN_BODY_EXTRA_JSON",
     requireBaseURL: false,
     allowLocalNoAuth: true
   }
@@ -368,7 +615,7 @@ function missingRequirements(entry, env, options = {}) {
   const localNoAuth = entry.allowLocalNoAuth && isLocalEndpoint(baseURL);
   const customAuth = hasAuthHeader(options.customHeaders || {});
   if (!localNoAuth && !String(env[entry.apiKeyEnv] || "").trim() && !customAuth) missing.push(entry.apiKeyEnv);
-  if (!options.models && !String(env[entry.modelEnv] || "").trim()) missing.push(entry.modelEnv);
+  if (!options.models && !String(env[entry.modelEnv] || defaultModelForCase(entry) || "").trim()) missing.push(entry.modelEnv);
   if (entry.requireBaseURL && !baseURL) missing.push(entry.baseURLEnv);
   return missing;
 }
@@ -386,6 +633,14 @@ function unsupportedInputReason(entry, options = {}) {
 function defaultBaseURLForCase(entry) {
   try {
     return entry?.profile ? runProfileDefault(entry.profile)?.baseURL || "" : "";
+  } catch (_err) {
+    return "";
+  }
+}
+
+function defaultModelForCase(entry) {
+  try {
+    return entry?.profile ? runProfileDefault(entry.profile)?.model || "" : "";
   } catch (_err) {
     return "";
   }
@@ -419,50 +674,23 @@ function sanitizeSmokeReport(report, env) {
 
 function redactKnownSecrets(text, env) {
   let output = String(text || "");
-  for (const key of [
-    "OPENAI_API_KEY",
-    "OPENAI_RESPONSES_COMPATIBLE_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_COMPATIBLE_API_KEY",
-    "OPENAI_COMPATIBLE_API_KEY",
-    "GITHUB_MODELS_API_KEY",
-    "FIREWORKS_API_KEY",
-    "CEREBRAS_API_KEY",
-    "NVIDIA_NIM_API_KEY",
-    "SAMBANOVA_API_KEY",
-    "SAMBANOVA_RESPONSES_API_KEY",
-    "SAMBANOVA_ANTHROPIC_API_KEY",
-    "OPENAI_HEADERS_JSON",
-    "OPENAI_RESPONSES_COMPATIBLE_HEADERS_JSON",
-    "ANTHROPIC_HEADERS_JSON",
-    "ANTHROPIC_COMPATIBLE_HEADERS_JSON",
-    "OPENAI_COMPATIBLE_HEADERS_JSON",
-    "GITHUB_MODELS_HEADERS_JSON",
-    "FIREWORKS_HEADERS_JSON",
-    "CEREBRAS_HEADERS_JSON",
-    "NVIDIA_NIM_HEADERS_JSON",
-    "SAMBANOVA_HEADERS_JSON",
-    "SAMBANOVA_RESPONSES_HEADERS_JSON",
-    "SAMBANOVA_ANTHROPIC_HEADERS_JSON",
-    "OPENAI_BODY_EXTRA_JSON",
-    "OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON",
-    "ANTHROPIC_BODY_EXTRA_JSON",
-    "ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON",
-    "OPENAI_COMPATIBLE_BODY_EXTRA_JSON",
-    "GITHUB_MODELS_BODY_EXTRA_JSON",
-    "FIREWORKS_BODY_EXTRA_JSON",
-    "CEREBRAS_BODY_EXTRA_JSON",
-    "NVIDIA_NIM_BODY_EXTRA_JSON",
-    "SAMBANOVA_BODY_EXTRA_JSON",
-    "SAMBANOVA_RESPONSES_BODY_EXTRA_JSON",
-    "SAMBANOVA_ANTHROPIC_BODY_EXTRA_JSON"
-  ]) {
+  for (const key of sensitiveEnvKeys()) {
     const value = String(env[key] || "");
     for (const secret of redactionCandidates(value, key.includes("HEADERS_JSON"))) {
       output = output.split(secret).join("[redacted]");
     }
   }
   return output;
+}
+
+function sensitiveEnvKeys() {
+  const keys = new Set();
+  for (const entry of DEFAULT_CASES) {
+    for (const key of [entry.apiKeyEnv, entry.headersEnv, entry.bodyExtraEnv]) {
+      if (key) keys.add(key);
+    }
+  }
+  return [...keys];
 }
 
 function redactionCandidates(value, includeJSONLeaves = false) {
@@ -605,6 +833,9 @@ function usage() {
     "  OPENAI_COMPATIBLE_API_KEY=... OPENAI_COMPATIBLE_BASE_URL=... npm run verify:provider:models:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_MODEL=... OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:models:live -- --include openai-compatible",
+    "  MINIMAX_API_KEY=... npm run verify:provider:live -- --include minimax",
+    "  GEMINI_API_KEY=... GEMINI_MODEL=... npm run verify:provider:live -- --include gemini",
+    "  AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=... AZURE_OPENAI_BASE_URL=... npm run verify:provider:live -- --include azure-openai",
     "  GITHUB_MODELS_API_KEY=... GITHUB_MODELS_MODEL=... npm run verify:provider:live -- --include github-models",
     "  FIREWORKS_API_KEY=... FIREWORKS_MODEL=... npm run verify:provider:live -- --include fireworks",
     "  CEREBRAS_API_KEY=... CEREBRAS_MODEL=... npm run verify:provider:live -- --include cerebras",
@@ -612,12 +843,15 @@ function usage() {
     "  SAMBANOVA_API_KEY=... SAMBANOVA_MODEL=... npm run verify:provider:live -- --include sambanova",
     "  SAMBANOVA_RESPONSES_API_KEY=... SAMBANOVA_RESPONSES_MODEL=... npm run verify:provider:live -- --include sambanova-responses",
     "  SAMBANOVA_ANTHROPIC_API_KEY=... SAMBANOVA_ANTHROPIC_MODEL=... npm run verify:provider:live -- --include sambanova-anthropic",
+    "  DEEPSEEK_API_KEY=... DEEPSEEK_MODEL=... npm run verify:provider:live -- --include deepseek",
+    "  OPENROUTER_API_KEY=... OPENROUTER_MODEL=... npm run verify:provider:live -- --include openrouter",
+    "  GROQ_API_KEY=... GROQ_MODEL=... npm run verify:provider:live -- --include groq",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --image",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --pdf",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --stream",
     "",
     "Options:",
-    "  --include LIST           Comma-separated cases: openai, openai-responses-compatible, anthropic, anthropic-compatible, openai-compatible, github-models, fireworks, cerebras, nvidia-nim, sambanova, sambanova-responses, sambanova-anthropic",
+    "  --include LIST           Comma-separated live case ids; named cases include built-in provider ids such as minimax, gemini, azure-openai, deepseek, openrouter, groq, github-models, fireworks, cerebras, nvidia-nim, sambanova, sambanova-responses, and sambanova-anthropic",
     "  --prompt TEXT            Override the smoke prompt",
     "  --context TEXT           Override the smoke context",
     "  --timeout-ms NUMBER      Per-provider timeout",
