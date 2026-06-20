@@ -218,6 +218,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     renderCandidateReviewMarkdown: (records: any[], options?: any) => string;
     candidateReviewLabels: (outputLanguage: string) => any;
     candidateReviewScreeningRows: (records: any[], labels: any) => Array<{ metric: string; count: number; action: string }>;
+    candidateReviewEvidenceRows: (records: any[], labels: any) => Array<{ title: string; state: string; gap: string; check: string; source: string }>;
     reviewDraftMarkdownPath: (outputDir: string, item: any) => string;
     renderReviewDraftMarkdown: (context: any, options?: any) => string;
     proposalNoteMarkdownPath: (outputDir: string, item: any) => string;
@@ -1625,6 +1626,73 @@ describe("workbench writeback helpers", () => {
     expect(counts["Abstract-only records"]).toBe(1);
   });
 
+  it("builds candidate evidence-chain follow-up rows from screening state and source gaps", () => {
+    const labels = helpers.candidateReviewLabels("en-US");
+    const rows = helpers.candidateReviewEvidenceRows([
+      {
+        candidateId: "doi:10.1000/include",
+        title: "Included Missing PDF",
+        decision: "include",
+        priority: { tier: "high", score: 90, recommendedDecision: "include" },
+        quality: { dedupeStatus: "new", isAbstractOnly: false },
+        sources: ["semantic_scholar"]
+      },
+      {
+        candidateId: "doi:10.1000/abstract",
+        title: "Abstract Only",
+        decision: "to_read",
+        priority: { tier: "medium", score: 72, recommendedDecision: "to_read" },
+        review: { screeningStage: "full_text_needed" },
+        quality: { dedupeStatus: "new", isAbstractOnly: true },
+        sources: ["crossref"]
+      },
+      {
+        candidateId: "doi:10.1000/exclude",
+        title: "Excluded Without Reason",
+        decision: "exclude",
+        priority: { tier: "low", score: 20, recommendedDecision: "exclude" },
+        quality: { dedupeStatus: "new", isAbstractOnly: false },
+        sources: ["arxiv"]
+      },
+      {
+        candidateId: "doi:10.1000/done",
+        title: "Already Screened",
+        decision: "include",
+        pdfUrl: "https://example.test/done.pdf",
+        review: { screeningStage: "full_text_screened" },
+        priority: { tier: "high", score: 88, recommendedDecision: "include" },
+        quality: { dedupeStatus: "new", isAbstractOnly: false }
+      },
+      {
+        candidateId: "doi:10.1000/dup",
+        title: "Duplicate",
+        decision: "include",
+        priority: { tier: "duplicate", score: 0, recommendedDecision: "exclude" },
+        quality: { dedupeStatus: "duplicate", isAbstractOnly: false }
+      }
+    ], labels);
+
+    expect(rows.map((row) => row.title)).toEqual([
+      "Included Missing PDF",
+      "Abstract Only",
+      "Excluded Without Reason"
+    ]);
+    expect(rows[0]).toMatchObject({
+      state: "Source only",
+      gap: "Included record is missing PDF or full-text evidence",
+      check: "Find an open-access PDF or attach local full text, then update the screening stage.",
+      source: "Search source: semantic_scholar"
+    });
+    expect(rows[1]).toMatchObject({
+      state: "Full text needed",
+      gap: "Full text is needed before judging evidence strength"
+    });
+    expect(rows[2]).toMatchObject({
+      gap: "Excluded record is missing a structured exclusion reason",
+      check: "Add an exclusion reason and note the evidence location."
+    });
+  });
+
   it("persists candidate review notes with decisions and can clear old notes", () => {
     const records = [
       {
@@ -1904,6 +1972,17 @@ describe("workbench writeback helpers", () => {
         priority: { tier: "duplicate", score: 0, recommendedDecision: "exclude", reasons: ["duplicate candidate"] },
         quality: { dedupeStatus: "duplicate", isAbstractOnly: false },
         review: { exclusionReason: "duplicate" }
+      },
+      {
+        candidateId: "title:abstract-only",
+        title: "Abstract Only Candidate",
+        year: 2024,
+        abstract: "Only the abstract is currently available.",
+        decision: "to_read",
+        sources: ["crossref"],
+        priority: { tier: "medium", score: 64, recommendedDecision: "to_read", reasons: ["abstract overlap"] },
+        quality: { dedupeStatus: "new", isAbstractOnly: true },
+        review: { screeningStage: "full_text_needed" }
       }
     ], {
       item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
@@ -1920,6 +1999,10 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("| 审阅状态 | 数量 | 建议处理 |");
     expect(report).toContain("高优先级待确认");
     expect(report).toContain("可导入 Zotero");
+    expect(report).toContain("## 证据链复核队列");
+    expect(report).toContain("| 候选论文 | 证据状态 | 证据缺口 | 建议核验 | 可用来源 |");
+    expect(report).toContain("Abstract Only Candidate (2024)");
+    expect(report).toContain("需要全文后才能判断证据强度");
     expect(report).toContain("## 人工复核清单");
     expect(report).toContain("## 筛选协议");
     expect(report).toContain("纳入标准");
@@ -1976,6 +2059,7 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reviewPath)).toContain("# Candidate Paper Review");
     expect(files.get(reviewPath)).toContain("## Screening Board");
     expect(files.get(reviewPath)).toContain("| Review state | Count | Suggested handling |");
+    expect(files.get(reviewPath)).toContain("## Evidence-chain Follow-up");
     expect(files.get(reviewPath)).toContain("## Screening Protocol");
     expect(files.get(reviewPath)).toContain("## Decision Action Queue");
     expect(files.get(reviewPath)).toContain("| Candidate paper | Decision | Recommended | Priority | Next action |");

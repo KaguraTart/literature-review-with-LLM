@@ -255,7 +255,7 @@ build/update.json
 - Single-turn image attachments and the `Figure/Table Extractor` skill are supported, including a structured visual OCR / table-reconstruction output contract, but chart, table, and handwritten-note understanding still depends on the selected model. A local OCR engine and automatic chart-data reconstruction are not implemented yet.
 - Formula rendering is lightweight. It supports common inline/display math patterns, but it is not a full TeX engine.
 - Paper reading logs and formal review drafts are structured Markdown scaffolds with evidence excerpts and manual fields; they still need human editing before becoming polished long-form review reports.
-- Candidate-paper search now has explainable ranking, duplicate reconciliation, configurable bounded citation-network expansion, saved manual review notes, structured full-text screening stages, exclusion reasons, high-confidence recommendation application, a screening board, and a Markdown candidate-review report, but richer evidence-chain workflows still need more work.
+- Candidate-paper search now has explainable ranking, duplicate reconciliation, configurable bounded citation-network expansion, saved manual review notes, structured full-text screening stages, exclusion reasons, high-confidence recommendation application, a screening board, an evidence-chain follow-up queue, and a Markdown candidate-review report, but source-to-PDF evidence extraction still needs more work.
 - The workbench UI is still being refined; some controls and settings are intentionally compact but may need more usability work.
 - Raw PDF input depends on provider capability. Many providers still use extracted Zotero text instead.
 - Local-agent calls depend on local CLI tools and their own authentication state.
@@ -266,7 +266,7 @@ build/update.json
 
 - Improve cross-collection clustering and continue polishing the global synthesis map, collection-level synthesis claims, synthesis roadmaps, and report generation.
 - Replace the current prompt-level visual OCR/table-reconstruction contract with local OCR, table parsing, and chart-data reconstruction for screenshots, PDF figures, tables, and experimental results.
-- Add richer candidate-paper evidence-chain workflows after the current full-text screening stages, exclusion reasons, screening board, and configurable citation-network policies.
+- Add source-to-PDF evidence extraction and citation-context snippets on top of the current screening stages, exclusion reasons, screening board, evidence-chain queue, and configurable citation-network policies.
 - Add more per-provider screenshots and tutorial examples beyond the in-app setup guide.
 - Continue polishing proposal-note and journal/report-outline templates, and add more domain-specific writing formats.
 

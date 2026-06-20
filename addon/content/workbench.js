@@ -6559,6 +6559,10 @@ function renderCandidateReviewMarkdown(records, options = {}) {
     "",
     ...candidateReviewScreeningBoard(candidates, labels),
     "",
+    `## ${labels.evidenceChain}`,
+    "",
+    ...candidateReviewEvidenceChainQueue(candidates, labels),
+    "",
     `## ${labels.checklist}`,
     "",
     `- [ ] ${labels.checkIdentifiers}`,
@@ -6669,6 +6673,80 @@ function candidateReviewScreeningRows(records, labels) {
     { metric: labels.boardPdfAttached, count: pdfAttached, action: labels.boardPdfAttachedAction },
     { metric: labels.boardAbstractOnly, count: abstractOnly, action: labels.boardAbstractOnlyAction }
   ];
+}
+
+function candidateReviewEvidenceChainQueue(records, labels) {
+  const rows = candidateReviewEvidenceRows(records, labels);
+  if (!rows.length) return [`- ${labels.evidenceNoFollowUp}`];
+  return [
+    `| ${labels.paperColumn} | ${labels.evidenceColumnState} | ${labels.evidenceColumnGap} | ${labels.evidenceColumnCheck} | ${labels.evidenceColumnSource} |`,
+    "| --- | --- | --- | --- | --- |",
+    ...rows.map((row) => `| ${mdTableCell(row.title)} | ${mdTableCell(row.state)} | ${mdTableCell(row.gap)} | ${mdTableCell(row.check)} | ${mdTableCell(row.source)} |`)
+  ];
+}
+
+function candidateReviewEvidenceRows(records, labels) {
+  return candidateReviewGroupRecords(records, candidateNeedsEvidenceFollowUp)
+    .slice(0, 20)
+    .map((record) => ({
+      title: `${record.title || record.candidateId}${record.year ? ` (${record.year})` : ""}`,
+      state: candidateReviewEvidenceState(record, labels),
+      gap: candidateReviewEvidenceGap(record, labels),
+      check: candidateReviewEvidenceCheck(record, labels),
+      source: candidateReviewEvidenceSource(record, labels)
+    }));
+}
+
+function candidateNeedsEvidenceFollowUp(record) {
+  return !!candidateReviewEvidenceGap(record, candidateReviewLabels("en-US"));
+}
+
+function candidateReviewEvidenceState(record, labels) {
+  const stage = candidateReviewScreeningStage(record);
+  if (stage === "full_text_screened") return labels.evidenceStateFullTextScreened;
+  if (stage === "full_text_needed") return labels.evidenceStateFullTextNeeded;
+  if (record?.quality?.isAbstractOnly === true) return labels.evidenceStateAbstractOnly;
+  if (stage === "abstract_screened") return labels.evidenceStateAbstractScreened;
+  if (candidateHasFullText(record)) return labels.evidenceStatePdfAvailable;
+  return labels.evidenceStateSourceOnly;
+}
+
+function candidateReviewEvidenceGap(record, labels) {
+  if (record?.quality?.dedupeStatus === "duplicate" || record?.priority?.tier === "duplicate") return "";
+  const decision = normalizeCandidateDecision(record?.decision);
+  const stage = candidateReviewScreeningStage(record);
+  if (decision === "exclude" && !candidateReviewExclusionReason(record)) return labels.evidenceGapMissingExclusionReason;
+  if (decision === "include" && !candidateHasFullText(record)) return labels.evidenceGapMissingFullText;
+  if (stage === "full_text_needed") return labels.evidenceGapFullTextNeeded;
+  if (record?.quality?.isAbstractOnly === true) return labels.evidenceGapAbstractOnly;
+  if (["include", "to_read"].includes(decision) && stage !== "full_text_screened") return labels.evidenceGapNeedFullTextScreening;
+  if (record?.networkOrigins?.length && stage !== "full_text_screened") return labels.evidenceGapCitationContext;
+  return "";
+}
+
+function candidateReviewEvidenceCheck(record, labels) {
+  const gap = candidateReviewEvidenceGap(record, labels);
+  if (gap === labels.evidenceGapMissingExclusionReason) return labels.evidenceCheckAddExclusionReason;
+  if (gap === labels.evidenceGapMissingFullText || gap === labels.evidenceGapFullTextNeeded) return labels.evidenceCheckFindPdf;
+  if (gap === labels.evidenceGapAbstractOnly) return labels.evidenceCheckReadAbstract;
+  if (gap === labels.evidenceGapCitationContext) return labels.evidenceCheckTraceCitationContext;
+  if (gap === labels.evidenceGapNeedFullTextScreening) return labels.evidenceCheckScreenFullText;
+  return labels.actionNoImmediate;
+}
+
+function candidateReviewEvidenceSource(record, labels) {
+  const parts = [
+    record?.pdfAttachmentStatus === "attached_pdf" ? labels.evidenceSourceAttachedPdf : "",
+    record?.pdfUrl ? labels.evidenceSourcePdfUrl : "",
+    record?.networkOrigins?.length ? labels.evidenceSourceNetwork : "",
+    record?.sources?.length ? `${labels.evidenceSourceCatalog}: ${record.sources.join(", ")}` : "",
+    record?.sourceUrl ? labels.source : ""
+  ].filter(Boolean);
+  return parts.length ? parts.join("; ") : labels.evidenceSourceUnknown;
+}
+
+function candidateHasFullText(record) {
+  return !!record?.pdfUrl || record?.pdfAttachmentStatus === "attached_pdf";
 }
 
 function candidateRecommendationMismatch(record) {
@@ -6836,6 +6914,34 @@ function candidateReviewLabels(outputLanguage) {
       boardPdfAttachedAction: "可进入精读或加入文献矩阵。",
       boardAbstractOnly: "仅摘要记录",
       boardAbstractOnlyAction: "低优先级仅摘要记录暂缓导入，先补全文或来源。",
+      evidenceChain: "证据链复核队列",
+      evidenceColumnState: "证据状态",
+      evidenceColumnGap: "证据缺口",
+      evidenceColumnCheck: "建议核验",
+      evidenceColumnSource: "可用来源",
+      evidenceNoFollowUp: "暂无需要单独复核的证据链事项；继续按审阅队列记录人工判断。",
+      evidenceStateFullTextScreened: "全文已筛",
+      evidenceStateFullTextNeeded: "需要全文",
+      evidenceStateAbstractScreened: "摘要已筛",
+      evidenceStateAbstractOnly: "仅摘要",
+      evidenceStatePdfAvailable: "PDF 可用",
+      evidenceStateSourceOnly: "仅来源记录",
+      evidenceGapMissingExclusionReason: "已排除但缺少结构化排除理由",
+      evidenceGapMissingFullText: "已纳入但缺少 PDF 或全文证据",
+      evidenceGapFullTextNeeded: "需要全文后才能判断证据强度",
+      evidenceGapAbstractOnly: "仅摘要，缺少方法、实验和局限证据",
+      evidenceGapNeedFullTextScreening: "尚未完成全文筛选",
+      evidenceGapCitationContext: "引用网络相关性需要回到原文核对",
+      evidenceCheckAddExclusionReason: "补充排除理由，并在备注中写明证据位置。",
+      evidenceCheckFindPdf: "查找开放获取 PDF 或附加本地全文，再更新筛选阶段。",
+      evidenceCheckScreenFullText: "检查方法、实验、局限和可复用指标，并标记为已筛全文。",
+      evidenceCheckReadAbstract: "先核对摘要与来源页，能获取全文后再进入纳入判断。",
+      evidenceCheckTraceCitationContext: "核对它与种子论文的引用/被引关系和具体段落上下文。",
+      evidenceSourcePdfUrl: "PDF 链接",
+      evidenceSourceAttachedPdf: "已附加 PDF",
+      evidenceSourceNetwork: "引用网络",
+      evidenceSourceCatalog: "检索来源",
+      evidenceSourceUnknown: "未知",
       checklist: "人工复核清单",
       checkIdentifiers: "核对 DOI、arXiv、Semantic Scholar ID 是否对应同一篇论文。",
       checkFullText: "优先确认是否有 PDF 或开放获取全文。",
@@ -6938,6 +7044,34 @@ function candidateReviewLabels(outputLanguage) {
     boardPdfAttachedAction: "Move to close reading or the literature matrix.",
     boardAbstractOnly: "Abstract-only records",
     boardAbstractOnlyAction: "Defer low-priority abstract-only records until full text or source evidence is available.",
+    evidenceChain: "Evidence-chain Follow-up",
+    evidenceColumnState: "Evidence state",
+    evidenceColumnGap: "Evidence gap",
+    evidenceColumnCheck: "Suggested check",
+    evidenceColumnSource: "Available source",
+    evidenceNoFollowUp: "No separate evidence-chain follow-up is needed; continue recording manual judgments from the review queue.",
+    evidenceStateFullTextScreened: "Full text screened",
+    evidenceStateFullTextNeeded: "Full text needed",
+    evidenceStateAbstractScreened: "Abstract screened",
+    evidenceStateAbstractOnly: "Abstract only",
+    evidenceStatePdfAvailable: "PDF available",
+    evidenceStateSourceOnly: "Source only",
+    evidenceGapMissingExclusionReason: "Excluded record is missing a structured exclusion reason",
+    evidenceGapMissingFullText: "Included record is missing PDF or full-text evidence",
+    evidenceGapFullTextNeeded: "Full text is needed before judging evidence strength",
+    evidenceGapAbstractOnly: "Abstract-only record lacks method, experiment, and limitation evidence",
+    evidenceGapNeedFullTextScreening: "Full-text screening is not complete",
+    evidenceGapCitationContext: "Citation-network relevance needs source-context verification",
+    evidenceCheckAddExclusionReason: "Add an exclusion reason and note the evidence location.",
+    evidenceCheckFindPdf: "Find an open-access PDF or attach local full text, then update the screening stage.",
+    evidenceCheckScreenFullText: "Check method, experiments, limitations, and reusable metrics, then mark full text screened.",
+    evidenceCheckReadAbstract: "Check the abstract and source page first; defer inclusion until full text is available.",
+    evidenceCheckTraceCitationContext: "Verify the reference/citation relation and the source paragraphs around it.",
+    evidenceSourcePdfUrl: "PDF URL",
+    evidenceSourceAttachedPdf: "Attached PDF",
+    evidenceSourceNetwork: "Citation network",
+    evidenceSourceCatalog: "Search source",
+    evidenceSourceUnknown: "Unknown",
     checklist: "Manual Review Checklist",
     checkIdentifiers: "Confirm DOI, arXiv, and Semantic Scholar IDs refer to the same paper.",
     checkFullText: "Prefer papers with PDF or open-access full text.",
