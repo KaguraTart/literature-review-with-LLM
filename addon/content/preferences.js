@@ -873,6 +873,7 @@ function providerSetupGuide(profile, language = "en-US") {
       `能力：${capabilities || "文本"}`,
       `模型列表：${modelList || "当前档案不支持自动加载模型列表"}`,
       `保存后测试：点击“测试连接”；失败信息会隐藏完整 API Key。`,
+      `复制环境变量模板：${verify.envTemplateCommand}`,
       `终端 live 检查：${verify.liveCommand}`,
       `模型列表 live 检查：${verify.modelsCommand}`
     ].join("\n");
@@ -887,6 +888,7 @@ function providerSetupGuide(profile, language = "en-US") {
     `Capabilities: ${capabilities || "text"}`,
     `Model list: ${modelList || "not available for this profile"}`,
     "After saving: click Test connection. Failure messages hide full API keys.",
+    `Copy env template: ${verify.envTemplateCommand}`,
     `Terminal live check: ${verify.liveCommand}`,
     `Model-list live check: ${verify.modelsCommand}`
   ].join("\n");
@@ -943,7 +945,8 @@ function providerLiveVerifyGuide(profile, provider = providerFromProfile(profile
   const modelAssignments = assignments.filter((item) => !item.startsWith(`${entry.modelEnv}=`));
   const modelPrefix = modelAssignments.join(" ");
   const modelsCommand = `${modelPrefix ? `${modelPrefix} ` : ""}npm run verify:provider:models:live -- --include ${entry.include}`;
-  return { ...entry, liveCommand, modelsCommand };
+  const envTemplateCommand = `npm run verify:provider:live -- --env-template --include ${entry.include}`;
+  return { ...entry, liveCommand, modelsCommand, envTemplateCommand };
 }
 
 function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)) {

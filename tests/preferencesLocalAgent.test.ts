@@ -1504,6 +1504,7 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).toContain("Request endpoint: https://api.openai.com/v1/responses");
     expect(guide).toContain("OPENAI_API_KEY=...");
     expect(guide).toContain("OPENAI_MODEL=gpt-4.1");
+    expect(guide).toContain("Copy env template: npm run verify:provider:live -- --env-template --include openai");
     expect(guide).toContain("npm run verify:provider:live -- --include openai");
     expect(guide).toContain("npm run verify:provider:models:live -- --include openai");
     expect(guide).not.toContain("sk-test-secret");
@@ -1522,6 +1523,7 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).toContain("ANTHROPIC_COMPATIBLE_API_KEY=...");
     expect(guide).toContain("ANTHROPIC_COMPATIBLE_MODEL=claude-router");
     expect(guide).toContain("ANTHROPIC_COMPATIBLE_BASE_URL=https://router.example/anthropic");
+    expect(guide).toContain("Copy env template: npm run verify:provider:live -- --env-template --include anthropic-compatible");
     expect(guide).toContain("--include anthropic-compatible");
     expect(guide).not.toContain("anthropic-secret");
   });

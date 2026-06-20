@@ -1397,6 +1397,9 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("https://api.deepseek.com/v1/models");
     expect(report).toContain("DEEPSEEK_API_KEY=...");
     expect(report).toContain("DEEPSEEK_MODEL=deepseek-chat");
+    expect(report).toContain("## Terminal Live Checks");
+    expect(report).toContain("### Copyable Env Template");
+    expect(report).toContain("npm run verify:provider:live -- --env-template --include deepseek");
     expect(report).toContain("npm run verify:provider:live -- --include deepseek");
     expect(report).toContain("`Authorization`");
     expect(report).toContain("## Redacted Request Preview");
@@ -1502,6 +1505,7 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("deepseek-chat");
     expect(report).toContain("DEEPSEEK_API_KEY=...");
     expect(report).toContain("DEEPSEEK_MODEL=deepseek-chat");
+    expect(report).toContain("npm run verify:provider:live -- --env-template --include deepseek");
     expect(report).not.toContain("new-secret");
     expect(report).not.toContain("old-secret");
     expect(workbench.state.profile.apiKey).toBe("new-secret");

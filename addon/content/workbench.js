@@ -2392,6 +2392,12 @@ function renderProviderDiagnosticsMarkdown(profile, options = {}) {
     "",
     `## ${labels.liveChecks}`,
     "",
+    `### ${labels.envTemplate}`,
+    "",
+    `\`\`\`bash`,
+    verify.envTemplateCommand || labels.notConfigured,
+    `\`\`\``,
+    "",
     `\`\`\`bash`,
     verify.liveCommand || labels.notConfigured,
     `\`\`\``,
@@ -2463,6 +2469,7 @@ function providerDiagnosticsLabels(outputLanguage) {
       previewImage: "图片",
       previewPdf: "原始 PDF",
       liveChecks: "终端 live 检查",
+      envTemplate: "可复制环境变量模板",
       statusSnapshot: "当前状态快照",
       troubleshooting: "排查清单",
       checkModel: "确认模型名称真实存在，必要时先点击 Load models。",
@@ -2525,6 +2532,7 @@ function providerDiagnosticsLabels(outputLanguage) {
     previewImage: "image",
     previewPdf: "raw PDF",
     liveChecks: "Terminal Live Checks",
+    envTemplate: "Copyable Env Template",
     statusSnapshot: "Current Status Snapshot",
     troubleshooting: "Troubleshooting Checklist",
     checkModel: "Confirm the model name exists. Use Load models first when available.",
@@ -2683,6 +2691,7 @@ function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProvid
   if (isLocalAgentProfile(profile)) {
     return {
       include: "local-agents",
+      envTemplateCommand: "npm run local-agent:service:doctor",
       liveCommand: "npm run local-agent:service:check",
       modelsCommand: "npm run local-agent:service:doctor"
     };
@@ -2699,6 +2708,7 @@ function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProvid
   const modelPrefix = modelAssignments.join(" ");
   return {
     ...entry,
+    envTemplateCommand: `npm run verify:provider:live -- --env-template --include ${entry.include}`,
     liveCommand: `${livePrefix ? `${livePrefix} ` : ""}npm run verify:provider:live -- --include ${entry.include}`,
     modelsCommand: `${modelPrefix ? `${modelPrefix} ` : ""}npm run verify:provider:models:live -- --include ${entry.include}`
   };
