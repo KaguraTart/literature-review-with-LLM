@@ -296,6 +296,12 @@ describe("provider smoke verifier", () => {
       ["openai-responses-compatible", "openai_responses", true, "OK responses"],
       ["anthropic", "anthropic_messages", true, "OK anthropic"]
     ]);
+    expect(report.results.map((result: any) => result.usage)).toEqual([
+      { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+      { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+      { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+      { inputTokens: 1, outputTokens: 2, totalTokens: 3 }
+    ]);
     expect(report.requests.map((request: any) => [request.path, request.bodyKeys.includes("stream")])).toEqual([
       ["/v1/chat/completions", true],
       ["/v1/responses", true],

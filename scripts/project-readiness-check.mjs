@@ -166,6 +166,12 @@ const SOURCE_MARKERS = [
     markers: ["extractOpenAIEventContainer", "isProviderStreamSnapshot", "modelTextFromStreamContainer", "!parsed.snapshot || !text"]
   },
   {
+    id: "provider.usage-metadata",
+    description: "OpenAI-compatible, Responses, Anthropic, and wrapped provider usage metadata is normalized and preserved",
+    files: ["src/providerAdapters.ts", "addon/content/workbench.js", "scripts/verify-provider-smoke.mjs", "tests/providerAdapters.test.ts", "tests/workbenchWriteback.test.ts"],
+    markers: ["extractProviderUsage", "parseStreamUsage", "providerUsageFromResponse", "response.zmsUsage", "message?.usage", "normalizes provider token usage", "captures provider usage metadata"]
+  },
+  {
     id: "provider.bootstrap-runtime",
     description: "Bootstrap generation keeps provider identity and version-aware endpoint routing",
     files: ["addon/bootstrap.js", "addon/content/bootstrap-settings.js"],
@@ -205,13 +211,13 @@ const SOURCE_MARKERS = [
     id: "provider.smoke-script",
     description: "Provider smoke verification can call OpenAI-compatible, Responses, and Anthropic endpoints with sanitized output",
     files: ["scripts/verify-provider-smoke.mjs"],
-    markers: ["runProviderSmoke", "runMockProviderSmoke", "runProviderModels", "runMockProviderModels", "endpointFor", "headersFor", "bodyFor", "extractResponseText", "api-key-env", "dryRun", "mockProviderResponse", "modelOptionsFromItems", "profileHasUsableAuth", "isLocalEndpoint", "smokeInputMode"]
+    markers: ["runProviderSmoke", "runMockProviderSmoke", "runProviderModels", "runMockProviderModels", "endpointFor", "headersFor", "bodyFor", "extractResponseText", "extractProviderUsage", "api-key-env", "dryRun", "mockProviderResponse", "modelOptionsFromItems", "profileHasUsableAuth", "isLocalEndpoint", "smokeInputMode"]
   },
   {
     id: "provider.stream-smoke",
     description: "Provider smoke verification covers streaming OpenAI-compatible, Responses, and Anthropic text/event-stream output",
     files: ["scripts/verify-provider-smoke.mjs", "scripts/verify-provider-live.mjs", "package.json", "tests/providerSmokeScript.test.ts"],
-    markers: ["--stream", "verify:provider:stream:mock", "mockProviderStreamResponse", "streamTextFromBody", "parseStreamChunk", "runs built-in mock stream checks", "runs live provider stream checks"]
+    markers: ["--stream", "verify:provider:stream:mock", "mockProviderStreamResponse", "streamTextFromBody", "streamUsageFromBody", "parseStreamChunk", "parseStreamUsage", "runs built-in mock stream checks", "runs live provider stream checks"]
   },
   {
     id: "provider.multimodal-smoke",

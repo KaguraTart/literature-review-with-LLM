@@ -40,6 +40,8 @@ if (!existsSync("scripts/project-readiness-check.mjs")) {
 }
 
 const packageJson = readFileSync("package.json", "utf8");
+const providerAdaptersSource = readFileSync("src/providerAdapters.ts", "utf8");
+const providerSmokeSource = readFileSync("scripts/verify-provider-smoke.mjs", "utf8");
 if (!packageJson.includes("local-agent:service:install")) {
   fail("Missing local agent service npm scripts");
 }
@@ -466,8 +468,14 @@ const requiredMarkers = [
   [workbenchJs, "streamErrorText", "workbench provider stream error parser"],
   [workbenchJs, "Provider error:", "workbench provider JSON error parser"],
   [workbenchJs, "streamTextFromData", "workbench stream tail parser"],
+  [workbenchJs, "providerUsageFromResponse", "workbench provider usage extractor"],
+  [workbenchJs, "response.zmsUsage", "workbench stream usage capture"],
+  [workbenchJs, "message?.usage", "workbench session usage metadata export"],
   [workbenchJs, "modelTextFromStreamContainer", "OpenAI Responses stream container parser in workbench"],
   [workbenchJs, "!parsed.snapshot || !text", "OpenAI Responses stream snapshot dedupe in workbench"],
+  [providerAdaptersSource, "extractProviderUsage", "provider adapter usage extractor"],
+  [providerAdaptersSource, "parseStreamUsage", "provider stream usage extractor"],
+  [providerSmokeSource, "streamUsageFromBody", "provider smoke stream usage report"],
   [workbenchJs, "searchCandidates", "workbench candidate search action"],
   [workbenchJs, "expandCandidateCitationNetwork", "workbench citation-network action"],
   [workbenchJs, "citationNetworkOptionsFromDom", "workbench configurable citation-network options"],

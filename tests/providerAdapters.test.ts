@@ -3,9 +3,11 @@ import {
   bodyFor,
   defaultCapabilities,
   endpointFor,
+  extractProviderUsage,
   headersFor,
   modelsEndpointFor,
   parseStreamChunk,
+  parseStreamUsage,
   providerBodyExtra,
   redact,
   extractResponseText,
@@ -734,6 +736,64 @@ describe("provider adapters", () => {
         message: "Bearer routed-secret overloaded"
       }
     })).toThrow("overloaded_error - Bearer [redacted] overloaded");
+  });
+
+  it("normalizes provider token usage across OpenAI, Anthropic, Gemini-style, and wrapped responses", () => {
+    expect(extractProviderUsage({
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        total_tokens: 15,
+        prompt_tokens_details: { cached_tokens: 3 },
+        completion_tokens_details: { reasoning_tokens: 2 }
+      }
+    })).toEqual({
+      inputTokens: 10,
+      outputTokens: 5,
+      totalTokens: 15,
+      cachedInputTokens: 3,
+      reasoningTokens: 2
+    });
+
+    expect(extractProviderUsage({
+      response: {
+        usage: {
+          input_tokens: 7,
+          output_tokens: 4,
+          cache_read_input_tokens: 2,
+          cache_creation_input_tokens: 1
+        }
+      }
+    })).toEqual({
+      inputTokens: 7,
+      outputTokens: 4,
+      totalTokens: 11,
+      cachedInputTokens: 3
+    });
+
+    expect(extractProviderUsage({
+      usage_metadata: {
+        promptTokenCount: "8",
+        candidatesTokenCount: "6",
+        totalTokenCount: "14"
+      }
+    })).toEqual({
+      inputTokens: 8,
+      outputTokens: 6,
+      totalTokens: 14
+    });
+  });
+
+  it("extracts provider token usage from stream chunks", () => {
+    expect(parseStreamUsage([
+      "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}",
+      "",
+      "data: {\"response\":{\"usage\":{\"input_tokens\":7,\"output_tokens\":4}}}"
+    ].join("\n"))).toEqual({
+      inputTokens: 10,
+      outputTokens: 5,
+      totalTokens: 15
+    });
   });
 
   it("extracts assistant text from nested message and output formats", () => {

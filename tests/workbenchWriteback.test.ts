@@ -179,6 +179,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     providerErrorText: (status: number, text: string) => string;
     extractResponseText: (protocol: string, data: any) => string;
     extractProviderConnectionText: (protocol: string, text: string) => string;
+    answerTextForMessage: (message: any) => string;
     getProfiles: () => any[];
     requestMessagesWithHistory: (messages: any[], latestUserText: string, requestPrompt: string, options?: { limit?: number; compaction?: any }) => any[];
     bodyForProfile: (profile: any, messages: any[], outputLanguage: string, systemPrompt: string, requestInput?: any, streamEnabled?: boolean) => any;
@@ -1313,6 +1314,25 @@ describe("workbench writeback helpers", () => {
 
     expect(text).toBe("streamed");
     expect(deltas).toEqual(["streamed"]);
+  });
+
+  it("captures provider usage metadata from workbench streams", async () => {
+    const response: any = {
+      body: streamFromText([
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"streamed\"}",
+        "data: {\"response\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":6,\"total_tokens\":18}}}"
+      ].join("\n"))
+    };
+    const deltas: string[] = [];
+    const text = await helpers.readStream(response, "openai_responses", (delta) => deltas.push(delta));
+
+    expect(text).toBe("streamed");
+    expect(deltas).toEqual(["streamed"]);
+    expect(response.zmsUsage).toEqual({
+      inputTokens: 12,
+      outputTokens: 6,
+      totalTokens: 18
+    });
   });
 
   it("uses OpenAI Responses done snapshots as a workbench stream fallback", async () => {
@@ -2989,6 +3009,34 @@ describe("workbench writeback helpers", () => {
     const assistant = dom.elements.get("zms-messages").children.find((child: any) => child.className.includes("zms-message-assistant"));
     const body = assistant.children.find((child: any) => child.className === "zms-message-body");
     expect(body.children.at(-1).className).toContain("zms-markdown");
+  });
+
+  it("stores provider usage metadata on assistant messages without changing answer text", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-input": "question",
+      "zms-skill": ""
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.state.item = { key: "ITEM" };
+    workbench.state.profile = providerProfile();
+    workbench.state.messages = [];
+    workbench.state.outputLanguage = "zh-CN";
+    workbench.state.uiLanguage = "en-US";
+    workbench.t = (key: string) => key;
+    workbench.saveSession = async () => undefined;
+    workbench.callModel = async () => ({
+      text: "answer body",
+      usage: { inputTokens: 12, outputTokens: 6, totalTokens: 18 }
+    });
+
+    await workbench.send();
+
+    const assistant = workbench.state.messages.find((message: any) => message.role === "assistant");
+    expect(assistant.content).toBe("answer body");
+    expect(assistant.usage).toEqual({ inputTokens: 12, outputTokens: 6, totalTokens: 18 });
+    expect(loaded.answerTextForMessage(assistant)).toBe("answer body");
   });
 
   it("sends image-only messages with a localized default prompt", async () => {

@@ -46,6 +46,8 @@ function loadWorkbenchHelpers() {
     sessionLabelFromPath: (path: string) => string;
     workbenchModelListRequestForProfile: (profile: any) => { url: string; headers: Record<string, string> } | null;
     extractResponseText: (protocol: string, data: any) => string;
+    providerUsageFromResponse: (data: any) => any;
+    providerUsageText: (usage: any) => string;
     streamTextFromData: (protocol: string, data: any) => string;
     isStreamSnapshot: (protocol: string, value: any) => boolean;
   };
@@ -67,6 +69,19 @@ describe("workbench session helpers", () => {
     expect(md).toContain("What is the method?");
     expect(md).toContain("**Assistant**");
     expect(md).toContain("It uses a transformer.");
+  });
+
+  it("renders assistant token usage metadata in exported session Markdown", () => {
+    const t = (k: string) => k;
+    const md = helpers.renderSessionAsMarkdown(
+      [
+        { role: "user", content: "What is the method?" },
+        { role: "assistant", content: "It uses a transformer.", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }
+      ],
+      t
+    );
+    expect(md).toContain("It uses a transformer.");
+    expect(md).toContain("_Usage: input 10, output 5, total 15_");
   });
 
   it("skips compaction marker and empty messages when rendering", () => {
@@ -151,6 +166,30 @@ describe("workbench session helpers", () => {
     expect(helpers.extractResponseText("anthropic_messages", {
       data: { content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "wrapped anthropic text" }] }
     })).toBe("wrapped anthropic text");
+  });
+
+  it("normalizes wrapped provider usage in the workbench", () => {
+    expect(helpers.providerUsageFromResponse({
+      data: {
+        usage: {
+          prompt_tokens: 10,
+          completion_tokens: 5,
+          total_tokens: 15,
+          completion_tokens_details: { reasoning_tokens: 2 }
+        }
+      }
+    })).toEqual({
+      inputTokens: 10,
+      outputTokens: 5,
+      totalTokens: 15,
+      reasoningTokens: 2
+    });
+    expect(helpers.providerUsageText({
+      inputTokens: 7,
+      outputTokens: 4,
+      totalTokens: 11,
+      cachedInputTokens: 2
+    })).toBe("input 7, output 4, total 11, cached 2");
   });
 
   it("extracts stream text and snapshots from wrapped provider chunks in the workbench", () => {

@@ -7,10 +7,12 @@ import {
   bodyFor,
   defaultCapabilities,
   endpointFor,
+  extractProviderUsage,
   extractResponseText,
   headersFor,
   modelsEndpointFor,
-  parseStreamChunk
+  parseStreamChunk,
+  parseStreamUsage
 } from "../src/providerAdapters.ts";
 
 const DEFAULT_PROMPT = "Reply with OK only.";
@@ -104,7 +106,7 @@ export async function runProviderSmoke(options = {}) {
       inputMode: smokeInputMode(options),
       contentTypes: requestContentTypes(body),
       text,
-      usage: parsed?.usage || null
+      usage: responseStream ? streamUsageFromBody(rawText) : extractProviderUsage(parsed)
     };
   } finally {
     clearTimeout(timer);
@@ -801,6 +803,24 @@ function streamTextFromBody(protocol, rawText) {
   return text.trim();
 }
 
+function streamUsageFromBody(rawText) {
+  return streamRecords(rawText)
+    .map((record) => parseStreamUsage(record))
+    .filter(Boolean)
+    .reduce((merged, usage) => mergeProviderUsage(merged, usage), null);
+}
+
+function mergeProviderUsage(left, right) {
+  if (!left) return right || null;
+  if (!right) return left;
+  const merged = {};
+  for (const key of ["inputTokens", "outputTokens", "totalTokens", "cachedInputTokens", "reasoningTokens"]) {
+    const values = [left[key], right[key]].filter((value) => typeof value === "number" && Number.isFinite(value));
+    if (values.length) merged[key] = Math.max(...values);
+  }
+  return Object.keys(merged).length ? merged : null;
+}
+
 function streamRecords(rawText) {
   const records = [];
   let recordLines = [];
@@ -896,6 +916,9 @@ function mockProviderStreamResponse(path) {
       "data: \"delta\":\"responses\"",
       "data: }",
       "",
+      "event: response.completed",
+      "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":1,\"total_tokens\":3}}}",
+      "",
       "data: [DONE]",
       ""
     ].join("\n");
@@ -911,6 +934,9 @@ function mockProviderStreamResponse(path) {
       "data: \"delta\":{\"type\":\"text_delta\",\"text\":\"anthropic\"}",
       "data: }",
       "",
+      "event: message_delta",
+      "data: {\"type\":\"message_delta\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}",
+      "",
       "data: [DONE]",
       ""
     ].join("\n");
@@ -918,6 +944,7 @@ function mockProviderStreamResponse(path) {
   return [
     "data: {\"choices\":[{\"delta\":{\"content\":\"OK \"}}]}",
     "data: {\"choices\":[{\"delta\":{\"content\":\"chat\"}}]}",
+    "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}",
     "data: [DONE]",
     ""
   ].join("\n");

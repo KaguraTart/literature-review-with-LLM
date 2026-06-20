@@ -44,6 +44,14 @@ export interface ModelRequest {
   stream: boolean;
 }
 
+export interface ProviderUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
+}
+
 type OpenAIResponsesInputItem = {
   role: "user" | "assistant";
   content: Array<Record<string, unknown>>;
@@ -135,6 +143,19 @@ export function extractResponseText(protocol: ProviderProtocol, data: unknown): 
 
 export function parseStreamChunk(protocol: ProviderProtocol, rawLine: string): string {
   return streamPayloads(rawLine).map((payload) => parseStreamPayload(protocol, payload)).filter(Boolean).join("");
+}
+
+export function parseStreamUsage(rawLine: string): ProviderUsage | null {
+  return streamPayloads(rawLine)
+    .map((payload) => safeParseJSON(payload))
+    .filter(Boolean)
+    .map((payload) => extractProviderUsage(payload))
+    .filter((usage): usage is ProviderUsage => !!usage)
+    .reduce((merged, usage) => mergeProviderUsage(merged, usage), null as ProviderUsage | null);
+}
+
+export function extractProviderUsage(data: unknown): ProviderUsage | null {
+  return providerUsageFromValue(data);
 }
 
 function parseStreamPayload(protocol: ProviderProtocol, payload: string): string {
@@ -360,6 +381,100 @@ function streamErrorText(data: any): string {
   const code = error.code || error.type || data?.code || data?.type || "";
   const message = error.message || data?.message || "";
   return [code, message || JSON.stringify(error)].filter(Boolean).join(" - ");
+}
+
+function providerUsageFromValue(value: unknown, depth = 0): ProviderUsage | null {
+  if (!value || typeof value !== "object" || depth > 3) return null;
+  const data = value as any;
+  const direct = normalizeProviderUsage(data?.usage || data?.token_usage || data?.tokenUsage || data?.usage_metadata);
+  const nested = ["response", "message", "result", "payload", "data"]
+    .map((key) => providerUsageFromValue(data?.[key], depth + 1))
+    .filter((usage): usage is ProviderUsage => !!usage)
+    .reduce((merged, usage) => mergeProviderUsage(merged, usage), null as ProviderUsage | null);
+  return mergeProviderUsage(direct, nested);
+}
+
+function normalizeProviderUsage(usage: any): ProviderUsage | null {
+  if (!usage || typeof usage !== "object") return null;
+  const inputTokens = firstNumber(
+    usage.input_tokens,
+    usage.prompt_tokens,
+    usage.inputTokens,
+    usage.promptTokens,
+    usage.promptTokenCount,
+    usage.input_token_count
+  );
+  const outputTokens = firstNumber(
+    usage.output_tokens,
+    usage.completion_tokens,
+    usage.outputTokens,
+    usage.completionTokens,
+    usage.candidatesTokenCount,
+    usage.output_token_count
+  );
+  const totalTokens = firstNumber(
+    usage.total_tokens,
+    usage.totalTokens,
+    usage.totalTokenCount,
+    inputTokens !== undefined || outputTokens !== undefined ? (inputTokens || 0) + (outputTokens || 0) : undefined
+  );
+  const cachedInputTokens = sumNumbers(
+    usage.cachedInputTokens,
+    usage.cache_read_input_tokens,
+    usage.cache_creation_input_tokens,
+    usage.input_tokens_details?.cached_tokens,
+    usage.prompt_tokens_details?.cached_tokens,
+    usage.promptTokensDetails?.cachedTokens
+  );
+  const reasoningTokens = firstNumber(
+    usage.output_tokens_details?.reasoning_tokens,
+    usage.completion_tokens_details?.reasoning_tokens,
+    usage.completionTokensDetails?.reasoningTokens,
+    usage.reasoning_tokens,
+    usage.reasoningTokens
+  );
+  const normalized: ProviderUsage = {};
+  if (inputTokens !== undefined) normalized.inputTokens = inputTokens;
+  if (outputTokens !== undefined) normalized.outputTokens = outputTokens;
+  if (totalTokens !== undefined) normalized.totalTokens = totalTokens;
+  if (cachedInputTokens !== undefined) normalized.cachedInputTokens = cachedInputTokens;
+  if (reasoningTokens !== undefined) normalized.reasoningTokens = reasoningTokens;
+  return Object.keys(normalized).length ? normalized : null;
+}
+
+function mergeProviderUsage(left: ProviderUsage | null, right: ProviderUsage | null): ProviderUsage | null {
+  if (!left) return right;
+  if (!right) return left;
+  const merged: ProviderUsage = {};
+  for (const key of ["inputTokens", "outputTokens", "totalTokens", "cachedInputTokens", "reasoningTokens"] as const) {
+    merged[key] = maxNumber(left[key], right[key]);
+  }
+  return Object.fromEntries(Object.entries(merged).filter(([, value]) => value !== undefined)) as ProviderUsage;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const number = numericValue(value);
+    if (number !== undefined) return number;
+  }
+  return undefined;
+}
+
+function sumNumbers(...values: unknown[]): number | undefined {
+  const numbers = values.map((value) => numericValue(value)).filter((value): value is number => value !== undefined);
+  if (!numbers.length) return undefined;
+  return numbers.reduce((sum, value) => sum + value, 0);
+}
+
+function maxNumber(...values: unknown[]): number | undefined {
+  const numbers = values.map((value) => numericValue(value)).filter((value): value is number => value !== undefined);
+  return numbers.length ? Math.max(...numbers) : undefined;
+}
+
+function numericValue(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return undefined;
 }
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {

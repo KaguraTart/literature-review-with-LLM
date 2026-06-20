@@ -1204,6 +1204,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     const assistantBody = this.appendMessageElement(assistantMessage);
     this.setStatus(this.t("thinking"));
     this.state.requestInFlight = true;
+    this.state.lastProviderUsage = null;
     this.updateComposerState();
     try {
       this.state.abortController = new AbortController();
@@ -1211,8 +1212,14 @@ var ZoteroMarkdownSummaryWorkbench = {
         assistantMessage.content += delta;
         renderMessageContent(assistantBody, assistantMessage);
       }, images);
+      const answerText = typeof answer === "string" ? answer : String(answer?.text || "");
       if (!assistantMessage.content) {
-        assistantMessage.content = answer;
+        assistantMessage.content = answerText;
+        renderMessageContent(assistantBody, assistantMessage);
+      }
+      const usage = normalizeProviderUsage(this.state.lastProviderUsage || answer?.usage);
+      if (usage) {
+        assistantMessage.usage = usage;
         renderMessageContent(assistantBody, assistantMessage);
       }
       await this.saveSession();
@@ -1277,6 +1284,7 @@ var ZoteroMarkdownSummaryWorkbench = {
           mergeAsMulti: LOCAL_AGENT_AGGREGATE_SKILLS.includes(skillId)
         });
         if (!answer?.trim()) throw new Error("Local agent returned empty response");
+        this.state.lastProviderUsage = null;
         return answer;
       } catch (err) {
         if (!fallbackToRemote) throw err;
@@ -1299,9 +1307,12 @@ var ZoteroMarkdownSummaryWorkbench = {
       throw new Error(providerErrorText(response.status, await response.text()));
     }
     if (response.zmsRequestedStream === true && response.body) {
-      return readStream(response, profile.protocol, onDelta);
+      const text = await readStream(response, profile.protocol, onDelta);
+      this.state.lastProviderUsage = response.zmsUsage || null;
+      return text;
     }
     const data = await response.json();
+    this.state.lastProviderUsage = providerUsageFromResponse(data);
     return extractResponseText(profile.protocol, data);
   },
 
@@ -5174,8 +5185,10 @@ async function readStream(response, protocol, onDelta) {
   let buffer = "";
   let recordLines = [];
   let text = "";
+  let usage = null;
   const consumeRecord = (record) => {
     const parsed = parseStreamDelta(protocol, record);
+    usage = mergeProviderUsage(usage, parsed.usage);
     if (parsed.text && (!parsed.snapshot || !text)) {
       text += parsed.text;
       onDelta(parsed.text);
@@ -5208,6 +5221,7 @@ async function readStream(response, protocol, onDelta) {
     recordLines.push(buffer);
   }
   if (recordLines.length) consumeRecord(recordLines.join("\n"));
+  response.zmsUsage = normalizeProviderUsage(usage);
   return text;
 }
 
@@ -5251,25 +5265,28 @@ function wrappedStreamTextFromData(protocol, data, depth) {
 
 function parseStreamDelta(protocol, rawLine) {
   const payloads = streamPayloads(rawLine);
-  if (!payloads.length) return { text: "", snapshot: false };
+  if (!payloads.length) return { text: "", snapshot: false, usage: null };
   let text = "";
   let snapshot = false;
+  let usage = null;
   for (const payload of payloads) {
     const parsed = parseStreamPayload(protocol, payload);
     if (parsed.snapshot) snapshot = true;
+    usage = mergeProviderUsage(usage, parsed.usage);
     if (parsed.text && (!parsed.snapshot || !text)) text += parsed.text;
   }
-  return { text, snapshot };
+  return { text, snapshot, usage };
 }
 
 function parseStreamPayload(protocol, payload) {
-  if (!payload || payload === "[DONE]") return { text: "", snapshot: false };
+  if (!payload || payload === "[DONE]") return { text: "", snapshot: false, usage: null };
   const data = safeParseJSON(payload);
   const errorText = streamErrorText(data);
   if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
   return {
     text: streamTextFromData(protocol, data),
-    snapshot: isStreamSnapshot(protocol, data)
+    snapshot: isStreamSnapshot(protocol, data),
+    usage: providerUsageFromResponse(data)
   };
 }
 
@@ -5313,6 +5330,112 @@ function streamErrorText(data) {
   const code = error.code || error.type || data?.code || data?.type || "";
   const message = error.message || data?.message || "";
   return [code, message || JSON.stringify(error)].filter(Boolean).join(" - ");
+}
+
+function providerUsageFromResponse(data, depth = 0) {
+  if (!data || typeof data !== "object" || depth > 3) return null;
+  const direct = normalizeProviderUsage(data.usage || data.token_usage || data.tokenUsage || data.usage_metadata);
+  const nested = ["response", "message", "result", "payload", "data"]
+    .map((key) => providerUsageFromResponse(data?.[key], depth + 1))
+    .filter(Boolean)
+    .reduce((merged, usage) => mergeProviderUsage(merged, usage), null);
+  return mergeProviderUsage(direct, nested);
+}
+
+function normalizeProviderUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const inputTokens = firstNumber(
+    usage.input_tokens,
+    usage.prompt_tokens,
+    usage.inputTokens,
+    usage.promptTokens,
+    usage.promptTokenCount,
+    usage.input_token_count
+  );
+  const outputTokens = firstNumber(
+    usage.output_tokens,
+    usage.completion_tokens,
+    usage.outputTokens,
+    usage.completionTokens,
+    usage.candidatesTokenCount,
+    usage.output_token_count
+  );
+  const totalTokens = firstNumber(
+    usage.total_tokens,
+    usage.totalTokens,
+    usage.totalTokenCount,
+    inputTokens !== undefined || outputTokens !== undefined ? (inputTokens || 0) + (outputTokens || 0) : undefined
+  );
+  const cachedInputTokens = sumNumbers(
+    usage.cachedInputTokens,
+    usage.cache_read_input_tokens,
+    usage.cache_creation_input_tokens,
+    usage.input_tokens_details?.cached_tokens,
+    usage.prompt_tokens_details?.cached_tokens,
+    usage.promptTokensDetails?.cachedTokens
+  );
+  const reasoningTokens = firstNumber(
+    usage.output_tokens_details?.reasoning_tokens,
+    usage.completion_tokens_details?.reasoning_tokens,
+    usage.completionTokensDetails?.reasoningTokens,
+    usage.reasoning_tokens,
+    usage.reasoningTokens
+  );
+  const normalized = {};
+  if (inputTokens !== undefined) normalized.inputTokens = inputTokens;
+  if (outputTokens !== undefined) normalized.outputTokens = outputTokens;
+  if (totalTokens !== undefined) normalized.totalTokens = totalTokens;
+  if (cachedInputTokens !== undefined) normalized.cachedInputTokens = cachedInputTokens;
+  if (reasoningTokens !== undefined) normalized.reasoningTokens = reasoningTokens;
+  return Object.keys(normalized).length ? normalized : null;
+}
+
+function mergeProviderUsage(left, right) {
+  if (!left) return right || null;
+  if (!right) return left;
+  const merged = {};
+  for (const key of ["inputTokens", "outputTokens", "totalTokens", "cachedInputTokens", "reasoningTokens"]) {
+    const value = maxNumber(left[key], right[key]);
+    if (value !== undefined) merged[key] = value;
+  }
+  return Object.keys(merged).length ? merged : null;
+}
+
+function providerUsageText(usage) {
+  const normalized = normalizeProviderUsage(usage);
+  if (!normalized) return "";
+  const parts = [];
+  if (normalized.inputTokens !== undefined) parts.push(`input ${normalized.inputTokens}`);
+  if (normalized.outputTokens !== undefined) parts.push(`output ${normalized.outputTokens}`);
+  if (normalized.totalTokens !== undefined) parts.push(`total ${normalized.totalTokens}`);
+  if (normalized.cachedInputTokens !== undefined) parts.push(`cached ${normalized.cachedInputTokens}`);
+  if (normalized.reasoningTokens !== undefined) parts.push(`reasoning ${normalized.reasoningTokens}`);
+  return parts.join(", ");
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    const number = numericValue(value);
+    if (number !== undefined) return number;
+  }
+  return undefined;
+}
+
+function sumNumbers(...values) {
+  const numbers = values.map((value) => numericValue(value)).filter((value) => value !== undefined);
+  if (!numbers.length) return undefined;
+  return numbers.reduce((sum, value) => sum + value, 0);
+}
+
+function maxNumber(...values) {
+  const numbers = values.map((value) => numericValue(value)).filter((value) => value !== undefined);
+  return numbers.length ? Math.max(...numbers) : undefined;
+}
+
+function numericValue(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return undefined;
 }
 
 function extractResponseText(protocol, data) {
@@ -5927,6 +6050,8 @@ function renderSessionAsMarkdown(messages, t, compactionSummary) {
     const text = String(message?.content || "").trim();
     if (!text) continue;
     lines.push(`### ${header}`, "", text, "");
+    const usageText = role === "assistant" ? providerUsageText(message?.usage) : "";
+    if (usageText) lines.push(`_Usage: ${usageText}_`, "");
   }
   return lines.join("\n");
 }
