@@ -4740,13 +4740,15 @@ async function readStream(response, protocol, onDelta) {
   return text;
 }
 
-function streamTextFromData(protocol, data) {
+function streamTextFromData(protocol, data, depth = 0) {
   if (!data) return "";
+  const errorText = streamErrorText(data);
+  if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
   if (protocol === "anthropic_messages") {
     if (data?.type === "content_block_delta") {
       return data?.delta?.text || data?.delta?.partial_json || "";
     }
-    return data?.delta?.text || data?.content_block?.text || "";
+    return data?.delta?.text || data?.content_block?.text || wrappedStreamTextFromData(protocol, data, depth);
   }
   if (typeof data?.choices?.[0]?.delta === "string") return data.choices[0].delta;
   const deltaContent = modelTextFromValue(data?.choices?.[0]?.delta?.content);
@@ -4762,7 +4764,18 @@ function streamTextFromData(protocol, data) {
   if (directContent) return directContent;
   const eventText = modelTextFromStreamContainer(data);
   if (eventText) return eventText;
-  return data?.choices?.[0]?.text || data?.choices?.[0]?.delta?.text || modelTextFromValue(data?.output) || (typeof data?.delta === "string" ? data.delta : "");
+  return data?.choices?.[0]?.text || data?.choices?.[0]?.delta?.text || modelTextFromValue(data?.output) || (typeof data?.delta === "string" ? data.delta : "") || wrappedStreamTextFromData(protocol, data, depth);
+}
+
+function wrappedStreamTextFromData(protocol, data, depth) {
+  if (depth >= 2 || !data || typeof data !== "object") return "";
+  for (const key of ["data", "result", "payload", "response"]) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object") continue;
+    const text = streamTextFromData(protocol, value, depth + 1);
+    if (text) return text;
+  }
+  return "";
 }
 
 function parseStreamDelta(protocol, rawLine) {
@@ -5031,16 +5044,22 @@ function wrappedProviderTextFromResponse(protocol, data, depth) {
   return "";
 }
 
-function isStreamSnapshot(protocol, value) {
+function isStreamSnapshot(protocol, value, depth = 0) {
   if (protocol === "anthropic_messages") return false;
   const type = String(value?.type || "");
-  return type === "response.output_text.done"
+  const direct = type === "response.output_text.done"
     || type === "response.content_part.done"
     || type === "response.output_item.done"
     || type === "response.completed"
     || !!value?.part
     || !!value?.item
     || !!value?.response;
+  if (direct) return true;
+  if (depth >= 2 || !value || typeof value !== "object") return false;
+  return ["data", "result", "payload"].some((key) => {
+    const wrapped = value?.[key];
+    return !!wrapped && typeof wrapped === "object" && isStreamSnapshot(protocol, wrapped, depth + 1);
+  });
 }
 
 function isReasoningModelPart(value) {

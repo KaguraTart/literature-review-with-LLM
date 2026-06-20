@@ -141,6 +141,10 @@ function parseStreamPayload(protocol: ProviderProtocol, payload: string): string
   if (!payload || payload === "[DONE]") return "";
   const data = safeParseJSON(payload) as any;
   if (!data) return "";
+  return streamTextFromParsedPayload(protocol, data);
+}
+
+function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, depth = 0): string {
   const errorText = streamErrorText(data);
   if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
   if (protocol === "anthropic_messages") {
@@ -151,6 +155,7 @@ function parseStreamPayload(protocol: ProviderProtocol, payload: string): string
       || data?.delta?.partial_json
       || data?.content_block?.text
       || extractAnthropicContent(data)
+      || extractWrappedStreamContent(protocol, data, depth)
       || "";
   }
   if (typeof data?.choices?.[0]?.delta === "string") return data.choices[0].delta;
@@ -172,7 +177,19 @@ function parseStreamPayload(protocol: ProviderProtocol, payload: string): string
     || data?.choices?.[0]?.delta?.text
     || extractOutputContent(data?.output)
     || (typeof data?.delta === "string" ? data.delta : "")
+    || extractWrappedStreamContent(protocol, data, depth)
     || "";
+}
+
+function extractWrappedStreamContent(protocol: ProviderProtocol, data: any, depth: number): string {
+  if (depth >= 2 || !data || typeof data !== "object") return "";
+  for (const key of ["data", "result", "payload", "response"]) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object") continue;
+    const text = streamTextFromParsedPayload(protocol, value, depth + 1);
+    if (text) return text;
+  }
+  return "";
 }
 
 function streamPayloads(rawRecord: string): string[] {

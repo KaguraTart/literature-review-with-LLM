@@ -111,6 +111,9 @@ function loadBootstrapProviderHelpers(fetchResponse: any = { output_text: "ok" }
       normalizedActiveProfile: () => any;
       settingsRequiresModel: (settings: any) => boolean;
       extractOpenAIStreamText: (chunk: any) => string;
+      extractAnthropicStreamText: (chunk: any) => string;
+      isProviderStreamSnapshot: (protocol: string, chunk: any) => boolean;
+      streamUsage: (chunk: any) => any;
       menuItem: (label: string, onCommand: (...args: any[]) => void, options?: Record<string, boolean>) => any;
       regularItemContextAvailable: (context: any) => boolean;
       findMarkdownAttachment: (item: any) => Promise<any>;
@@ -1930,5 +1933,14 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.extractOpenAIStreamText({
       choices: [{ message: { content: [{ type: "output_text", text: "message text" }] } }]
     })).toBe("message text");
+    expect(helpers.extractOpenAIStreamText({ data: { choices: [{ delta: { content: "wrapped chat" } }] } })).toBe("wrapped chat");
+    expect(helpers.extractOpenAIStreamText({ result: { type: "response.output_text.delta", delta: "wrapped responses" } })).toBe("wrapped responses");
+    expect(helpers.extractAnthropicStreamText({
+      payload: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped anthropic" } }
+    })).toBe("wrapped anthropic");
+    expect(helpers.isProviderStreamSnapshot("openai_responses", {
+      data: { type: "response.completed", response: { output_text: "snapshot" } }
+    })).toBe(true);
+    expect(helpers.streamUsage({ data: { usage: { total_tokens: 9 } } })).toEqual({ total_tokens: 9 });
   });
 });

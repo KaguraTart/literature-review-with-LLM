@@ -7,8 +7,17 @@ function streamErrorText(data) {
   return [code, message || JSON.stringify(error)].filter(Boolean).join(" - ");
 }
 
-function streamUsage(chunk) {
-  return chunk?.usage || chunk?.message?.usage || chunk?.delta?.usage;
+function streamUsage(chunk, depth = 0) {
+  const usage = chunk?.usage || chunk?.message?.usage || chunk?.delta?.usage;
+  if (usage) return usage;
+  if (depth >= 2 || !chunk || typeof chunk !== "object") return undefined;
+  for (const key of ["data", "result", "payload", "response"]) {
+    const value = chunk?.[key];
+    if (!value || typeof value !== "object") continue;
+    const wrappedUsage = streamUsage(value, depth + 1);
+    if (wrappedUsage) return wrappedUsage;
+  }
+  return undefined;
 }
 
 function extractProviderStreamText(protocol, chunk) {
@@ -40,8 +49,10 @@ function extractOpenAITextValue(data, depth = 0) {
     || extractWrappedResponseContent("openai", data, depth);
 }
 
-function extractOpenAIStreamText(chunk) {
+function extractOpenAIStreamText(chunk, depth = 0) {
   if (!chunk) return "";
+  const errorText = streamErrorText(chunk);
+  if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
   if (typeof chunk?.choices?.[0]?.delta === "string") return chunk.choices[0].delta;
   const delta = chunk.choices?.[0]?.delta;
   const deltaContent = extractOpenAIMessageContent(delta?.content);
@@ -60,17 +71,32 @@ function extractOpenAIStreamText(chunk) {
   if (outputText) return outputText;
   const eventText = extractOpenAIEventContainer(chunk);
   if (eventText) return eventText;
-  return "";
+  return extractWrappedStreamText("openai", chunk, depth);
 }
 
-function extractAnthropicStreamText(chunk) {
+function extractAnthropicStreamText(chunk, depth = 0) {
   if (!chunk) return "";
+  const errorText = streamErrorText(chunk);
+  if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
   if (chunk?.type === "content_block_delta") {
     if (typeof chunk?.delta?.text === "string") return chunk.delta.text;
     if (typeof chunk?.delta?.partial_json === "string") return chunk.delta.partial_json;
   }
   if (typeof chunk?.delta?.text === "string") return chunk.delta.text;
   if (typeof chunk?.content_block?.text === "string") return chunk.content_block.text;
+  return extractWrappedStreamText("anthropic", chunk, depth);
+}
+
+function extractWrappedStreamText(protocol, chunk, depth) {
+  if (depth >= 2 || !chunk || typeof chunk !== "object") return "";
+  for (const key of ["data", "result", "payload", "response"]) {
+    const value = chunk?.[key];
+    if (!value || typeof value !== "object") continue;
+    const text = protocol === "anthropic"
+      ? extractAnthropicStreamText(value, depth + 1)
+      : extractOpenAIStreamText(value, depth + 1);
+    if (text) return text;
+  }
   return "";
 }
 
@@ -164,15 +190,21 @@ function extractOpenAIEventContainer(value) {
     || "";
 }
 
-function isOpenAIStreamSnapshot(value) {
+function isOpenAIStreamSnapshot(value, depth = 0) {
   const type = String(value?.type || "");
-  return type === "response.output_text.done"
+  const direct = type === "response.output_text.done"
     || type === "response.content_part.done"
     || type === "response.output_item.done"
     || type === "response.completed"
     || !!value?.part
     || !!value?.item
     || !!value?.response;
+  if (direct) return true;
+  if (depth >= 2 || !value || typeof value !== "object") return false;
+  return ["data", "result", "payload"].some((key) => {
+    const wrapped = value?.[key];
+    return !!wrapped && typeof wrapped === "object" && isOpenAIStreamSnapshot(wrapped, depth + 1);
+  });
 }
 
 function isOpenAIReasoningPart(value) {

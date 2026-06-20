@@ -46,6 +46,8 @@ function loadWorkbenchHelpers() {
     sessionLabelFromPath: (path: string) => string;
     workbenchModelListRequestForProfile: (profile: any) => { url: string; headers: Record<string, string> } | null;
     extractResponseText: (protocol: string, data: any) => string;
+    streamTextFromData: (protocol: string, data: any) => string;
+    isStreamSnapshot: (protocol: string, value: any) => boolean;
   };
 }
 
@@ -149,6 +151,21 @@ describe("workbench session helpers", () => {
     expect(helpers.extractResponseText("anthropic_messages", {
       data: { content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "wrapped anthropic text" }] }
     })).toBe("wrapped anthropic text");
+  });
+
+  it("extracts stream text and snapshots from wrapped provider chunks in the workbench", () => {
+    expect(helpers.streamTextFromData("openai_chat", {
+      data: { choices: [{ delta: { content: "wrapped chat" } }] }
+    })).toBe("wrapped chat");
+    expect(helpers.streamTextFromData("openai_responses", {
+      result: { type: "response.output_text.delta", delta: "wrapped responses" }
+    })).toBe("wrapped responses");
+    expect(helpers.streamTextFromData("anthropic_messages", {
+      payload: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped anthropic" } }
+    })).toBe("wrapped anthropic");
+    expect(helpers.isStreamSnapshot("openai_responses", {
+      data: { type: "response.completed", response: { output_text: "snapshot" } }
+    })).toBe(true);
   });
 
   it("extracts a sessionId from a session file path", () => {

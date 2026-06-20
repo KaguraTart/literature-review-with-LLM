@@ -677,6 +677,9 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.completed\",\"response\":{\"output\":[{\"content\":[{\"type\":\"output_text\",\"text\":\"snapshot response\"}]}]}}")).toBe("snapshot response");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"claude\"}}")).toBe("claude");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"ok\\\"\"}}")).toBe("{\"ok\"");
+    expect(parseStreamChunk("openai_chat", "data: {\"data\":{\"choices\":[{\"delta\":{\"content\":\"wrapped chat\"}}]}}")).toBe("wrapped chat");
+    expect(parseStreamChunk("openai_responses", "data: {\"result\":{\"type\":\"response.output_text.delta\",\"delta\":\"wrapped responses\"}}")).toBe("wrapped responses");
+    expect(parseStreamChunk("anthropic_messages", "data: {\"payload\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"wrapped anthropic\"}}}")).toBe("wrapped anthropic");
     expect(parseStreamChunk("openai_chat", "data: not-json")).toBe("");
     expect(parseStreamChunk("openai_chat", [
       "event: message",
@@ -713,6 +716,7 @@ describe("provider adapters", () => {
 
   it("throws redacted provider errors from stream error events", () => {
     expect(() => parseStreamChunk("openai_responses", "data: {\"type\":\"error\",\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"Too many requests for sk-test-secret\"}}")).toThrow("rate_limit_exceeded - Too many requests for [redacted]");
+    expect(() => parseStreamChunk("openai_chat", "data: {\"data\":{\"type\":\"error\",\"error\":{\"code\":\"bad_request\",\"message\":\"Bad sk-test-secret\"}}}")).toThrow("bad_request - Bad [redacted]");
     expect(() => parseStreamChunk("anthropic_messages", "data: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Bearer routed-secret overloaded\"}}")).toThrow("overloaded_error - Bearer [redacted] overloaded");
   });
 
