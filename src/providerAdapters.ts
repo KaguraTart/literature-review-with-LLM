@@ -203,10 +203,15 @@ function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, dept
   if (typeof data?.choices?.[0]?.delta === "string") return data.choices[0].delta;
   const deltaContent = extractMessageContent(data?.choices?.[0]?.delta?.content);
   if (deltaContent) return deltaContent;
+  const deltaMessage = extractMessageContent(data?.choices?.[0]?.delta);
+  if (deltaMessage) return deltaMessage;
   const messageContent = extractMessageContent(data?.choices?.[0]?.message?.content);
   if (messageContent) return messageContent;
+  const message = extractMessageContent(data?.choices?.[0]?.message);
+  if (message) return message;
   if (data?.type === "response.output_text.delta" && typeof data?.delta === "string") return data.delta;
   if (data?.type === "response.text.delta" && typeof data?.delta === "string") return data.delta;
+  if (data?.type === "response.refusal.delta" && typeof data?.delta === "string") return data.delta;
   if (data?.delta?.content) {
     const nestedDelta = extractMessageContent(data.delta.content);
     if (nestedDelta) return nestedDelta;
@@ -330,6 +335,7 @@ function extractMessageContent(content: unknown, depth = 0): string {
     if (typeof record.output_text === "string") return record.output_text;
     if (typeof record.content === "string") return record.content;
     if (typeof record.completion === "string") return record.completion;
+    if (typeof record.refusal === "string") return record.refusal;
     for (const key of MODEL_TEXT_CONTAINER_KEYS) {
       const value = record[key];
       if (!value || value === content) continue;
@@ -358,8 +364,8 @@ function extractOpenAIEventContainer(data: any): string {
 
 function extractOpenAIResponseContent(data: any, depth = 0): string {
   return data?.output_text
-    || extractMessageContent(data?.choices?.[0]?.message?.content)
-    || extractMessageContent(data?.choices?.[0]?.delta?.content)
+    || extractMessageContent(data?.choices?.[0]?.message)
+    || extractMessageContent(data?.choices?.[0]?.delta)
     || data?.choices?.[0]?.text
     || data?.choices?.[0]?.delta?.text
     || extractOutputContent(data?.output)

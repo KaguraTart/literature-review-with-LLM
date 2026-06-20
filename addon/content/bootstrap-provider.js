@@ -68,8 +68,8 @@ function extractOpenAIText(data) {
 
 function extractOpenAITextValue(data, depth = 0) {
   return data?.output_text
-    || extractOpenAIMessageContent(data?.choices?.[0]?.message?.content)
-    || extractOpenAIMessageContent(data?.choices?.[0]?.delta?.content)
+    || extractOpenAIMessageContent(data?.choices?.[0]?.message)
+    || extractOpenAIMessageContent(data?.choices?.[0]?.delta)
     || data?.choices?.[0]?.text
     || data?.choices?.[0]?.delta?.text
     || extractOpenAIContentArray(data?.output)
@@ -88,10 +88,15 @@ function extractOpenAIStreamText(chunk, depth = 0) {
   const delta = chunk.choices?.[0]?.delta;
   const deltaContent = extractOpenAIMessageContent(delta?.content);
   if (deltaContent) return deltaContent;
+  const deltaMessage = extractOpenAIMessageContent(delta);
+  if (deltaMessage) return deltaMessage;
   const messageContent = extractOpenAIMessageContent(chunk.choices?.[0]?.message?.content);
   if (messageContent) return messageContent;
+  const message = extractOpenAIMessageContent(chunk.choices?.[0]?.message);
+  if (message) return message;
   if (typeof delta?.text === "string") return delta.text;
   if ((chunk?.type === "response.output_text.delta" || chunk?.type === "response.text.delta") && typeof chunk?.delta === "string") return chunk.delta;
+  if (chunk?.type === "response.refusal.delta" && typeof chunk?.delta === "string") return chunk.delta;
   if (chunk?.delta?.content) {
     const nestedDelta = extractOpenAIMessageContent(chunk.delta.content);
     if (nestedDelta) return nestedDelta;
@@ -219,6 +224,7 @@ function extractOpenAIMessageContent(content, depth = 0) {
     if (typeof content?.output_text === "string") return content.output_text;
     if (typeof content?.content === "string") return content.content;
     if (typeof content?.completion === "string") return content.completion;
+    if (typeof content?.refusal === "string") return content.refusal;
     for (const key of MODEL_TEXT_CONTAINER_KEYS) {
       const nested = content?.[key];
       if (!nested || nested === content) continue;

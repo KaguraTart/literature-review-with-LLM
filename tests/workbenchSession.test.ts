@@ -246,6 +246,12 @@ describe("workbench session helpers", () => {
       body: { message: { content: [{ type: "output_text", text: "wrapped body message" }] } }
     })).toBe("wrapped body message");
     expect(helpers.extractResponseText("openai_chat", {
+      choices: [{ message: { content: null, refusal: "chat refusal" } }]
+    })).toBe("chat refusal");
+    expect(helpers.extractResponseText("openai_responses", {
+      output: [{ content: [{ type: "refusal", refusal: "responses refusal" }] }]
+    })).toBe("responses refusal");
+    expect(helpers.extractResponseText("openai_chat", {
       candidates: [{ content: { parts: [{ text: "candidate part text" }] } }]
     })).toBe("candidate part text");
     expect(helpers.extractResponseText("anthropic_messages", {
@@ -315,6 +321,15 @@ describe("workbench session helpers", () => {
     expect(helpers.streamTextFromData("openai_responses", {
       body: { type: "response.output_text.delta", delta: "wrapped body" }
     })).toBe("wrapped body");
+    expect(helpers.streamTextFromData("openai_chat", {
+      choices: [{ delta: { refusal: "stream refusal" } }]
+    })).toBe("stream refusal");
+    expect(helpers.streamTextFromData("openai_responses", {
+      type: "response.refusal.delta", delta: "responses refusal"
+    })).toBe("responses refusal");
+    expect(helpers.streamTextFromData("openai_responses", {
+      item: { content: [{ type: "refusal", refusal: "snapshot refusal" }] }
+    })).toBe("snapshot refusal");
     expect(helpers.streamTextFromData("anthropic_messages", {
       payload: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped anthropic" } }
     })).toBe("wrapped anthropic");

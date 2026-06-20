@@ -1720,6 +1720,52 @@ describe("bootstrap provider helpers", () => {
       }
     }, "hash", false)).resolves.toMatchObject({ markdown: "wrapped chat summary" });
 
+    const refusal = loadBootstrapProviderHelpers({
+      choices: [{ message: { content: null, refusal: "chat refusal" } }]
+    });
+    await expect(refusal.helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false)).resolves.toMatchObject({ markdown: "chat refusal" });
+
+    const responsesRefusal = loadBootstrapProviderHelpers({
+      output: [{ content: [{ type: "refusal", refusal: "responses refusal" }] }]
+    });
+    await expect(responsesRefusal.helpers.callOpenAICompatible({
+      provider: "openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test-secret",
+      model: "responses-model",
+      capabilities: { pdfBase64: true, streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", true)).resolves.toMatchObject({ markdown: "responses refusal" });
+
     const thinking = loadBootstrapProviderHelpers({
       choices: [{ message: { content: "<think data-source=\"router\">hidden chain</think>\n\nvisible summary\n\n<think>late hidden" } }]
     });
@@ -2474,12 +2520,15 @@ describe("bootstrap provider helpers", () => {
   it("extracts Responses stream deltas used by the legacy bootstrap path", () => {
     const { helpers } = loadBootstrapProviderHelpers();
     expect(helpers.extractOpenAIStreamText({ type: "response.output_text.delta", delta: "streamed" })).toBe("streamed");
+    expect(helpers.extractOpenAIStreamText({ type: "response.refusal.delta", delta: "responses refusal" })).toBe("responses refusal");
     expect(helpers.extractOpenAIStreamText({ type: "response.reasoning_summary_text.delta", delta: "hidden reasoning" })).toBe("");
     expect(helpers.extractOpenAIStreamText({ data: { type: "response.reasoning_text.delta", delta: "wrapped hidden" } })).toBe("");
     expect(helpers.extractOpenAIStreamText({ type: "response.content_part.done", part: { type: "output_text", text: "snapshot part" } })).toBe("snapshot part");
+    expect(helpers.extractOpenAIStreamText({ type: "response.output_item.done", item: { content: [{ type: "refusal", refusal: "snapshot refusal" }] } })).toBe("snapshot refusal");
     expect(helpers.extractOpenAIStreamText({ type: "response.completed", response: { output_text: "snapshot response" } })).toBe("snapshot response");
     expect(helpers.extractOpenAIStreamText({ delta: { content: [{ text: "nested" }] } })).toBe("nested");
     expect(helpers.extractOpenAIStreamText({ choices: [{ delta: { reasoning_content: "hidden" } }] })).toBe("");
+    expect(helpers.extractOpenAIStreamText({ choices: [{ delta: { refusal: "stream refusal" } }] })).toBe("stream refusal");
     expect(helpers.extractOpenAIStreamText({
       choices: [{
         delta: {

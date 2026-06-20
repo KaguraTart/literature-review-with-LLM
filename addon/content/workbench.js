@@ -7607,9 +7607,14 @@ function streamTextFromData(protocol, data, depth = 0) {
   if (typeof data?.choices?.[0]?.delta === "string") return data.choices[0].delta;
   const deltaContent = modelTextFromValue(data?.choices?.[0]?.delta?.content);
   if (deltaContent) return deltaContent;
+  const deltaMessage = modelTextFromValue(data?.choices?.[0]?.delta);
+  if (deltaMessage) return deltaMessage;
   const messageContent = modelTextFromValue(data?.choices?.[0]?.message?.content);
   if (messageContent) return messageContent;
+  const message = modelTextFromValue(data?.choices?.[0]?.message);
+  if (message) return message;
   if ((data?.type === "response.output_text.delta" || data?.type === "response.text.delta") && typeof data?.delta === "string") return data.delta;
+  if (data?.type === "response.refusal.delta" && typeof data?.delta === "string") return data.delta;
   if (data?.delta?.content) {
     const nestedDelta = modelTextFromValue(data.delta.content);
     if (nestedDelta) return nestedDelta;
@@ -8017,6 +8022,7 @@ function modelTextFromValue(value, depth = 0) {
     if (typeof value.output_text === "string") return value.output_text;
     if (typeof value.content === "string") return value.content;
     if (typeof value.completion === "string") return value.completion;
+    if (typeof value.refusal === "string") return value.refusal;
     for (const key of MODEL_TEXT_CONTAINER_KEYS) {
       const nested = value?.[key];
       if (!nested || nested === value) continue;
@@ -8037,8 +8043,8 @@ function modelTextFromStreamContainer(value) {
 
 function openAITextFromResponse(data, depth = 0) {
   return data?.output_text
-    || modelTextFromValue(data?.choices?.[0]?.message?.content)
-    || modelTextFromValue(data?.choices?.[0]?.delta?.content)
+    || modelTextFromValue(data?.choices?.[0]?.message)
+    || modelTextFromValue(data?.choices?.[0]?.delta)
     || data?.choices?.[0]?.text
     || data?.choices?.[0]?.delta?.text
     || modelTextFromValue(data?.output)
