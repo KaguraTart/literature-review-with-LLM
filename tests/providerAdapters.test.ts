@@ -433,6 +433,18 @@ describe("provider adapters", () => {
     expect(providerCompatibilityFallbackFields(
       "openai_responses",
       responsesBody,
+      200,
+      JSON.stringify({
+        error: {
+          code: "unsupported_parameter",
+          message: "Unsupported request parameter",
+          param: "max_output_tokens"
+        }
+      })
+    )).toEqual(["max_output_tokens"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_responses",
+      responsesBody,
       422,
       JSON.stringify({
         detail: [

@@ -651,9 +651,20 @@ async function requestJSON(url, headers, body, stream, protocol = "openai_chat")
         }
         throw error;
       }
-      if (requestStream && response.body) {
-        return await readProviderStream(response, protocol);
+      if (shouldInspectBootstrapOkResponse(response, requestStream)) {
+        const text = await response.text();
+        const fallbackFields = providerCompatibilityFallbackFields(protocol, requestBody, response.status, text, usedCompatibilityFallbackFields);
+        if (fallbackFields.length && attempt < 3) {
+          requestBody = omitProviderRequestBodyFields(requestBody, fallbackFields, usedCompatibilityFallbackFields);
+          requestStream = requestBody.stream === true;
+          usedCompatibilityFallbackFields = Array.from(new Set([...usedCompatibilityFallbackFields, ...fallbackFields]));
+          continue;
+        }
+        const data = safeParseJSON(text);
+        if (data) return data;
+        return JSON.parse(text);
       }
+      if (requestStream && response.body) return await readProviderStream(response, protocol);
       return await response.json();
     } catch (err) {
       if (err?.retryableProviderError === false) throw err;
@@ -665,6 +676,23 @@ async function requestJSON(url, headers, body, stream, protocol = "openai_chat")
     }
   }
   throw lastError;
+}
+
+function shouldInspectBootstrapOkResponse(response, requestedStream) {
+  if (typeof response?.text !== "function") return false;
+  if (!requestedStream) return true;
+  const contentType = responseHeaderValue(response, "content-type").toLowerCase();
+  if (!response.body) return true;
+  return /json|problem\+json|text\/plain/.test(contentType);
+}
+
+function responseHeaderValue(response, name) {
+  const headers = response?.headers;
+  if (!headers) return "";
+  if (typeof headers.get === "function") return String(headers.get(name) || "");
+  const normalized = String(name || "").toLowerCase();
+  const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === normalized);
+  return entry ? String(entry[1] || "") : "";
 }
 
 function providerHTTPError(status, text) {

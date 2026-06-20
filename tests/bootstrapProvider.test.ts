@@ -1235,6 +1235,48 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[2].body).not.toHaveProperty("max_output_tokens");
   });
 
+  it("falls back when bootstrap provider responses wrap unsupported-parameter errors in HTTP 200 bodies", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          error: {
+            code: "unsupported_parameter",
+            message: "Unsupported request parameter",
+            param: "max_output_tokens"
+          }
+        },
+        {
+          output_text: "fallback summary"
+        }
+      ]
+    });
+
+    const result = await helpers.callOpenAICompatible({
+      provider: "openai-responses-compatible",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "responses-model",
+      capabilities: { streaming: false },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(result.markdown).toBe("fallback summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({ max_output_tokens: 1024 });
+    expect(fetchCalls[1].body).not.toHaveProperty("max_output_tokens");
+  });
+
   it("falls back when bootstrap OpenAI Responses endpoints reject instructions and reasoning options", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       __responses: [
