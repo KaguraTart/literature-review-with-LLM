@@ -960,6 +960,19 @@ button:disabled {
   min-height: 28px;
 }
 
+.zms-candidate-note {
+  min-height: 54px;
+  max-height: 120px;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid #cfd8e3;
+  border-radius: 6px;
+  font: inherit;
+  line-height: 1.35;
+}
+
 .zms-writeback {
   padding: 12px;
   border-block-start: 1px solid #d8dee5;

@@ -781,12 +781,12 @@ var ZoteroMarkdownSummaryWorkbench = {
 
   async saveCandidates() {
     try {
-      const decisions = candidateDecisionMapFromDom();
-      const previousDecisions = candidatePreviousDecisionMap(this.state.candidates);
+      const updates = candidateReviewUpdateMapFromDom();
+      const previousReview = candidatePreviousReviewMap(this.state.candidates);
       const now = new Date().toISOString();
-      this.state.candidates = applyCandidateDecisions(this.state.candidates, decisions, now);
+      this.state.candidates = applyCandidateDecisions(this.state.candidates, updates, now);
       await saveCandidateRecords(this.state.candidatePath || candidateJsonlPath(this.state.outputDir, this.state.item), this.state.candidates);
-      await appendImportLedgerEntries(importLedgerJsonlPath(this.state.outputDir, this.state.item), decisionLedgerEntries(this.state.candidates, previousDecisions, decisions, now));
+      await appendImportLedgerEntries(importLedgerJsonlPath(this.state.outputDir, this.state.item), decisionLedgerEntries(this.state.candidates, previousReview, updates, now));
       this.renderCandidates();
       this.setStatus(`${this.t("candidateSaved")}: ${this.state.candidates.length}`);
     } catch (err) {
@@ -877,9 +877,9 @@ var ZoteroMarkdownSummaryWorkbench = {
       const loaded = this.state.candidates.length
         ? this.state.candidates
         : await loadCandidateRecords(this.state.candidatePath).catch(() => []);
-      const decisions = candidateDecisionMapFromDom();
-      const previousDecisions = candidatePreviousDecisionMap(loaded);
-      const candidates = applyCandidateDecisions(loaded, decisions, now);
+      const updates = candidateReviewUpdateMapFromDom();
+      const previousReview = candidatePreviousReviewMap(loaded);
+      const candidates = applyCandidateDecisions(loaded, updates, now);
       if (!candidates.length) {
         this.setStatus(this.t("candidateReviewNone"));
         return;
@@ -888,7 +888,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       const ledgerPath = importLedgerJsonlPath(this.state.outputDir, this.state.item);
       this.setStatus(this.t("candidateReviewExporting"));
       await saveCandidateRecords(this.state.candidatePath, candidates);
-      await appendImportLedgerEntries(ledgerPath, decisionLedgerEntries(candidates, previousDecisions, decisions, now));
+      await appendImportLedgerEntries(ledgerPath, decisionLedgerEntries(candidates, previousReview, updates, now));
       await writeTextAtomic(reviewPath, renderCandidateReviewMarkdown(candidates, {
         item: this.state.item,
         outputLanguage: this.state.outputLanguage,
@@ -6396,6 +6396,7 @@ function candidateReviewRecordLines(record, index, labels) {
     record.networkOrigins?.length ? `   - ${labels.network}: ${mdText(candidateReviewNetworkOrigins(record.networkOrigins))}` : "",
     links ? `   - ${labels.links}: ${links}` : "",
     record.abstract ? `   - ${labels.abstract}: ${mdText(truncateText(record.abstract, 500))}` : "",
+    candidateReviewNote(record) ? `   - ${labels.savedNote}: ${mdText(candidateReviewNote(record))}` : "",
     `   - ${labels.notesLine}: `
   ].filter(Boolean);
 }
@@ -6468,6 +6469,7 @@ function candidateReviewLabels(outputLanguage) {
       links: "链接",
       source: "来源页",
       abstract: "摘要",
+      savedNote: "已保存备注",
       notesLine: "人工判断"
     };
   }
@@ -6512,6 +6514,7 @@ function candidateReviewLabels(outputLanguage) {
     links: "Links",
     source: "Source",
     abstract: "Abstract",
+    savedNote: "Saved note",
     notesLine: "Manual judgment"
   };
 }
@@ -6556,7 +6559,13 @@ function candidateElement(record, translate = (key) => key) {
     option.selected = normalizeCandidateDecision(record.decision) === decision;
     select.appendChild(option);
   }
-  wrapper.append(title, meta, select);
+  const note = document.createElement("textarea");
+  note.className = "zms-candidate-note";
+  note.dataset.candidateNote = record.candidateId;
+  note.value = candidateReviewNote(record);
+  note.placeholder = translate("candidateReviewNotePlaceholder");
+  note.setAttribute?.("aria-label", translate("candidateReviewNoteLabel"));
+  wrapper.append(title, meta, select, note);
   return wrapper;
 }
 
@@ -6613,16 +6622,74 @@ function candidateDecisionMapFromDom() {
   return decisions;
 }
 
-function applyCandidateDecisions(records, decisions, now) {
+function candidateReviewUpdateMapFromDom() {
+  if (typeof document === "undefined") return {};
+  const updates = {};
+  for (const element of document.querySelectorAll("[data-candidate-decision]")) {
+    const candidateId = element.dataset?.candidateDecision || "";
+    if (!candidateId) continue;
+    updates[candidateId] = {
+      ...(updates[candidateId] || {}),
+      decision: normalizeCandidateDecision(element.value)
+    };
+  }
+  for (const element of document.querySelectorAll("[data-candidate-note]")) {
+    const candidateId = element.dataset?.candidateNote || "";
+    if (!candidateId) continue;
+    updates[candidateId] = {
+      ...(updates[candidateId] || {}),
+      note: normalizeCandidateReviewNote(element.value)
+    };
+  }
+  return updates;
+}
+
+function applyCandidateDecisions(records, updates, now) {
   return (records || []).map((record) => {
-    const decision = decisions[record.candidateId];
-    if (!decision) return record;
-    return {
+    const update = candidateReviewUpdateForRecord(updates, record.candidateId);
+    if (!update) return record;
+    const nextDecision = update.decision ? normalizeCandidateDecision(update.decision) : normalizeCandidateDecision(record.decision);
+    const currentNote = candidateReviewNote(record);
+    const hasNoteUpdate = Object.prototype.hasOwnProperty.call(update, "note");
+    const nextNote = hasNoteUpdate ? normalizeCandidateReviewNote(update.note) : currentNote;
+    const decisionChanged = nextDecision !== normalizeCandidateDecision(record.decision);
+    const noteChanged = hasNoteUpdate && nextNote !== currentNote;
+    if (!decisionChanged && !noteChanged) return record;
+    const review = { ...(record.review || {}) };
+    if (hasNoteUpdate) {
+      if (nextNote) {
+        review.note = nextNote;
+        review.updatedAt = now || new Date().toISOString();
+      } else {
+        delete review.note;
+        if (Object.keys(review).length) review.updatedAt = now || new Date().toISOString();
+      }
+    }
+    const nextRecord = {
       ...record,
-      decision: normalizeCandidateDecision(decision),
+      decision: nextDecision,
       updatedAt: now || new Date().toISOString()
     };
+    if (Object.keys(review).length) nextRecord.review = review;
+    else delete nextRecord.review;
+    return nextRecord;
   });
+}
+
+function candidateReviewUpdateForRecord(updates, candidateId) {
+  if (!updates || !candidateId || !Object.prototype.hasOwnProperty.call(updates, candidateId)) return null;
+  const update = updates[candidateId];
+  if (typeof update === "string") return { decision: update };
+  if (update && typeof update === "object" && !Array.isArray(update)) return update;
+  return null;
+}
+
+function candidateReviewNote(record) {
+  return normalizeCandidateReviewNote(record?.review?.note ?? record?.reviewNote ?? record?.manualNote ?? "");
+}
+
+function normalizeCandidateReviewNote(value) {
+  return String(value ?? "").replace(/\r\n?/g, "\n").trim().slice(0, 2000);
 }
 
 function importableCandidateRecords(records) {
@@ -7040,6 +7107,13 @@ function candidatePreviousDecisionMap(records) {
   return new Map((records || []).map((record) => [record.candidateId, normalizeCandidateDecision(record.decision)]));
 }
 
+function candidatePreviousReviewMap(records) {
+  return new Map((records || []).map((record) => [record.candidateId, {
+    decision: normalizeCandidateDecision(record.decision),
+    note: candidateReviewNote(record)
+  }]));
+}
+
 function discoveredLedgerEntries(records, existingCandidateIds, now = new Date().toISOString()) {
   return (records || [])
     .filter((record) => !existingCandidateIds?.has?.(record.candidateId))
@@ -7049,9 +7123,38 @@ function discoveredLedgerEntries(records, existingCandidateIds, now = new Date()
 function decisionLedgerEntries(records, previousDecisions, changedDecisions, now = new Date().toISOString()) {
   return (records || [])
     .filter((record) => Object.prototype.hasOwnProperty.call(changedDecisions || {}, record.candidateId))
-    .filter((record) => previousDecisions?.get(record.candidateId) !== normalizeCandidateDecision(record.decision))
-    .map((record) => importLedgerEntryForCandidate(record, decisionLedgerAction(record.decision), now))
-    .filter((entry) => !!entry.action);
+    .map((record) => {
+      const previous = candidatePreviousReviewValue(previousDecisions?.get(record.candidateId));
+      const current = {
+        decision: normalizeCandidateDecision(record.decision),
+        note: candidateReviewNote(record)
+      };
+      const decisionChanged = previous.decision !== current.decision;
+      const noteChanged = previous.note !== current.note;
+      if (!decisionChanged && !noteChanged) return null;
+      const action = decisionChanged ? decisionLedgerAction(record.decision) : "review_note";
+      return importLedgerEntryForCandidate(record, action, now, {
+        reviewNote: current.note,
+        previousDecision: previous.decision,
+        previousReviewNote: previous.note,
+        decisionChanged,
+        noteChanged
+      });
+    })
+    .filter((entry) => !!entry?.action);
+}
+
+function candidatePreviousReviewValue(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return {
+      decision: normalizeCandidateDecision(value.decision),
+      note: normalizeCandidateReviewNote(value.note)
+    };
+  }
+  return {
+    decision: normalizeCandidateDecision(value),
+    note: ""
+  };
 }
 
 function decisionLedgerAction(decision) {
@@ -7077,6 +7180,11 @@ function importLedgerEntryForCandidate(record, action, at, extra = {}) {
     dedupeStatus: record.quality?.dedupeStatus,
     zoteroItemKey: extra.zoteroItemKey,
     attachmentKey: extra.attachmentKey,
+    reviewNote: extra.reviewNote ?? candidateReviewNote(record),
+    previousDecision: extra.previousDecision,
+    previousReviewNote: extra.previousReviewNote,
+    decisionChanged: extra.decisionChanged,
+    noteChanged: extra.noteChanged,
     message: extra.message,
     error: extra.error
   };

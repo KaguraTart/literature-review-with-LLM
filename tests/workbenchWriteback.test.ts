@@ -226,9 +226,9 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     renderComparisonReportMarkdown: (context: any, options?: any) => string;
     citationNetworkSeedsForWorkbench: (records: any[], item: any, limit?: number) => any[];
     citationNetworkMetaText: (record: any) => string;
-    applyCandidateDecisions: (records: any[], decisions: Record<string, string>, now: string) => any[];
+    applyCandidateDecisions: (records: any[], decisions: Record<string, any>, now: string) => any[];
     discoveredLedgerEntries: (records: any[], existingCandidateIds: Set<string>, now?: string) => any[];
-    decisionLedgerEntries: (records: any[], previousDecisions: Map<string, string>, changedDecisions: Record<string, string>, now?: string) => any[];
+    decisionLedgerEntries: (records: any[], previousDecisions: Map<string, any>, changedDecisions: Record<string, any>, now?: string) => any[];
     loadCandidateRecords: (path: string) => Promise<any[]>;
     saveCandidateRecords: (path: string, records: any[]) => Promise<void>;
     __writes: Map<string, string>;
@@ -1449,6 +1449,45 @@ describe("workbench writeback helpers", () => {
     expect(() => helpers.parseCandidateJsonl("{bad json}\n")).toThrow("Invalid candidates.jsonl line 1");
   });
 
+  it("persists candidate review notes with decisions and can clear old notes", () => {
+    const records = [
+      {
+        candidateId: "doi:10.1000/a",
+        title: "Candidate A",
+        decision: "user_pending",
+        sources: ["crossref"],
+        quality: { dedupeStatus: "new" }
+      },
+      {
+        candidateId: "doi:10.1000/b",
+        title: "Candidate B",
+        decision: "include",
+        review: { note: "Old inclusion note", updatedAt: "2026-06-13T00:00:00.000Z" },
+        sources: ["semantic_scholar"],
+        quality: { dedupeStatus: "new" }
+      }
+    ];
+
+    const updated = helpers.applyCandidateDecisions(records, {
+      "doi:10.1000/a": { decision: "include", note: "Include because it shares the evaluation scenario." },
+      "doi:10.1000/b": { decision: "exclude", note: "" }
+    }, "2026-06-13T00:01:00.000Z");
+
+    expect(updated[0]).toMatchObject({
+      decision: "include",
+      review: {
+        note: "Include because it shares the evaluation scenario.",
+        updatedAt: "2026-06-13T00:01:00.000Z"
+      },
+      updatedAt: "2026-06-13T00:01:00.000Z"
+    });
+    expect(updated[1]).toMatchObject({
+      decision: "exclude",
+      updatedAt: "2026-06-13T00:01:00.000Z"
+    });
+    expect(updated[1].review?.note).toBeUndefined();
+  });
+
   it("creates import ledger entries for discovery and decision changes", () => {
     const record = {
       candidateId: "doi:10.1000/a",
@@ -1492,6 +1531,36 @@ describe("workbench writeback helpers", () => {
       .toContain("\"action\":\"discovered\"");
   });
 
+  it("records candidate review-note changes in the import ledger", () => {
+    const record = {
+      candidateId: "doi:10.1000/a",
+      title: "Candidate A",
+      decision: "include",
+      review: { note: "New reviewer note" },
+      sources: ["crossref"],
+      quality: { dedupeStatus: "new" }
+    };
+
+    const entries = helpers.decisionLedgerEntries(
+      [record],
+      new Map([["doi:10.1000/a", { decision: "include", note: "Old reviewer note" }]]),
+      { "doi:10.1000/a": { decision: "include", note: "New reviewer note" } },
+      "2026-06-13T00:03:00.000Z"
+    );
+
+    expect(entries).toEqual([
+      expect.objectContaining({
+        id: "doi:10.1000/a:review_note:2026-06-13T00:03:00.000Z",
+        action: "review_note",
+        decision: "include",
+        reviewNote: "New reviewer note",
+        previousReviewNote: "Old reviewer note",
+        decisionChanged: false,
+        noteChanged: true
+      })
+    ]);
+  });
+
   it("renders a candidate review Markdown report for manual screening", () => {
     const report = helpers.renderCandidateReviewMarkdown([
       {
@@ -1509,7 +1578,8 @@ describe("workbench writeback helpers", () => {
         sources: ["semantic_scholar"],
         priority: { tier: "high", score: 82, recommendedDecision: "include", reasons: ["PDF available", "citation-network relation"] },
         networkOrigins: [{ direction: "citations", seedId: "S2-Seed", seedTitle: "Seed Paper" }],
-        quality: { dedupeStatus: "new", isAbstractOnly: false }
+        quality: { dedupeStatus: "new", isAbstractOnly: false },
+        review: { note: "Read first for shared datasets and metrics." }
       },
       {
         candidateId: "doi:10.1000/dup",
@@ -1537,6 +1607,7 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("优先级: high 82");
     expect(report).toContain("引用网络来源: citations from Seed Paper");
     expect(report).toContain("[PDF](https://example.test/a.pdf)");
+    expect(report).toContain("已保存备注: Read first for shared datasets and metrics.");
     expect(report).toContain("### 重复项");
     expect(report).toContain("Duplicate Candidate");
   });
@@ -2670,6 +2741,12 @@ describe("workbench writeback helpers", () => {
     });
     expect(dom.elements.get("zms-status").textContent).toContain("candidateSearchDone: 1");
     expect(dom.elements.get("zms-candidate-list").children).toHaveLength(1);
+    const renderedCandidate = dom.elements.get("zms-candidate-list").children[0];
+    const noteInput = renderedCandidate.children.find((child: any) => child.dataset?.candidateNote === "doi:10.1000/uav");
+    expect(noteInput).toMatchObject({
+      className: "zms-candidate-note",
+      placeholder: "candidateReviewNotePlaceholder"
+    });
   });
 
   it("continues saving to the loaded JSONL session file", async () => {
