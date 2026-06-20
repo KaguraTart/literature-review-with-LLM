@@ -665,22 +665,37 @@ describe("provider smoke verifier", () => {
     expect(report.results.map((result: any) => [result.profile, result.protocol, result.contentTypes])).toEqual([
       ["openai", "openai_responses", ["input_file", "input_text"]],
       ["openai-responses-compatible", "openai_responses", ["input_file", "input_text"]],
-      ["anthropic", "anthropic_messages", ["document", "text"]],
-      ["anthropic-compatible", "anthropic_messages", ["document", "text"]]
+      ["anthropic", "anthropic_messages", ["document", "text"]]
     ]);
     expect(report.requests.map((request: any) => request.path)).toEqual([
       "/v1/responses",
       "/v1/responses",
-      "/v1/messages",
       "/v1/messages"
     ]);
     expect(report.requests.map((request: any) => request.contentTypes)).toEqual([
       ["input_file", "input_text"],
       ["input_file", "input_text"],
-      ["document", "text"],
       ["document", "text"]
     ]);
     expect(JSON.stringify(report)).not.toContain("mock-secret");
+  });
+
+  it("does not silently enable raw-PDF input for profiles without that capability", async () => {
+    await expect(execFileAsync(process.execPath, [
+      "scripts/verify-provider-smoke.mjs",
+      "--profile", "anthropic-compatible",
+      "--base-url", "https://anthropic-compatible.example",
+      "--api-key", "capability-secret",
+      "--model", "mock-anthropic-compatible",
+      "--pdf",
+      "--dry-run",
+      "--json"
+    ], {
+      cwd: process.cwd(),
+      maxBuffer: 1024 * 1024
+    })).rejects.toMatchObject({
+      stderr: expect.stringContaining("does not support PDF base64 input")
+    });
   });
 
   it("runs built-in mock model-list checks across provider protocols", async () => {
