@@ -786,7 +786,7 @@ describe("bootstrap provider helpers", () => {
     }, "hash", true);
 
     expect(result.markdown).toBe("summary");
-    expect(result.usage).toEqual({ total_tokens: 1 });
+    expect(result.usage).toEqual({ totalTokens: 1 });
     expect(fetchCalls[0].url).toBe("https://api.openai.com/v1/responses");
     expect(fetchCalls[0].headers).toMatchObject({ authorization: "Bearer sk-test-secret", "x-test": "1" });
     expect(fetchCalls[0].body).toMatchObject({
@@ -833,7 +833,48 @@ describe("bootstrap provider helpers", () => {
     }, "hash", true);
 
     expect(result.markdown).toBe("wrapped summary");
-    expect(result.usage).toEqual({ input_tokens: 11, output_tokens: 4 });
+    expect(result.usage).toEqual({ inputTokens: 11, outputTokens: 4, totalTokens: 15 });
+  });
+
+  it("normalizes Gemini-style usage metadata in direct summaries", async () => {
+    const { helpers } = loadBootstrapProviderHelpers({
+      output_text: "gemini summary",
+      usageMetadata: {
+        promptTokenCount: "8",
+        candidatesTokenCount: "6",
+        totalTokenCount: "14",
+        cachedContentTokenCount: "2",
+        thoughtsTokenCount: "3"
+      }
+    });
+
+    const result = await helpers.callOpenAICompatible({
+      provider: "gemini",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+      apiKey: "gemini-secret",
+      model: "gemini-model",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(result.markdown).toBe("gemini summary");
+    expect(result.usage).toEqual({
+      inputTokens: 8,
+      outputTokens: 6,
+      totalTokens: 14,
+      cachedInputTokens: 2,
+      reasoningTokens: 3
+    });
   });
 
   it("uses Responses done snapshots only as a bootstrap stream fallback", async () => {
@@ -2349,7 +2390,7 @@ describe("bootstrap provider helpers", () => {
     }, "hash");
 
     expect(result.markdown).toBe("wrapped anthropic summary");
-    expect(result.usage).toEqual({ input_tokens: 7, output_tokens: 3 });
+    expect(result.usage).toEqual({ inputTokens: 7, outputTokens: 3, totalTokens: 10 });
   });
 
   it("extracts wrapped Anthropic response text in the bootstrap provider path", async () => {
