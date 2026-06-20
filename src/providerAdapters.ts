@@ -677,7 +677,7 @@ function endpointForProtocol(protocol: ProviderProtocol, baseURL: string): strin
 function stripKnownProviderEndpointPath(baseURL: string): string {
   return String(baseURL || "")
     .replace(/\/+$/, "")
-    .replace(/\/(?:chat\/completions|responses|messages)$/i, "");
+    .replace(/\/(?:chat\/completions|responses|messages|models)$/i, "");
 }
 
 function openAICompatibleBaseWithVersion(baseURL: string): string {

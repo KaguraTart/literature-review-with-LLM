@@ -372,6 +372,14 @@ describe("preferences local-agent config helpers", () => {
       .toBe("https://api.openai.com/v1/chat/completions");
     expect(helpers.modelListRequestForProfile(pastedChatEndpointProfile)?.url)
       .toBe("https://api.openai.com/v1/models");
+    const pastedChatModelsProfile = {
+      ...profile,
+      baseURL: "https://api.openai.com/v1/models"
+    };
+    expect(helpers.connectionTestRequestForProfile(pastedChatModelsProfile).url)
+      .toBe("https://api.openai.com/v1/chat/completions");
+    expect(helpers.modelListRequestForProfile(pastedChatModelsProfile)?.url)
+      .toBe("https://api.openai.com/v1/models");
 
     const noVersionProfile = {
       ...helpers.providerDefaults("deepseek"),
@@ -414,6 +422,16 @@ describe("preferences local-agent config helpers", () => {
       .toBe("https://api.openai.com/v1/responses");
     expect(helpers.modelListRequestForProfile(pastedResponsesEndpointProfile)?.url)
       .toBe("https://api.openai.com/v1/models");
+    const pastedResponsesModelsProfile = {
+      ...helpers.providerDefaults("openai"),
+      baseURL: "https://api.openai.com/v1/models",
+      apiKey: "sk-test-secret",
+      model: "response-model"
+    };
+    expect(helpers.connectionTestRequestForProfile(pastedResponsesModelsProfile).url)
+      .toBe("https://api.openai.com/v1/responses");
+    expect(helpers.modelListRequestForProfile(pastedResponsesModelsProfile)?.url)
+      .toBe("https://api.openai.com/v1/models");
 
     const pastedAnthropicEndpointProfile = {
       ...helpers.providerDefaults("anthropic"),
@@ -424,6 +442,16 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.connectionTestRequestForProfile(pastedAnthropicEndpointProfile).url)
       .toBe("https://api.anthropic.com/v1/messages");
     expect(helpers.modelListRequestForProfile(pastedAnthropicEndpointProfile)?.url)
+      .toBe("https://api.anthropic.com/v1/models");
+    const pastedAnthropicModelsProfile = {
+      ...helpers.providerDefaults("anthropic"),
+      baseURL: "https://api.anthropic.com/v1/models",
+      apiKey: "anthropic-secret",
+      model: "claude-model"
+    };
+    expect(helpers.connectionTestRequestForProfile(pastedAnthropicModelsProfile).url)
+      .toBe("https://api.anthropic.com/v1/messages");
+    expect(helpers.modelListRequestForProfile(pastedAnthropicModelsProfile)?.url)
       .toBe("https://api.anthropic.com/v1/models");
 
     const perplexityProfile = {

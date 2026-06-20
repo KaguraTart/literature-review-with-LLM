@@ -1174,10 +1174,50 @@ describe("bootstrap provider helpers", () => {
     }, "hash", false);
 
     await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1/models",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    await helpers.callOpenAICompatible({
       provider: "openai",
       protocol: "openai_responses",
       endpointMode: "base_url",
       baseURL: "https://api.openai.com/v1/responses",
+      apiKey: "sk-test-secret",
+      model: "response-model",
+      capabilities: { pdfBase64: true, streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", true);
+
+    await helpers.callOpenAICompatible({
+      provider: "openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1/models",
       apiKey: "sk-test-secret",
       model: "response-model",
       capabilities: { pdfBase64: true, streaming: true },
@@ -1198,7 +1238,9 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[2].url).toBe("https://azure-resource.openai.azure.com/openai/v1/responses");
     expect(fetchCalls[3].url).toBe("https://api.perplexity.ai/chat/completions");
     expect(fetchCalls[4].url).toBe("https://router.example/v1/chat/completions");
-    expect(fetchCalls[5].url).toBe("https://api.openai.com/v1/responses");
+    expect(fetchCalls[5].url).toBe("https://router.example/v1/chat/completions");
+    expect(fetchCalls[6].url).toBe("https://api.openai.com/v1/responses");
+    expect(fetchCalls[7].url).toBe("https://api.openai.com/v1/responses");
     expect(fetchCalls[2].headers).toMatchObject({ "api-key": "sk-test-secret" });
     expect(fetchCalls[2].headers).not.toHaveProperty("authorization");
   });
@@ -1543,6 +1585,26 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[0].body).not.toHaveProperty("localAgent");
     expect(fetchCalls[0].body).not.toHaveProperty("authHeader");
     expect(fetchCalls[0].body).not.toHaveProperty("omitFields");
+
+    await helpers.callAnthropic({
+      provider: "anthropic",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.anthropic.com/v1/models",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+    expect(fetchCalls[1].url).toBe("https://api.anthropic.com/v1/messages");
   });
 
   it("allows disabling official Anthropic direct browser access in the bootstrap provider path", async () => {

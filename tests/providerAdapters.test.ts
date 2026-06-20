@@ -85,6 +85,17 @@ describe("provider adapters", () => {
       ...profile,
       baseURL: "https://api.openai.com/v1/chat/completions"
     })).toBe("https://api.openai.com/v1/models");
+    expect(endpointFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        baseURL: "https://api.openai.com/v1/models"
+      }
+    })).toBe("https://api.openai.com/v1/chat/completions");
+    expect(modelsEndpointFor({
+      ...profile,
+      baseURL: "https://api.openai.com/v1/models"
+    })).toBe("https://api.openai.com/v1/models");
 
     expect(endpointFor({
       ...baseRequest,
@@ -107,6 +118,14 @@ describe("provider adapters", () => {
       protocol: "openai_responses",
       baseURL: "https://api.openai.com/v1/responses"
     })).toBe("https://api.openai.com/v1/models");
+    expect(endpointFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        protocol: "openai_responses",
+        baseURL: "https://api.openai.com/v1/models"
+      }
+    })).toBe("https://api.openai.com/v1/responses");
 
     const anthropicProfile: ProviderProfile = {
       ...profile,
@@ -120,6 +139,17 @@ describe("provider adapters", () => {
       profile: anthropicProfile
     })).toBe("https://api.anthropic.com/v1/messages");
     expect(modelsEndpointFor(anthropicProfile)).toBe("https://api.anthropic.com/v1/models");
+    expect(endpointFor({
+      ...baseRequest,
+      profile: {
+        ...anthropicProfile,
+        baseURL: "https://api.anthropic.com/v1/models"
+      }
+    })).toBe("https://api.anthropic.com/v1/messages");
+    expect(modelsEndpointFor({
+      ...anthropicProfile,
+      baseURL: "https://api.anthropic.com/v1/models"
+    })).toBe("https://api.anthropic.com/v1/models");
     expect(endpointFor({
       ...baseRequest,
       profile: {

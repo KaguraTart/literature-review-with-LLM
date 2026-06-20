@@ -44,6 +44,7 @@ function loadWorkbenchHelpers() {
     requestMessagesWithHistory: (messages: any[], latestUserText: string, requestPrompt: string, options?: any) => any[];
     sessionIdFromPath: (path: string) => string;
     sessionLabelFromPath: (path: string) => string;
+    workbenchModelListRequestForProfile: (profile: any) => { url: string; headers: Record<string, string> } | null;
   };
 }
 
@@ -116,6 +117,25 @@ describe("workbench session helpers", () => {
     );
     expect(out[out.length - 1]).toEqual({ role: "user", content: "rendered" });
     expect(out.find((m) => m.role === "user" && m.content === "latest")).toBeUndefined();
+  });
+
+  it("normalizes pasted model-list endpoints for workbench model loading", () => {
+    expect(helpers.workbenchModelListRequestForProfile({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1/models",
+      apiKey: "sk-test-secret",
+      capabilities: { modelList: true },
+      customHeaders: {}
+    })?.url).toBe("https://router.example/v1/models");
+    expect(helpers.workbenchModelListRequestForProfile({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.anthropic.com/v1/models",
+      apiKey: "sk-test-secret",
+      capabilities: { modelList: true },
+      customHeaders: {}
+    })?.url).toBe("https://api.anthropic.com/v1/models");
   });
 
   it("extracts a sessionId from a session file path", () => {
