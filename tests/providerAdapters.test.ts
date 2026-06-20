@@ -352,7 +352,27 @@ describe("provider adapters", () => {
     }, 400, "Unknown field: max_tokens")).toEqual(["max_tokens"]);
     expect(providerCompatibilityFallbackFields("openai_chat", body, 422, "stream is not supported"))
       .toEqual(["stream", "stream_options"]);
-    expect(providerCompatibilityFallbackFields("openai_responses", body, 400, "stream_options")).toEqual([]);
+    const responsesBody = {
+      model: "responses-model",
+      input: [],
+      text: { format: { type: "json_object" } },
+      max_output_tokens: 1024,
+      temperature: 0.2,
+      stream: false
+    };
+    expect(providerCompatibilityFallbackFields(
+      "openai_responses",
+      responsesBody,
+      400,
+      "Unsupported parameters: text.format, max_output_tokens, temperature, stream"
+    )).toEqual(["stream", "temperature", "text", "max_output_tokens"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_responses",
+      responsesBody,
+      400,
+      "Unsupported parameter: max_output_tokens",
+      ["max_output_tokens"]
+    )).toEqual([]);
     expect(providerCompatibilityFallbackFields("openai_chat", body, 401, "stream_options")).toEqual([]);
     expect(providerCompatibilityFallbackFields("openai_chat", body, 400, "stream_options", true)).toEqual([]);
   });

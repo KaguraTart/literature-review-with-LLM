@@ -4619,6 +4619,63 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("max_completion_tokens");
   });
 
+  it("downgrades OpenAI Responses optional fields across multiple workbench attempts", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      if (body.text) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "Unsupported parameter: text.format"
+            }
+          })
+        };
+      }
+      if (body.max_output_tokens) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "Unsupported parameter: max_output_tokens"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ output_text: "ok" })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      protocol: "openai_responses",
+      capabilities: { ...providerProfile().capabilities, jsonMode: true }
+    }, [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "text", text: "context" }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(3);
+    expect(fetchCalls[0].body).toMatchObject({
+      text: { format: { type: "json_object" } },
+      max_output_tokens: 8192
+    });
+    expect(fetchCalls[1].body).not.toHaveProperty("text");
+    expect(fetchCalls[1].body).toMatchObject({ max_output_tokens: 8192 });
+    expect(fetchCalls[2].body).not.toHaveProperty("text");
+    expect(fetchCalls[2].body).not.toHaveProperty("max_output_tokens");
+  });
+
   it("falls back to non-streaming when an OpenAI Chat route rejects streaming", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: any[] = [];

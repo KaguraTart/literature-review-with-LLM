@@ -797,15 +797,17 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
   return rest;
 }
 
-export function providerCompatibilityFallbackFields(protocol: string, body: Record<string, unknown>, status: number, text: string, usedFallback = false): string[] {
-  if (usedFallback || protocol !== "openai_chat" || ![400, 422].includes(Number(status))) return [];
+export function providerCompatibilityFallbackFields(protocol: string, body: Record<string, unknown>, status: number, text: string, usedFallback: boolean | string[] = false): string[] {
+  if (usedFallback === true || !["openai_chat", "openai_responses"].includes(protocol) || ![400, 422].includes(Number(status))) return [];
+  const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
   const detail = String(text || "").toLowerCase();
   const fields: string[] = [];
   if (body?.stream_options !== undefined && /stream_options|stream options|stream option/.test(detail)) {
     fields.push("stream_options");
   }
-  if (body?.stream === true && /\bstream\b|streaming/.test(detail)) {
-    fields.push("stream", "stream_options");
+  if (body?.stream !== undefined && /\bstream\b|streaming/.test(detail)) {
+    fields.push("stream");
+    if (body?.stream_options !== undefined) fields.push("stream_options");
   }
   if (body?.temperature !== undefined && /temperature/.test(detail)) {
     fields.push("temperature");
@@ -822,7 +824,13 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   if (body?.max_tokens !== undefined && /max_tokens|max tokens|max token/.test(detail)) {
     fields.push("max_tokens");
   }
-  return Array.from(new Set(fields));
+  if (body?.text !== undefined && /text\.format|text format|(?:^|[^a-z0-9_])text(?:[^a-z0-9_]|$)|json mode|json_schema|json schema/.test(detail)) {
+    fields.push("text");
+  }
+  if (body?.max_output_tokens !== undefined && /max_output_tokens|max output tokens|max output token/.test(detail)) {
+    fields.push("max_output_tokens");
+  }
+  return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
 }
 
 export function omitProviderRequestBodyFields(body: Record<string, unknown>, fields: string[]): Record<string, unknown> {

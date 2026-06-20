@@ -79,6 +79,7 @@ export async function runProviderSmoke(options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const usedCompatibilityFallbackFields = [];
     let response = await fetch(endpoint, {
       method: "POST",
       headers,
@@ -88,10 +89,11 @@ export async function runProviderSmoke(options = {}) {
     const rawText = await response.text();
     let responseText = rawText;
     let parsed = responseStream ? null : parseResponseBody(responseText);
-    if (!response.ok) {
-      const fields = providerCompatibilityFallbackFields(profile.protocol, body, response.status, responseText);
+    while (!response.ok) {
+      const fields = providerCompatibilityFallbackFields(profile.protocol, body, response.status, responseText, usedCompatibilityFallbackFields);
       if (fields.length) {
         body = omitProviderRequestBodyFields(body, fields);
+        usedCompatibilityFallbackFields.push(...fields);
         responseStream = body.stream === true;
         response = await fetch(endpoint, {
           method: "POST",
@@ -101,7 +103,9 @@ export async function runProviderSmoke(options = {}) {
         });
         responseText = await response.text();
         parsed = responseStream ? null : parseResponseBody(responseText);
+        continue;
       }
+      break;
     }
     if (!response.ok) {
       return {

@@ -1086,6 +1086,55 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("max_completion_tokens");
   });
 
+  it("falls back across multiple bootstrap OpenAI Responses optional-field errors", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 400,
+          error: { message: "Unsupported parameter: text.format" }
+        },
+        {
+          __status: 400,
+          error: { message: "Unsupported parameter: max_output_tokens" }
+        },
+        {
+          output_text: "fallback summary"
+        }
+      ]
+    });
+
+    const result = await helpers.callOpenAICompatible({
+      provider: "openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test-secret",
+      model: "responses-model",
+      capabilities: { streaming: true, jsonMode: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(result.markdown).toBe("fallback summary");
+    expect(fetchCalls).toHaveLength(3);
+    expect(fetchCalls[0].body).toMatchObject({
+      text: { format: { type: "json_object" } },
+      max_output_tokens: 1024
+    });
+    expect(fetchCalls[1].body).not.toHaveProperty("text");
+    expect(fetchCalls[1].body).toMatchObject({ max_output_tokens: 1024 });
+    expect(fetchCalls[2].body).not.toHaveProperty("text");
+    expect(fetchCalls[2].body).not.toHaveProperty("max_output_tokens");
+  });
+
   it("respects bootstrap OpenAI Chat stream option overrides", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       choices: [{ message: { content: "chat summary" } }]

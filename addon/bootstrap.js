@@ -627,7 +627,7 @@ async function requestJSON(url, headers, body, stream, protocol = "openai_chat")
   let lastError;
   let requestBody = body;
   let requestStream = stream;
-  let usedCompatibilityFallback = false;
+  let usedCompatibilityFallbackFields = [];
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const response = await fetch(url, {
@@ -637,11 +637,11 @@ async function requestJSON(url, headers, body, stream, protocol = "openai_chat")
       });
       if (!response.ok) {
         const text = await response.text();
-        const fallbackFields = providerCompatibilityFallbackFields(protocol, requestBody, response.status, text, usedCompatibilityFallback);
+        const fallbackFields = providerCompatibilityFallbackFields(protocol, requestBody, response.status, text, usedCompatibilityFallbackFields);
         if (fallbackFields.length && attempt < 3) {
           requestBody = omitProviderRequestBodyFields(requestBody, fallbackFields);
           requestStream = requestBody.stream === true;
-          usedCompatibilityFallback = true;
+          usedCompatibilityFallbackFields = Array.from(new Set([...usedCompatibilityFallbackFields, ...fallbackFields]));
           continue;
         }
         const error = providerHTTPError(response.status, text);

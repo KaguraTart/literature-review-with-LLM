@@ -181,6 +181,50 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("falls back across multiple OpenAI Responses-compatible smoke optional-field errors", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-responses-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-responses",
+        "--body-extra-json", JSON.stringify({ text: { format: { type: "json_object" } } }),
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_responses",
+        stream: false,
+        text: "OK fallback"
+      });
+      expect(requests).toHaveLength(3);
+      expect(requests[0].body).toMatchObject({
+        text: { format: { type: "json_object" } },
+        max_output_tokens: 64
+      });
+      expect(requests[1].body).not.toHaveProperty("text");
+      expect(requests[1].body).toMatchObject({ max_output_tokens: 64 });
+      expect(requests[2].body).not.toHaveProperty("text");
+      expect(requests[2].body).not.toHaveProperty("max_output_tokens");
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.body?.text) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: { message: "Unsupported parameter: text.format" } }));
+          return;
+        }
+        if (requestData.body?.max_output_tokens) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: { message: "Unsupported parameter: max_output_tokens" } }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ output_text: "OK fallback" }));
+      }
+    });
+  });
+
   it("rejects non-object provider body-extra JSON", async () => {
     await expect(execFileAsync(process.execPath, [
       "scripts/verify-provider-smoke.mjs",
