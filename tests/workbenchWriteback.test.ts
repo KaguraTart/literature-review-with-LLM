@@ -210,6 +210,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     renderImportLedgerJsonl: (entries: any[]) => string;
     candidateDecisionCounts: (records: any[]) => any;
     candidateStatusText: (records: any[], path: string, translate?: (key: string) => string) => string;
+    candidateRecommendationUpdates: (records: any[], currentUpdates?: Record<string, any>) => Record<string, any>;
     candidateReviewMarkdownPath: (outputDir: string, item: any) => string;
     renderCandidateReviewMarkdown: (records: any[], options?: any) => string;
     reviewDraftMarkdownPath: (outputDir: string, item: any) => string;
@@ -252,6 +253,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
       exportProposalNote: () => Promise<void>;
       exportJournalOutline: () => Promise<void>;
       searchCandidates: () => Promise<void>;
+      applyCandidateRecommendations: () => Promise<void>;
       t: (key: string) => string;
       sessionDir: () => string;
       sessionPath: () => string;
@@ -1498,6 +1500,46 @@ describe("workbench writeback helpers", () => {
     expect(() => helpers.parseCandidateJsonl("{bad json}\n")).toThrow("Invalid candidates.jsonl line 1");
   });
 
+  it("builds recommendation updates only for pending high-confidence candidates", () => {
+    const records = [
+      {
+        candidateId: "doi:10.1000/include",
+        title: "Recommended Include",
+        decision: "user_pending",
+        priority: { tier: "high", recommendedDecision: "include" },
+        quality: { dedupeStatus: "new" }
+      },
+      {
+        candidateId: "doi:10.1000/manual",
+        title: "Manual Decision",
+        decision: "user_pending",
+        priority: { tier: "high", recommendedDecision: "exclude" },
+        quality: { dedupeStatus: "new" }
+      },
+      {
+        candidateId: "doi:10.1000/low",
+        title: "Low Priority",
+        decision: "user_pending",
+        priority: { tier: "low", recommendedDecision: "exclude" },
+        quality: { dedupeStatus: "new" }
+      },
+      {
+        candidateId: "doi:10.1000/dup",
+        title: "Duplicate",
+        decision: "user_pending",
+        priority: { tier: "duplicate", recommendedDecision: "exclude" },
+        quality: { dedupeStatus: "duplicate" }
+      }
+    ];
+
+    expect(helpers.candidateRecommendationUpdates(records, {
+      "doi:10.1000/manual": { decision: "include" }
+    })).toEqual({
+      "doi:10.1000/include": { decision: "include" },
+      "doi:10.1000/dup": { decision: "exclude" }
+    });
+  });
+
   it("persists candidate review notes with decisions and can clear old notes", () => {
     const records = [
       {
@@ -1608,6 +1650,55 @@ describe("workbench writeback helpers", () => {
         noteChanged: true
       })
     ]);
+  });
+
+  it("applies candidate recommendations from the workbench and records ledger changes", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.item = {
+      key: "ITEM",
+      getCollections: () => [10]
+    };
+    workbench.state.candidates = [
+      {
+        candidateId: "doi:10.1000/a",
+        title: "Candidate A",
+        decision: "user_pending",
+        priority: { tier: "high", recommendedDecision: "include" },
+        quality: { dedupeStatus: "new" }
+      },
+      {
+        candidateId: "doi:10.1000/b",
+        title: "Candidate B",
+        decision: "include",
+        priority: { tier: "high", recommendedDecision: "exclude" },
+        quality: { dedupeStatus: "new" }
+      },
+      {
+        candidateId: "doi:10.1000/c",
+        title: "Candidate C",
+        decision: "user_pending",
+        priority: { tier: "duplicate", recommendedDecision: "exclude" },
+        quality: { dedupeStatus: "duplicate" }
+      }
+    ];
+    workbench.t = (key: string) => key;
+
+    await workbench.applyCandidateRecommendations();
+
+    const candidatePath = "/tmp/out/collections/COL/sources/candidates.jsonl";
+    const ledgerPath = "/tmp/out/collections/COL/sources/import-ledger.jsonl";
+    expect(files.get(candidatePath)).toContain("\"candidateId\":\"doi:10.1000/a\",\"title\":\"Candidate A\",\"decision\":\"include\"");
+    expect(files.get(candidatePath)).toContain("\"candidateId\":\"doi:10.1000/b\",\"title\":\"Candidate B\",\"decision\":\"include\"");
+    expect(files.get(candidatePath)).toContain("\"candidateId\":\"doi:10.1000/c\",\"title\":\"Candidate C\",\"decision\":\"exclude\"");
+    expect(files.get(ledgerPath)).toContain("\"action\":\"confirmed\"");
+    expect(files.get(ledgerPath)).toContain("\"action\":\"excluded\"");
+    expect(dom.elements.get("zms-status").textContent).toContain("candidateRecommendationsApplied: 2");
   });
 
   it("renders a candidate review Markdown report for manual screening", () => {

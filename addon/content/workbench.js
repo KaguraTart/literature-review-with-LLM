@@ -145,6 +145,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-search-candidates": () => this.searchCandidates(),
       "zms-expand-citation-network": () => this.expandCandidateCitationNetwork(),
       "zms-load-candidates": () => this.loadCandidates(),
+      "zms-apply-candidate-recommendations": () => this.applyCandidateRecommendations(),
       "zms-save-candidates": () => this.saveCandidates(),
       "zms-export-candidate-review": () => this.exportCandidateReview(),
       "zms-import-candidates": () => this.importIncludedCandidates(),
@@ -425,6 +426,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-search-candidates", this.t("candidateSearch"));
     setText("zms-expand-citation-network", this.t("expandCitationNetwork"));
     setText("zms-load-candidates", this.t("loadCandidates"));
+    setText("zms-apply-candidate-recommendations", this.t("applyCandidateRecommendations"));
     setText("zms-save-candidates", this.t("saveCandidateDecisions"));
     setText("zms-export-candidate-review", this.t("exportCandidateReview"));
     setText("zms-import-candidates", this.t("importCandidates"));
@@ -791,6 +793,36 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.setStatus(`${this.t("candidateSaved")}: ${this.state.candidates.length}`);
     } catch (err) {
       this.setStatus(`${this.t("writeFailed")}: ${safeError(err)}`);
+    }
+  },
+
+  async applyCandidateRecommendations() {
+    try {
+      const now = new Date().toISOString();
+      const candidatePath = this.state.candidatePath || candidateJsonlPath(this.state.outputDir, this.state.item);
+      const loaded = this.state.candidates.length
+        ? this.state.candidates
+        : await loadCandidateRecords(candidatePath).catch(() => []);
+      if (!loaded.length) {
+        this.setStatus(this.t("candidateRecommendationsNone"));
+        return;
+      }
+      const domUpdates = candidateReviewUpdateMapFromDom();
+      const recommendationUpdates = candidateRecommendationUpdates(loaded, domUpdates);
+      if (!Object.keys(recommendationUpdates).length) {
+        this.setStatus(this.t("candidateRecommendationsNone"));
+        return;
+      }
+      const updates = mergeCandidateReviewUpdates(domUpdates, recommendationUpdates);
+      const previousReview = candidatePreviousReviewMap(loaded);
+      this.state.candidates = applyCandidateDecisions(loaded, updates, now);
+      this.state.candidatePath = candidatePath;
+      await saveCandidateRecords(candidatePath, this.state.candidates);
+      await appendImportLedgerEntries(importLedgerJsonlPath(this.state.outputDir, this.state.item), decisionLedgerEntries(this.state.candidates, previousReview, updates, now));
+      this.renderCandidates();
+      this.setStatus(`${this.t("candidateRecommendationsApplied")}: ${Object.keys(recommendationUpdates).length}`);
+    } catch (err) {
+      this.setStatus(`${this.t("candidateRecommendationsFailed")}: ${safeError(err)}`);
     }
   },
 
@@ -6971,6 +7003,40 @@ function applyCandidateDecisions(records, updates, now) {
     else delete nextRecord.review;
     return nextRecord;
   });
+}
+
+function candidateRecommendationUpdates(records, currentUpdates = {}) {
+  return (records || []).reduce((updates, record) => {
+    const currentUpdate = candidateReviewUpdateForRecord(currentUpdates, record.candidateId);
+    const decision = recommendedCandidateDecision(record, currentUpdate?.decision || record.decision);
+    if (decision) updates[record.candidateId] = { decision };
+    return updates;
+  }, {});
+}
+
+function recommendedCandidateDecision(record, currentDecision) {
+  const current = normalizeCandidateDecision(currentDecision);
+  if (current !== "user_pending") return "";
+  const recommended = record?.priority?.recommendedDecision ? normalizeCandidateDecision(record.priority.recommendedDecision) : "";
+  if (!recommended || recommended === current) return "";
+  const tier = record?.priority?.tier || "";
+  if (record?.quality?.dedupeStatus === "duplicate" || tier === "duplicate") return recommended === "exclude" ? "exclude" : "";
+  if (!["high", "medium"].includes(tier)) return "";
+  return recommended;
+}
+
+function mergeCandidateReviewUpdates(...updateMaps) {
+  return updateMaps.reduce((merged, updates) => {
+    for (const [candidateId, update] of Object.entries(updates || {})) {
+      const value = typeof update === "string" ? { decision: update } : update;
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      merged[candidateId] = {
+        ...(merged[candidateId] || {}),
+        ...value
+      };
+    }
+    return merged;
+  }, {});
 }
 
 function candidateReviewUpdateForRecord(updates, candidateId) {

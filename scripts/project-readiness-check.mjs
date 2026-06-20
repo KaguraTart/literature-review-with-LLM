@@ -329,6 +329,8 @@ const SOURCE_MARKERS = [
       "candidateReviewUpdateMapFromDom",
       "candidateReviewNote",
       "review_note",
+      "zms-apply-candidate-recommendations",
+      "candidateRecommendationUpdates",
       "zms-export-candidate-review",
       "zms-import-candidates",
       "zms-attach-candidate-pdfs",
