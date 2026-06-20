@@ -2174,6 +2174,33 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toBe("Connection OK");
   });
 
+  it("retries settings connection tests when a 200 response wraps an unsupported-parameter error", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      initialModel: "model-a",
+      fetchResponses: [
+        {
+          __fetchOk: true,
+          __fetchStatus: 200,
+          __fetchBody: {
+            error: {
+              code: "unsupported_parameter",
+              message: "Unsupported request parameter",
+              param: "max_output_tokens"
+            }
+          }
+        },
+        { output_text: "pong" }
+      ]
+    });
+
+    await controller.testConnection();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(JSON.parse(fetchCalls[0].init.body)).toHaveProperty("max_output_tokens");
+    expect(JSON.parse(fetchCalls[1].init.body)).not.toHaveProperty("max_output_tokens");
+    expect(elements.get("zms-status").value).toBe("Connection OK");
+  });
+
   it("retries settings connection tests after stripping unsupported Anthropic fields", async () => {
     const { controller, elements, fetchCalls } = loadPreferencesController({
       initialModel: "claude-compatible",

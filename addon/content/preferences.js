@@ -1202,8 +1202,8 @@ async function runProviderConnectionTest(profile, request) {
     const text = await response.text();
     lastResponse = response;
     lastText = text;
-    if (response.ok) return { response, text };
     const fallbackFields = providerCompatibilityFallbackFields(profile?.protocol, body, response.status, text, usedFallbackFields);
+    if (response.ok && !fallbackFields.length) return { response, text };
     if (!fallbackFields.length) return { response, text };
     usedFallbackFields.push(...fallbackFields);
     body = omitProviderRequestBodyFields(body, fallbackFields, usedFallbackFields);
@@ -1648,6 +1648,36 @@ function providerTextFromResponse(protocol, data) {
 }
 
 const PREFERENCES_PROVIDER_RESPONSE_WRAPPER_KEYS = ["data", "result", "payload", "response", "message", "body", "completion"];
+const PREFERENCES_PROVIDER_FALLBACK_BODY_FIELDS = new Set([
+  "stream_options",
+  "stream",
+  "temperature",
+  "n",
+  "response_format",
+  "max_completion_tokens",
+  "max_tokens",
+  "text",
+  "max_output_tokens",
+  "instructions",
+  "reasoning",
+  "verbosity",
+  "system",
+  "metadata",
+  "thinking",
+  "top_p",
+  "presence_penalty",
+  "frequency_penalty",
+  "seed",
+  "top_logprobs",
+  "logprobs",
+  "parallel_tool_calls",
+  "reasoning_effort",
+  "stop",
+  "top_k",
+  "stop_sequences",
+  "tools",
+  "tool_choice"
+]);
 const PREFERENCES_MODEL_TEXT_CONTAINER_KEYS = [
   "content",
   "output",
@@ -1940,10 +1970,10 @@ function openAIChatOptionalDefaults(profile, defaults) {
 }
 
 function providerCompatibilityFallbackFields(protocol, body, status, text, usedFallback = false) {
-  if (usedFallback === true || !["openai_chat", "openai_responses", "anthropic_messages"].includes(protocol) || ![400, 422].includes(Number(status))) return [];
+  if (usedFallback === true || !["openai_chat", "openai_responses", "anthropic_messages"].includes(protocol) || !providerFallbackEligibleStatus(body, status, text)) return [];
   const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
   const detail = String(text || "").toLowerCase();
-  const fields = [];
+  const fields = providerStructuredUnsupportedFields(body, text);
   if (body?.stream_options !== undefined && /stream_options|stream options|stream option/.test(detail)) {
     fields.push("stream_options");
   }
@@ -2030,6 +2060,68 @@ function providerCompatibilityFallbackFields(protocol, body, status, text, usedF
     fields.push("tool_choice");
   }
   return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
+}
+
+function providerFallbackEligibleStatus(body, status, text) {
+  const numericStatus = Number(status);
+  if (numericStatus === 400 || numericStatus === 422) return true;
+  if (numericStatus !== 200) return false;
+  return providerOkResponseLooksLikeFallbackError(body, text);
+}
+
+function providerOkResponseLooksLikeFallbackError(body, text) {
+  const parsed = safeParseJSON(text);
+  if (!parsed) return false;
+  if (providerResponseErrorDetail(parsed)) return true;
+  if (!providerStructuredUnsupportedFields(body, text).length) return false;
+  return /unsupported|unrecognized|not supported|unknown (?:field|parameter|argument)|extra_forbidden|not permitted|invalid|forbidden/.test(String(text || "").toLowerCase());
+}
+
+function providerStructuredUnsupportedFields(body, text) {
+  const parsed = safeParseJSON(text);
+  if (!parsed) return [];
+  const hints = [];
+  collectProviderFieldHints(parsed, hints);
+  return hints
+    .map((value) => normalizeProviderFieldHint(value))
+    .filter((field) => field && PREFERENCES_PROVIDER_FALLBACK_BODY_FIELDS.has(field) && body?.[field] !== undefined);
+}
+
+function collectProviderFieldHints(value, hints) {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectProviderFieldHints(item, hints);
+    return;
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (isProviderFieldHintKey(key)) collectProviderFieldHintValue(entry, hints);
+    if (entry && typeof entry === "object") collectProviderFieldHints(entry, hints);
+  }
+}
+
+function collectProviderFieldHintValue(value, hints) {
+  if (typeof value === "string") {
+    hints.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectProviderFieldHintValue(item, hints);
+  }
+}
+
+function isProviderFieldHintKey(key) {
+  return /^(?:param|params|parameter|parameters|field|fields|property|properties|argument|arguments|loc|location|path|json_path|jsonpath|unsupported_param|unsupported_params|unsupported_parameter|unsupported_parameters|invalid_param|invalid_params|invalid_parameter|invalid_parameters)$/i.test(key);
+}
+
+function normalizeProviderFieldHint(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/^\$\.?/, "")
+    .replace(/^(?:body|request|payload|params?|parameters?|input)\./i, "")
+    .replace(/\[[^\]]+\]/g, "")
+    .split(".")[0]
+    .trim();
 }
 
 function omitProviderRequestBodyFields(body, fields, usedFallback = false) {
