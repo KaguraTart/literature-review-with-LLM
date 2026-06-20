@@ -45,6 +45,7 @@ function loadWorkbenchHelpers() {
     sessionIdFromPath: (path: string) => string;
     sessionLabelFromPath: (path: string) => string;
     workbenchModelListRequestForProfile: (profile: any) => { url: string; headers: Record<string, string> } | null;
+    workbenchModelOptionsFromItems: (source: any[]) => Array<{ id: string; label: string }>;
     extractResponseText: (protocol: string, data: any) => string;
     providerUsageFromResponse: (data: any) => any;
     providerUsageText: (usage: any) => string;
@@ -154,6 +155,20 @@ describe("workbench session helpers", () => {
       capabilities: { modelList: true },
       customHeaders: {}
     })?.url).toBe("https://api.anthropic.com/v1/models");
+  });
+
+  it("normalizes model-list options for workbench settings", () => {
+    expect(helpers.workbenchModelOptionsFromItems([
+      { model: "router-model", displayName: "Router Model" },
+      { id: "id-only-model" },
+      { name: "name-only-model" },
+      "string-model"
+    ])).toEqual([
+      { id: "id-only-model", label: "id-only-model" },
+      { id: "name-only-model", label: "name-only-model" },
+      { id: "router-model", label: "Router Model" },
+      { id: "string-model", label: "string-model" }
+    ]);
   });
 
   it("extracts model text from wrapped provider responses in the workbench", () => {

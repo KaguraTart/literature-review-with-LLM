@@ -11296,9 +11296,12 @@ function workbenchModelOptionsFromItems(source) {
 }
 
 function workbenchModelOptionFromItem(item) {
-  if (typeof item === "string") return { id: item.trim(), label: "" };
-  const id = String(item?.id || item?.name || item?.model || "").trim();
-  const label = String(item?.display_name || item?.displayName || item?.label || "").trim();
+  if (typeof item === "string") {
+    const id = item.trim();
+    return { id, label: id };
+  }
+  const id = workbenchStringField(item?.id, item?.model, item?.name);
+  const label = workbenchStringField(item?.display_name, item?.displayName, item?.label, item?.name, id);
   return { id, label };
 }
 

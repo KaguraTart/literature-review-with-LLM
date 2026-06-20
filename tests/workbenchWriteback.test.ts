@@ -1163,7 +1163,7 @@ describe("workbench writeback helpers", () => {
       headers: { authorization: "Bearer sk-test-secret" }
     })).resolves.toEqual([
       { id: "model-a", label: "Model A" },
-      { id: "model-b", label: "" }
+      { id: "model-b", label: "model-b" }
     ]);
     expect(fetchCalls).toEqual([
       "https://api.openai.com/v1/models",

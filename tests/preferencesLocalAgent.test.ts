@@ -759,6 +759,19 @@ describe("preferences local-agent config helpers", () => {
       { id: "claude-opus-4-8", label: "Claude Opus 4.8" },
       { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" }
     ]);
+    expect(helpers.modelOptionsFromResponse({
+      data: [
+        { model: "router-model", displayName: "Router Model" },
+        { id: "id-only-model" },
+        { name: "name-only-model" },
+        "string-model"
+      ]
+    })).toEqual([
+      { id: "id-only-model", label: "id-only-model" },
+      { id: "name-only-model", label: "name-only-model" },
+      { id: "router-model", label: "Router Model" },
+      { id: "string-model", label: "string-model" }
+    ]);
   });
 
   it("formats settings provider errors without leaking API credentials", () => {
