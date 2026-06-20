@@ -6539,6 +6539,10 @@ function renderCandidateReviewMarkdown(records, options = {}) {
     `- ${labels.low}: ${tierCounts.low || 0}`,
     `- ${labels.duplicate}: ${tierCounts.duplicate || 0}`,
     "",
+    `## ${labels.screeningBoard}`,
+    "",
+    ...candidateReviewScreeningBoard(candidates, labels),
+    "",
     `## ${labels.checklist}`,
     "",
     `- [ ] ${labels.checkIdentifiers}`,
@@ -6612,6 +6616,49 @@ function candidateReviewActionRows(records, labels) {
         action: candidateReviewNextAction(record, labels)
       };
     });
+}
+
+function candidateReviewScreeningBoard(records, labels) {
+  const rows = candidateReviewScreeningRows(records, labels);
+  return [
+    `| ${labels.boardMetric} | ${labels.boardCount} | ${labels.boardAction} |`,
+    "| --- | ---: | --- |",
+    ...rows.map((row) => `| ${mdTableCell(row.metric)} | ${row.count} | ${mdTableCell(row.action)} |`)
+  ];
+}
+
+function candidateReviewScreeningRows(records, labels) {
+  const candidates = records || [];
+  const recommendedMismatch = candidates.filter(candidateRecommendationMismatch).length;
+  const highPending = candidates.filter((record) => normalizeCandidateDecision(record.decision) === "user_pending" && record?.priority?.tier === "high").length;
+  const mediumPending = candidates.filter((record) => normalizeCandidateDecision(record.decision) === "user_pending" && record?.priority?.tier === "medium").length;
+  const duplicateCount = candidates.filter((record) => record?.quality?.dedupeStatus === "duplicate" || record?.priority?.tier === "duplicate").length;
+  const readyToImport = importableCandidateRecords(candidates).length;
+  const includedMissingPdf = candidates.filter((record) => normalizeCandidateDecision(record.decision) === "include"
+    && record?.quality?.dedupeStatus !== "duplicate"
+    && record?.quality?.isAbstractOnly !== true
+    && !record?.pdfUrl
+    && record?.pdfAttachmentStatus !== "attached_pdf").length;
+  const importIssues = candidates.filter((record) => record?.importStatus && !["imported", "skipped_duplicate"].includes(record.importStatus)).length;
+  const pdfAttached = candidates.filter((record) => record?.pdfAttachmentStatus === "attached_pdf").length;
+  const abstractOnly = candidates.filter((record) => record?.quality?.isAbstractOnly === true).length;
+  return [
+    { metric: labels.boardHighPending, count: highPending, action: labels.boardHighPendingAction },
+    { metric: labels.boardMediumPending, count: mediumPending, action: labels.boardMediumPendingAction },
+    { metric: labels.boardRecommendationMismatch, count: recommendedMismatch, action: labels.boardRecommendationMismatchAction },
+    { metric: labels.boardDuplicates, count: duplicateCount, action: labels.boardDuplicatesAction },
+    { metric: labels.boardReadyToImport, count: readyToImport, action: labels.boardReadyToImportAction },
+    { metric: labels.boardIncludedMissingPdf, count: includedMissingPdf, action: labels.boardIncludedMissingPdfAction },
+    { metric: labels.boardImportIssues, count: importIssues, action: labels.boardImportIssuesAction },
+    { metric: labels.boardPdfAttached, count: pdfAttached, action: labels.boardPdfAttachedAction },
+    { metric: labels.boardAbstractOnly, count: abstractOnly, action: labels.boardAbstractOnlyAction }
+  ];
+}
+
+function candidateRecommendationMismatch(record) {
+  const decision = normalizeCandidateDecision(record?.decision);
+  const recommended = record?.priority?.recommendedDecision ? normalizeCandidateDecision(record.priority.recommendedDecision) : "";
+  return !!recommended && recommended !== decision;
 }
 
 function candidateNeedsReviewAction(record) {
@@ -6726,6 +6773,28 @@ function candidateReviewLabels(outputLanguage) {
       medium: "中优先级",
       low: "低优先级",
       duplicate: "重复项",
+      screeningBoard: "审阅状态看板",
+      boardMetric: "审阅状态",
+      boardCount: "数量",
+      boardAction: "建议处理",
+      boardHighPending: "高优先级待确认",
+      boardHighPendingAction: "优先阅读摘要和全文，必要时直接转为纳入或排除。",
+      boardMediumPending: "中优先级待确认",
+      boardMediumPendingAction: "检查与综述分类、方法和实验指标的相关性。",
+      boardRecommendationMismatch: "建议与当前决策不一致",
+      boardRecommendationMismatchAction: "逐条人工复核，不自动覆盖已有人工判断。",
+      boardDuplicates: "重复或疑似重复",
+      boardDuplicatesAction: "核对 DOI、标题和 Zotero 已有条目，确认后排除或合并。",
+      boardReadyToImport: "可导入 Zotero",
+      boardReadyToImportAction: "确认纳入理由后执行导入，并记录后续 PDF 补全状态。",
+      boardIncludedMissingPdf: "已纳入但缺 PDF",
+      boardIncludedMissingPdfAction: "优先查找开放获取 PDF 或手动附加本地文件。",
+      boardImportIssues: "导入异常",
+      boardImportIssuesAction: "检查导入错误、重复项和缺失标识符。",
+      boardPdfAttached: "PDF 已补全",
+      boardPdfAttachedAction: "可进入精读或加入文献矩阵。",
+      boardAbstractOnly: "仅摘要记录",
+      boardAbstractOnlyAction: "低优先级仅摘要记录暂缓导入，先补全文或来源。",
       checklist: "人工复核清单",
       checkIdentifiers: "核对 DOI、arXiv、Semantic Scholar ID 是否对应同一篇论文。",
       checkFullText: "优先确认是否有 PDF 或开放获取全文。",
@@ -6793,6 +6862,28 @@ function candidateReviewLabels(outputLanguage) {
     medium: "Medium priority",
     low: "Low priority",
     duplicate: "Duplicates",
+    screeningBoard: "Screening Board",
+    boardMetric: "Review state",
+    boardCount: "Count",
+    boardAction: "Suggested handling",
+    boardHighPending: "High-priority pending",
+    boardHighPendingAction: "Review abstract and full text first, then include or exclude.",
+    boardMediumPending: "Medium-priority pending",
+    boardMediumPendingAction: "Check relevance to the review taxonomy, method, and evaluation metrics.",
+    boardRecommendationMismatch: "Recommendation differs from current decision",
+    boardRecommendationMismatchAction: "Manually review each mismatch instead of overwriting prior human decisions.",
+    boardDuplicates: "Duplicate or possible duplicate",
+    boardDuplicatesAction: "Compare DOI, title, and existing Zotero items before excluding or merging.",
+    boardReadyToImport: "Ready for Zotero import",
+    boardReadyToImportAction: "Import after confirming the inclusion rationale, then track PDF attachment state.",
+    boardIncludedMissingPdf: "Included but missing PDF",
+    boardIncludedMissingPdfAction: "Look for open-access PDF or attach a local file.",
+    boardImportIssues: "Import issues",
+    boardImportIssuesAction: "Inspect import errors, duplicates, and missing identifiers.",
+    boardPdfAttached: "PDF attached",
+    boardPdfAttachedAction: "Move to close reading or the literature matrix.",
+    boardAbstractOnly: "Abstract-only records",
+    boardAbstractOnlyAction: "Defer low-priority abstract-only records until full text or source evidence is available.",
     checklist: "Manual Review Checklist",
     checkIdentifiers: "Confirm DOI, arXiv, and Semantic Scholar IDs refer to the same paper.",
     checkFullText: "Prefer papers with PDF or open-access full text.",

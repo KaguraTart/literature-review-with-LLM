@@ -214,6 +214,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     candidateRecommendationUpdates: (records: any[], currentUpdates?: Record<string, any>) => Record<string, any>;
     candidateReviewMarkdownPath: (outputDir: string, item: any) => string;
     renderCandidateReviewMarkdown: (records: any[], options?: any) => string;
+    candidateReviewLabels: (outputLanguage: string) => any;
+    candidateReviewScreeningRows: (records: any[], labels: any) => Array<{ metric: string; count: number; action: string }>;
     reviewDraftMarkdownPath: (outputDir: string, item: any) => string;
     renderReviewDraftMarkdown: (context: any, options?: any) => string;
     proposalNoteMarkdownPath: (outputDir: string, item: any) => string;
@@ -1560,6 +1562,67 @@ describe("workbench writeback helpers", () => {
     });
   });
 
+  it("builds candidate screening board rows for manual review triage", () => {
+    const labels = helpers.candidateReviewLabels("en-US");
+    const rows = helpers.candidateReviewScreeningRows([
+      {
+        candidateId: "doi:10.1000/high",
+        title: "High Pending",
+        decision: "user_pending",
+        priority: { tier: "high", recommendedDecision: "include" },
+        quality: { dedupeStatus: "new", isAbstractOnly: false }
+      },
+      {
+        candidateId: "doi:10.1000/medium",
+        title: "Medium Pending",
+        decision: "user_pending",
+        priority: { tier: "medium", recommendedDecision: "to_read" },
+        quality: { dedupeStatus: "new", isAbstractOnly: false }
+      },
+      {
+        candidateId: "doi:10.1000/include",
+        title: "Included Missing PDF",
+        decision: "include",
+        priority: { tier: "high", recommendedDecision: "include" },
+        quality: { dedupeStatus: "new", isAbstractOnly: false }
+      },
+      {
+        candidateId: "doi:10.1000/dup",
+        title: "Duplicate",
+        decision: "include",
+        priority: { tier: "duplicate", recommendedDecision: "exclude" },
+        quality: { dedupeStatus: "duplicate", isAbstractOnly: false }
+      },
+      {
+        candidateId: "doi:10.1000/import",
+        title: "Import Failed",
+        decision: "include",
+        importStatus: "failed",
+        pdfAttachmentStatus: "attached_pdf",
+        priority: { tier: "medium", recommendedDecision: "include" },
+        quality: { dedupeStatus: "new", isAbstractOnly: false }
+      },
+      {
+        candidateId: "title:abstract",
+        title: "Abstract Only",
+        decision: "include",
+        priority: { tier: "low", recommendedDecision: "include" },
+        quality: { dedupeStatus: "new", isAbstractOnly: true }
+      }
+    ], labels);
+
+    const counts = Object.fromEntries(rows.map((row) => [row.metric, row.count]));
+    expect(counts["High-priority pending"]).toBe(1);
+    expect(counts["Medium-priority pending"]).toBe(1);
+    expect(counts["Recommendation differs from current decision"]).toBe(3);
+    expect(counts["Duplicate or possible duplicate"]).toBe(1);
+    expect(counts["Ready for Zotero import"]).toBe(2);
+    expect(counts["Included but missing PDF"]).toBe(1);
+    expect(counts["Import issues"]).toBe(1);
+    expect(counts["PDF attached"]).toBe(1);
+    expect(counts["Abstract-only records"]).toBe(1);
+  });
+
   it("persists candidate review notes with decisions and can clear old notes", () => {
     const records = [
       {
@@ -1761,6 +1824,10 @@ describe("workbench writeback helpers", () => {
 
     expect(report).toContain("templateVersion: candidate-review-v1");
     expect(report).toContain("# 候选论文审阅报告");
+    expect(report).toContain("## 审阅状态看板");
+    expect(report).toContain("| 审阅状态 | 数量 | 建议处理 |");
+    expect(report).toContain("高优先级待确认");
+    expect(report).toContain("可导入 Zotero");
     expect(report).toContain("## 人工复核清单");
     expect(report).toContain("## 筛选协议");
     expect(report).toContain("纳入标准");
@@ -1813,6 +1880,8 @@ describe("workbench writeback helpers", () => {
     const reviewPath = "/tmp/out/collections/COL/writing/candidate-review.md";
     expect(files.get(candidatePath)).toContain("\"candidateId\":\"doi:10.1000/a\"");
     expect(files.get(reviewPath)).toContain("# Candidate Paper Review");
+    expect(files.get(reviewPath)).toContain("## Screening Board");
+    expect(files.get(reviewPath)).toContain("| Review state | Count | Suggested handling |");
     expect(files.get(reviewPath)).toContain("## Screening Protocol");
     expect(files.get(reviewPath)).toContain("## Decision Action Queue");
     expect(files.get(reviewPath)).toContain("| Candidate paper | Decision | Recommended | Priority | Next action |");
