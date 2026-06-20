@@ -2002,7 +2002,7 @@ describe("preferences local-agent config helpers", () => {
           __fetchStatus: 400,
           __fetchBody: {
             error: {
-              message: "Unsupported parameters: text.format, max_output_tokens, stream, presence_penalty, frequency_penalty, seed, top_logprobs, logprobs, parallel_tool_calls, reasoning_effort, stop"
+              message: "Unsupported parameters: instructions, text.verbosity, max_output_tokens, stream, presence_penalty, frequency_penalty, seed, top_logprobs, logprobs, parallel_tool_calls, reasoning_effort, reasoning, verbosity, stop"
             }
           }
         },
@@ -2018,6 +2018,9 @@ describe("preferences local-agent config helpers", () => {
       logprobs: true,
       parallel_tool_calls: false,
       reasoning_effort: "low",
+      reasoning: { effort: "low" },
+      verbosity: "low",
+      text: { verbosity: "low" },
       stop: ["END"]
     });
 
@@ -2025,7 +2028,7 @@ describe("preferences local-agent config helpers", () => {
 
     expect(fetchCalls).toHaveLength(2);
     expect(JSON.parse(fetchCalls[0].init.body)).toMatchObject({
-      text: { format: { type: "json_object" } },
+      text: { verbosity: "low" },
       max_output_tokens: 32,
       stream: false,
       presence_penalty: 0.2,
@@ -2035,9 +2038,13 @@ describe("preferences local-agent config helpers", () => {
       logprobs: true,
       parallel_tool_calls: false,
       reasoning_effort: "low",
+      reasoning: { effort: "low" },
+      verbosity: "low",
       stop: ["END"]
     });
+    expect(JSON.parse(fetchCalls[0].init.body)).toHaveProperty("instructions");
     const retriedBody = JSON.parse(fetchCalls[1].init.body);
+    expect(retriedBody).not.toHaveProperty("instructions");
     expect(retriedBody).not.toHaveProperty("text");
     expect(retriedBody).not.toHaveProperty("max_output_tokens");
     expect(retriedBody).not.toHaveProperty("stream");
@@ -2048,6 +2055,8 @@ describe("preferences local-agent config helpers", () => {
     expect(retriedBody).not.toHaveProperty("logprobs");
     expect(retriedBody).not.toHaveProperty("parallel_tool_calls");
     expect(retriedBody).not.toHaveProperty("reasoning_effort");
+    expect(retriedBody).not.toHaveProperty("reasoning");
+    expect(retriedBody).not.toHaveProperty("verbosity");
     expect(retriedBody).not.toHaveProperty("stop");
     expect(elements.get("zms-status").value).toBe("Connection OK");
   });

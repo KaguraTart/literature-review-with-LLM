@@ -397,6 +397,19 @@ describe("provider adapters", () => {
     )).toEqual(["stream", "temperature", "text", "max_output_tokens"]);
     expect(providerCompatibilityFallbackFields(
       "openai_responses",
+      {
+        model: "responses-model",
+        input: [],
+        instructions: "system",
+        text: { verbosity: "low" },
+        reasoning: { effort: "low" },
+        verbosity: "low"
+      },
+      422,
+      "Unsupported parameters: instructions, reasoning, text.verbosity, verbosity"
+    )).toEqual(["text", "instructions", "reasoning", "verbosity"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_responses",
       responsesBody,
       400,
       "Unsupported parameter: max_output_tokens",

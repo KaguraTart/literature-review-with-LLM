@@ -1129,6 +1129,67 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("stop");
   });
 
+  it("retries workbench Responses requests without unsupported instructions and reasoning options", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    (loaded as any).fetch = async (url: string, init: any) => {
+      fetchCalls.push({ url, body: JSON.parse(init.body) });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 422,
+          text: async () => JSON.stringify({
+            error: {
+              message: "Unsupported parameters: instructions, reasoning, text.verbosity, verbosity"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ output_text: "pong" })
+      };
+    };
+
+    const profile = {
+      id: "responses-router",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "responses-model",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: false },
+      bodyExtra: {
+        text: { verbosity: "low" },
+        reasoning: { effort: "low" },
+        verbosity: "low"
+      }
+    };
+
+    const response = await loaded.requestModelWithRetry(
+      profile,
+      [{ role: "user", content: "ping" }],
+      "en-US",
+      "system",
+      { type: "text", text: "paper text" },
+      false
+    );
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({
+      instructions: expect.stringContaining("system"),
+      text: { verbosity: "low" },
+      reasoning: { effort: "low" },
+      verbosity: "low"
+    });
+    expect(fetchCalls[1].body).not.toHaveProperty("instructions");
+    expect(fetchCalls[1].body).not.toHaveProperty("text");
+    expect(fetchCalls[1].body).not.toHaveProperty("reasoning");
+    expect(fetchCalls[1].body).not.toHaveProperty("verbosity");
+  });
+
   it("loads wrapped model-list pages in the workbench", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: string[] = [];

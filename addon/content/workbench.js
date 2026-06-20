@@ -7332,11 +7332,20 @@ function providerUnsupportedOptionalFields(body, text, usedFallback = []) {
   if (body?.max_tokens !== undefined && /max_tokens|max tokens|max token/.test(detail)) {
     fields.push("max_tokens");
   }
-  if (body?.text !== undefined && /text\.format|text format|(?:^|[^a-z0-9_])text(?:[^a-z0-9_]|$)|json mode|json_schema|json schema/.test(detail)) {
+  if (body?.text !== undefined && /text\.format|text format|text\.verbosity|text verbosity|(?:^|[^a-z0-9_])text(?:[^a-z0-9_]|$)|json mode|json_schema|json schema/.test(detail)) {
     fields.push("text");
   }
   if (body?.max_output_tokens !== undefined && /max_output_tokens|max output tokens|max output token/.test(detail)) {
     fields.push("max_output_tokens");
+  }
+  if (body?.instructions !== undefined && /(?:^|[^a-z0-9_])instructions?(?:[^a-z0-9_]|$)|system instructions?|developer instructions?|system prompt/.test(detail)) {
+    fields.push("instructions");
+  }
+  if (body?.reasoning !== undefined && /(?:^|[^a-z0-9_])reasoning(?:[^a-z0-9_]|$)|reasoning config|reasoning parameter/.test(detail)) {
+    fields.push("reasoning");
+  }
+  if (body?.verbosity !== undefined && /(?:^|[^a-z0-9_])verbosity(?:[^a-z0-9_]|$)/.test(detail)) {
+    fields.push("verbosity");
   }
   if (body?.system !== undefined && /(?:^|[^a-z0-9_])system(?:[^a-z0-9_]|$)|system prompt|system field/.test(detail)) {
     fields.push("system");
