@@ -40,6 +40,16 @@
           <html:input id="zms-local-ocr-input" type="checkbox"/>
           <html:span id="zms-local-ocr-text">Local OCR</html:span>
         </html:label>
+        <html:details id="zms-local-ocr-options" class="zms-settings-details">
+          <html:summary id="zms-local-ocr-options-heading">Local OCR Options</html:summary>
+          <html:label id="zms-local-ocr-endpoint-label" for="zms-local-ocr-endpoint">MCP Endpoint</html:label>
+          <html:input id="zms-local-ocr-endpoint" type="url"/>
+          <html:label id="zms-local-ocr-tool-label" for="zms-local-ocr-tool">Tool</html:label>
+          <html:input id="zms-local-ocr-tool" type="text"/>
+          <html:label id="zms-local-ocr-language-label" for="zms-local-ocr-language">Language</html:label>
+          <html:input id="zms-local-ocr-language" type="text"/>
+          <html:p id="zms-local-ocr-help" class="zms-muted">Use eng by default. Chinese OCR needs local language data.</html:p>
+        </html:details>
         <html:div class="zms-actions zms-profile-actions">
           <html:button id="zms-save-profile-settings" type="button">Save</html:button>
           <html:button id="zms-test-profile-settings" type="button">Save and Test</html:button>

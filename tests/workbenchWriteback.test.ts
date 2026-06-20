@@ -4197,13 +4197,18 @@ describe("workbench writeback helpers", () => {
     const loaded = loadWorkbenchHelpers();
     const dom = fakeDocument({
       "zms-input": "",
-      "zms-skill": ""
+      "zms-skill": "",
+      "zms-local-ocr-endpoint": "http://127.0.0.1:3333/mcp",
+      "zms-local-ocr-tool": "ocr_image",
+      "zms-local-ocr-language": "eng+chi_sim"
     });
     (loaded as any).document = dom;
-    (loaded as any).fetch = async (_url: string, options: any) => {
+    (loaded as any).fetch = async (url: string, options: any) => {
+      expect(url).toBe("http://127.0.0.1:3333/mcp");
       const body = JSON.parse(options.body);
       expect(body.params.name).toBe("ocr_image");
       expect(body.params.arguments.image.base64).toBe("aW1hZ2U=");
+      expect(body.params.arguments.language).toBe("eng+chi_sim");
       return {
         ok: true,
         status: 200,
@@ -4230,7 +4235,6 @@ describe("workbench writeback helpers", () => {
     workbench.state.uiLanguage = "en-US";
     const localOcrInput = dom.getElementById("zms-local-ocr-input") as HTMLInputElement;
     localOcrInput.checked = true;
-    workbench.state.localOcrEnabled = true;
     workbench.t = (key: string) => key;
     workbench.saveSession = async () => undefined;
     let capturedImages: any[] = [];
@@ -4255,6 +4259,35 @@ describe("workbench writeback helpers", () => {
         language: "eng+chi_sim",
         text: "Axis Delay 12 ms"
       }
+    });
+  });
+
+  it("persists workbench local OCR endpoint, tool, and language settings", () => {
+    const prefs: Record<string, any> = {};
+    const loaded = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument({
+      "zms-local-ocr-endpoint": "http://127.0.0.1:4444/mcp",
+      "zms-local-ocr-tool": "custom_ocr",
+      "zms-local-ocr-language": "eng+chi_sim"
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    const localOcrInput = dom.getElementById("zms-local-ocr-input") as HTMLInputElement;
+    localOcrInput.checked = true;
+
+    expect(workbench.syncLocalOcrPreference()).toBe(true);
+
+    expect(workbench.state).toMatchObject({
+      localOcrEnabled: true,
+      localOcrEndpoint: "http://127.0.0.1:4444/mcp",
+      localOcrTool: "custom_ocr",
+      localOcrLanguage: "eng+chi_sim"
+    });
+    expect(prefs).toMatchObject({
+      localOcrEnabled: true,
+      localOcrEndpoint: "http://127.0.0.1:4444/mcp",
+      localOcrTool: "custom_ocr",
+      localOcrLanguage: "eng+chi_sim"
     });
   });
 

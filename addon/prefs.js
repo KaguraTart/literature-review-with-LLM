@@ -10,6 +10,7 @@ pref("stream", true);
 pref("localOcrEnabled", false);
 pref("localOcrEndpoint", "http://127.0.0.1:3333/mcp");
 pref("localOcrTool", "ocr_image");
+pref("localOcrLanguage", "eng");
 pref("summaryVersion", "1");
 pref("uiLanguage", "auto");
 pref("outputLanguage", "zh-CN");

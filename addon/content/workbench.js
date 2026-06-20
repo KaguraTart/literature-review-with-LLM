@@ -90,6 +90,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     localOcrEnabled: false,
     localOcrEndpoint: "http://127.0.0.1:3333/mcp",
     localOcrTool: "ocr_image",
+    localOcrLanguage: "eng",
     summaryVersion: "1",
     uiLanguage: "en-US",
     systemPrompt: "",
@@ -400,6 +401,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     this.state.localOcrEnabled = normalizeBoolean(pref("localOcrEnabled"), false);
     this.state.localOcrEndpoint = String(pref("localOcrEndpoint") || "http://127.0.0.1:3333/mcp");
     this.state.localOcrTool = String(pref("localOcrTool") || "ocr_image");
+    this.state.localOcrLanguage = String(pref("localOcrLanguage") || "eng");
     this.state.summaryVersion = String(pref("summaryVersion") || "1");
     this.state.uiLanguage = resolveUiLanguage(pref("uiLanguage"), runtimeLocale());
     this.state.systemPrompt = pref("systemPrompt") || "";
@@ -432,6 +434,11 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-profile-model-label", this.t("model"));
     setText("zms-profile-image-text", this.t("imageInput"));
     setText("zms-local-ocr-text", this.t("localOcr"));
+    setText("zms-local-ocr-options-heading", this.t("localOcrOptions"));
+    setText("zms-local-ocr-endpoint-label", this.t("localOcrEndpoint"));
+    setText("zms-local-ocr-tool-label", this.t("localOcrTool"));
+    setText("zms-local-ocr-language-label", this.t("localOcrLanguage"));
+    setText("zms-local-ocr-help", this.t("localOcrHelp"));
     const localOcrInput = document.getElementById("zms-local-ocr-input");
     if (localOcrInput) localOcrInput.setAttribute("title", this.t("localOcrTitle"));
     setText("zms-prompt-pack-label", this.t("promptPack"));
@@ -549,6 +556,9 @@ var ZoteroMarkdownSummaryWorkbench = {
     if (imageInput) imageInput.checked = profile?.capabilities?.imageBase64 === true;
     const localOcrInput = document.getElementById("zms-local-ocr-input");
     if (localOcrInput) localOcrInput.checked = this.state.localOcrEnabled === true;
+    setInputValue("zms-local-ocr-endpoint", this.state.localOcrEndpoint || "http://127.0.0.1:3333/mcp");
+    setInputValue("zms-local-ocr-tool", this.state.localOcrTool || "ocr_image");
+    setInputValue("zms-local-ocr-language", this.state.localOcrLanguage || "eng");
   },
 
   profileFromSettingsPanel() {
@@ -597,8 +607,19 @@ var ZoteroMarkdownSummaryWorkbench = {
     const localOcrInput = document.getElementById("zms-local-ocr-input");
     if (!localOcrInput) return this.state.localOcrEnabled === true;
     const enabled = localOcrInput.checked === true;
+    const endpoint = document.getElementById("zms-local-ocr-endpoint")?.value?.trim() || "http://127.0.0.1:3333/mcp";
+    const tool = document.getElementById("zms-local-ocr-tool")?.value?.trim() || "ocr_image";
+    const language = document.getElementById("zms-local-ocr-language")?.value?.trim() || "";
     this.state.localOcrEnabled = enabled;
-    if (options.persist !== false) setPref("localOcrEnabled", enabled);
+    this.state.localOcrEndpoint = endpoint;
+    this.state.localOcrTool = tool;
+    this.state.localOcrLanguage = language;
+    if (options.persist !== false) {
+      setPref("localOcrEnabled", enabled);
+      setPref("localOcrEndpoint", endpoint);
+      setPref("localOcrTool", tool);
+      setPref("localOcrLanguage", language);
+    }
     return enabled;
   },
 
@@ -1366,6 +1387,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       results.push(await localOcrForImage(image, {
         endpoint: this.state.localOcrEndpoint,
         tool: this.state.localOcrTool,
+        language: this.state.localOcrLanguage,
         signal: this.state.abortController?.signal
       }));
     }
@@ -6131,7 +6153,17 @@ async function localOcrForImage(image, options = {}) {
   if (typeof fetch !== "function") return null;
   const tool = String(options.tool || "ocr_image").trim() || "ocr_image";
   const endpoint = normalizeLocalAgentEndpoint(options.endpoint || "http://127.0.0.1:3333/mcp");
+  const language = String(options.language || "").trim();
   try {
+    const args = {
+      image: {
+        name: image?.name || "image.png",
+        mimeType: image?.mimeType || "image/png",
+        base64: image?.base64 || ""
+      },
+      timeoutSeconds: 30
+    };
+    if (language) args.language = language;
     const payload = await assertLocalAgentRequestOk({
       url: endpoint,
       signal: options.signal,
@@ -6142,14 +6174,7 @@ async function localOcrForImage(image, options = {}) {
         method: "tools/call",
         params: {
           name: tool,
-          arguments: {
-            image: {
-              name: image?.name || "image.png",
-              mimeType: image?.mimeType || "image/png",
-              base64: image?.base64 || ""
-            },
-            timeoutSeconds: 30
-          }
+          arguments: args
         }
       }
     });

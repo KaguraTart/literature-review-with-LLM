@@ -142,7 +142,7 @@ http://127.0.0.1:3333/mcp
 可选本地 OCR：
 
 - bridge 暴露 `ocr_image` 工具，默认 OCR 命令是 `/opt/homebrew/bin/tesseract`，默认 OCR 语言是 `eng`。
-- 启动服务前可用 `LOCAL_AGENT_TESSERACT_BIN=/path/to/tesseract` 覆盖 OCR 命令，用 `LOCAL_AGENT_TESSERACT_LANG=eng+chi_sim` 覆盖语言；中文 OCR 需要本机已安装对应 Tesseract 语言包。
+- 启动服务前可用 `LOCAL_AGENT_TESSERACT_BIN=/path/to/tesseract` 覆盖 OCR 命令，用 `LOCAL_AGENT_TESSERACT_LANG=eng+chi_sim` 覆盖服务默认语言；工作台设置面板也可以修改本地 OCR endpoint、工具名和单次请求语言。中文 OCR 需要本机已安装对应 Tesseract 语言包。
 - 在工作台设置面板启用 `Local OCR` 后，图片提问会先尝试记录本地 OCR 文本；OCR 失败只会写入本机会话元数据，不会阻断远程模型请求。
 
 ## 开发
@@ -252,7 +252,7 @@ build/update.json
 ## TODO
 
 - 完善跨集合聚类，并继续精修全局综合地图、重复缺口看板、集合级综合主张、综合路线图和报告生成。
-- 在当前可选本地 OCR、提示词级视觉 OCR 契约和 JSON/CSV 表格 sidecar 导出基础上，继续改善 OCR 配置体验，并加入直接图像图表数据重建，用于截图、PDF 图表、表格和实验结果。
+- 在当前可选本地 OCR、提示词级视觉 OCR 契约和 JSON/CSV 表格 sidecar 导出基础上，继续增加 OCR 结果复核/校正，并加入直接图像图表数据重建，用于截图、PDF 图表、表格和实验结果。
 - 在当前全文筛选阶段、排除理由、审阅状态看板、证据链复核队列、来源证据摘录、带排序命中上下文、重复页眉/页脚清理、目录/参考文献噪声降权、简单断词恢复、匹配到的批注页标签、best-effort 分页符/页标记提示、定位和短哈希的 Zotero 全文索引证据摘录和可配置引用网络策略基础上，继续补充未批注 PDF 文本的真正页码级来源到 PDF 证据抽取。
 - 在内置配置指南之外，继续补充更多厂商配置截图和教程。
 - 在当前按提示模板包生成的开题/课题申报笔记和期刊/报告提纲写作清单基础上，继续补充更深入的领域化写作格式。

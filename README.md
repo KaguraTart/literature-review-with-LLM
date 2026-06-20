@@ -143,7 +143,7 @@ The CLI tools themselves must be installed and authenticated separately on the m
 Optional local OCR:
 
 - The bridge exposes an `ocr_image` tool. The default engine command is `/opt/homebrew/bin/tesseract`, and the default OCR language is `eng`.
-- Override the OCR command with `LOCAL_AGENT_TESSERACT_BIN=/path/to/tesseract` and the language with `LOCAL_AGENT_TESSERACT_LANG=eng+chi_sim` before starting the service. Chinese OCR requires the matching local Tesseract language data.
+- Override the OCR command with `LOCAL_AGENT_TESSERACT_BIN=/path/to/tesseract` and the default service language with `LOCAL_AGENT_TESSERACT_LANG=eng+chi_sim` before starting the service. The workbench settings drawer also exposes the local OCR endpoint, tool name, and per-request language. Chinese OCR requires the matching local Tesseract language data.
 - In the workbench settings drawer, enable `Local OCR` for image questions. OCR failures are recorded in the local session metadata and do not block the remote model request.
 
 ## Workbench Usage
@@ -273,7 +273,7 @@ build/update.json
 ## TODO
 
 - Improve cross-collection clustering and continue polishing the global synthesis map, recurring-gap board, collection-level synthesis claims, synthesis roadmaps, and report generation.
-- Improve local OCR setup and add direct chart-image data reconstruction on top of the current prompt-level visual OCR contract and JSON/CSV table sidecar export for screenshots, PDF figures, tables, and experimental results.
+- Improve local OCR result review/correction and add direct chart-image data reconstruction on top of the current prompt-level visual OCR contract and JSON/CSV table sidecar export for screenshots, PDF figures, tables, and experimental results.
 - Add true page-accurate source-to-PDF evidence extraction for unannotated PDF text on top of the current screening stages, exclusion reasons, screening board, evidence-chain queue, source-evidence snippets, Zotero indexed full-text snippets with ranked hit context, repeated page-header/footer cleanup, table-of-contents/reference noise downranking, simple dehyphenation, matched annotation page labels, best-effort form-feed/page-marker hints, locators and hashes, and configurable citation-network policies.
 - Add more per-provider screenshots and tutorial examples beyond the in-app setup guide.
 - Continue adding deeper domain-specific writing formats beyond the current prompt-pack-specific proposal-note and journal/report-outline checklists.
