@@ -465,7 +465,7 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
   const data = await requestJSON(url, headers, merged, merged.stream === true, summaryRequest.protocol || protocol);
   return {
     markdown: extractOpenAIText(data),
-    usage: data.usage,
+    usage: providerUsageFromResponse(data),
     provider: summaryRequest.provider,
     model,
     sourceHash
@@ -526,7 +526,7 @@ async function callAnthropic(summaryRequest, sourceHash) {
   const data = await requestJSON(messageUrl, headers, merged, merged.stream === true, "anthropic_messages");
   return {
     markdown: extractAnthropicText(data),
-    usage: data.usage,
+    usage: providerUsageFromResponse(data),
     provider: summaryRequest.provider,
     model,
     sourceHash
@@ -751,6 +751,28 @@ function numericUsageValue(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
   return undefined;
+}
+
+function providerUsageFromResponse(data, depth = 0) {
+  if (!data || typeof data !== "object" || depth > 3) return undefined;
+  const direct = directProviderUsage(data);
+  let nested;
+  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
+    const value = data?.[key];
+    if (!value || typeof value !== "object") continue;
+    nested = mergeStreamUsage(nested, providerUsageFromResponse(value, depth + 1));
+  }
+  return mergeStreamUsage(direct, nested);
+}
+
+function directProviderUsage(data) {
+  return data?.usage
+    || data?.token_usage
+    || data?.tokenUsage
+    || data?.usage_metadata
+    || data?.message?.usage
+    || data?.delta?.usage
+    || undefined;
 }
 
 function parseProviderStreamPayload(protocol, payload) {

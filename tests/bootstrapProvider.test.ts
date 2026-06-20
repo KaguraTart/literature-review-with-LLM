@@ -785,6 +785,7 @@ describe("bootstrap provider helpers", () => {
     }, "hash", true);
 
     expect(result.markdown).toBe("summary");
+    expect(result.usage).toEqual({ total_tokens: 1 });
     expect(fetchCalls[0].url).toBe("https://api.openai.com/v1/responses");
     expect(fetchCalls[0].headers).toMatchObject({ authorization: "Bearer sk-test-secret", "x-test": "1" });
     expect(fetchCalls[0].body).toMatchObject({
@@ -801,6 +802,37 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[0].body).not.toHaveProperty("omitFields");
     expect(fetchCalls[0].body).not.toHaveProperty("temperature");
     expect(fetchCalls[0].body).not.toHaveProperty("max_output_tokens");
+  });
+
+  it("extracts wrapped OpenAI usage metadata in direct summaries", async () => {
+    const { helpers } = loadBootstrapProviderHelpers({
+      result: {
+        output_text: "wrapped summary",
+        usage: { input_tokens: 11, output_tokens: 4 }
+      }
+    });
+
+    const result = await helpers.callOpenAICompatible({
+      provider: "openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", true);
+
+    expect(result.markdown).toBe("wrapped summary");
+    expect(result.usage).toEqual({ input_tokens: 11, output_tokens: 4 });
   });
 
   it("uses Responses done snapshots only as a bootstrap stream fallback", async () => {
@@ -2047,6 +2079,37 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[1].body).toMatchObject({ stream: false });
     expect(fetchCalls[2].body).not.toHaveProperty("metadata");
     expect(fetchCalls[2].body).not.toHaveProperty("stream");
+  });
+
+  it("extracts wrapped Anthropic usage metadata in direct summaries", async () => {
+    const { helpers } = loadBootstrapProviderHelpers({
+      payload: {
+        content: [{ type: "text", text: "wrapped anthropic summary" }],
+        usage: { input_tokens: 7, output_tokens: 3 }
+      }
+    });
+
+    const result = await helpers.callAnthropic({
+      provider: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "routed-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+
+    expect(result.markdown).toBe("wrapped anthropic summary");
+    expect(result.usage).toEqual({ input_tokens: 7, output_tokens: 3 });
   });
 
   it("extracts wrapped Anthropic response text in the bootstrap provider path", async () => {
