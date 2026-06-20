@@ -432,6 +432,19 @@ describe("provider adapters", () => {
     )).toEqual(["text", "max_output_tokens", "temperature", "stream"]);
     expect(providerCompatibilityFallbackFields(
       "openai_responses",
+      responsesBody,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "extra_forbidden", loc: ["body", "text", "format"], msg: "Extra inputs are not permitted" },
+          { type: "extra_forbidden", loc: ["body", "max_output_tokens"], msg: "Extra inputs are not permitted" },
+          { type: "extra_forbidden", loc: ["body", "temperature"], msg: "Extra inputs are not permitted" },
+          { type: "extra_forbidden", loc: ["body", "stream"], msg: "Extra inputs are not permitted" }
+        ]
+      })
+    )).toEqual(["text", "max_output_tokens", "temperature", "stream"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_responses",
       {
         model: "responses-model",
         input: [{ role: "user", content: [{ type: "input_text", text: "ping" }] }],

@@ -1210,6 +1210,66 @@ describe("workbench writeback helpers", () => {
     ]);
   });
 
+  it("retries workbench provider requests from structured loc error hints", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    (loaded as any).fetch = async (url: string, init: any) => {
+      fetchCalls.push({ url, body: JSON.parse(init.body) });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 422,
+          text: async () => JSON.stringify({
+            detail: [
+              { type: "extra_forbidden", loc: ["body", "text", "format"], msg: "Extra inputs are not permitted" },
+              { type: "extra_forbidden", loc: ["body", "max_output_tokens"], msg: "Extra inputs are not permitted" },
+              { type: "extra_forbidden", loc: ["body", "temperature"], msg: "Extra inputs are not permitted" },
+              { type: "extra_forbidden", loc: ["body", "stream"], msg: "Extra inputs are not permitted" }
+            ]
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ output_text: "pong" })
+      };
+    };
+
+    const profile = {
+      id: "responses-router",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "responses-model",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true, jsonMode: true },
+      bodyExtra: {}
+    };
+
+    const response = await loaded.requestModelWithRetry(
+      profile,
+      [{ role: "user", content: "ping" }],
+      "en-US",
+      "system",
+      { type: "text", text: "paper text" },
+      true
+    );
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({
+      text: { format: { type: "json_object" } },
+      max_output_tokens: expect.any(Number),
+      temperature: expect.any(Number),
+      stream: true
+    });
+    expect(fetchCalls[1].body).not.toHaveProperty("text");
+    expect(fetchCalls[1].body).not.toHaveProperty("max_output_tokens");
+    expect(fetchCalls[1].body).not.toHaveProperty("temperature");
+    expect(fetchCalls[1].body).not.toHaveProperty("stream");
+  });
+
   it("loads wrapped model-list pages in the workbench", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: string[] = [];

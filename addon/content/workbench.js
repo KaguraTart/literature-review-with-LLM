@@ -7568,7 +7568,7 @@ function collectProviderFieldHintValue(value, hints) {
 }
 
 function isProviderFieldHintKey(key) {
-  return /^(?:param|params|parameter|parameters|field|fields|property|properties|argument|arguments|unsupported_param|unsupported_params|unsupported_parameter|unsupported_parameters|invalid_param|invalid_params|invalid_parameter|invalid_parameters)$/i.test(key);
+  return /^(?:param|params|parameter|parameters|field|fields|property|properties|argument|arguments|loc|location|path|json_path|jsonpath|unsupported_param|unsupported_params|unsupported_parameter|unsupported_parameters|invalid_param|invalid_params|invalid_parameter|invalid_parameters)$/i.test(key);
 }
 
 function normalizeProviderFieldHint(value) {
