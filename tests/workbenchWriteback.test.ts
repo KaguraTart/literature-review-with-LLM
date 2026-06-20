@@ -361,6 +361,16 @@ function fakeDocument(values: Record<string, string> = {}) {
   };
 }
 
+function findNode(root: any, predicate: (node: any) => boolean): any {
+  if (!root) return null;
+  if (predicate(root)) return root;
+  for (const child of root.children || []) {
+    const found = findNode(child, predicate);
+    if (found) return found;
+  }
+  return null;
+}
+
 function loadCandidateSourcesRuntime() {
   const code = readFileSync(resolve(process.cwd(), "addon/content/candidate-sources.js"), "utf8");
   const sandbox: any = { window: {}, URLSearchParams, console };
@@ -4084,6 +4094,59 @@ describe("workbench writeback helpers", () => {
     };
 
     expect(loaded.answerTextForMessage(assistant)).toBe("## Result\n\nVisible answer.");
+  });
+
+  it("renders editable OCR review controls on user image messages", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    const labels: Record<string, string> = {
+      ocrReview: "OCR Review",
+      ocrStatus: "Status",
+      ocrText: "OCR text",
+      saveOcr: "Save OCR",
+      ocrSaved: "OCR saved",
+      ocrCorrected: "corrected"
+    };
+    workbench.t = (key: string) => labels[key] || key;
+    let saved = 0;
+    workbench.saveSession = async () => {
+      saved += 1;
+    };
+    const message = {
+      id: "user-image",
+      role: "user",
+      content: "Please inspect this figure.",
+      images: [
+        {
+          name: "figure.png",
+          mimeType: "image/png",
+          size: 12,
+          localOcr: { status: "ok", engine: "tesseract", language: "eng", text: "Axis Delay 12 ms" }
+        }
+      ]
+    };
+
+    workbench.appendMessageElement(message);
+
+    const user = dom.elements.get("zms-messages").children[0];
+    const reviewPanel = user.children.find((child: any) => child.className === "zms-user-image-review");
+    expect(reviewPanel.children[0].textContent).toBe("OCR Review");
+    const textarea = findNode(reviewPanel, (node) => node.className === "zms-user-image-review-text");
+    const save = findNode(reviewPanel, (node) => node.className === "zms-user-image-review-save");
+    expect(textarea.value).toBe("Axis Delay 12 ms");
+
+    textarea.value = "Corrected Axis Delay 10 ms";
+    await save.onclick();
+
+    expect(message.images[0].localOcr).toMatchObject({
+      status: "corrected",
+      text: "Corrected Axis Delay 10 ms",
+      error: ""
+    });
+    expect(saved).toBe(1);
+    expect(dom.elements.get("zms-chat-status").textContent).toBe("OCR saved");
   });
 
   it("renders assistant streaming output through the markdown renderer", async () => {

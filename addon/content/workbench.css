@@ -361,6 +361,59 @@
   white-space: pre-wrap;
 }
 
+.zms-user-image-review {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(33, 82, 63, 0.16);
+}
+
+.zms-user-image-review-heading {
+  color: #305442;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.zms-user-image-review-item {
+  border: 1px solid rgba(33, 82, 63, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.zms-user-image-review-item summary {
+  padding: 6px 8px;
+  color: #254232;
+  cursor: pointer;
+}
+
+.zms-user-image-review-meta,
+.zms-user-image-review-label {
+  display: block;
+  padding: 0 8px 6px;
+  color: #456154;
+  font-size: 12px;
+}
+
+.zms-user-image-review-text {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 62px;
+  margin-top: 4px;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+
+.zms-user-image-review-save {
+  min-height: 27px;
+  margin: 0 8px 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #245340;
+  font-size: 12px;
+}
+
 .zms-markdown {
   color: #1d2733;
   overflow-wrap: anywhere;

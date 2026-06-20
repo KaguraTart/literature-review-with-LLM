@@ -289,8 +289,8 @@ const SOURCE_MARKERS = [
   {
     id: "local-agents.ocr-workbench",
     description: "Workbench can optionally run local OCR on image attachments through the local-agent bridge and store the result as metadata",
-    files: ["addon/prefs.js", "addon/content/workbench.xhtml", "addon/content/workbench.js", "addon/content/messages.js", "tests/workbenchWriteback.test.ts", "tests/localAgentMcpRuntime.test.ts", "README.md", "README.zh-CN.md"],
-    markers: ["localOcrEnabled", "localOcrLanguage", "zms-local-ocr-input", "zms-local-ocr-endpoint", "zms-local-ocr-language", "localOcrForImage", "imageMessageMetadataForSend", "localOcrRunning", "ocr_image", "stores optional local OCR metadata", "Local OCR", "本地 OCR"]
+    files: ["addon/prefs.js", "addon/content/workbench.xhtml", "addon/content/workbench.js", "addon/content/workbench.css", "addon/content/messages.js", "tests/workbenchWriteback.test.ts", "tests/localAgentMcpRuntime.test.ts", "README.md", "README.zh-CN.md"],
+    markers: ["localOcrEnabled", "localOcrLanguage", "zms-local-ocr-input", "zms-local-ocr-endpoint", "zms-local-ocr-language", "localOcrForImage", "appendUserImageReview", "zms-user-image-review", "ocrCorrected", "imageMessageMetadataForSend", "localOcrRunning", "ocr_image", "stores optional local OCR metadata", "renders editable OCR review controls", "Local OCR", "本地 OCR"]
   },
   {
     id: "local-agents.aggregate-failure",

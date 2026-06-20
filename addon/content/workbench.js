@@ -1274,6 +1274,9 @@ var ZoteroMarkdownSummaryWorkbench = {
       block.appendChild(toolbar);
     }
     block.appendChild(body);
+    if (message.role === "user") {
+      this.appendUserImageReview(block, message);
+    }
     if (message.role === "assistant") {
       const actions = document.createElement("div");
       actions.className = "zms-message-actions";
@@ -1289,6 +1292,64 @@ var ZoteroMarkdownSummaryWorkbench = {
     container.appendChild(block);
     container.scrollTop = container.scrollHeight;
     return body;
+  },
+
+  appendUserImageReview(block, message) {
+    const images = Array.isArray(message?.images) ? message.images : [];
+    if (!images.length) return;
+    const panel = document.createElement("div");
+    panel.className = "zms-user-image-review";
+    const heading = document.createElement("div");
+    heading.className = "zms-user-image-review-heading";
+    heading.textContent = this.t("ocrReview");
+    panel.appendChild(heading);
+    images.forEach((image, index) => {
+      const item = document.createElement("details");
+      item.className = "zms-user-image-review-item";
+      item.open = Boolean(image?.localOcr?.text || image?.localOcr?.error);
+      const summary = document.createElement("summary");
+      summary.textContent = `${image?.name || image?.mimeType || "image"} · ${userImageOcrSummary(image?.localOcr, (key) => this.t(key))}`;
+      item.appendChild(summary);
+      const meta = document.createElement("div");
+      meta.className = "zms-user-image-review-meta";
+      meta.textContent = `${this.t("ocrStatus")}: ${userImageOcrSummary(image?.localOcr, (key) => this.t(key))}`;
+      item.appendChild(meta);
+      const label = document.createElement("label");
+      label.className = "zms-user-image-review-label";
+      label.textContent = this.t("ocrText");
+      const textarea = document.createElement("textarea");
+      textarea.className = "zms-user-image-review-text";
+      textarea.value = image?.localOcr?.text || "";
+      textarea.rows = 3;
+      const button = document.createElement("button");
+      button.className = "zms-user-image-review-save";
+      button.type = "button";
+      button.textContent = this.t("saveOcr");
+      button.onclick = async () => {
+        const nextText = textarea.value.trim();
+        const previous = image?.localOcr && typeof image.localOcr === "object" && !Array.isArray(image.localOcr)
+          ? image.localOcr
+          : {};
+        images[index].localOcr = {
+          ...previous,
+          status: nextText ? (previous.status ? "corrected" : "manual") : "empty",
+          text: nextText,
+          error: ""
+        };
+        summary.textContent = `${image?.name || image?.mimeType || "image"} · ${userImageOcrSummary(images[index].localOcr, (key) => this.t(key))}`;
+        meta.textContent = `${this.t("ocrStatus")}: ${userImageOcrSummary(images[index].localOcr, (key) => this.t(key))}`;
+        try {
+          await this.saveSession({ quiet: true });
+          this.setStatus(this.t("ocrSaved"));
+        } catch (err) {
+          this.setStatus(`${this.t("saveFailed")}: ${safeError(err)}`);
+        }
+      };
+      label.appendChild(textarea);
+      item.append(label, button);
+      panel.appendChild(item);
+    });
+    block.appendChild(panel);
   },
 
   async send() {
@@ -3607,6 +3668,20 @@ function renderUserMessageContent(body, message) {
   body.appendChild(list);
 }
 
+function userImageOcrSummary(localOcr, translate = (key) => key) {
+  const label = (key, fallback) => {
+    const translated = translate(key);
+    return translated && translated !== key ? translated : fallback;
+  };
+  if (!localOcr?.status) return label("localOcrNotRun", "not run");
+  if (localOcr.status === "corrected") return label("ocrCorrected", "corrected");
+  if (localOcr.status === "manual") return label("ocrManual", "manual");
+  if (localOcr.status === "ok") return label("localOcrOk", "recognized");
+  if (localOcr.status === "empty") return label("ocrNoText", "no text");
+  if (localOcr.status === "failed") return [label("localOcrFailed", "failed"), localOcr.error].filter(Boolean).join(": ");
+  return String(localOcr.status || "");
+}
+
 function answerTextForMessage(message) {
   return splitThinkBlocks(message?.content || "").answer.trim();
 }
@@ -5443,9 +5518,14 @@ function visualExtractionLocalOcrMetadata(localOcr) {
 
 function visualExtractionLocalOcrSummary(localOcr, labels) {
   if (!localOcr?.status) return labels.localOcrNotRun;
-  if (localOcr.status === "ok") {
+  if (localOcr.status === "ok" || localOcr.status === "corrected" || localOcr.status === "manual") {
     const text = truncateText(localOcr.text || "", 120);
-    return text ? `${labels.localOcrOk}: ${text}` : labels.localOcrOk;
+    const label = localOcr.status === "corrected"
+      ? labels.localOcrCorrected
+      : localOcr.status === "manual"
+        ? labels.localOcrManual
+        : labels.localOcrOk;
+    return text ? `${label}: ${text}` : label;
   }
   if (localOcr.status === "empty") return labels.localOcrEmpty;
   if (localOcr.status === "failed") return [labels.localOcrFailed, localOcr.error].filter(Boolean).join(": ");
@@ -5599,6 +5679,8 @@ function visualExtractionReportLabels(outputLanguage) {
       localOcr: "本地 OCR",
       localOcrNotRun: "未运行",
       localOcrOk: "已识别",
+      localOcrCorrected: "已校正",
+      localOcrManual: "手动录入",
       localOcrEmpty: "无文本",
       localOcrFailed: "失败",
       noImages: "本次导出未记录图片附件；请核对原会话。",
@@ -5643,6 +5725,8 @@ function visualExtractionReportLabels(outputLanguage) {
     localOcr: "Local OCR",
     localOcrNotRun: "not run",
     localOcrOk: "recognized",
+    localOcrCorrected: "corrected",
+    localOcrManual: "manual",
     localOcrEmpty: "no text",
     localOcrFailed: "failed",
     noImages: "No image attachment metadata was recorded for this export; check the original session.",
