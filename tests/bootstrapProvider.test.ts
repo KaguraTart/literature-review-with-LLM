@@ -1592,6 +1592,39 @@ describe("bootstrap provider helpers", () => {
       { type: "input_text", text: "prompt" },
       { type: "input_image", image_url: "data:image/jpeg;base64,aW1hZ2U=" }
     ]);
+    expect(fetchCalls[0].body.input[0].content[0]).not.toHaveProperty("file_url");
+
+    await helpers.callOpenAICompatible({
+      provider: "openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "response-model",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true },
+      customHeaders: {},
+      bodyExtra: { pdfInputFileField: "file_url" },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: {
+          type: "pdf_base64",
+          base64: "cGRm",
+          filename: "paper.pdf"
+        },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", true);
+
+    expect(fetchCalls[1].body.input[0].content[0]).toEqual({
+      type: "input_file",
+      filename: "paper.pdf",
+      file_url: "data:application/pdf;base64,cGRm"
+    });
+    expect(fetchCalls[1].body.input[0].content[0]).not.toHaveProperty("file_data");
+    expect(fetchCalls[1].body).not.toHaveProperty("pdfInputFileField");
   });
 
   it("sends image attachments through bootstrap Anthropic message bodies", async () => {

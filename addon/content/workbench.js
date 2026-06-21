@@ -7170,7 +7170,7 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
     return withProviderBodyDefaults(profile, {
       model: profile.model,
       instructions: system,
-      input: openaiResponsesInput(messages, requestInput, responsesSystemInUser ? system : ""),
+      input: openaiResponsesInput(messages, requestInput, responsesSystemInUser ? system : "", profile),
       max_output_tokens: Number(pref("maxOutputTokens")) || 8192,
       temperature: Number(pref("temperature")) || 1,
       stream
@@ -7220,6 +7220,7 @@ function providerBodyExtra(bodyExtra) {
     maxTokenField: _maxTokenField,
     instructionsFallbackToUser: _instructionsFallbackToUser,
     systemFallbackToUser: _systemFallbackToUser,
+    pdfInputFileField: _pdfInputFileField,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,
@@ -7311,7 +7312,7 @@ function messagesToText(messages) {
   return messages.map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
 }
 
-function openaiResponsesInput(messages, requestInput = {}, fallbackSystem = "") {
+function openaiResponsesInput(messages, requestInput = {}, fallbackSystem = "", profile = null) {
   const input = messages.map((message) => ({
     role: message.role,
     content: [{ type: message.role === "assistant" ? "output_text" : "input_text", text: String(message.content || "") }]
@@ -7326,11 +7327,7 @@ function openaiResponsesInput(messages, requestInput = {}, fallbackSystem = "") 
     lastUserIndex = appendOpenAIResponsesPart(input, lastUserIndex, { type: "input_text", text: `CONTEXT:\n${contextText}` });
   }
   if (requestInput?.type === "pdf_base64" && requestInput.base64) {
-    lastUserIndex = prependOpenAIResponsesPart(input, lastUserIndex, {
-      type: "input_file",
-      filename: requestInput.filename || "paper.pdf",
-      file_data: `data:application/pdf;base64,${requestInput.base64}`
-    });
+    lastUserIndex = prependOpenAIResponsesPart(input, lastUserIndex, openAIResponsesPdfFilePart(requestInput, profile));
   }
   for (const image of requestInputImages(requestInput)) {
     lastUserIndex = appendOpenAIResponsesPart(input, lastUserIndex, {
@@ -7339,6 +7336,21 @@ function openaiResponsesInput(messages, requestInput = {}, fallbackSystem = "") 
     });
   }
   return input;
+}
+
+function openAIResponsesPdfFilePart(requestInput, profile) {
+  const dataURL = `data:application/pdf;base64,${requestInput.base64 || ""}`;
+  const field = normalizePdfInputFileField(profile?.bodyExtra?.pdfInputFileField);
+  return {
+    type: "input_file",
+    filename: requestInput.filename || "paper.pdf",
+    [field]: dataURL
+  };
+}
+
+function normalizePdfInputFileField(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]/g, "");
+  return normalized === "fileurl" || normalized === "url" ? "file_url" : "file_data";
 }
 
 function openaiChatMessages(messages, requestInput = {}) {

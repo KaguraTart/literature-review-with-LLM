@@ -738,11 +738,7 @@ function openaiResponsesInput(request: ModelRequest): OpenAIResponsesInputItem[]
     }
   }
   if (request.input?.type === "pdf_base64") {
-    const filePart = {
-      type: "input_file",
-      filename: request.input.filename ?? "paper.pdf",
-      file_data: `data:application/pdf;base64,${request.input.base64 ?? ""}`
-    };
+    const filePart = openAIResponsesPdfFilePart(request.input, request.profile);
     if (lastUserIndex >= 0) {
       input[lastUserIndex] = {
         ...input[lastUserIndex],
@@ -767,6 +763,21 @@ function openaiResponsesInput(request: ModelRequest): OpenAIResponsesInputItem[]
     }
   }
   return input;
+}
+
+function openAIResponsesPdfFilePart(input: NonNullable<ModelRequest["input"]>, profile: ProviderProfile): Record<string, unknown> {
+  const dataURL = `data:application/pdf;base64,${input.base64 ?? ""}`;
+  const field = normalizePdfInputFileField(profile.bodyExtra?.pdfInputFileField);
+  return {
+    type: "input_file",
+    filename: input.filename ?? "paper.pdf",
+    [field]: dataURL
+  };
+}
+
+function normalizePdfInputFileField(value: unknown): "file_data" | "file_url" {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]/g, "");
+  return normalized === "fileurl" || normalized === "url" ? "file_url" : "file_data";
 }
 
 function anthropicBody(request: ModelRequest): Record<string, unknown> {
@@ -914,6 +925,7 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
     maxTokenField: _maxTokenField,
     instructionsFallbackToUser: _instructionsFallbackToUser,
     systemFallbackToUser: _systemFallbackToUser,
+    pdfInputFileField: _pdfInputFileField,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,

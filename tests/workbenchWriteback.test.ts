@@ -507,7 +507,8 @@ describe("workbench writeback helpers", () => {
       agent: { endpoint: "http://127.0.0.1:3334/mcp" },
       subagent: { endpoint: "http://127.0.0.1:3335/mcp" },
       directBrowserAccess: true,
-      anthropicDirectBrowserAccess: false
+      anthropicDirectBrowserAccess: false,
+      pdfInputFileField: "file_url"
     })).toEqual({ response_format: { type: "json_object" } });
   });
 
@@ -827,6 +828,23 @@ describe("workbench writeback helpers", () => {
         file_data: "data:application/pdf;base64,abc123"
       })
     ]));
+    expect(openaiBody.input[2].content.find((part: any) => part.type === "input_file")).not.toHaveProperty("file_url");
+
+    const openaiFileURLBody = helpers.bodyForProfile({
+      protocol: "openai_responses",
+      model: "model-a",
+      capabilities: { streaming: true },
+      bodyExtra: { pdfInputFileField: "file_url" }
+    }, messages, "zh-CN", "system", requestInput, false);
+    expect(openaiFileURLBody.input[2].content).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "input_file",
+        filename: "paper.pdf",
+        file_url: "data:application/pdf;base64,abc123"
+      })
+    ]));
+    expect(openaiFileURLBody.input[2].content.find((part: any) => part.type === "input_file")).not.toHaveProperty("file_data");
+    expect(openaiFileURLBody).not.toHaveProperty("pdfInputFileField");
 
     const anthropicBody = helpers.bodyForProfile({
       protocol: "anthropic_messages",
@@ -1579,6 +1597,27 @@ describe("workbench writeback helpers", () => {
     expect(openAIReport).toContain("data:application/pdf;base64,[omitted]");
     expect(openAIReport).not.toContain("JVBERi0=");
     expect(openAIReport).not.toContain("sk-test-secret");
+
+    const openAIFileURLReport = helpers.renderProviderDiagnosticsMarkdown({
+      id: "openai-router",
+      name: "OpenAI-compatible Responses",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "response-model",
+      capabilities: { text: true, imageBase64: true, pdfBase64: true, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: { pdfInputFileField: "file_url" }
+    }, {
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+
+    expect(openAIFileURLReport).toContain("\"file_url\"");
+    expect(openAIFileURLReport).not.toContain("\"file_data\"");
+    expect(openAIFileURLReport).not.toContain("pdfInputFileField");
+    expect(openAIFileURLReport).not.toContain("JVBERi0=");
 
     const anthropicReport = helpers.renderProviderDiagnosticsMarkdown({
       id: "anthropic",

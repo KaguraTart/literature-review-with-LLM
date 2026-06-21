@@ -354,17 +354,13 @@ function extractWrappedStreamText(protocol, chunk, depth) {
   return "";
 }
 
-function openaiResponsesInputForSummary(request) {
+function openaiResponsesInputForSummary(request, profile = null) {
   const content = [{ type: "input_text", text: request.prompt || "" }];
   if (request.input.type === "text" && request.input.text) {
     content.push({ type: "input_text", text: `CONTEXT:\n${request.input.text}` });
   }
   if (request.input.type === "pdf_base64") {
-    content.unshift({
-      type: "input_file",
-      filename: request.input.filename || "paper.pdf",
-      file_data: `data:application/pdf;base64,${request.input.base64}`
-    });
+    content.unshift(openAIResponsesPdfFilePartForSummary(request.input, profile));
   }
   for (const image of requestInputImages(request.input)) {
     content.push({
@@ -373,6 +369,21 @@ function openaiResponsesInputForSummary(request) {
     });
   }
   return [{ role: "user", content }];
+}
+
+function openAIResponsesPdfFilePartForSummary(input, profile) {
+  const dataURL = `data:application/pdf;base64,${input.base64 || ""}`;
+  const field = normalizePdfInputFileField(profile?.bodyExtra?.pdfInputFileField);
+  return {
+    type: "input_file",
+    filename: input.filename || "paper.pdf",
+    [field]: dataURL
+  };
+}
+
+function normalizePdfInputFileField(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]/g, "");
+  return normalized === "fileurl" || normalized === "url" ? "file_url" : "file_data";
 }
 
 function openAIChatSummaryMessages(request) {
@@ -652,6 +663,7 @@ function providerBodyExtra(bodyExtra) {
     maxTokenField: _maxTokenField,
     instructionsFallbackToUser: _instructionsFallbackToUser,
     systemFallbackToUser: _systemFallbackToUser,
+    pdfInputFileField: _pdfInputFileField,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,

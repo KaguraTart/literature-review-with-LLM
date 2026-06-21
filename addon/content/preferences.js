@@ -1927,6 +1927,7 @@ function providerBodyExtra(bodyExtra) {
     maxTokenField: _maxTokenField,
     instructionsFallbackToUser: _instructionsFallbackToUser,
     systemFallbackToUser: _systemFallbackToUser,
+    pdfInputFileField: _pdfInputFileField,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,

@@ -253,7 +253,8 @@ describe("preferences local-agent config helpers", () => {
       agent: { endpoint: "http://127.0.0.1:3334/mcp" },
       subagent: { endpoint: "http://127.0.0.1:3335/mcp" },
       directBrowserAccess: true,
-      anthropicDirectBrowserAccess: false
+      anthropicDirectBrowserAccess: false,
+      pdfInputFileField: "file_url"
     })).toEqual({ extra_body: { reasoning_split: true } });
   });
 
@@ -267,6 +268,7 @@ describe("preferences local-agent config helpers", () => {
       customHeaders: { "x-route": "paper" },
       bodyExtra: {
         response_format: { type: "json_object" },
+        pdfInputFileField: "file_url",
         localAgent: { endpoint: "http://127.0.0.1:3333/mcp" }
       }
     });
@@ -287,6 +289,7 @@ describe("preferences local-agent config helpers", () => {
       response_format: { type: "json_object" }
     });
     expect(request.body).not.toHaveProperty("localAgent");
+    expect(request.body).not.toHaveProperty("pdfInputFileField");
   });
 
   it("adds JSON mode defaults to settings connection test requests", () => {

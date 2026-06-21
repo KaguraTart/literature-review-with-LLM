@@ -680,6 +680,28 @@ describe("provider smoke verifier", () => {
     expect(JSON.stringify(report)).not.toContain("mock-secret");
   });
 
+  it("uses file_url for Responses PDF dry-runs when pdfInputFileField is configured", async () => {
+    const report = await runSmoke([
+      "--profile", "openai-responses-compatible",
+      "--base-url", "https://router.example/v1",
+      "--api-key", "smoke-secret",
+      "--model", "router-model",
+      "--pdf",
+      "--dry-run",
+      "--body-extra-json", JSON.stringify({ pdfInputFileField: "file_url" }),
+      "--json"
+    ]);
+
+    const filePart = report.request.body.input[0].content[0];
+    expect(filePart).toMatchObject({
+      type: "input_file",
+      filename: "smoke.pdf",
+      file_url: expect.stringContaining("data:application/pdf;base64,")
+    });
+    expect(filePart).not.toHaveProperty("file_data");
+    expect(report.request.body).not.toHaveProperty("pdfInputFileField");
+  });
+
   it("does not silently enable raw-PDF input for profiles without that capability", async () => {
     await expect(execFileAsync(process.execPath, [
       "scripts/verify-provider-smoke.mjs",

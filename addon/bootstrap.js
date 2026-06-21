@@ -526,7 +526,7 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
   const body = useResponses ? {
     model,
     instructions: request.system,
-    input: openaiResponsesInputForSummary(request),
+    input: openaiResponsesInputForSummary(request, summaryRequest),
     temperature: request.temperature,
     max_output_tokens: request.maxOutputTokens,
     stream: request.stream

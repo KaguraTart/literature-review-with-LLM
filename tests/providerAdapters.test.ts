@@ -753,6 +753,7 @@ describe("provider adapters", () => {
           authHeader: "authorization",
           directBrowserAccess: true,
           anthropicDirectBrowserAccess: false,
+          pdfInputFileField: "file_url",
           omitFields: ["temperature", "n", "max_tokens"]
         }
       }
@@ -836,6 +837,34 @@ describe("provider adapters", () => {
     const body = bodyFor(request);
     expect(JSON.stringify(body)).toContain("input_file");
     expect((body.input as any[])[0].content.map((part: any) => part.type)).toEqual(["input_file", "input_text"]);
+    expect((body.input as any[])[0].content[0]).toMatchObject({
+      type: "input_file",
+      filename: "paper.pdf",
+      file_data: "data:application/pdf;base64,abc"
+    });
+    expect((body.input as any[])[0].content[0]).not.toHaveProperty("file_url");
+  });
+
+  it("can map Responses PDF input to file_url for compatible routers", () => {
+    const request = {
+      ...baseRequest,
+      profile: {
+        ...profile,
+        protocol: "openai_responses" as const,
+        baseURL: "https://router.example/v1",
+        capabilities: { ...defaultCapabilities, pdfBase64: true },
+        bodyExtra: { pdfInputFileField: "file_url" }
+      },
+      input: { type: "pdf_base64" as const, base64: "abc", filename: "paper.pdf" }
+    };
+    const body = bodyFor(request);
+    expect((body.input as any[])[0].content[0]).toMatchObject({
+      type: "input_file",
+      filename: "paper.pdf",
+      file_url: "data:application/pdf;base64,abc"
+    });
+    expect((body.input as any[])[0].content[0]).not.toHaveProperty("file_data");
+    expect(body).not.toHaveProperty("pdfInputFileField");
   });
 
   it("maps Anthropic PDF input and auth headers", () => {

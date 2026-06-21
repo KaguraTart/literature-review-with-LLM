@@ -230,13 +230,13 @@ const SOURCE_MARKERS = [
     id: "provider.multimodal-smoke",
     description: "Provider smoke verification covers OpenAI image, Responses PDF/image, and Anthropic image/document request bodies",
     files: ["scripts/verify-provider-smoke.mjs", "package.json", "tests/providerSmokeScript.test.ts"],
-    markers: ["--image", "--pdf", "verify:provider:multimodal:mock", "input_image", "input_file", "document", "runs built-in mock image checks", "runs built-in mock PDF checks"]
+    markers: ["--image", "--pdf", "verify:provider:multimodal:mock", "input_image", "input_file", "pdfInputFileField", "document", "runs built-in mock image checks", "runs built-in mock PDF checks"]
   },
   {
     id: "provider.catalog-shape-verifier",
     description: "Default provider profiles can be checked offline for endpoint, auth header, model-list capability, and text/image/PDF request-body shape",
     files: ["scripts/verify-provider-smoke.mjs", "package.json", "tests/providerSmokeScript.test.ts"],
-    markers: ["runProviderCatalog", "catalogProfileResult", "catalogProfileIssues", "catalogInputChecks", "catalogInputCheck", "--catalog", "verify:provider:catalog", "model-list endpoint present while capability is disabled", "inputChecks", "image_url", "input_file", "document"]
+    markers: ["runProviderCatalog", "catalogProfileResult", "catalogProfileIssues", "catalogInputChecks", "catalogInputCheck", "--catalog", "verify:provider:catalog", "model-list endpoint present while capability is disabled", "inputChecks", "image_url", "input_file", "pdfInputFileField", "document"]
   },
   {
     id: "provider.settings-connection-response",
