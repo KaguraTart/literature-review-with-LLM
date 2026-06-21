@@ -1270,6 +1270,32 @@ describe("bootstrap provider helpers", () => {
     )).toEqual([]);
   });
 
+  it("moves rejected OpenAI Chat system role into the user message in bootstrap fallback helpers", () => {
+    const { helpers } = loadBootstrapProviderHelpers();
+    const body = {
+      model: "router-model",
+      messages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "ping" }
+      ]
+    };
+    const fields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "literal_error", loc: ["body", "messages", 0, "role"], msg: "Input should be 'user' or 'assistant'" }
+        ]
+      })
+    );
+    expect(fields).toEqual(["messages.role.system"]);
+    expect((helpers as any).omitProviderRequestBodyFields(body, fields)).toEqual({
+      model: "router-model",
+      messages: [{ role: "user", content: "SYSTEM:\nsystem\n\nping" }]
+    });
+  });
+
   it("falls back when bootstrap OpenAI Chat endpoints reject JSON and token fields", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       __responses: [
@@ -1312,6 +1338,52 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("response_format");
     expect(fetchCalls[1].body).not.toHaveProperty("max_completion_tokens");
     expect(fetchCalls[1].body).toMatchObject({ max_tokens: 1024 });
+  });
+
+  it("falls back when bootstrap OpenAI Chat endpoints reject system role", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 422,
+          detail: [
+            { type: "literal_error", loc: ["body", "messages", 0, "role"], msg: "Input should be 'user' or 'assistant'" }
+          ]
+        },
+        {
+          choices: [{ message: { content: "fallback summary" } }]
+        }
+      ]
+    });
+
+    const result = await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(result.markdown).toBe("fallback summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body.messages[0]).toMatchObject({ role: "system" });
+    expect(fetchCalls[1].body.messages.some((message: any) => message.role === "system")).toBe(false);
+    expect(fetchCalls[1].body.messages[0]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("SYSTEM:\nsystem")
+    });
+    expect(fetchCalls[1].body.messages[0].content).toContain("paper text");
   });
 
   it("falls back when direct bootstrap summaries reject advanced optional fields", async () => {

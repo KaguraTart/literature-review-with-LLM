@@ -89,6 +89,7 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "tools",
   "tool_choice",
   "messages.content",
+  "messages.role.system",
   "image_url.url",
   "input_file.file_data",
   "input_file.file_url"
@@ -3580,10 +3581,12 @@ function connectionTestBodyForProfile(profile) {
   }
   return {
     model: profile.model,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: "ping" }
-    ],
+    messages: isTrueValue(profile?.bodyExtra?.systemFallbackToUser)
+      ? messagesWithPrependedOpenAIChatText([{ role: "user", content: "ping" }], fallbackSystemText(system))
+      : [
+        { role: "system", content: system },
+        { role: "user", content: "ping" }
+      ],
     ...openAIChatTokenLimit(profile, 32),
     ...openAIChatOptionalDefaults(profile, { n: 1 }),
     stream: false
@@ -7159,6 +7162,7 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
   const stream = shouldStream(profile, streamEnabled);
   const responsesSystemInUser = isTrueValue(profile?.bodyExtra?.instructionsFallbackToUser);
   const anthropicSystemInUser = isTrueValue(profile?.bodyExtra?.systemFallbackToUser);
+  const openAIChatSystemInUser = isTrueValue(profile?.bodyExtra?.systemFallbackToUser);
   if (requestInputImages(requestInput).length && !canUseImageInput(profile)) {
     throw new Error("Selected provider profile does not support image input");
   }
@@ -7181,9 +7185,12 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
       stream
     });
   }
+  const chatMessages = openaiChatMessages(messages, requestInput, profile);
   return withOpenAIChatBodyDefaults(profile, {
     model: profile.model,
-    messages: [{ role: "system", content: system }, ...openaiChatMessages(messages, requestInput, profile)],
+    messages: openAIChatSystemInUser
+      ? messagesWithPrependedOpenAIChatText(chatMessages, fallbackSystemText(system))
+      : [{ role: "system", content: system }, ...chatMessages],
     ...openAIChatOptionalDefaults(profile, {
       temperature: Number(pref("temperature")) || 1,
       n: 1
@@ -7363,12 +7370,15 @@ function normalizePdfInputFileField(value) {
 
 function openaiChatMessages(messages, requestInput = {}, profile = null) {
   const mapped = messages.map((message) => ({ role: message.role, content: message.content }));
+  const contextText = requestInput?.type === "text" && requestInput.text ? `CONTEXT:\n${requestInput.text}` : "";
   const images = requestInputImages(requestInput);
-  if (!images.length) return mapped;
   const lastUserIndex = findLastIndex(mapped, (message) => message.role === "user");
+  if (!images.length) {
+    return contextText ? messagesWithAppendedOpenAIChatText(mapped, contextText) : mapped;
+  }
   const imageParts = images.map((image) => openAIChatImagePart(image, profile));
   if (lastUserIndex >= 0) {
-    const baseText = String(mapped[lastUserIndex].content || "");
+    const baseText = [String(mapped[lastUserIndex].content || ""), contextText].filter(Boolean).join("\n\n");
     mapped[lastUserIndex] = {
       role: "user",
       content: [
@@ -7378,7 +7388,10 @@ function openaiChatMessages(messages, requestInput = {}, profile = null) {
     };
     return mapped;
   }
-  mapped.push({ role: "user", content: imageParts });
+  mapped.push({
+    role: "user",
+    content: contextText ? [{ type: "text", text: contextText }, ...imageParts] : imageParts
+  });
   return mapped;
 }
 
@@ -7650,6 +7663,10 @@ function providerUnsupportedOptionalFields(protocol, body, text, usedFallback = 
   if (protocol === "openai_chat" && rejectedImageURLField) {
     fields.push(rejectedImageURLField);
   }
+  const rejectedSystemRoleField = rejectedOpenAIChatSystemRoleField(body, detail);
+  if (protocol === "openai_chat" && rejectedSystemRoleField) {
+    fields.push(rejectedSystemRoleField);
+  }
   const rejectedPDFField = rejectedOpenAIResponsesPdfFileField(body, detail);
   if (protocol === "openai_responses" && rejectedPDFField) {
     fields.push(rejectedPDFField);
@@ -7728,6 +7745,7 @@ function normalizeProviderFieldHint(value) {
   if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
   if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(normalized)) return "image_url.url";
   if (/messages?(?:\.\d+|\[\d+\])?\.content|messages?content/.test(normalized)) return "messages.content";
+  if (/messages?(?:\.\d+|\[\d+\])?\.role|messages?role/.test(normalized)) return "messages.role.system";
   return normalized
     .split(".")[0]
     .trim();
@@ -7735,6 +7753,7 @@ function normalizeProviderFieldHint(value) {
 
 function providerFallbackFieldPresent(body, field) {
   if (field === "messages.content") return anthropicMessagesHaveStringContent(body);
+  if (field === "messages.role.system") return openAIChatHasSystemMessage(body);
   if (field === "image_url.url") return openAIChatImageURLHasObjectURL(body);
   if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
   if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
@@ -7744,6 +7763,7 @@ function providerFallbackFieldPresent(body, field) {
 function providerFallbackFieldSupported(body, field, protocol = "") {
   if (!field) return false;
   if (field === "messages.content") return protocol === "anthropic_messages";
+  if (field === "messages.role.system") return protocol === "openai_chat";
   if (PROVIDER_FALLBACK_BODY_FIELDS.has(field)) return true;
   return providerFallbackCustomBodyFieldPresent(body, field);
 }
@@ -7771,6 +7791,19 @@ function rejectedOpenAIChatImageURLField(body, detail) {
   if (!openAIChatImageURLHasObjectURL(body)) return "";
   if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(detail)) return "image_url.url";
   return "";
+}
+
+function rejectedOpenAIChatSystemRoleField(body, detail) {
+  if (!openAIChatHasSystemMessage(body)) return "";
+  if (/system (?:role|message)|(?:role|message).*system|messages?(?:[.\[]\d+\]?)*\.?role|message role|unsupported role|invalid role|expected.*(?:user|assistant)|(?:user|assistant).*expected/.test(detail)) {
+    return "messages.role.system";
+  }
+  return "";
+}
+
+function openAIChatHasSystemMessage(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message) => String(message?.role || "").toLowerCase() === "system");
 }
 
 function openAIChatImageURLHasObjectURL(body) {
@@ -7811,6 +7844,10 @@ function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = 
   }
   if (fields.includes("system") && body?.system !== undefined) {
     nextExtra.systemFallbackToUser = true;
+  }
+  if (fields.includes("messages.role.system") && openAIChatHasSystemMessage(body)) {
+    nextExtra.systemFallbackToUser = true;
+    removeFromArray(omitFields, "messages.role.system");
   }
   if (fields.includes("max_completion_tokens") && !usedFields.has("max_tokens") && body?.max_completion_tokens !== undefined && body?.max_tokens === undefined) {
     nextExtra.tokenLimitField = "max_tokens";
@@ -8326,6 +8363,38 @@ function imageDataURL(image) {
 function fallbackSystemText(value) {
   const text = String(value || "").trim();
   return text ? `SYSTEM:\n${text}` : "";
+}
+
+function messagesWithPrependedOpenAIChatText(messages, text) {
+  const items = Array.isArray(messages) ? messages.map((item) => ({ ...item })) : [];
+  const userIndex = items.findIndex((item) => item?.role === "user");
+  if (userIndex >= 0) {
+    const item = items[userIndex];
+    if (typeof item.content === "string") {
+      items[userIndex] = { ...item, content: `${text}\n\n${item.content}` };
+      return items;
+    }
+    const content = Array.isArray(item.content) ? item.content : item.content ? [item.content] : [];
+    items[userIndex] = { ...item, content: [{ type: "text", text }, ...content] };
+    return items;
+  }
+  return [{ role: "user", content: text }, ...items];
+}
+
+function messagesWithAppendedOpenAIChatText(messages, text) {
+  const items = Array.isArray(messages) ? messages.map((item) => ({ ...item })) : [];
+  const userIndex = findLastIndex(items, (item) => item?.role === "user");
+  if (userIndex >= 0) {
+    const item = items[userIndex];
+    if (typeof item.content === "string") {
+      items[userIndex] = { ...item, content: `${item.content}\n\n${text}` };
+      return items;
+    }
+    const content = Array.isArray(item.content) ? item.content : item.content ? [item.content] : [];
+    items[userIndex] = { ...item, content: [...content, { type: "text", text }] };
+    return items;
+  }
+  return [...items, { role: "user", content: text }];
 }
 
 function messagesWithPrependedAnthropicText(messages, text) {

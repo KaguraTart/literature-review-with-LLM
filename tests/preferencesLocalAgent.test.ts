@@ -315,6 +315,31 @@ describe("preferences local-agent config helpers", () => {
     )).toEqual([]);
   });
 
+  it("moves rejected OpenAI Chat system role into the user message in preferences fallback helpers", () => {
+    const body = {
+      model: "router-model",
+      messages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "ping" }
+      ]
+    };
+    const fields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "literal_error", loc: ["body", "messages", 0, "role"], msg: "Input should be 'user' or 'assistant'" }
+        ]
+      })
+    );
+    expect(fields).toEqual(["messages.role.system"]);
+    expect((helpers as any).omitProviderRequestBodyFields(body, fields)).toEqual({
+      model: "router-model",
+      messages: [{ role: "user", content: "SYSTEM:\nsystem\n\nping" }]
+    });
+  });
+
   it("builds a Responses connection test request from the edited profile", () => {
     const request = helpers.connectionTestRequestForProfile({
       protocol: "openai_responses",
@@ -456,6 +481,16 @@ describe("preferences local-agent config helpers", () => {
     expect(strippedRequest.body).not.toHaveProperty("n");
     expect(strippedRequest.body).not.toHaveProperty("max_tokens");
     expect(strippedRequest.body).not.toHaveProperty("omitFields");
+
+    const systemFallbackRequest = helpers.connectionTestRequestForProfile({
+      ...profile,
+      bodyExtra: { systemFallbackToUser: true }
+    });
+    expect(systemFallbackRequest.body.messages.some((message: any) => message.role === "system")).toBe(false);
+    expect(systemFallbackRequest.body.messages[0]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("SYSTEM:")
+    });
 
     const pastedChatEndpointProfile = {
       ...profile,

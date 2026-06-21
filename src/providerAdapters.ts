@@ -284,10 +284,13 @@ export function redact(value: unknown): string {
 }
 
 function openaiChatBody(request: ModelRequest): Record<string, unknown> {
-  const messages = [
-    { role: "system", content: request.system },
-    ...openaiChatMessages(request)
-  ];
+  const chatMessages = openaiChatMessages(request);
+  const messages = isTrueValue(request.profile.bodyExtra?.systemFallbackToUser)
+    ? messagesWithPrependedOpenAIChatText(chatMessages, fallbackSystemText(request.system))
+    : [
+      { role: "system", content: request.system },
+      ...chatMessages
+    ];
   return withOpenAIChatBodyDefaults(request.profile, {
     model: request.profile.model,
     messages,
@@ -1063,6 +1066,10 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   if (protocol === "openai_chat" && rejectedImageURLField) {
     fields.push(rejectedImageURLField);
   }
+  const rejectedSystemRoleField = rejectedOpenAIChatSystemRoleField(body, detail);
+  if (protocol === "openai_chat" && rejectedSystemRoleField) {
+    fields.push(rejectedSystemRoleField);
+  }
   const rejectedPDFField = rejectedOpenAIResponsesPdfFileField(body, detail);
   if (protocol === "openai_responses" && rejectedPDFField) {
     fields.push(rejectedPDFField);
@@ -1115,6 +1122,7 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "tools",
   "tool_choice",
   "messages.content",
+  "messages.role.system",
   "image_url.url",
   "input_file.file_data",
   "input_file.file_url"
@@ -1184,6 +1192,7 @@ function normalizeProviderFieldHint(value: string): string {
   if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
   if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(normalized)) return "image_url.url";
   if (/messages?(?:\.\d+|\[\d+\])?\.content|messages?content/.test(normalized)) return "messages.content";
+  if (/messages?(?:\.\d+|\[\d+\])?\.role|messages?role/.test(normalized)) return "messages.role.system";
   return normalized
     .split(".")[0]
     .trim();
@@ -1191,6 +1200,7 @@ function normalizeProviderFieldHint(value: string): string {
 
 function providerFallbackFieldPresent(body: Record<string, unknown>, field: string): boolean {
   if (field === "messages.content") return anthropicMessagesHaveStringContent(body);
+  if (field === "messages.role.system") return openAIChatHasSystemMessage(body);
   if (field === "image_url.url") return openAIChatImageURLHasObjectURL(body);
   if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
   if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
@@ -1200,6 +1210,7 @@ function providerFallbackFieldPresent(body: Record<string, unknown>, field: stri
 function providerFallbackFieldSupported(body: Record<string, unknown>, field: string, protocol = ""): boolean {
   if (!field) return false;
   if (field === "messages.content") return protocol === "anthropic_messages";
+  if (field === "messages.role.system") return protocol === "openai_chat";
   if (PROVIDER_FALLBACK_BODY_FIELDS.has(field)) return true;
   return providerFallbackCustomBodyFieldPresent(body, field);
 }
@@ -1227,6 +1238,19 @@ function rejectedOpenAIChatImageURLField(body: Record<string, unknown>, detail: 
   if (!openAIChatImageURLHasObjectURL(body)) return "";
   if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(detail)) return "image_url.url";
   return "";
+}
+
+function rejectedOpenAIChatSystemRoleField(body: Record<string, unknown>, detail: string): string {
+  if (!openAIChatHasSystemMessage(body)) return "";
+  if (/system (?:role|message)|(?:role|message).*system|messages?(?:[.\[]\d+\]?)*\.?role|message role|unsupported role|invalid role|expected.*(?:user|assistant)|(?:user|assistant).*expected/.test(detail)) {
+    return "messages.role.system";
+  }
+  return "";
+}
+
+function openAIChatHasSystemMessage(body: Record<string, unknown>): boolean {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message: any) => String(message?.role || "").toLowerCase() === "system");
 }
 
 function openAIChatImageURLHasObjectURL(body: Record<string, unknown>): boolean {
@@ -1291,6 +1315,10 @@ export function omitProviderRequestBodyFields(body: Record<string, unknown>, fie
     }
     if (field === "image_url.url") {
       switchOpenAIChatImageURLToString(next);
+      continue;
+    }
+    if (field === "messages.role.system") {
+      moveOpenAIChatSystemIntoMessages(next);
       continue;
     }
     if (field === "messages.content") {
@@ -1374,6 +1402,33 @@ function moveAnthropicSystemIntoMessages(body: Record<string, unknown>): void {
   delete body.system;
 }
 
+function moveOpenAIChatSystemIntoMessages(body: Record<string, unknown>): void {
+  const messages = Array.isArray(body.messages) ? body.messages.map((item) => clonePlainObject(item)) : [];
+  const systemText = messages
+    .filter((message) => String(message?.role || "").toLowerCase() === "system")
+    .map((message) => extractMessageContent(message.content))
+    .filter(Boolean)
+    .join("\n\n");
+  const remaining = messages.filter((message) => String(message?.role || "").toLowerCase() !== "system");
+  body.messages = systemText ? messagesWithPrependedOpenAIChatText(remaining, fallbackSystemText(systemText)) : remaining;
+}
+
+function messagesWithPrependedOpenAIChatText(messages: unknown, text: string): unknown {
+  const items = Array.isArray(messages) ? messages.map((item) => clonePlainObject(item)) : [];
+  const userIndex = items.findIndex((item) => item?.role === "user");
+  if (userIndex >= 0) {
+    const item = items[userIndex] as Record<string, unknown>;
+    if (typeof item.content === "string") {
+      items[userIndex] = { ...item, content: `${text}\n\n${item.content}` };
+      return items;
+    }
+    const content = Array.isArray(item.content) ? item.content : item.content ? [item.content] : [];
+    items[userIndex] = { ...item, content: [{ type: "text", text }, ...content] };
+    return items;
+  }
+  return [{ role: "user", content: text }, ...items];
+}
+
 function messagesWithPrependedAnthropicText(messages: unknown, text: string): unknown {
   const items = Array.isArray(messages) ? messages.map((item) => clonePlainObject(item)) : [];
   const userIndex = items.findIndex((item) => item?.role === "user");
@@ -1417,6 +1472,10 @@ function bodyFieldList(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap((item) => bodyFieldList(item));
   if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean);
   return [];
+}
+
+function isTrueValue(value: unknown): boolean {
+  return value === true || String(value || "").trim().toLowerCase() === "true";
 }
 
 function openAIChatTokenLimit(profile: ProviderProfile, maxTokens: number): Record<string, unknown> {

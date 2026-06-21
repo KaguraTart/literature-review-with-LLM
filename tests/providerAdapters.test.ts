@@ -86,6 +86,18 @@ describe("provider adapters", () => {
       stream: true,
       stream_options: { include_usage: true }
     });
+    const systemInUserBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        bodyExtra: { systemFallbackToUser: true }
+      }
+    });
+    expect((systemInUserBody.messages as any[]).some((message) => message.role === "system")).toBe(false);
+    expect((systemInUserBody.messages as any[])[0]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("SYSTEM:\nsystem")
+    });
   });
 
   it("requests OpenAI-compatible Chat stream usage while respecting body-extra overrides", () => {
@@ -430,6 +442,33 @@ describe("provider adapters", () => {
     expect(omitProviderRequestBodyFields(customBody, ["router_extra"])).toEqual({
       model: "router-model",
       messages: []
+    });
+    const systemRoleBody = {
+      model: "router-model",
+      messages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "ping" }
+      ]
+    };
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      systemRoleBody,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "literal_error", loc: ["body", "messages", 0, "role"], msg: "Input should be 'user' or 'assistant'" }
+        ]
+      })
+    )).toEqual(["messages.role.system"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      systemRoleBody,
+      400,
+      "Unsupported role: system"
+    )).toEqual(["messages.role.system"]);
+    expect(omitProviderRequestBodyFields(systemRoleBody, ["messages.role.system"])).toEqual({
+      model: "router-model",
+      messages: [{ role: "user", content: "SYSTEM:\nsystem\n\nping" }]
     });
     expect(providerCompatibilityFallbackFields(
       "openai_chat",

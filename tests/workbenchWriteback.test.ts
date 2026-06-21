@@ -719,6 +719,15 @@ describe("workbench writeback helpers", () => {
       ...chatProfile,
       bodyExtra: { omitFields: ["stream_options"] }
     }, messages, "zh-CN", "system", {}, true)).not.toHaveProperty("stream_options");
+    const chatSystemInUserBody = helpers.bodyForProfile({
+      ...chatProfile,
+      bodyExtra: { systemFallbackToUser: true }
+    }, messages, "zh-CN", "system", {}, false);
+    expect(chatSystemInUserBody.messages.some((message: any) => message.role === "system")).toBe(false);
+    expect(chatSystemInUserBody.messages[0]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("SYSTEM:\nsystem")
+    });
   });
 
   it("adds protocol-specific JSON mode defaults in workbench request bodies", () => {
@@ -901,6 +910,18 @@ describe("workbench writeback helpers", () => {
       { type: "text", text: "请解释这张图" },
       { type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } }
     ]);
+    const systemFallbackChatBody = helpers.bodyForProfile({
+      protocol: "openai_chat",
+      model: "model-a",
+      capabilities: { streaming: true, imageBase64: true },
+      bodyExtra: { systemFallbackToUser: true }
+    }, messages, "zh-CN", "system", requestInput, false);
+    expect(systemFallbackChatBody.messages.some((message: any) => message.role === "system")).toBe(false);
+    expect(systemFallbackChatBody.messages[0].content).toEqual([
+      { type: "text", text: expect.stringContaining("SYSTEM:\nsystem") },
+      { type: "text", text: "请解释这张图" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } }
+    ]);
     const stringImageChatBody = helpers.bodyForProfile({
       protocol: "openai_chat",
       model: "model-a",
@@ -1030,6 +1051,16 @@ describe("workbench writeback helpers", () => {
       max_tokens: 32,
       stream: false,
       n: 1
+    });
+    const chatSystemInUserTestBody = helpers.connectionTestBodyForProfile({
+      protocol: "openai_chat",
+      model: "chat-model",
+      bodyExtra: { systemFallbackToUser: true }
+    });
+    expect(chatSystemInUserTestBody.messages.some((message: any) => message.role === "system")).toBe(false);
+    expect(chatSystemInUserTestBody.messages[0]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("SYSTEM:")
     });
 
     expect(helpers.connectionTestBodyForProfile({
@@ -1182,6 +1213,60 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("parallel_tool_calls");
     expect(fetchCalls[1].body).not.toHaveProperty("reasoning_effort");
     expect(fetchCalls[1].body).not.toHaveProperty("stop");
+  });
+
+  it("retries workbench OpenAI Chat requests without rejected system role", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    (loaded as any).fetch = async (url: string, init: any) => {
+      fetchCalls.push({ url, body: JSON.parse(init.body) });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 422,
+          text: async () => JSON.stringify({
+            detail: [
+              { type: "literal_error", loc: ["body", "messages", 0, "role"], msg: "Input should be 'user' or 'assistant'" }
+            ]
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ choices: [{ message: { content: "pong" } }] })
+      };
+    };
+
+    const profile = {
+      id: "router",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: false },
+      bodyExtra: {}
+    };
+
+    const response = await loaded.requestModelWithRetry(
+      profile,
+      [{ role: "user", content: "ping" }],
+      "en-US",
+      "system",
+      { type: "text", text: "paper text" },
+      false
+    );
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body.messages[0]).toMatchObject({ role: "system" });
+    expect(fetchCalls[1].body.messages.some((message: any) => message.role === "system")).toBe(false);
+    expect(fetchCalls[1].body.messages[0]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("SYSTEM:\nsystem")
+    });
+    expect(fetchCalls[1].body.messages[0].content).toContain("CONTEXT:\npaper text");
   });
 
   it("retries workbench Responses requests without unsupported instructions and reasoning options", async () => {
