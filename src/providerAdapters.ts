@@ -1025,6 +1025,10 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
     fields.push("tool_choice");
   }
+  const rejectedPDFField = rejectedOpenAIResponsesPdfFileField(body, detail);
+  if (protocol === "openai_responses" && rejectedPDFField) {
+    fields.push(rejectedPDFField);
+  }
   return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
 }
 
@@ -1071,7 +1075,9 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "top_k",
   "stop_sequences",
   "tools",
-  "tool_choice"
+  "tool_choice",
+  "input_file.file_data",
+  "input_file.file_url"
 ]);
 
 function providerStructuredUnsupportedFields(body: Record<string, unknown>, text: string): string[] {
@@ -1081,7 +1087,7 @@ function providerStructuredUnsupportedFields(body: Record<string, unknown>, text
   collectProviderFieldHints(parsed, hints);
   return hints
     .map((value) => normalizeProviderFieldHint(value))
-    .filter((field) => field && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && body?.[field] !== undefined);
+    .filter((field) => field && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && providerFallbackFieldPresent(body, field));
 }
 
 function collectProviderFieldHints(value: unknown, hints: string[]): void {
@@ -1116,10 +1122,34 @@ function normalizeProviderFieldHint(value: string): string {
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/^\$\.?/, "")
     .replace(/^(?:body|request|payload|params?|parameters?|input)\./i, "")
-    .replace(/\[[^\]]+\]/g, "")
+    .replace(/\[[^\]]+\]/g, "");
+  if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
+  if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
+  return normalized
     .split(".")[0]
     .trim();
-  return normalized;
+}
+
+function providerFallbackFieldPresent(body: Record<string, unknown>, field: string): boolean {
+  if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
+  if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
+  return body?.[field] !== undefined;
+}
+
+function rejectedOpenAIResponsesPdfFileField(body: Record<string, unknown>, detail: string): string {
+  if (openAIResponsesInputFileHasField(body, "file_data") && /\bfile_data\b/.test(detail)) return "input_file.file_data";
+  if (openAIResponsesInputFileHasField(body, "file_url") && /\bfile_url\b/.test(detail)) return "input_file.file_url";
+  return "";
+}
+
+function openAIResponsesInputFileHasField(body: Record<string, unknown>, field: "file_data" | "file_url"): boolean {
+  return openAIResponsesInputFileParts(body).some((part) => part[field] !== undefined);
+}
+
+function openAIResponsesInputFileParts(body: Record<string, unknown>): Array<Record<string, unknown>> {
+  const input = Array.isArray(body?.input) ? body.input : [];
+  return input.flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+    .filter((part: any) => part?.type === "input_file" && part && typeof part === "object");
 }
 
 export function omitProviderRequestBodyFields(body: Record<string, unknown>, fields: string[], usedFallback: boolean | string[] = false): Record<string, unknown> {
@@ -1145,9 +1175,32 @@ export function omitProviderRequestBodyFields(body: Record<string, unknown>, fie
       delete next.max_tokens;
       continue;
     }
+    if (field === "input_file.file_data") {
+      switchOpenAIResponsesInputFileField(next, "file_data", "file_url");
+      continue;
+    }
+    if (field === "input_file.file_url") {
+      switchOpenAIResponsesInputFileField(next, "file_url", "file_data");
+      continue;
+    }
     delete next[field];
   }
   return next;
+}
+
+function switchOpenAIResponsesInputFileField(body: Record<string, unknown>, from: "file_data" | "file_url", to: "file_data" | "file_url"): void {
+  const input = Array.isArray(body.input) ? body.input : [];
+  body.input = input.map((item: any) => {
+    const content = Array.isArray(item?.content) ? item.content : [];
+    return {
+      ...item,
+      content: content.map((part: any) => {
+        if (part?.type !== "input_file" || part?.[from] === undefined) return part;
+        const { [from]: value, ...rest } = part;
+        return { ...rest, [to]: value };
+      })
+    };
+  });
 }
 
 function fallbackSystemText(value: unknown): string {

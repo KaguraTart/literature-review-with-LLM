@@ -455,6 +455,49 @@ describe("provider adapters", () => {
         ]
       })
     )).toEqual(["text", "max_output_tokens", "temperature", "stream"]);
+    const responsesPDFBody = {
+      model: "responses-model",
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_file", filename: "paper.pdf", file_data: "data:application/pdf;base64,abc" },
+            { type: "input_text", text: "ping" }
+          ]
+        }
+      ]
+    };
+    expect(providerCompatibilityFallbackFields(
+      "openai_responses",
+      responsesPDFBody,
+      400,
+      JSON.stringify({
+        error: {
+          code: "unsupported_parameter",
+          message: "Unsupported request parameter",
+          param: "input[0].content[0].file_data"
+        }
+      })
+    )).toEqual(["input_file.file_data"]);
+    const fileURLRetryBody = omitProviderRequestBodyFields(responsesPDFBody, ["input_file.file_data"]);
+    expect((fileURLRetryBody.input as any[])[0].content[0]).toEqual({
+      type: "input_file",
+      filename: "paper.pdf",
+      file_url: "data:application/pdf;base64,abc"
+    });
+    expect((responsesPDFBody.input as any[])[0].content[0]).toHaveProperty("file_data");
+    expect(providerCompatibilityFallbackFields(
+      "openai_responses",
+      fileURLRetryBody,
+      400,
+      "Unsupported parameter: file_url"
+    )).toEqual(["input_file.file_url"]);
+    const fileDataRetryBody = omitProviderRequestBodyFields(fileURLRetryBody, ["input_file.file_url"]);
+    expect((fileDataRetryBody.input as any[])[0].content[0]).toEqual({
+      type: "input_file",
+      filename: "paper.pdf",
+      file_data: "data:application/pdf;base64,abc"
+    });
     expect(providerCompatibilityFallbackFields(
       "openai_responses",
       {

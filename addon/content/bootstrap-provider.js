@@ -45,7 +45,9 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "top_k",
   "stop_sequences",
   "tools",
-  "tool_choice"
+  "tool_choice",
+  "input_file.file_data",
+  "input_file.file_url"
 ]);
 
 function streamErrorText(data, depth = 0) {
@@ -796,6 +798,10 @@ function providerCompatibilityFallbackFields(protocol, body, status, text, usedF
   if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
     fields.push("tool_choice");
   }
+  const rejectedPDFField = rejectedOpenAIResponsesPdfFileField(body, detail);
+  if (protocol === "openai_responses" && rejectedPDFField) {
+    fields.push(rejectedPDFField);
+  }
   return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
 }
 
@@ -821,7 +827,7 @@ function providerStructuredUnsupportedFields(body, text) {
   collectProviderFieldHints(parsed, hints);
   return hints
     .map((value) => normalizeProviderFieldHint(value))
-    .filter((field) => field && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && body?.[field] !== undefined);
+    .filter((field) => field && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && providerFallbackFieldPresent(body, field));
 }
 
 function collectProviderFieldHints(value, hints) {
@@ -851,14 +857,39 @@ function isProviderFieldHintKey(key) {
 }
 
 function normalizeProviderFieldHint(value) {
-  return String(value || "")
+  const normalized = String(value || "")
     .trim()
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/^\$\.?/, "")
     .replace(/^(?:body|request|payload|params?|parameters?|input)\./i, "")
-    .replace(/\[[^\]]+\]/g, "")
+    .replace(/\[[^\]]+\]/g, "");
+  if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
+  if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
+  return normalized
     .split(".")[0]
     .trim();
+}
+
+function providerFallbackFieldPresent(body, field) {
+  if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
+  if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
+  return body?.[field] !== undefined;
+}
+
+function rejectedOpenAIResponsesPdfFileField(body, detail) {
+  if (openAIResponsesInputFileHasField(body, "file_data") && /\bfile_data\b/.test(detail)) return "input_file.file_data";
+  if (openAIResponsesInputFileHasField(body, "file_url") && /\bfile_url\b/.test(detail)) return "input_file.file_url";
+  return "";
+}
+
+function openAIResponsesInputFileHasField(body, field) {
+  return openAIResponsesInputFileParts(body).some((part) => part[field] !== undefined);
+}
+
+function openAIResponsesInputFileParts(body) {
+  const input = Array.isArray(body?.input) ? body.input : [];
+  return input.flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+    .filter((part) => part?.type === "input_file" && part && typeof part === "object");
 }
 
 function omitProviderRequestBodyFields(body, fields, usedFallback = false) {
@@ -884,9 +915,32 @@ function omitProviderRequestBodyFields(body, fields, usedFallback = false) {
       delete next.max_tokens;
       continue;
     }
+    if (field === "input_file.file_data") {
+      switchOpenAIResponsesInputFileField(next, "file_data", "file_url");
+      continue;
+    }
+    if (field === "input_file.file_url") {
+      switchOpenAIResponsesInputFileField(next, "file_url", "file_data");
+      continue;
+    }
     delete next[field];
   }
   return next;
+}
+
+function switchOpenAIResponsesInputFileField(body, from, to) {
+  const input = Array.isArray(body.input) ? body.input : [];
+  body.input = input.map((item) => {
+    const content = Array.isArray(item?.content) ? item.content : [];
+    return {
+      ...item,
+      content: content.map((part) => {
+        if (part?.type !== "input_file" || part?.[from] === undefined) return part;
+        const { [from]: value, ...rest } = part;
+        return { ...rest, [to]: value };
+      })
+    };
+  });
 }
 
 function fallbackSystemText(value) {

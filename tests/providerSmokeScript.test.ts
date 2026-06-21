@@ -702,6 +702,50 @@ describe("provider smoke verifier", () => {
     expect(report.request.body).not.toHaveProperty("pdfInputFileField");
   });
 
+  it("retries Responses PDF requests with file_url when file_data is rejected", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-responses-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "router-model",
+        "--pdf",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_responses",
+        inputMode: "pdf",
+        text: "OK pdf fallback"
+      });
+      expect(requests).toHaveLength(2);
+      expect(requests[0].body.input[0].content[0]).toHaveProperty("file_data");
+      expect(requests[1].body.input[0].content[0]).toMatchObject({
+        type: "input_file",
+        filename: "smoke.pdf",
+        file_url: expect.stringContaining("data:application/pdf;base64,")
+      });
+      expect(requests[1].body.input[0].content[0]).not.toHaveProperty("file_data");
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.body?.input?.[0]?.content?.[0]?.file_data) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "Unsupported request parameter",
+              param: "input[0].content[0].file_data"
+            }
+          }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ output_text: "OK pdf fallback" }));
+      }
+    });
+  });
+
   it("does not silently enable raw-PDF input for profiles without that capability", async () => {
     await expect(execFileAsync(process.execPath, [
       "scripts/verify-provider-smoke.mjs",

@@ -87,7 +87,9 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "top_k",
   "stop_sequences",
   "tools",
-  "tool_choice"
+  "tool_choice",
+  "input_file.file_data",
+  "input_file.file_url"
 ]);
 
 function wbMessage(scope, key, settingOrLocale) {
@@ -7621,6 +7623,10 @@ function providerUnsupportedOptionalFields(body, text, usedFallback = []) {
   if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
     fields.push("tool_choice");
   }
+  const rejectedPDFField = rejectedOpenAIResponsesPdfFileField(body, detail);
+  if (rejectedPDFField) {
+    fields.push(rejectedPDFField);
+  }
   return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
 }
 
@@ -7631,7 +7637,7 @@ function providerStructuredUnsupportedFields(body, text) {
   collectProviderFieldHints(parsed, hints);
   return hints
     .map((value) => normalizeProviderFieldHint(value))
-    .filter((field) => field && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && body?.[field] !== undefined);
+    .filter((field) => field && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && providerFallbackFieldPresent(body, field));
 }
 
 function parseProviderFallbackJSON(text) {
@@ -7669,14 +7675,39 @@ function isProviderFieldHintKey(key) {
 }
 
 function normalizeProviderFieldHint(value) {
-  return String(value || "")
+  const normalized = String(value || "")
     .trim()
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/^\$\.?/, "")
     .replace(/^(?:body|request|payload|params?|parameters?|input)\./i, "")
-    .replace(/\[[^\]]+\]/g, "")
+    .replace(/\[[^\]]+\]/g, "");
+  if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
+  if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
+  return normalized
     .split(".")[0]
     .trim();
+}
+
+function providerFallbackFieldPresent(body, field) {
+  if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
+  if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
+  return body?.[field] !== undefined;
+}
+
+function rejectedOpenAIResponsesPdfFileField(body, detail) {
+  if (openAIResponsesInputFileHasField(body, "file_data") && /\bfile_data\b/.test(detail)) return "input_file.file_data";
+  if (openAIResponsesInputFileHasField(body, "file_url") && /\bfile_url\b/.test(detail)) return "input_file.file_url";
+  return "";
+}
+
+function openAIResponsesInputFileHasField(body, field) {
+  return openAIResponsesInputFileParts(body).some((part) => part[field] !== undefined);
+}
+
+function openAIResponsesInputFileParts(body) {
+  const input = Array.isArray(body?.input) ? body.input : [];
+  return input.flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+    .filter((part) => part?.type === "input_file" && part && typeof part === "object");
 }
 
 function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = []) {
@@ -7696,6 +7727,14 @@ function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = 
   if (fields.includes("max_tokens") && !usedFields.has("max_completion_tokens") && body?.max_tokens !== undefined && body?.max_completion_tokens === undefined) {
     nextExtra.tokenLimitField = "max_completion_tokens";
     removeFromArray(omitFields, "max_tokens");
+  }
+  if (fields.includes("input_file.file_data")) {
+    nextExtra.pdfInputFileField = "file_url";
+    removeFromArray(omitFields, "input_file.file_data");
+  }
+  if (fields.includes("input_file.file_url")) {
+    nextExtra.pdfInputFileField = "file_data";
+    removeFromArray(omitFields, "input_file.file_url");
   }
   return mergeProviderBodyOmitFields(nextExtra, omitFields);
 }

@@ -5865,6 +5865,55 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[2].body).not.toHaveProperty("max_output_tokens");
   });
 
+  it("downgrades OpenAI Responses PDF input from file_data to file_url in the workbench request path", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      if (body.input?.[0]?.content?.[0]?.file_data) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "Unsupported request parameter",
+              param: "input[0].content[0].file_data"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ output_text: "ok" })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      protocol: "openai_responses",
+      capabilities: { ...providerProfile().capabilities, pdfBase64: true }
+    }, [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "pdf_base64", base64: "abc123", filename: "paper.pdf" }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body.input[0].content[0]).toMatchObject({
+      type: "input_file",
+      filename: "paper.pdf",
+      file_data: "data:application/pdf;base64,abc123"
+    });
+    expect(fetchCalls[1].body.input[0].content[0]).toMatchObject({
+      type: "input_file",
+      filename: "paper.pdf",
+      file_url: "data:application/pdf;base64,abc123"
+    });
+    expect(fetchCalls[1].body.input[0].content[0]).not.toHaveProperty("file_data");
+  });
+
   it("downgrades Anthropic-compatible optional fields across multiple workbench attempts", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: any[] = [];

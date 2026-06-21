@@ -1372,6 +1372,58 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[2].body).not.toHaveProperty("max_output_tokens");
   });
 
+  it("falls back to file_url when bootstrap OpenAI Responses rejects PDF file_data", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 400,
+          error: {
+            code: "unsupported_parameter",
+            message: "Unsupported request parameter",
+            param: "input[0].content[0].file_data"
+          }
+        },
+        {
+          output_text: "pdf fallback summary"
+        }
+      ]
+    });
+
+    const result = await helpers.callOpenAICompatible({
+      provider: "openai-responses-compatible",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "responses-model",
+      capabilities: { pdfBase64: true, streaming: false },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "pdf_base64", base64: "cGRm", filename: "paper.pdf" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(result.markdown).toBe("pdf fallback summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body.input[0].content[0]).toMatchObject({
+      type: "input_file",
+      filename: "paper.pdf",
+      file_data: "data:application/pdf;base64,cGRm"
+    });
+    expect(fetchCalls[1].body.input[0].content[0]).toMatchObject({
+      type: "input_file",
+      filename: "paper.pdf",
+      file_url: "data:application/pdf;base64,cGRm"
+    });
+    expect(fetchCalls[1].body.input[0].content[0]).not.toHaveProperty("file_data");
+  });
+
   it("falls back when bootstrap provider responses wrap unsupported-parameter errors in HTTP 200 bodies", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       __responses: [
