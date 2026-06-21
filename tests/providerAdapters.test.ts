@@ -401,6 +401,35 @@ describe("provider adapters", () => {
     ]);
     expect(providerCompatibilityFallbackFields("openai_chat", body, 422, "stream is not supported"))
       .toEqual(["stream", "stream_options"]);
+    const customBody = {
+      model: "router-model",
+      messages: [],
+      router_extra: { trace: true }
+    };
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      customBody,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "extra_forbidden", loc: ["body", "router_extra"], msg: "Extra inputs are not permitted" }
+        ]
+      })
+    )).toEqual(["router_extra"]);
+    expect(omitProviderRequestBodyFields(customBody, ["router_extra"])).toEqual({
+      model: "router-model",
+      messages: []
+    });
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      customBody,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "extra_forbidden", loc: ["body", "model"], msg: "Extra inputs are not permitted" }
+        ]
+      })
+    )).toEqual([]);
     const imageBody = {
       model: "router-model",
       messages: [

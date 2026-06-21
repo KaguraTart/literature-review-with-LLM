@@ -6139,6 +6139,49 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[0].body.messages.find((message: any) => message.role === "user").content).toBe("hello");
   });
 
+  it("omits custom body-extra fields when a router explicitly rejects them", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      if (body.router_extra !== undefined) {
+        return {
+          ok: false,
+          status: 422,
+          text: async () => JSON.stringify({
+            detail: [
+              { type: "extra_forbidden", loc: ["body", "router_extra"], msg: "Extra inputs are not permitted" }
+            ]
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "ok" } }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      id: "openai-compatible",
+      protocol: "openai_chat",
+      baseURL: "https://router.example/v1",
+      capabilities: { ...providerProfile().capabilities, pdfBase64: false },
+      bodyExtra: { router_extra: { trace: true } }
+    }, [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "text", text: "" }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toHaveProperty("router_extra");
+    expect(fetchCalls[1].body).not.toHaveProperty("router_extra");
+    expect(fetchCalls[1].body).toHaveProperty("model", "model-a");
+    expect(fetchCalls[1].body).toHaveProperty("messages");
+  });
+
   it("falls back to non-streaming when an OpenAI Chat route rejects streaming", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: any[] = [];

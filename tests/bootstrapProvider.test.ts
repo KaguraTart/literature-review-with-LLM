@@ -1235,6 +1235,40 @@ describe("bootstrap provider helpers", () => {
     });
   });
 
+  it("omits rejected custom body-extra fields in bootstrap fallback helpers", () => {
+    const { helpers } = loadBootstrapProviderHelpers();
+    const body = {
+      model: "router-model",
+      messages: [],
+      router_extra: { trace: true }
+    };
+    const fields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "extra_forbidden", loc: ["body", "router_extra"], msg: "Extra inputs are not permitted" }
+        ]
+      })
+    );
+    expect(fields).toEqual(["router_extra"]);
+    expect((helpers as any).omitProviderRequestBodyFields(body, fields)).toEqual({
+      model: "router-model",
+      messages: []
+    });
+    expect((helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "extra_forbidden", loc: ["body", "model"], msg: "Extra inputs are not permitted" }
+        ]
+      })
+    )).toEqual([]);
+  });
+
   it("falls back when bootstrap OpenAI Chat endpoints reject JSON and token fields", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       __responses: [

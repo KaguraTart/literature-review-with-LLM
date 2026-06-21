@@ -93,6 +93,7 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "input_file.file_data",
   "input_file.file_url"
 ]);
+const PROVIDER_REQUIRED_BODY_FIELDS = new Set(["model", "messages", "input"]);
 
 function wbMessage(scope, key, settingOrLocale) {
   if (typeof zmsMessage !== "function") return key;
@@ -7663,7 +7664,7 @@ function providerStructuredUnsupportedFields(body, text, protocol = "") {
   collectProviderFieldHints(parsed, hints);
   return hints
     .map((value) => normalizeProviderFieldHint(value))
-    .filter((field) => field && (protocol === "anthropic_messages" || field !== "messages.content") && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && providerFallbackFieldPresent(body, field));
+    .filter((field) => providerFallbackFieldSupported(body, field, protocol) && providerFallbackFieldPresent(body, field));
 }
 
 function parseProviderFallbackJSON(text) {
@@ -7738,6 +7739,19 @@ function providerFallbackFieldPresent(body, field) {
   if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
   if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
   return body?.[field] !== undefined;
+}
+
+function providerFallbackFieldSupported(body, field, protocol = "") {
+  if (!field) return false;
+  if (field === "messages.content") return protocol === "anthropic_messages";
+  if (PROVIDER_FALLBACK_BODY_FIELDS.has(field)) return true;
+  return providerFallbackCustomBodyFieldPresent(body, field);
+}
+
+function providerFallbackCustomBodyFieldPresent(body, field) {
+  if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(field)) return false;
+  if (PROVIDER_REQUIRED_BODY_FIELDS.has(field.toLowerCase())) return false;
+  return Object.prototype.hasOwnProperty.call(body || {}, field);
 }
 
 function rejectedAnthropicMessagesContentField(body, detail) {

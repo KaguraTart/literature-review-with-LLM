@@ -281,6 +281,39 @@ describe("preferences local-agent config helpers", () => {
     });
   });
 
+  it("omits rejected custom body-extra fields in preferences fallback helpers", () => {
+    const body = {
+      model: "router-model",
+      messages: [],
+      router_extra: { trace: true }
+    };
+    const fields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "extra_forbidden", loc: ["body", "router_extra"], msg: "Extra inputs are not permitted" }
+        ]
+      })
+    );
+    expect(fields).toEqual(["router_extra"]);
+    expect((helpers as any).omitProviderRequestBodyFields(body, fields)).toEqual({
+      model: "router-model",
+      messages: []
+    });
+    expect((helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "extra_forbidden", loc: ["body", "model"], msg: "Extra inputs are not permitted" }
+        ]
+      })
+    )).toEqual([]);
+  });
+
   it("builds a Responses connection test request from the edited profile", () => {
     const request = helpers.connectionTestRequestForProfile({
       protocol: "openai_responses",
