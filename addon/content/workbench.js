@@ -3583,15 +3583,11 @@ function connectionTestBodyForProfile(profile) {
     };
   }
   if (profile.protocol === "openai_responses") {
+    const instructionsInUser = isTrueValue(profile?.bodyExtra?.instructionsFallbackToUser);
     return {
       model: profile.model,
-      instructions: system,
-      input: [
-        {
-          role: "user",
-          content: [{ type: "input_text", text: "ping" }]
-        }
-      ],
+      ...(instructionsInUser ? {} : { instructions: system }),
+      input: openaiResponsesInput([{ role: "user", content: "ping" }], {}, instructionsInUser ? system : "", profile),
       max_output_tokens: 32,
       stream: false
     };
@@ -7200,7 +7196,7 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
   if (profile.protocol === "openai_responses") {
     return withProviderBodyDefaults(profile, {
       model: profile.model,
-      instructions: system,
+      ...(responsesSystemInUser ? {} : { instructions: system }),
       input: openaiResponsesInput(messages, requestInput, responsesSystemInUser ? system : "", profile),
       max_output_tokens: Number(pref("maxOutputTokens")) || 8192,
       temperature: Number(pref("temperature")) || 1,
@@ -7357,7 +7353,16 @@ function openaiResponsesInput(messages, requestInput = {}, fallbackSystem = "", 
   let lastUserIndex = findLastIndex(input, (message) => message.role === "user");
   const systemText = fallbackSystemText(fallbackSystem);
   if (systemText) {
-    lastUserIndex = prependOpenAIResponsesPart(input, lastUserIndex, { type: "input_text", text: systemText });
+    const firstUserIndex = input.findIndex((message) => message.role === "user");
+    if (firstUserIndex >= 0) {
+      input[firstUserIndex] = {
+        ...input[firstUserIndex],
+        content: [{ type: "input_text", text: systemText }, ...input[firstUserIndex].content]
+      };
+    } else {
+      input.unshift({ role: "user", content: [{ type: "input_text", text: systemText }] });
+      lastUserIndex = 0;
+    }
   }
   const contextText = requestInput?.type === "text" ? requestInput.text : "";
   if (contextText) {

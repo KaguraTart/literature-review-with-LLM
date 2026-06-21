@@ -899,6 +899,31 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[0].body).not.toHaveProperty("omitFields");
     expect(fetchCalls[0].body).not.toHaveProperty("temperature");
     expect(fetchCalls[0].body).not.toHaveProperty("max_output_tokens");
+
+    await helpers.callOpenAICompatible({
+      provider: "openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: { instructionsFallbackToUser: true },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", true);
+    expect(fetchCalls[1].body).not.toHaveProperty("instructions");
+    expect(fetchCalls[1].body.input[0].content).toEqual([
+      { type: "input_text", text: "SYSTEM:\nsystem" },
+      { type: "input_text", text: "prompt" },
+      { type: "input_text", text: "CONTEXT:\npaper text" }
+    ]);
   });
 
   it("extracts wrapped OpenAI usage metadata in direct summaries", async () => {

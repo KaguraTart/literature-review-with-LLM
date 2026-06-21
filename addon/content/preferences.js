@@ -1891,15 +1891,17 @@ function connectionTestBodyForProfile(profile) {
     };
   }
   if (profile.protocol === "openai_responses") {
+    const instructionsInUser = normalizeBoolean(profile?.bodyExtra?.instructionsFallbackToUser, false);
+    const input = [
+      {
+        role: "user",
+        content: [{ type: "input_text", text: "ping" }]
+      }
+    ];
     return {
       model: profile.model,
-      instructions: system,
-      input: [
-        {
-          role: "user",
-          content: [{ type: "input_text", text: "ping" }]
-        }
-      ],
+      ...(instructionsInUser ? {} : { instructions: system }),
+      input: instructionsInUser ? inputWithPrependedOpenAIResponsesText(input, fallbackSystemText(system)) : input,
       max_output_tokens: 32,
       stream: false
     };

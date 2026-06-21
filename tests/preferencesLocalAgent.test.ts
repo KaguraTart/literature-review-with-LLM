@@ -372,6 +372,21 @@ describe("preferences local-agent config helpers", () => {
     });
     expect(request.body).not.toHaveProperty("localAgent");
     expect(request.body).not.toHaveProperty("pdfInputFileField");
+
+    const fallbackRequest = helpers.connectionTestRequestForProfile({
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "responses-compatible",
+      customHeaders: {},
+      bodyExtra: { instructionsFallbackToUser: true }
+    });
+    expect(fallbackRequest.body).not.toHaveProperty("instructions");
+    expect(fallbackRequest.body.input[0].content).toEqual([
+      { type: "input_text", text: expect.stringContaining("SYSTEM:\nYou are a provider connection test endpoint") },
+      { type: "input_text", text: "ping" }
+    ]);
   });
 
   it("adds JSON mode defaults to settings connection test requests", () => {

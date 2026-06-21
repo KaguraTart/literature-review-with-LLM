@@ -523,10 +523,11 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
   }
   const protocol = useResponses ? "openai_responses" : "openai_chat";
   const url = endpointMode === "full_url" ? (fullURL || baseURL) : endpointForProtocol(protocol, baseURL);
+  const responsesInstructionsInUser = isTrueValue(bodyExtra?.instructionsFallbackToUser);
   const body = useResponses ? {
     model,
-    instructions: request.system,
-    input: openaiResponsesInputForSummary(request, summaryRequest),
+    ...(responsesInstructionsInUser ? {} : { instructions: request.system }),
+    input: openaiResponsesInputForSummary(request, summaryRequest, responsesInstructionsInUser ? request.system : ""),
     temperature: request.temperature,
     max_output_tokens: request.maxOutputTokens,
     stream: request.stream

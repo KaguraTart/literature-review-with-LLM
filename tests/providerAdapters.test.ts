@@ -1159,6 +1159,24 @@ describe("provider adapters", () => {
     ]);
     expect(JSON.stringify(body.input)).not.toContain("system\\n\\n");
     expect(JSON.stringify(body.input)).not.toContain("USER:");
+
+    const fallbackBody = bodyFor({
+      ...request,
+      profile: {
+        ...request.profile,
+        bodyExtra: { instructionsFallbackToUser: true }
+      }
+    });
+    const fallbackInput = fallbackBody.input as Array<{ role: string; content: Array<{ type: string; text?: string }> }>;
+    expect(fallbackBody).not.toHaveProperty("instructions");
+    expect(fallbackInput[0].content).toEqual([
+      { type: "input_text", text: "SYSTEM:\nsystem" },
+      { type: "input_text", text: "first question" }
+    ]);
+    expect(fallbackInput[2].content).toEqual([
+      { type: "input_text", text: "second question" },
+      { type: "input_text", text: "CONTEXT:\npaper text" }
+    ]);
   });
 
   it("keeps Anthropic message history roles while attaching PDF context", () => {

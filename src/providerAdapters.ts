@@ -713,22 +713,37 @@ function normalizeAuthHeaderName(value: unknown): "authorization" | "x-api-key" 
 }
 
 function openaiResponsesBody(request: ModelRequest): Record<string, unknown> {
+  const instructionsInUser = isTrueValue(request.profile.bodyExtra?.instructionsFallbackToUser);
   return withBodyExtra(request.profile, {
     model: request.profile.model,
-    instructions: request.system,
-    input: openaiResponsesInput(request),
+    ...(instructionsInUser ? {} : { instructions: request.system }),
+    input: openaiResponsesInput(request, instructionsInUser ? request.system : ""),
     temperature: request.temperature,
     max_output_tokens: request.maxOutputTokens,
     stream: request.stream
   });
 }
 
-function openaiResponsesInput(request: ModelRequest): OpenAIResponsesInputItem[] {
+function openaiResponsesInput(request: ModelRequest, fallbackSystem = ""): OpenAIResponsesInputItem[] {
   const input: OpenAIResponsesInputItem[] = request.messages.map((message) => ({
     role: message.role,
     content: [{ type: message.role === "assistant" ? "output_text" : "input_text", text: message.content }]
   }));
-  const lastUserIndex = findLastIndex(input, (message) => message.role === "user");
+  let lastUserIndex = findLastIndex(input, (message) => message.role === "user");
+  const systemText = fallbackSystemText(fallbackSystem);
+  if (systemText) {
+    const textPart = { type: "input_text", text: systemText };
+    const firstUserIndex = input.findIndex((message) => message.role === "user");
+    if (firstUserIndex >= 0) {
+      input[firstUserIndex] = {
+        ...input[firstUserIndex],
+        content: [textPart, ...input[firstUserIndex].content]
+      };
+    } else {
+      input.unshift({ role: "user", content: [textPart] });
+      lastUserIndex = 0;
+    }
+  }
   if (request.input?.type === "text" && request.input.text) {
     const contextPart = { type: "input_text", text: `CONTEXT:\n${request.input.text}` };
     if (lastUserIndex >= 0) {

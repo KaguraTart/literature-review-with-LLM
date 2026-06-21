@@ -809,6 +809,18 @@ describe("workbench writeback helpers", () => {
     }, messages, "zh-CN", "system", {}, false)).toMatchObject({
       text: { format: { type: "json_schema", name: "paper" } }
     });
+
+    const responsesInstructionsInUserBody = helpers.bodyForProfile({
+      protocol: "openai_responses",
+      model: "model-a",
+      capabilities: { streaming: true },
+      bodyExtra: { instructionsFallbackToUser: true }
+    }, messages, "zh-CN", "system", {}, false);
+    expect(responsesInstructionsInUserBody).not.toHaveProperty("instructions");
+    expect(responsesInstructionsInUserBody.input[0].content).toEqual([
+      { type: "input_text", text: expect.stringContaining("SYSTEM:\nsystem") },
+      { type: "input_text", text: "Return JSON." }
+    ]);
   });
 
   it("passes PDF base64 request input into workbench provider request bodies", () => {
@@ -1093,6 +1105,16 @@ describe("workbench writeback helpers", () => {
       max_output_tokens: 32,
       stream: false
     });
+    const responsesInstructionsInUserTestBody = helpers.connectionTestBodyForProfile({
+      protocol: "openai_responses",
+      model: "responses-model",
+      bodyExtra: { instructionsFallbackToUser: true }
+    });
+    expect(responsesInstructionsInUserTestBody).not.toHaveProperty("instructions");
+    expect(responsesInstructionsInUserTestBody.input[0].content).toEqual([
+      { type: "input_text", text: expect.stringContaining("SYSTEM:\nYou are a provider connection test endpoint") },
+      { type: "input_text", text: "ping" }
+    ]);
 
     expect(helpers.connectionTestBodyForProfile({
       protocol: "anthropic_messages",

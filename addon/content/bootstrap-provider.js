@@ -360,8 +360,11 @@ function extractWrappedStreamText(protocol, chunk, depth) {
   return "";
 }
 
-function openaiResponsesInputForSummary(request, profile = null) {
-  const content = [{ type: "input_text", text: request.prompt || "" }];
+function openaiResponsesInputForSummary(request, profile = null, fallbackSystem = "") {
+  const content = [
+    fallbackSystemText(fallbackSystem) ? { type: "input_text", text: fallbackSystemText(fallbackSystem) } : null,
+    { type: "input_text", text: request.prompt || "" }
+  ].filter(Boolean);
   if (request.input.type === "text" && request.input.text) {
     content.push({ type: "input_text", text: `CONTEXT:\n${request.input.text}` });
   }
