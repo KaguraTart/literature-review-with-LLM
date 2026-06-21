@@ -128,6 +128,14 @@ export function headersFor(profile: ProviderProfile): Record<string, string> {
   return withoutBlankHeaders(headers);
 }
 
+export function providerRequestHeadersWithFallback(headers: Record<string, string>, fields: string[]): Record<string, string> {
+  if (!Array.isArray(fields) || !fields.includes("headers.anthropic-version")) return headers;
+  const next = { ...(headers || {}) };
+  const key = headerKey(next, "anthropic-version");
+  if (key) delete next[key];
+  return next;
+}
+
 export function bodyFor(request: ModelRequest): Record<string, unknown> {
   if (request.input?.type === "pdf_base64" && !request.profile.capabilities.pdfBase64) {
     throw new Error("Selected provider profile does not support PDF base64 input");

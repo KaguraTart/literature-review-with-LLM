@@ -14,7 +14,8 @@ import {
   omitProviderRequestBodyFields,
   parseStreamChunk,
   parseStreamUsage,
-  providerCompatibilityFallbackFields
+  providerCompatibilityFallbackFields,
+  providerRequestHeadersWithFallback
 } from "../src/providerAdapters.ts";
 
 const PROVIDER_RESPONSE_WRAPPER_KEYS = ["data", "result", "payload", "response", "message", "body", "completion"];
@@ -59,7 +60,7 @@ export async function runProviderSmoke(options = {}) {
     stream: Boolean(options.stream)
   };
   const endpoint = endpointFor(request);
-  const headers = headersFor(profile);
+  let headers = headersFor(profile);
   let body = bodyFor(request);
   let responseStream = body.stream === true;
   if (options.dryRun) {
@@ -92,6 +93,7 @@ export async function runProviderSmoke(options = {}) {
       const fields = providerCompatibilityFallbackFields(profile.protocol, body, response.status, responseText, usedCompatibilityFallbackFields);
       if (fields.length) {
         body = omitProviderRequestBodyFields(body, fields, usedCompatibilityFallbackFields);
+        headers = providerRequestHeadersWithFallback(headers, fields);
         usedCompatibilityFallbackFields.push(...fields);
         responseStream = body.stream === true;
         response = await fetch(endpoint, {

@@ -435,6 +435,43 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("retries Anthropic-compatible smoke without a rejected version header", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "anthropic-compatible",
+        "--base-url", baseURL,
+        "--api-key", "smoke-secret",
+        "--model", "mock-anthropic",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "anthropic_messages",
+        stream: false,
+        text: "OK anthropic header fallback"
+      });
+      expect(requests).toHaveLength(2);
+      expect(requests[0].anthropicVersion).toBe("2023-06-01");
+      expect(requests[1].anthropicVersion).toBeUndefined();
+      expect(requests[1].body).toMatchObject({
+        model: "mock-anthropic",
+        max_tokens: 64,
+        stream: false
+      });
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.anthropicVersion) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: { message: "Unsupported header: anthropic-version" } }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ content: [{ type: "text", text: "OK anthropic header fallback" }] }));
+      }
+    });
+  });
+
   it("rejects non-object provider body-extra JSON", async () => {
     await expect(execFileAsync(process.execPath, [
       "scripts/verify-provider-smoke.mjs",

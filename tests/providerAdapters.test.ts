@@ -10,6 +10,7 @@ import {
   parseStreamChunk,
   parseStreamUsage,
   providerCompatibilityFallbackFields,
+  providerRequestHeadersWithFallback,
   providerBodyExtra,
   redact,
   extractResponseText,
@@ -693,6 +694,18 @@ describe("provider adapters", () => {
       JSON.stringify({ error: { message: "Unsupported header: anthropic-version" } })
     )).toEqual(["headers.anthropic-version"]);
     expect(omitProviderRequestBodyFields(anthropicBody, ["headers.anthropic-version"])).toEqual(anthropicBody);
+    const anthropicHeaders = {
+      "content-type": "application/json",
+      Authorization: "Bearer anthropic-compatible-secret",
+      "Anthropic-Version": "2023-06-01"
+    };
+    const anthropicHeaderRetry = providerRequestHeadersWithFallback(anthropicHeaders, ["headers.anthropic-version"]);
+    expect(anthropicHeaderRetry).toEqual({
+      "content-type": "application/json",
+      Authorization: "Bearer anthropic-compatible-secret"
+    });
+    expect(anthropicHeaders).toHaveProperty("Anthropic-Version", "2023-06-01");
+    expect(providerRequestHeadersWithFallback(anthropicHeaders, ["stream"])).toBe(anthropicHeaders);
     expect(providerCompatibilityFallbackFields(
       "anthropic_messages",
       anthropicBody,

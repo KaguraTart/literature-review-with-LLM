@@ -559,6 +559,7 @@ const requiredMarkers = [
   [providerAdaptersSource, "providerCompatibilityFallbackFields", "provider adapter OpenAI Chat compatibility fallback fields"],
   [providerSmokeSource, "streamUsageFromBody", "provider smoke stream usage report"],
   [providerSmokeSource, "omitProviderRequestBodyFields", "provider smoke OpenAI Chat compatibility fallback"],
+  [providerSmokeSource, "providerRequestHeadersWithFallback", "provider smoke Anthropic-compatible header fallback"],
   [workbenchJs, "searchCandidates", "workbench candidate search action"],
   [workbenchJs, "expandCandidateCitationNetwork", "workbench citation-network action"],
   [workbenchJs, "citationNetworkOptionsFromDom", "workbench configurable citation-network options"],
