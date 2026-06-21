@@ -7251,6 +7251,9 @@ function providerBodyExtra(bodyExtra) {
     instructionsFallbackToUser: _instructionsFallbackToUser,
     systemFallbackToUser: _systemFallbackToUser,
     pdfInputFileField: _pdfInputFileField,
+    omitPdfInputFile: _omitPdfInputFile,
+    skipPdfInputFile: _skipPdfInputFile,
+    dropPdfInputFile: _dropPdfInputFile,
     imageURLFormat: _imageURLFormat,
     anthropicTextContentFormat: _anthropicTextContentFormat,
     anthropicTextContent: _anthropicTextContent,
@@ -7368,7 +7371,7 @@ function openaiResponsesInput(messages, requestInput = {}, fallbackSystem = "", 
   if (contextText) {
     lastUserIndex = appendOpenAIResponsesPart(input, lastUserIndex, { type: "input_text", text: `CONTEXT:\n${contextText}` });
   }
-  if (requestInput?.type === "pdf_base64" && requestInput.base64) {
+  if (requestInput?.type === "pdf_base64" && requestInput.base64 && !shouldOmitPdfInputFile(profile)) {
     lastUserIndex = prependOpenAIResponsesPart(input, lastUserIndex, openAIResponsesPdfFilePart(requestInput, profile));
   }
   for (const image of requestInputImages(requestInput)) {
@@ -7388,6 +7391,12 @@ function openAIResponsesPdfFilePart(requestInput, profile) {
     filename: requestInput.filename || "paper.pdf",
     [field]: dataURL
   };
+}
+
+function shouldOmitPdfInputFile(profile) {
+  return isTrueValue(profile?.bodyExtra?.omitPdfInputFile)
+    || isTrueValue(profile?.bodyExtra?.skipPdfInputFile)
+    || isTrueValue(profile?.bodyExtra?.dropPdfInputFile);
 }
 
 function normalizePdfInputFileField(value) {
@@ -7885,11 +7894,19 @@ function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = 
     removeFromArray(omitFields, "max_tokens");
   }
   if (fields.includes("input_file.file_data")) {
-    nextExtra.pdfInputFileField = "file_url";
+    if (usedFields.has("input_file.file_url")) {
+      nextExtra.omitPdfInputFile = true;
+    } else {
+      nextExtra.pdfInputFileField = "file_url";
+    }
     removeFromArray(omitFields, "input_file.file_data");
   }
   if (fields.includes("input_file.file_url")) {
-    nextExtra.pdfInputFileField = "file_data";
+    if (usedFields.has("input_file.file_data")) {
+      nextExtra.omitPdfInputFile = true;
+    } else {
+      nextExtra.pdfInputFileField = "file_data";
+    }
     removeFromArray(omitFields, "input_file.file_url");
   }
   if (fields.includes("image_url.url")) {

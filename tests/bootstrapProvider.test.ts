@@ -1292,6 +1292,33 @@ describe("bootstrap provider helpers", () => {
     });
   });
 
+  it("removes Responses input files in bootstrap fallback helpers after both PDF fields fail", () => {
+    const { helpers } = loadBootstrapProviderHelpers();
+    const body = {
+      model: "responses-model",
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_file", filename: "paper.pdf", file_url: "data:application/pdf;base64,abc" },
+            { type: "input_text", text: "ping" }
+          ]
+        }
+      ]
+    };
+    const fields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_responses",
+      body,
+      400,
+      "Unsupported parameter: file_url",
+      ["input_file.file_data"]
+    );
+    expect(fields).toEqual(["input_file.file_url"]);
+    expect((helpers as any).omitProviderRequestBodyFields(body, fields, ["input_file.file_data"]).input[0].content).toEqual([
+      { type: "input_text", text: "ping" }
+    ]);
+  });
+
   it("omits rejected custom body-extra fields in bootstrap fallback helpers", () => {
     const { helpers } = loadBootstrapProviderHelpers();
     const body = {
@@ -1946,6 +1973,35 @@ describe("bootstrap provider helpers", () => {
     });
     expect(fetchCalls[1].body.input[0].content[0]).not.toHaveProperty("file_data");
     expect(fetchCalls[1].body).not.toHaveProperty("pdfInputFileField");
+
+    await helpers.callOpenAICompatible({
+      provider: "openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "response-model",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true },
+      customHeaders: {},
+      bodyExtra: { omitPdfInputFile: true },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: {
+          type: "pdf_base64",
+          base64: "cGRm",
+          filename: "paper.pdf"
+        },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", true);
+
+    expect(fetchCalls[2].body.input[0].content).toEqual([
+      { type: "input_text", text: "prompt" }
+    ]);
+    expect(fetchCalls[2].body).not.toHaveProperty("omitPdfInputFile");
   });
 
   it("sends image attachments through bootstrap Anthropic message bodies", async () => {

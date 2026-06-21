@@ -311,6 +311,32 @@ describe("preferences local-agent config helpers", () => {
     });
   });
 
+  it("removes Responses input files in preferences fallback helpers after both PDF fields fail", () => {
+    const body = {
+      model: "responses-model",
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_file", filename: "paper.pdf", file_url: "data:application/pdf;base64,abc" },
+            { type: "input_text", text: "ping" }
+          ]
+        }
+      ]
+    };
+    const fields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_responses",
+      body,
+      400,
+      "Unsupported parameter: file_url",
+      ["input_file.file_data"]
+    );
+    expect(fields).toEqual(["input_file.file_url"]);
+    expect((helpers as any).omitProviderRequestBodyFields(body, fields, ["input_file.file_data"]).input[0].content).toEqual([
+      { type: "input_text", text: "ping" }
+    ]);
+  });
+
   it("omits rejected custom body-extra fields in preferences fallback helpers", () => {
     const body = {
       model: "router-model",

@@ -622,6 +622,10 @@ describe("provider adapters", () => {
       filename: "paper.pdf",
       file_data: "data:application/pdf;base64,abc"
     });
+    const textOnlyPDFRetryBody = omitProviderRequestBodyFields(fileURLRetryBody, ["input_file.file_url"], ["input_file.file_data"]);
+    expect((textOnlyPDFRetryBody.input as any[])[0].content).toEqual([
+      { type: "input_text", text: "ping" }
+    ]);
     expect(providerCompatibilityFallbackFields(
       "openai_responses",
       {
@@ -1095,6 +1099,26 @@ describe("provider adapters", () => {
     });
     expect((body.input as any[])[0].content[0]).not.toHaveProperty("file_data");
     expect(body).not.toHaveProperty("pdfInputFileField");
+  });
+
+  it("omits Responses PDF input files after raw PDF fallback is exhausted", () => {
+    const request = {
+      ...baseRequest,
+      profile: {
+        ...profile,
+        protocol: "openai_responses" as const,
+        baseURL: "https://router.example/v1",
+        capabilities: { ...defaultCapabilities, pdfBase64: true },
+        bodyExtra: { omitPdfInputFile: true }
+      },
+      input: { type: "pdf_base64" as const, base64: "abc", filename: "paper.pdf" }
+    };
+    const body = bodyFor(request);
+    expect(JSON.stringify(body.input)).not.toContain("input_file");
+    expect((body.input as any[])[0].content).toEqual([
+      { type: "input_text", text: "prompt" }
+    ]);
+    expect(body).not.toHaveProperty("omitPdfInputFile");
   });
 
   it("maps Anthropic PDF input and auth headers", () => {

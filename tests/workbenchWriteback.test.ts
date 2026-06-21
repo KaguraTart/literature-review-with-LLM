@@ -870,6 +870,16 @@ describe("workbench writeback helpers", () => {
     expect(openaiFileURLBody.input[2].content.find((part: any) => part.type === "input_file")).not.toHaveProperty("file_data");
     expect(openaiFileURLBody).not.toHaveProperty("pdfInputFileField");
 
+    const openaiTextOnlyPDFBody = helpers.bodyForProfile({
+      protocol: "openai_responses",
+      model: "model-a",
+      capabilities: { streaming: true },
+      bodyExtra: { omitPdfInputFile: true }
+    }, messages, "zh-CN", "system", requestInput, false);
+    expect(JSON.stringify(openaiTextOnlyPDFBody.input)).not.toContain("input_file");
+    expect(openaiTextOnlyPDFBody.input[2].content).toContainEqual({ type: "input_text", text: "second question" });
+    expect(openaiTextOnlyPDFBody).not.toHaveProperty("omitPdfInputFile");
+
     const anthropicBody = helpers.bodyForProfile({
       protocol: "anthropic_messages",
       model: "model-a",
@@ -1436,6 +1446,61 @@ describe("workbench writeback helpers", () => {
       { type: "input_text", text: expect.stringContaining("SYSTEM:\nsystem") },
       { type: "input_text", text: "ping" },
       { type: "input_text", text: "CONTEXT:\npaper text" }
+    ]);
+  });
+
+  it("retries workbench Responses PDF requests without raw PDF after both file fields fail", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    (loaded as any).fetch = async (url: string, init: any) => {
+      fetchCalls.push({ url, body: JSON.parse(init.body) });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({ error: { message: "Unsupported parameter", param: "input[0].content[0].file_data" } })
+        };
+      }
+      if (fetchCalls.length === 2) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({ error: { message: "Unsupported parameter: file_url" } })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ output_text: "text only ok" })
+      };
+    };
+
+    const profile = {
+      id: "responses-router",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "responses-model",
+      capabilities: { text: true, imageBase64: true, pdfBase64: true, streaming: false },
+      bodyExtra: {}
+    };
+
+    const response = await loaded.requestModelWithRetry(
+      profile,
+      [{ role: "user", content: "summarize" }],
+      "en-US",
+      "system",
+      { type: "pdf_base64", source: "pdf_base64", base64: "abc123", filename: "paper.pdf" },
+      false
+    );
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(3);
+    expect(fetchCalls[0].body.input[0].content[0]).toMatchObject({ type: "input_file", file_data: "data:application/pdf;base64,abc123" });
+    expect(fetchCalls[1].body.input[0].content[0]).toMatchObject({ type: "input_file", file_url: "data:application/pdf;base64,abc123" });
+    expect(fetchCalls[2].body.input[0].content).toEqual([
+      { type: "input_text", text: "summarize" }
     ]);
   });
 

@@ -1941,6 +1941,9 @@ function providerBodyExtra(bodyExtra) {
     instructionsFallbackToUser: _instructionsFallbackToUser,
     systemFallbackToUser: _systemFallbackToUser,
     pdfInputFileField: _pdfInputFileField,
+    omitPdfInputFile: _omitPdfInputFile,
+    skipPdfInputFile: _skipPdfInputFile,
+    dropPdfInputFile: _dropPdfInputFile,
     imageURLFormat: _imageURLFormat,
     anthropicTextContentFormat: _anthropicTextContentFormat,
     anthropicTextContent: _anthropicTextContent,
@@ -2287,11 +2290,19 @@ function omitProviderRequestBodyFields(body, fields, usedFallback = false) {
       continue;
     }
     if (field === "input_file.file_data") {
-      switchOpenAIResponsesInputFileField(next, "file_data", "file_url");
+      if (usedFields.has("input_file.file_url")) {
+        removeOpenAIResponsesInputFiles(next);
+      } else {
+        switchOpenAIResponsesInputFileField(next, "file_data", "file_url");
+      }
       continue;
     }
     if (field === "input_file.file_url") {
-      switchOpenAIResponsesInputFileField(next, "file_url", "file_data");
+      if (usedFields.has("input_file.file_data")) {
+        removeOpenAIResponsesInputFiles(next);
+      } else {
+        switchOpenAIResponsesInputFileField(next, "file_url", "file_data");
+      }
       continue;
     }
     if (field === "image_url.url") {
@@ -2345,6 +2356,17 @@ function switchOpenAIResponsesInputFileField(body, from, to) {
         const { [from]: value, ...rest } = part;
         return { ...rest, [to]: value };
       })
+    };
+  });
+}
+
+function removeOpenAIResponsesInputFiles(body) {
+  const input = Array.isArray(body.input) ? body.input : [];
+  body.input = input.map((item) => {
+    const content = Array.isArray(item?.content) ? item.content : [];
+    return {
+      ...item,
+      content: content.filter((part) => part?.type !== "input_file")
     };
   });
 }

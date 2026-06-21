@@ -755,7 +755,7 @@ function openaiResponsesInput(request: ModelRequest, fallbackSystem = ""): OpenA
       input.push({ role: "user", content: [contextPart] });
     }
   }
-  if (request.input?.type === "pdf_base64") {
+  if (request.input?.type === "pdf_base64" && !shouldOmitPdfInputFile(request.profile)) {
     const filePart = openAIResponsesPdfFilePart(request.input, request.profile);
     if (lastUserIndex >= 0) {
       input[lastUserIndex] = {
@@ -791,6 +791,12 @@ function openAIResponsesPdfFilePart(input: NonNullable<ModelRequest["input"]>, p
     filename: input.filename ?? "paper.pdf",
     [field]: dataURL
   };
+}
+
+function shouldOmitPdfInputFile(profile: ProviderProfile): boolean {
+  return isTrueValue(profile.bodyExtra?.omitPdfInputFile)
+    || isTrueValue(profile.bodyExtra?.skipPdfInputFile)
+    || isTrueValue(profile.bodyExtra?.dropPdfInputFile);
 }
 
 function normalizePdfInputFileField(value: unknown): "file_data" | "file_url" {
@@ -977,6 +983,9 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
     instructionsFallbackToUser: _instructionsFallbackToUser,
     systemFallbackToUser: _systemFallbackToUser,
     pdfInputFileField: _pdfInputFileField,
+    omitPdfInputFile: _omitPdfInputFile,
+    skipPdfInputFile: _skipPdfInputFile,
+    dropPdfInputFile: _dropPdfInputFile,
     imageURLFormat: _imageURLFormat,
     anthropicTextContentFormat: _anthropicTextContentFormat,
     anthropicTextContent: _anthropicTextContent,
@@ -1327,11 +1336,19 @@ export function omitProviderRequestBodyFields(body: Record<string, unknown>, fie
       continue;
     }
     if (field === "input_file.file_data") {
-      switchOpenAIResponsesInputFileField(next, "file_data", "file_url");
+      if (usedFields.has("input_file.file_url")) {
+        removeOpenAIResponsesInputFiles(next);
+      } else {
+        switchOpenAIResponsesInputFileField(next, "file_data", "file_url");
+      }
       continue;
     }
     if (field === "input_file.file_url") {
-      switchOpenAIResponsesInputFileField(next, "file_url", "file_data");
+      if (usedFields.has("input_file.file_data")) {
+        removeOpenAIResponsesInputFiles(next);
+      } else {
+        switchOpenAIResponsesInputFileField(next, "file_url", "file_data");
+      }
       continue;
     }
     if (field === "image_url.url") {
@@ -1385,6 +1402,17 @@ function switchOpenAIResponsesInputFileField(body: Record<string, unknown>, from
         const { [from]: value, ...rest } = part;
         return { ...rest, [to]: value };
       })
+    };
+  });
+}
+
+function removeOpenAIResponsesInputFiles(body: Record<string, unknown>): void {
+  const input = Array.isArray(body.input) ? body.input : [];
+  body.input = input.map((item: any) => {
+    const content = Array.isArray(item?.content) ? item.content : [];
+    return {
+      ...item,
+      content: content.filter((part: any) => part?.type !== "input_file")
     };
   });
 }
