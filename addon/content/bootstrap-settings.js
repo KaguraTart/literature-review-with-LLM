@@ -32,22 +32,23 @@ function getSettings() {
 
 function settingsProviderDefaults(provider) {
   const id = String(provider || "openai_compatible").trim();
-  const commonCapabilities = { text: true, pdfBase64: false, imageBase64: true, fileReference: false, streaming: true, embeddings: false, jsonMode: false, toolUse: false, modelList: true };
+  const commonCapabilities = { text: true, pdfBase64: false, imageBase64: false, fileReference: false, streaming: true, embeddings: false, jsonMode: false, toolUse: false, modelList: true };
+  const imageCapabilities = { ...commonCapabilities, imageBase64: true };
   const common = { endpointMode: "base_url", fullURL: "", model: "", customHeaders: {}, bodyExtra: {} };
   if (id === "openai") {
-    return { ...common, protocol: "openai_responses", baseURL: "https://api.openai.com/v1", capabilities: { ...commonCapabilities, pdfBase64: true } };
+    return { ...common, protocol: "openai_responses", baseURL: "https://api.openai.com/v1", capabilities: { ...imageCapabilities, pdfBase64: true } };
   }
   if (id === "openai_responses_compatible" || id === "openai-responses-compatible") {
-    return { ...common, protocol: "openai_responses", baseURL: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1", capabilities: { ...commonCapabilities, pdfBase64: true } };
+    return { ...common, protocol: "openai_responses", baseURL: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1", capabilities: { ...imageCapabilities, pdfBase64: true } };
   }
   if (id === "anthropic") {
-    return { ...common, protocol: "anthropic_messages", baseURL: "https://api.anthropic.com", capabilities: { ...commonCapabilities, pdfBase64: true } };
+    return { ...common, protocol: "anthropic_messages", baseURL: "https://api.anthropic.com", capabilities: { ...imageCapabilities, pdfBase64: true } };
   }
   if (id === "anthropic_compatible" || id === "anthropic-compatible") {
     return { ...common, protocol: "anthropic_messages", baseURL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT", capabilities: commonCapabilities, bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false } };
   }
   if (id === "azure_openai" || id === "azure-openai") {
-    return { ...common, protocol: "openai_responses", baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1", capabilities: { ...commonCapabilities, pdfBase64: true } };
+    return { ...common, protocol: "openai_responses", baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1", capabilities: { ...imageCapabilities, pdfBase64: true } };
   }
   if (id === "perplexity") {
     return { ...common, protocol: "openai_chat", baseURL: "https://api.perplexity.ai", capabilities: commonCapabilities };
@@ -65,7 +66,7 @@ function settingsProviderDefaults(provider) {
     return { ...common, protocol: "openai_chat", baseURL: "https://api.hunyuan.cloud.tencent.com/v1", capabilities: commonCapabilities };
   }
   if (id === "gemini") {
-    return { ...common, protocol: "openai_chat", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", capabilities: commonCapabilities };
+    return { ...common, protocol: "openai_chat", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", capabilities: imageCapabilities };
   }
   if (id === "xai") {
     return { ...common, protocol: "openai_chat", baseURL: "https://api.x.ai/v1", capabilities: commonCapabilities };

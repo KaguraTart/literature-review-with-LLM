@@ -2625,7 +2625,7 @@ function providerDefaults(provider) {
   const id = String(provider || "minimax");
   const commonCapabilities = {
     text: true,
-    imageBase64: true,
+    imageBase64: false,
     fileReference: false,
     streaming: true,
     embeddings: false,
@@ -2633,6 +2633,7 @@ function providerDefaults(provider) {
     toolUse: false,
     modelList: true
   };
+  const imageCapabilities = { ...commonCapabilities, imageBase64: true };
   if (id === "anthropic") {
     return {
       id: "anthropic",
@@ -2642,7 +2643,7 @@ function providerDefaults(provider) {
       baseURL: "https://api.anthropic.com",
       fullURL: "",
       model: "",
-      capabilities: { ...commonCapabilities, pdfBase64: true },
+      capabilities: { ...imageCapabilities, pdfBase64: true },
       bodyExtra: {}
     };
   }
@@ -2668,7 +2669,7 @@ function providerDefaults(provider) {
       baseURL: "https://api.openai.com/v1",
       fullURL: "",
       model: "",
-      capabilities: { ...commonCapabilities, pdfBase64: true },
+      capabilities: { ...imageCapabilities, pdfBase64: true },
       bodyExtra: {}
     };
   }
@@ -2681,7 +2682,7 @@ function providerDefaults(provider) {
       baseURL: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1",
       fullURL: "",
       model: "",
-      capabilities: { ...commonCapabilities, pdfBase64: true },
+      capabilities: { ...imageCapabilities, pdfBase64: true },
       bodyExtra: {}
     };
   }
@@ -2694,7 +2695,7 @@ function providerDefaults(provider) {
       baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
       fullURL: "",
       model: "",
-      capabilities: { ...commonCapabilities, pdfBase64: false },
+      capabilities: { ...imageCapabilities, pdfBase64: false },
       bodyExtra: {}
     };
   }
@@ -2707,7 +2708,7 @@ function providerDefaults(provider) {
       baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1",
       fullURL: "",
       model: "",
-      capabilities: { ...commonCapabilities, pdfBase64: true },
+      capabilities: { ...imageCapabilities, pdfBase64: true },
       customHeaders: {},
       bodyExtra: {}
     };

@@ -85,7 +85,7 @@ type AnthropicMessage = {
 export const defaultCapabilities: ProviderCapabilities = {
   text: true,
   pdfBase64: false,
-  imageBase64: true,
+  imageBase64: false,
   fileReference: false,
   streaming: true,
   embeddings: false,

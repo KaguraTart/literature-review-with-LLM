@@ -40,6 +40,10 @@ const baseRequest: ModelRequest = {
 };
 
 describe("provider adapters", () => {
+  it("keeps image input disabled until a profile explicitly enables it", () => {
+    expect(defaultCapabilities.imageBase64).toBe(false);
+  });
+
   it("maps OpenAI-compatible chat profiles to chat completions", () => {
     expect(endpointFor(baseRequest)).toBe("https://api.minimaxi.com/v1/chat/completions");
     expect(endpointFor({
@@ -744,14 +748,15 @@ describe("provider adapters", () => {
       text: "paper text",
       images: [{ name: "screen.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
     };
-    const chatBody = bodyFor({ ...baseRequest, input: imageInput });
+    const imageProfile = { ...profile, capabilities: { ...defaultCapabilities, imageBase64: true } };
+    const chatBody = bodyFor({ ...baseRequest, profile: imageProfile, input: imageInput });
     expect((chatBody.messages as any[]).at(-1).content).toEqual([
       { type: "text", text: "prompt\n\npaper text" },
       { type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } }
     ]);
     const stringImageChatBody = bodyFor({
       ...baseRequest,
-      profile: { ...profile, bodyExtra: { imageURLFormat: "string" } },
+      profile: { ...imageProfile, bodyExtra: { imageURLFormat: "string" } },
       input: imageInput
     });
     expect((stringImageChatBody.messages as any[]).at(-1).content).toEqual([
@@ -761,7 +766,7 @@ describe("provider adapters", () => {
 
     const responsesBody = bodyFor({
       ...baseRequest,
-      profile: { ...profile, protocol: "openai_responses" },
+      profile: { ...imageProfile, protocol: "openai_responses" },
       input: imageInput
     });
     expect((responsesBody.input as any[])[0].content).toContainEqual({
@@ -771,7 +776,7 @@ describe("provider adapters", () => {
 
     const anthropicBody = bodyFor({
       ...baseRequest,
-      profile: { ...profile, protocol: "anthropic_messages", baseURL: "https://api.anthropic.com" },
+      profile: { ...imageProfile, protocol: "anthropic_messages", baseURL: "https://api.anthropic.com" },
       input: imageInput
     });
     expect((anthropicBody.messages as any[])[0].content).toContainEqual({
@@ -784,6 +789,7 @@ describe("provider adapters", () => {
         ...profile,
         protocol: "anthropic_messages",
         baseURL: "https://router.example",
+        capabilities: { ...defaultCapabilities, imageBase64: true },
         bodyExtra: { systemFallbackToUser: true }
       },
       input: imageInput

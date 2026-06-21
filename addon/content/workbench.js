@@ -2191,15 +2191,16 @@ function normalizeProfileId(value) {
 
 function workbenchProviderDefaults(provider) {
   const id = String(provider || "openai_compatible").trim();
-  const commonCapabilities = { text: true, pdfBase64: false, imageBase64: true, fileReference: false, streaming: true, embeddings: false, jsonMode: false, toolUse: false, modelList: true };
+  const commonCapabilities = { text: true, pdfBase64: false, imageBase64: false, fileReference: false, streaming: true, embeddings: false, jsonMode: false, toolUse: false, modelList: true };
+  const imageCapabilities = { ...commonCapabilities, imageBase64: true };
   if (id === "openai") {
-    return { id: "openai", name: "OpenAI", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://api.openai.com/v1", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, bodyExtra: {} };
+    return { id: "openai", name: "OpenAI", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://api.openai.com/v1", model: "", capabilities: { ...imageCapabilities, pdfBase64: true }, bodyExtra: {} };
   }
   if (id === "openai_responses_compatible" || id === "openai-responses-compatible") {
-    return { id: "openai-responses-compatible", name: "OpenAI Compatible Responses", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, bodyExtra: {} };
+    return { id: "openai-responses-compatible", name: "OpenAI Compatible Responses", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://YOUR-OPENAI-RESPONSES-COMPATIBLE-ENDPOINT/v1", model: "", capabilities: { ...imageCapabilities, pdfBase64: true }, bodyExtra: {} };
   }
   if (id === "anthropic") {
-    return { id: "anthropic", name: "Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.anthropic.com", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, bodyExtra: {} };
+    return { id: "anthropic", name: "Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.anthropic.com", model: "", capabilities: { ...imageCapabilities, pdfBase64: true }, bodyExtra: {} };
   }
   if (id === "anthropic_compatible" || id === "anthropic-compatible") {
     return { id: "anthropic-compatible", name: "Anthropic Compatible Messages", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT", model: "", capabilities: commonCapabilities, bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false } };
@@ -2208,10 +2209,10 @@ function workbenchProviderDefaults(provider) {
     return { id: "minimax", name: "MiniMax", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.minimaxi.com/v1", model: "MiniMax-M2.7", capabilities: commonCapabilities, bodyExtra: { extra_body: { reasoning_split: true } } };
   }
   if (id === "gemini") {
-    return { id: "gemini", name: "Gemini OpenAI Compatible", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+    return { id: "gemini", name: "Gemini OpenAI Compatible", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", model: "", capabilities: imageCapabilities, bodyExtra: {} };
   }
   if (id === "azure_openai" || id === "azure-openai") {
-    return { id: "azure-openai", name: "Azure OpenAI", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1", model: "", capabilities: { ...commonCapabilities, pdfBase64: true }, customHeaders: {}, bodyExtra: {} };
+    return { id: "azure-openai", name: "Azure OpenAI", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1", model: "", capabilities: { ...imageCapabilities, pdfBase64: true }, customHeaders: {}, bodyExtra: {} };
   }
   if (id === "github_models" || id === "github-models") {
     return { id: "github-models", name: "GitHub Models", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://models.github.ai/inference", model: "", capabilities: { ...commonCapabilities, modelList: false }, customHeaders: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }, bodyExtra: {} };

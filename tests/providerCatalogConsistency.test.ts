@@ -191,4 +191,16 @@ describe("provider catalog consistency", () => {
 
     expect(bootstrapDefaults).toEqual(editableDefaults);
   });
+
+  it("keeps screenshot input opt-in for unknown or text-first provider defaults", () => {
+    const profiles = loadPreferencesHelpers().defaultProviderProfiles();
+    const byId = new Map(profiles.map((profile) => [profile.id, profile]));
+
+    for (const id of ["openai", "openai-responses-compatible", "anthropic", "gemini", "azure-openai"]) {
+      expect(byId.get(id)?.capabilities?.imageBase64).toBe(true);
+    }
+    for (const id of ["minimax", "openai-compatible", "deepseek", "kimi", "groq", "openrouter", "ollama", "local-agents"]) {
+      expect(byId.get(id)?.capabilities?.imageBase64).toBe(false);
+    }
+  });
 });

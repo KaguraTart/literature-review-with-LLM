@@ -284,6 +284,10 @@ export async function runMockProviderSmoke(options = {}) {
     for (const entry of cases) {
       results.push(await runProviderSmoke({
         ...options,
+        capabilities: {
+          ...(options.capabilities || {}),
+          ...(entry.capabilities || {})
+        },
         mock: false,
         dryRun: false,
         profile: entry.profile,
@@ -317,7 +321,7 @@ function mockSmokeCases(options, baseURL) {
     ];
   }
   return [
-    { profile: "openai-compatible", baseURL: `${baseURL}/v1`, model: multimodal ? "mock-chat-vision" : "mock-chat" },
+    { profile: "openai-compatible", baseURL: `${baseURL}/v1`, model: multimodal ? "mock-chat-vision" : "mock-chat", capabilities: multimodal ? { imageBase64: true } : {} },
     { profile: "openai", baseURL: `${baseURL}/v1`, model: multimodal ? "mock-responses-vision" : "mock-responses" },
     { profile: "openai-responses-compatible", baseURL: `${baseURL}/v1`, model: multimodal ? "mock-responses-compatible-vision" : "mock-responses-compatible" },
     { profile: "anthropic", baseURL, model: multimodal ? "mock-anthropic-vision" : "mock-anthropic" }
