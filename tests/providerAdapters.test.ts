@@ -416,6 +416,17 @@ describe("provider adapters", () => {
         ]
       })
     )).toEqual(["router_extra"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      customBody,
+      400,
+      JSON.stringify({
+        error: {
+          message: "Unsupported fields in request body",
+          unsupported_fields: ["router_extra"]
+        }
+      })
+    )).toEqual(["router_extra"]);
     expect(omitProviderRequestBodyFields(customBody, ["router_extra"])).toEqual({
       model: "router-model",
       messages: []

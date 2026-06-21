@@ -6150,9 +6150,10 @@ describe("workbench writeback helpers", () => {
           ok: false,
           status: 422,
           text: async () => JSON.stringify({
-            detail: [
-              { type: "extra_forbidden", loc: ["body", "router_extra"], msg: "Extra inputs are not permitted" }
-            ]
+            error: {
+              message: "Extra inputs are not permitted",
+              extra_fields: ["router_extra"]
+            }
           })
         };
       }

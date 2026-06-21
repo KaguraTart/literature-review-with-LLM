@@ -292,9 +292,10 @@ describe("preferences local-agent config helpers", () => {
       body,
       422,
       JSON.stringify({
-        detail: [
-          { type: "extra_forbidden", loc: ["body", "router_extra"], msg: "Extra inputs are not permitted" }
-        ]
+        error: {
+          message: "Forbidden request field",
+          forbidden_fields: ["router_extra"]
+        }
       })
     );
     expect(fields).toEqual(["router_extra"]);

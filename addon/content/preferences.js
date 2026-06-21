@@ -2147,7 +2147,7 @@ function providerFieldHintArrayPath(value) {
 }
 
 function isProviderFieldHintKey(key) {
-  return /^(?:param|params|parameter|parameters|field|fields|property|properties|argument|arguments|loc|location|path|json_path|jsonpath|unsupported_param|unsupported_params|unsupported_parameter|unsupported_parameters|invalid_param|invalid_params|invalid_parameter|invalid_parameters)$/i.test(key);
+  return /^(?:param|params|parameter|parameters|field|fields|property|properties|argument|arguments|loc|location|path|json_path|jsonpath|unsupported_param|unsupported_params|unsupported_parameter|unsupported_parameters|unsupported_field|unsupported_fields|unknown_param|unknown_params|unknown_parameter|unknown_parameters|unknown_field|unknown_fields|invalid_param|invalid_params|invalid_parameter|invalid_parameters|invalid_field|invalid_fields|extra_field|extra_fields|forbidden_field|forbidden_fields|unrecognized_param|unrecognized_params|unrecognized_parameter|unrecognized_parameters|unrecognized_field|unrecognized_fields)$/i.test(key);
 }
 
 function normalizeProviderFieldHint(value) {

@@ -1247,9 +1247,10 @@ describe("bootstrap provider helpers", () => {
       body,
       422,
       JSON.stringify({
-        detail: [
-          { type: "extra_forbidden", loc: ["body", "router_extra"], msg: "Extra inputs are not permitted" }
-        ]
+        error: {
+          message: "Unknown parameter",
+          unknown_parameter: "router_extra"
+        }
       })
     );
     expect(fields).toEqual(["router_extra"]);
