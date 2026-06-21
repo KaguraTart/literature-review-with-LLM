@@ -258,6 +258,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.state.escapeBound = true;
     }
     this.bindImageInput();
+    this.bindMessageSelection();
     this.bindCitationNetworkPolicyControls();
     const composer = document.getElementById("zms-composer");
     if (input && input.dataset?.zmsFocusBound !== "1") {
@@ -277,6 +278,19 @@ var ZoteroMarkdownSummaryWorkbench = {
       if (composer.dataset) composer.dataset.zmsFocusBound = "1";
     }
     this.updateComposerState();
+  },
+
+  bindMessageSelection() {
+    const messages = document.getElementById("zms-messages");
+    if (!messages || messages.dataset?.zmsSelectionBound === "1") return;
+    const keepNativeSelection = (event) => {
+      if (isInteractiveWorkbenchTarget(event?.target)) return;
+      event?.stopPropagation?.();
+    };
+    for (const eventName of ["pointerdown", "mousedown", "click", "dblclick"]) {
+      messages.addEventListener(eventName, keepNativeSelection);
+    }
+    if (messages.dataset) messages.dataset.zmsSelectionBound = "1";
   },
 
   bindImageInput() {
@@ -3804,6 +3818,11 @@ function userImageOcrSummary(localOcr, translate = (key) => key) {
 
 function answerTextForMessage(message) {
   return splitThinkBlocks(message?.content || "").answer.trim();
+}
+
+function visibleMessageText(message) {
+  if (message?.role === "assistant") return answerTextForMessage(message);
+  return String(message?.content || "").trim();
 }
 
 function splitThinkBlocks(value) {
@@ -9007,7 +9026,7 @@ function renderSessionAsMarkdown(messages, t, compactionSummary) {
     const role = message?.role;
     if (role !== "user" && role !== "assistant") continue;
     const header = role === "user" ? "**You**" : "**Assistant**";
-    const text = role === "assistant" ? answerTextForMessage(message) : String(message?.content || "").trim();
+    const text = visibleMessageText(message);
     if (!text) continue;
     lines.push(`### ${header}`, "", text, "");
     const usageText = role === "assistant" ? providerUsageText(message?.usage) : "";
@@ -9035,10 +9054,10 @@ function renderEmptySessionList(element, message) {
 
 async function summarizeMessagesWithLlm(messages, profile, t, setStatus) {
   const history = (messages || [])
-    .filter((message) => (message.role === "user" || message.role === "assistant") && String(message.content || "").trim())
+    .filter((message) => (message.role === "user" || message.role === "assistant") && visibleMessageText(message))
     .slice(-COMPACT_HISTORY_LIMIT);
   if (!history.length) return "";
-  const transcript = history.map((message) => `${message.role === "user" ? "USER" : "ASSISTANT"}: ${String(message.content).slice(0, 2000)}`).join("\n\n");
+  const transcript = history.map((message) => `${message.role === "user" ? "USER" : "ASSISTANT"}: ${visibleMessageText(message).slice(0, 2000)}`).join("\n\n");
   const instruction = t("compactPrompt") || "Summarize the conversation above in 6-10 concise bullet points, keeping any concrete facts, decisions, open questions, and conclusions. Reply in the same language as the conversation.";
   if (setStatus) setStatus(t("compacting"));
   try {
@@ -9063,8 +9082,15 @@ async function summarizeMessagesWithLlm(messages, profile, t, setStatus) {
     return String(extractResponseText(profile.protocol, data) || "").trim();
   } catch (_err) {
     // Last-resort fallback so the user can still manually trigger later.
-    return history.map((m) => m.content).join("\n").slice(0, 1500);
+    return history.map((message) => visibleMessageText(message)).filter(Boolean).join("\n").slice(0, 1500);
   }
+}
+
+function isInteractiveWorkbenchTarget(target) {
+  const tagName = String(target?.tagName || target?.localName || "").toLowerCase();
+  if (["a", "button", "input", "textarea", "select", "option", "summary", "label"].includes(tagName)) return true;
+  const role = String(target?.getAttribute?.("role") || "").toLowerCase();
+  return ["button", "link", "textbox", "combobox", "checkbox", "menuitem"].includes(role);
 }
 
 const COMPACT_TRIGGER_MESSAGES = 16;

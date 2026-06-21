@@ -185,6 +185,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     extractResponseText: (protocol: string, data: any) => string;
     extractProviderConnectionText: (protocol: string, text: string) => string;
     answerTextForMessage: (message: any) => string;
+    visibleMessageText: (message: any) => string;
+    summarizeMessagesWithLlm: (messages: any[], profile: any, t: (key: string) => string, setStatus?: (message: string) => void) => Promise<string>;
     getProfiles: () => any[];
     requestMessagesWithHistory: (messages: any[], latestUserText: string, requestPrompt: string, options?: { limit?: number; compaction?: any }) => any[];
     bodyForProfile: (profile: any, messages: any[], outputLanguage: string, systemPrompt: string, requestInput?: any, streamEnabled?: boolean) => any;
@@ -4874,6 +4876,7 @@ describe("workbench writeback helpers", () => {
     expect(sendButton.dataset.zmsBound).toBe("1");
     expect(input.dataset.zmsShortcutBound).toBe("1");
     expect(input.dataset.zmsFocusBound).toBe("1");
+    expect(dom.elements.get("zms-messages").dataset.zmsSelectionBound).toBe("1");
 
     await input.eventListeners.get("click")[0]();
     expect(input.focusCalls).toBe(1);
@@ -4901,6 +4904,33 @@ describe("workbench writeback helpers", () => {
     });
     expect(sends).toBe(2);
     expect(prevented).toBe(1);
+  });
+
+  it("keeps message text selection events from bubbling to outer focus handlers", () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+
+    workbench.bindActions();
+
+    const messages = dom.elements.get("zms-messages");
+    const listener = messages.eventListeners.get("mousedown")[0];
+    let stopped = 0;
+    listener({
+      target: { tagName: "p" },
+      stopPropagation() {
+        stopped += 1;
+      }
+    });
+    listener({
+      target: { tagName: "button" },
+      stopPropagation() {
+        stopped += 1;
+      }
+    });
+
+    expect(stopped).toBe(1);
   });
 
   it("opens the settings drawer from the single settings control", async () => {
@@ -4993,6 +5023,40 @@ describe("workbench writeback helpers", () => {
     };
 
     expect(loaded.answerTextForMessage(assistant)).toBe("## Result\n\nVisible answer.");
+    expect(loaded.visibleMessageText(assistant)).toBe("## Result\n\nVisible answer.");
+  });
+
+  it("keeps think blocks out of compaction prompts and fallback summaries", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const calls: any[] = [];
+    const originalRequestModelWithRetry = (loaded as any).requestModelWithRetry;
+    const profile = providerProfile();
+    const messages = [
+      { role: "user", content: "What is the method?" },
+      { role: "assistant", content: "<think>private chain</think>\n\nVisible answer." }
+    ];
+    (loaded as any).requestModelWithRetry = async (_profile: any, requestMessages: any[]) => {
+      calls.push(requestMessages);
+      return {
+        ok: true,
+        json: async () => ({ output_text: "compact summary" })
+      };
+    };
+
+    const summary = await loaded.summarizeMessagesWithLlm(messages, profile, (key) => key === "outputLanguage" ? "en-US" : key);
+
+    expect(summary).toBe("compact summary");
+    expect(calls[0][1].content).toContain("Visible answer.");
+    expect(calls[0][1].content).not.toContain("private chain");
+
+    (loaded as any).requestModelWithRetry = async () => {
+      throw new Error("network failed");
+    };
+    const fallback = await loaded.summarizeMessagesWithLlm(messages, profile, (key) => key === "outputLanguage" ? "en-US" : key);
+
+    expect(fallback).toContain("Visible answer.");
+    expect(fallback).not.toContain("private chain");
+    (loaded as any).requestModelWithRetry = originalRequestModelWithRetry;
   });
 
   it("renders editable OCR review controls on user image messages", async () => {
