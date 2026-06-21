@@ -255,6 +255,7 @@ describe("preferences local-agent config helpers", () => {
       directBrowserAccess: true,
       anthropicDirectBrowserAccess: false,
       pdfInputFileField: "file_url",
+      omitAnthropicDocument: true,
       imageURLFormat: "string",
       anthropicTextContentFormat: "blocks"
     })).toEqual({ extra_body: { reasoning_split: true } });
@@ -334,6 +335,35 @@ describe("preferences local-agent config helpers", () => {
     expect(fields).toEqual(["input_file.file_url"]);
     expect((helpers as any).omitProviderRequestBodyFields(body, fields, ["input_file.file_data"]).input[0].content).toEqual([
       { type: "input_text", text: "ping" }
+    ]);
+  });
+
+  it("removes Anthropic document blocks in preferences fallback helpers", () => {
+    const body = {
+      model: "claude-compatible",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: "abc" } },
+            { type: "text", text: "ping" }
+          ]
+        }
+      ]
+    };
+    const fields = (helpers as any).providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      body,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "unsupported_media_type", loc: ["body", "messages", 0, "content", 0, "source", "media_type"], msg: "Unsupported media_type application/pdf" }
+        ]
+      })
+    );
+    expect(fields).toEqual(["messages.content.document"]);
+    expect((helpers as any).omitProviderRequestBodyFields(body, fields).messages[0].content).toEqual([
+      { type: "text", text: "ping" }
     ]);
   });
 

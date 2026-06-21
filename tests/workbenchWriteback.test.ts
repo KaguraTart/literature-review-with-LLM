@@ -511,6 +511,7 @@ describe("workbench writeback helpers", () => {
       directBrowserAccess: true,
       anthropicDirectBrowserAccess: false,
       pdfInputFileField: "file_url",
+      omitAnthropicDocument: true,
       imageURLFormat: "string"
     })).toEqual({ response_format: { type: "json_object" } });
   });
@@ -894,6 +895,15 @@ describe("workbench writeback helpers", () => {
       },
       expect.objectContaining({ type: "text" })
     ]));
+    const anthropicTextOnlyBody = helpers.bodyForProfile({
+      protocol: "anthropic_messages",
+      model: "model-a",
+      capabilities: { streaming: true },
+      bodyExtra: { omitAnthropicDocument: true }
+    }, messages, "zh-CN", "system", requestInput, false);
+    expect(JSON.stringify(anthropicTextOnlyBody.messages)).not.toContain("application/pdf");
+    expect(anthropicTextOnlyBody.messages[2].content).toBe("second question");
+    expect(anthropicTextOnlyBody).not.toHaveProperty("omitAnthropicDocument");
     expect(anthropicBody).not.toHaveProperty("temperature");
     expect(helpers.bodyForProfile({
       protocol: "anthropic_messages",
@@ -6300,6 +6310,51 @@ describe("workbench writeback helpers", () => {
       file_url: "data:application/pdf;base64,abc123"
     });
     expect(fetchCalls[1].body.input[0].content[0]).not.toHaveProperty("file_data");
+  });
+
+  it("drops Anthropic PDF document input when a compatible workbench endpoint rejects document blocks", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      const content = body.messages?.[0]?.content || [];
+      if (Array.isArray(content) && content.some((part: any) => part?.type === "document")) {
+        return {
+          ok: false,
+          status: 422,
+          text: async () => JSON.stringify({
+            detail: [
+              { type: "unsupported_media_type", loc: ["body", "messages", 0, "content", 0, "source", "media_type"], msg: "Unsupported media_type application/pdf" }
+            ]
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ content: [{ type: "text", text: "ok" }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      id: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      baseURL: "https://router.example/v1",
+      capabilities: { ...providerProfile().capabilities, pdfBase64: true }
+    }, [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "pdf_base64", base64: "abc123", filename: "paper.pdf" }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body.messages[0].content).toEqual(expect.arrayContaining([
+      { type: "document", source: { type: "base64", media_type: "application/pdf", data: "abc123" } },
+      expect.objectContaining({ type: "text" })
+    ]));
+    expect(fetchCalls[1].body.messages[0].content).toBe("hello");
+    expect(fetchCalls[1].body).not.toHaveProperty("omitAnthropicDocument");
   });
 
   it("downgrades Anthropic-compatible optional fields across multiple workbench attempts", async () => {

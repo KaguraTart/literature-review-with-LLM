@@ -799,6 +799,15 @@ function shouldOmitPdfInputFile(profile: ProviderProfile): boolean {
     || isTrueValue(profile.bodyExtra?.dropPdfInputFile);
 }
 
+function shouldOmitAnthropicDocument(profile: ProviderProfile): boolean {
+  return isTrueValue(profile.bodyExtra?.omitAnthropicDocument)
+    || isTrueValue(profile.bodyExtra?.skipAnthropicDocument)
+    || isTrueValue(profile.bodyExtra?.dropAnthropicDocument)
+    || isTrueValue(profile.bodyExtra?.omitPdfDocument)
+    || isTrueValue(profile.bodyExtra?.skipPdfDocument)
+    || isTrueValue(profile.bodyExtra?.dropPdfDocument);
+}
+
 function normalizePdfInputFileField(value: unknown): "file_data" | "file_url" {
   const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]/g, "");
   return normalized === "fileurl" || normalized === "url" ? "file_url" : "file_data";
@@ -849,7 +858,7 @@ function anthropicMessages(request: ModelRequest, fallbackSystem = ""): Array<Re
       }
     });
   }
-  if (request.input?.type === "pdf_base64") {
+  if (request.input?.type === "pdf_base64" && !shouldOmitAnthropicDocument(request.profile)) {
     contentBlocks.push({
       type: "document",
       source: {
@@ -986,6 +995,12 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
     omitPdfInputFile: _omitPdfInputFile,
     skipPdfInputFile: _skipPdfInputFile,
     dropPdfInputFile: _dropPdfInputFile,
+    omitAnthropicDocument: _omitAnthropicDocument,
+    skipAnthropicDocument: _skipAnthropicDocument,
+    dropAnthropicDocument: _dropAnthropicDocument,
+    omitPdfDocument: _omitPdfDocument,
+    skipPdfDocument: _skipPdfDocument,
+    dropPdfDocument: _dropPdfDocument,
     imageURLFormat: _imageURLFormat,
     anthropicTextContentFormat: _anthropicTextContentFormat,
     anthropicTextContent: _anthropicTextContent,
@@ -1092,6 +1107,10 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   if (protocol === "anthropic_messages" && rejectedAnthropicContentField) {
     fields.push(rejectedAnthropicContentField);
   }
+  const rejectedAnthropicDocumentField = rejectedAnthropicMessagesDocumentField(body, detail);
+  if (protocol === "anthropic_messages" && rejectedAnthropicDocumentField) {
+    fields.push(rejectedAnthropicDocumentField);
+  }
   const rejectedImageURLField = rejectedOpenAIChatImageURLField(body, detail);
   if (protocol === "openai_chat" && rejectedImageURLField) {
     fields.push(rejectedImageURLField);
@@ -1152,6 +1171,7 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "tools",
   "tool_choice",
   "messages.content",
+  "messages.content.document",
   "messages.role.system",
   "image_url.url",
   "input_file.file_data",
@@ -1221,6 +1241,7 @@ function normalizeProviderFieldHint(value: string): string {
   if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
   if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
   if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl|(?:^|[^a-z0-9_])image_url(?:[^a-z0-9_]|$)|(?:^|[^a-z0-9_])imageurl(?:[^a-z0-9_]|$)/.test(normalized)) return "image_url.url";
+  if (/messages?(?:\.\d+|\[\d+\])?\.content.*(?:document|source|media_type|mediatype|base64|application\/pdf)|messages?content.*(?:document|source|media_type|mediatype|base64|applicationpdf)|(?:^|[^a-z0-9_])document(?:[^a-z0-9_]|$)/.test(normalized)) return "messages.content.document";
   if (/messages?(?:\.\d+|\[\d+\])?\.content|messages?content/.test(normalized)) return "messages.content";
   if (/messages?(?:\.\d+|\[\d+\])?\.role|messages?role/.test(normalized)) return "messages.role.system";
   return normalized
@@ -1230,6 +1251,7 @@ function normalizeProviderFieldHint(value: string): string {
 
 function providerFallbackFieldPresent(body: Record<string, unknown>, field: string): boolean {
   if (field === "messages.content") return anthropicMessagesHaveStringContent(body);
+  if (field === "messages.content.document") return anthropicMessagesHaveDocumentBlock(body);
   if (field === "messages.role.system") return openAIChatHasSystemMessage(body);
   if (field === "image_url.url") return openAIChatImageURLHasObjectURL(body);
   if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
@@ -1240,6 +1262,7 @@ function providerFallbackFieldPresent(body: Record<string, unknown>, field: stri
 function providerFallbackFieldSupported(body: Record<string, unknown>, field: string, protocol = ""): boolean {
   if (!field) return false;
   if (field === "messages.content") return protocol === "anthropic_messages";
+  if (field === "messages.content.document") return protocol === "anthropic_messages";
   if (field === "messages.role.system") return protocol === "openai_chat";
   if (PROVIDER_FALLBACK_BODY_FIELDS.has(field)) return true;
   return providerFallbackCustomBodyFieldPresent(body, field);
@@ -1262,6 +1285,24 @@ function rejectedAnthropicMessagesContentField(body: Record<string, unknown>, de
 function anthropicMessagesHaveStringContent(body: Record<string, unknown>): boolean {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   return messages.some((message: any) => typeof message?.content === "string");
+}
+
+function rejectedAnthropicMessagesDocumentField(body: Record<string, unknown>, detail: string): string {
+  if (!anthropicMessagesHaveDocumentBlock(body)) return "";
+  if (/messages?(?:[.\[]\d+\]?)*\.?content.*(?:document|source|media_type|media type|base64|application\/pdf)|content block.*document|document.*content block|unsupported document|document.*unsupported|pdf.*(?:unsupported|not supported|invalid)|(?:unsupported|not supported|invalid).*pdf/.test(detail)) {
+    return "messages.content.document";
+  }
+  return "";
+}
+
+function anthropicMessagesHaveDocumentBlock(body: Record<string, unknown>): boolean {
+  return anthropicDocumentBlocks(body).length > 0;
+}
+
+function anthropicDocumentBlocks(body: Record<string, unknown>): Array<Record<string, unknown>> {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.flatMap((message: any) => Array.isArray(message?.content) ? message.content : [])
+    .filter((part: any) => part?.type === "document" && part && typeof part === "object");
 }
 
 function rejectedOpenAIChatImageURLField(body: Record<string, unknown>, detail: string): string {
@@ -1363,6 +1404,10 @@ export function omitProviderRequestBodyFields(body: Record<string, unknown>, fie
       switchAnthropicStringMessagesToTextBlocks(next);
       continue;
     }
+    if (field === "messages.content.document") {
+      removeAnthropicDocumentBlocks(next);
+      continue;
+    }
     delete next[field];
   }
   return next;
@@ -1413,6 +1458,18 @@ function removeOpenAIResponsesInputFiles(body: Record<string, unknown>): void {
     return {
       ...item,
       content: content.filter((part: any) => part?.type !== "input_file")
+    };
+  });
+}
+
+function removeAnthropicDocumentBlocks(body: Record<string, unknown>): void {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message: any) => {
+    const content = Array.isArray(message?.content) ? message.content : null;
+    if (!content) return message;
+    return {
+      ...message,
+      content: content.filter((part: any) => part?.type !== "document")
     };
   });
 }

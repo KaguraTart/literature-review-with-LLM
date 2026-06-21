@@ -581,7 +581,7 @@ async function callAnthropic(summaryRequest, sourceHash) {
       }
     });
   }
-  if (request.input.type === "pdf_base64") {
+  if (request.input.type === "pdf_base64" && !shouldOmitAnthropicDocument(summaryRequest)) {
     content.push({
       type: "document",
       source: {

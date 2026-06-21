@@ -1319,6 +1319,36 @@ describe("bootstrap provider helpers", () => {
     ]);
   });
 
+  it("removes Anthropic document blocks in bootstrap fallback helpers", () => {
+    const { helpers } = loadBootstrapProviderHelpers();
+    const body = {
+      model: "claude-compatible",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: "abc" } },
+            { type: "text", text: "ping" }
+          ]
+        }
+      ]
+    };
+    const fields = (helpers as any).providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      body,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "unsupported_media_type", loc: ["body", "messages", 0, "content", 0, "source", "media_type"], msg: "Unsupported media_type application/pdf" }
+        ]
+      })
+    );
+    expect(fields).toEqual(["messages.content.document"]);
+    expect((helpers as any).omitProviderRequestBodyFields(body, fields).messages[0].content).toEqual([
+      { type: "text", text: "ping" }
+    ]);
+  });
+
   it("omits rejected custom body-extra fields in bootstrap fallback helpers", () => {
     const { helpers } = loadBootstrapProviderHelpers();
     const body = {
@@ -1635,6 +1665,52 @@ describe("bootstrap provider helpers", () => {
       file_url: "data:application/pdf;base64,cGRm"
     });
     expect(fetchCalls[1].body.input[0].content[0]).not.toHaveProperty("file_data");
+  });
+
+  it("drops Anthropic PDF document input when bootstrap Anthropic endpoints reject document blocks", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 422,
+          detail: [
+            { type: "unsupported_media_type", loc: ["body", "messages", 0, "content", 0, "source", "media_type"], msg: "Unsupported media_type application/pdf" }
+          ]
+        },
+        {
+          content: [{ type: "text", text: "text-only summary" }]
+        }
+      ]
+    });
+
+    const result = await helpers.callAnthropic({
+      provider: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://anthropic-router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "claude-compatible",
+      capabilities: { pdfBase64: true, streaming: false },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "pdf_base64", base64: "cGRm", filename: "paper.pdf" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+
+    expect(result.markdown).toBe("text-only summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body.messages[0].content).toEqual(expect.arrayContaining([
+      { type: "document", source: { type: "base64", media_type: "application/pdf", data: "cGRm" } },
+      expect.objectContaining({ type: "text" })
+    ]));
+    expect(fetchCalls[1].body.messages[0].content).toEqual([
+      expect.objectContaining({ type: "text" })
+    ]);
   });
 
   it("falls back when bootstrap provider responses wrap unsupported-parameter errors in HTTP 200 bodies", async () => {

@@ -689,6 +689,31 @@ describe("provider adapters", () => {
     expect(omitProviderRequestBodyFields(anthropicBody, ["messages.content"])).toMatchObject({
       messages: [{ role: "user", content: [{ type: "text", text: "ping" }] }]
     });
+    const anthropicDocumentBody = {
+      model: "claude-compatible",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: "abc" } },
+            { type: "text", text: "ping" }
+          ]
+        }
+      ]
+    };
+    expect(providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      anthropicDocumentBody,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "unsupported_media_type", loc: ["body", "messages", 0, "content", 0, "source", "media_type"], msg: "Unsupported media_type application/pdf" }
+        ]
+      })
+    )).toEqual(["messages.content.document"]);
+    expect((omitProviderRequestBodyFields(anthropicDocumentBody, ["messages.content.document"]).messages as any[])[0].content).toEqual([
+      { type: "text", text: "ping" }
+    ]);
     expect(providerCompatibilityFallbackFields(
       "openai_chat",
       { model: "openai-compatible", messages: [{ role: "user", content: "ping" }] },
@@ -984,6 +1009,7 @@ describe("provider adapters", () => {
           directBrowserAccess: true,
           anthropicDirectBrowserAccess: false,
           pdfInputFileField: "file_url",
+          omitAnthropicDocument: true,
           imageURLFormat: "string",
           anthropicTextContentFormat: "blocks",
           omitFields: ["temperature", "n", "max_tokens"]
@@ -1002,6 +1028,7 @@ describe("provider adapters", () => {
     expect(body).not.toHaveProperty("anthropicDirectBrowserAccess");
     expect(body).not.toHaveProperty("imageURLFormat");
     expect(body).not.toHaveProperty("anthropicTextContentFormat");
+    expect(body).not.toHaveProperty("omitAnthropicDocument");
     expect(body).not.toHaveProperty("omitFields");
     expect(providerBodyExtra(request.profile.bodyExtra)).toEqual({ response_format: { type: "json_object" } });
   });
@@ -1141,6 +1168,16 @@ describe("provider adapters", () => {
     const body = bodyFor(request);
     expect(JSON.stringify(body)).toContain("application/pdf");
     expect(body).not.toHaveProperty("temperature");
+    const textOnlyBody = bodyFor({
+      ...request,
+      profile: {
+        ...request.profile,
+        bodyExtra: { omitAnthropicDocument: true }
+      }
+    });
+    expect(JSON.stringify(textOnlyBody.messages)).not.toContain("application/pdf");
+    expect((textOnlyBody.messages as any[])[0].content).toBe("prompt");
+    expect(textOnlyBody).not.toHaveProperty("omitAnthropicDocument");
     expect(bodyFor({
       ...request,
       profile: {
