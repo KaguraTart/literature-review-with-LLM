@@ -504,6 +504,22 @@ describe("provider adapters", () => {
         }
       })
     )).toEqual(["image_url.url"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      imageBody,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "string_type", loc: ["body", "messages", 0, "content", 1, "image_url"], msg: "Input should be a valid string" }
+        ]
+      })
+    )).toEqual(["image_url.url"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      imageBody,
+      400,
+      "image_url must be a string"
+    )).toEqual(["image_url.url"]);
     const stringImageBody = omitProviderRequestBodyFields(imageBody, ["image_url.url"]);
     expect(((stringImageBody.messages as any[])[0].content as any[])[1]).toEqual({
       type: "image_url",

@@ -1211,7 +1211,7 @@ function normalizeProviderFieldHint(value: string): string {
     .replace(/\[[^\]]+\]/g, "");
   if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
   if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
-  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(normalized)) return "image_url.url";
+  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl|(?:^|[^a-z0-9_])image_url(?:[^a-z0-9_]|$)|(?:^|[^a-z0-9_])imageurl(?:[^a-z0-9_]|$)/.test(normalized)) return "image_url.url";
   if (/messages?(?:\.\d+|\[\d+\])?\.content|messages?content/.test(normalized)) return "messages.content";
   if (/messages?(?:\.\d+|\[\d+\])?\.role|messages?role/.test(normalized)) return "messages.role.system";
   return normalized
@@ -1257,7 +1257,7 @@ function anthropicMessagesHaveStringContent(body: Record<string, unknown>): bool
 
 function rejectedOpenAIChatImageURLField(body: Record<string, unknown>, detail: string): string {
   if (!openAIChatImageURLHasObjectURL(body)) return "";
-  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(detail)) return "image_url.url";
+  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl|(?:^|[^a-z0-9_])image_url(?:[^a-z0-9_]|$)|image url|(?:^|[^a-z0-9_])imageurl(?:[^a-z0-9_]|$)/.test(detail)) return "image_url.url";
   return "";
 }
 

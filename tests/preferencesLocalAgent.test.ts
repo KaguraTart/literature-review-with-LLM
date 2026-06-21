@@ -281,6 +281,36 @@ describe("preferences local-agent config helpers", () => {
     });
   });
 
+  it("converts OpenAI Chat image URL objects to strings in preferences fallback helpers", () => {
+    const body = {
+      model: "router-model",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "describe" },
+            { type: "image_url", image_url: { url: "data:image/png;base64,abc" } }
+          ]
+        }
+      ]
+    };
+    const fields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "string_type", loc: ["body", "messages", 0, "content", 1, "image_url"], msg: "Input should be a valid string" }
+        ]
+      })
+    );
+    expect(fields).toEqual(["image_url.url"]);
+    expect((helpers as any).omitProviderRequestBodyFields(body, fields).messages[0].content[1]).toEqual({
+      type: "image_url",
+      image_url: "data:image/png;base64,abc"
+    });
+  });
+
   it("omits rejected custom body-extra fields in preferences fallback helpers", () => {
     const body = {
       model: "router-model",

@@ -1314,6 +1314,65 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[1].body.messages[0].content).toContain("CONTEXT:\npaper text");
   });
 
+  it("retries workbench OpenAI Chat image requests with string data URLs when routers reject image_url objects", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    (loaded as any).fetch = async (url: string, init: any) => {
+      fetchCalls.push({ url, body: JSON.parse(init.body) });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 422,
+          text: async () => JSON.stringify({
+            detail: [
+              { type: "string_type", loc: ["body", "messages", 1, "content", 1, "image_url"], msg: "Input should be a valid string" }
+            ]
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ choices: [{ message: { content: "image ok" } }] })
+      };
+    };
+
+    const profile = {
+      id: "router",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: false },
+      bodyExtra: {}
+    };
+
+    const response = await loaded.requestModelWithRetry(
+      profile,
+      [{ role: "user", content: "describe" }],
+      "en-US",
+      "system",
+      {
+        type: "text",
+        text: "paper text",
+        images: [{ name: "figure.png", mimeType: "image/png", base64: "abc" }]
+      },
+      false
+    );
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body.messages[1].content[1]).toEqual({
+      type: "image_url",
+      image_url: { url: "data:image/png;base64,abc" }
+    });
+    expect(fetchCalls[1].body.messages[1].content[1]).toEqual({
+      type: "image_url",
+      image_url: "data:image/png;base64,abc"
+    });
+  });
+
   it("retries workbench Responses requests without unsupported instructions and reasoning options", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: Array<{ url: string; body: any }> = [];
