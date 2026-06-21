@@ -2687,6 +2687,28 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[0].body).not.toHaveProperty("omitFields");
 
     await helpers.callAnthropic({
+      provider: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://router.example",
+      apiKey: "routed-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: { systemFallbackToUser: true },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+    expect(fetchCalls[1].body).not.toHaveProperty("system");
+    expect(fetchCalls[1].body.messages[0].content[0].text).toContain("SYSTEM:\nsystem");
+    expect(fetchCalls[1].body.messages[0].content[0].text).toContain("prompt");
+
+    await helpers.callAnthropic({
       provider: "anthropic",
       protocol: "anthropic_messages",
       endpointMode: "base_url",
@@ -2704,7 +2726,7 @@ describe("bootstrap provider helpers", () => {
         stream: false
       }
     }, "hash");
-    expect(fetchCalls[1].url).toBe("https://api.anthropic.com/v1/messages");
+    expect(fetchCalls[2].url).toBe("https://api.anthropic.com/v1/messages");
   });
 
   it("falls back across multiple bootstrap Anthropic-compatible optional-field errors", async () => {

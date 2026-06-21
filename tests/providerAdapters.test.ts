@@ -733,6 +733,21 @@ describe("provider adapters", () => {
       type: "image",
       source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" }
     });
+    const anthropicSystemFallbackBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        protocol: "anthropic_messages",
+        baseURL: "https://router.example",
+        bodyExtra: { systemFallbackToUser: true }
+      },
+      input: imageInput
+    });
+    expect(anthropicSystemFallbackBody).not.toHaveProperty("system");
+    expect((anthropicSystemFallbackBody.messages as any[])[0].content).toContainEqual({
+      type: "text",
+      text: expect.stringContaining("SYSTEM:\nsystem")
+    });
     const anthropicTextBlockBody = bodyFor({
       ...baseRequest,
       profile: {

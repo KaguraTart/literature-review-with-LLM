@@ -784,10 +784,11 @@ function normalizePdfInputFileField(value: unknown): "file_data" | "file_url" {
 }
 
 function anthropicBody(request: ModelRequest): Record<string, unknown> {
+  const systemInUser = isTrueValue(request.profile.bodyExtra?.systemFallbackToUser);
   return withBodyExtra(request.profile, {
     model: request.profile.model,
-    system: request.system,
-    messages: anthropicMessages(request),
+    ...(systemInUser ? {} : { system: request.system }),
+    messages: anthropicMessages(request, systemInUser ? request.system : ""),
     max_tokens: request.maxOutputTokens,
     stream: request.stream && request.profile.capabilities.streaming
   });
@@ -810,11 +811,12 @@ function messagesToText(messages: ChatMessage[], inputText?: string): string {
   return inputText ? `${body}\n\nCONTEXT:\n${inputText}` : body;
 }
 
-function anthropicMessages(request: ModelRequest): Array<Record<string, unknown>> {
+function anthropicMessages(request: ModelRequest, fallbackSystem = ""): Array<Record<string, unknown>> {
   const messages: AnthropicMessage[] = request.messages.map((message) => ({
     role: message.role,
     content: message.content
   }));
+  const systemText = fallbackSystemText(fallbackSystem);
   const contentBlocks: Array<Record<string, unknown>> = [];
   for (const image of inputImages(request)) {
     contentBlocks.push({
@@ -837,15 +839,19 @@ function anthropicMessages(request: ModelRequest): Array<Record<string, unknown>
     });
   }
   const inputText = request.input?.type === "text" ? request.input.text : "";
-  if (!contentBlocks.length && !inputText) return formatAnthropicMessages(mergeConsecutiveAnthropicMessages(messages), request.profile);
+  if (!contentBlocks.length && !inputText) {
+    const nextMessages = systemText ? messagesWithPrependedAnthropicText(messages, systemText) as AnthropicMessage[] : messages;
+    return formatAnthropicMessages(mergeConsecutiveAnthropicMessages(nextMessages), request.profile);
+  }
   const lastUserIndex = findLastIndex(messages, (message) => message.role === "user");
   if (lastUserIndex >= 0) {
     const baseText = String(messages[lastUserIndex].content || "");
-    contentBlocks.push({ type: "text", text: inputText ? `${baseText}\n\nCONTEXT:\n${inputText}` : baseText });
+    const text = [systemText, inputText ? `${baseText}\n\nCONTEXT:\n${inputText}` : baseText].filter(Boolean).join("\n\n");
+    contentBlocks.push({ type: "text", text });
     messages[lastUserIndex] = { role: "user", content: contentBlocks };
     return formatAnthropicMessages(mergeConsecutiveAnthropicMessages(messages), request.profile);
   }
-  contentBlocks.push({ type: "text", text: inputText ? `CONTEXT:\n${inputText}` : "" });
+  contentBlocks.push({ type: "text", text: [systemText, inputText ? `CONTEXT:\n${inputText}` : ""].filter(Boolean).join("\n\n") });
   messages.push({ role: "user", content: contentBlocks });
   return formatAnthropicMessages(mergeConsecutiveAnthropicMessages(messages), request.profile);
 }

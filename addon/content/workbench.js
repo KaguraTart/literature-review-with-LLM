@@ -3571,12 +3571,15 @@ function setPref(key, value) {
 function connectionTestBodyForProfile(profile) {
   const system = "You are a provider connection test endpoint. Reply with pong only.";
   if (profile.protocol === "anthropic_messages") {
+    const systemInUser = isTrueValue(profile?.bodyExtra?.systemFallbackToUser);
     return {
       model: profile.model,
-      system,
+      ...(systemInUser ? {} : { system }),
       max_tokens: 32,
       stream: false,
-      messages: [{ role: "user", content: "ping" }]
+      messages: systemInUser
+        ? messagesWithPrependedAnthropicText([{ role: "user", content: "ping" }], fallbackSystemText(system))
+        : [{ role: "user", content: "ping" }]
     };
   }
   if (profile.protocol === "openai_responses") {
@@ -7188,7 +7191,7 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
   if (profile.protocol === "anthropic_messages") {
     return withProviderBodyDefaults(profile, {
       model: profile.model,
-      system,
+      ...(anthropicSystemInUser ? {} : { system }),
       messages: anthropicMessages(messages, requestInput, baseText, anthropicSystemInUser ? system : "", profile),
       max_tokens: Number(pref("maxOutputTokens")) || 8192,
       stream

@@ -879,6 +879,19 @@ describe("workbench writeback helpers", () => {
       capabilities: { streaming: true },
       bodyExtra: { temperature: 0.2 }
     }, messages, "zh-CN", "system", requestInput, false)).toMatchObject({ temperature: 0.2 });
+    const anthropicSystemFallbackBody = helpers.bodyForProfile({
+      protocol: "anthropic_messages",
+      model: "model-a",
+      capabilities: { streaming: true },
+      bodyExtra: { systemFallbackToUser: true }
+    }, messages, "zh-CN", "system", requestInput, false);
+    expect(anthropicSystemFallbackBody).not.toHaveProperty("system");
+    expect(anthropicSystemFallbackBody.messages[2].content).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining("SYSTEM:\nsystem")
+      })
+    ]));
 
     const anthropicTextBlockBody = helpers.bodyForProfile({
       protocol: "anthropic_messages",
@@ -1091,6 +1104,14 @@ describe("workbench writeback helpers", () => {
       stream: false,
       messages: [{ role: "user", content: "ping" }]
     });
+    const anthropicSystemInUserTestBody = helpers.connectionTestBodyForProfile({
+      protocol: "anthropic_messages",
+      model: "claude-model",
+      bodyExtra: { systemFallbackToUser: true }
+    });
+    expect(anthropicSystemInUserTestBody).not.toHaveProperty("system");
+    expect(anthropicSystemInUserTestBody.messages[0].content).toContain("SYSTEM:\nYou are a provider connection test endpoint");
+    expect(anthropicSystemInUserTestBody.messages[0].content).toContain("ping");
   });
 
   it("validates workbench settings connection responses before marking them usable", () => {

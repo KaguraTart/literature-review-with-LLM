@@ -491,6 +491,19 @@ describe("preferences local-agent config helpers", () => {
       role: "user",
       content: expect.stringContaining("SYSTEM:")
     });
+    const anthropicSystemFallbackRequest = helpers.connectionTestRequestForProfile({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://router.example",
+      apiKey: "anthropic-secret",
+      model: "claude-compatible",
+      capabilities: { streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: { systemFallbackToUser: true }
+    });
+    expect(anthropicSystemFallbackRequest.body).not.toHaveProperty("system");
+    expect(anthropicSystemFallbackRequest.body.messages[0].content).toContain("SYSTEM:\nYou are a provider connection test endpoint");
+    expect(anthropicSystemFallbackRequest.body.messages[0].content).toContain("ping");
 
     const pastedChatEndpointProfile = {
       ...profile,

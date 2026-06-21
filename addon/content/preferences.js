@@ -1879,12 +1879,15 @@ function normalizeModelOptions(modelOptions) {
 function connectionTestBodyForProfile(profile) {
   const system = "You are a provider connection test endpoint. Reply with pong only.";
   if (profile.protocol === "anthropic_messages") {
+    const systemInUser = normalizeBoolean(profile?.bodyExtra?.systemFallbackToUser, false);
     return {
       model: profile.model,
-      system,
+      ...(systemInUser ? {} : { system }),
       max_tokens: 32,
       stream: false,
-      messages: [{ role: "user", content: "ping" }]
+      messages: systemInUser
+        ? messagesWithPrependedAnthropicText([{ role: "user", content: "ping" }], fallbackSystemText(system))
+        : [{ role: "user", content: "ping" }]
     };
   }
   if (profile.protocol === "openai_responses") {

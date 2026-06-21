@@ -592,7 +592,10 @@ async function callAnthropic(summaryRequest, sourceHash) {
   }
   content.push({
     type: "text",
-    text: request.input.type === "text" ? `${request.prompt}\n\n${request.input.text}` : request.prompt
+    text: [
+      isTrueValue(bodyExtra?.systemFallbackToUser) ? fallbackSystemText(request.system) : "",
+      request.input.type === "text" ? `${request.prompt}\n\n${request.input.text}` : request.prompt
+    ].filter(Boolean).join("\n\n")
   });
   const headers = {
     "content-type": "application/json",
@@ -609,7 +612,7 @@ async function callAnthropic(summaryRequest, sourceHash) {
   const messageUrl = endpointMode === "full_url" ? (fullURL || baseURL) : endpointForProtocol("anthropic_messages", baseURL);
   const merged = withProviderBodyDefaults(summaryRequest, {
     model,
-    system: request.system,
+    ...(isTrueValue(bodyExtra?.systemFallbackToUser) ? {} : { system: request.system }),
     messages: [{ role: "user", content }],
     max_tokens: request.maxOutputTokens,
     stream: request.stream
