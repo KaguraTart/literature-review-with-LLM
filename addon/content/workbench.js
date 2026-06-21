@@ -7071,7 +7071,9 @@ function headersForProfile(profile) {
       const authHeader = anthropicAuthHeaderName(profile);
       setHeaderIfMissing(headers, authHeader, authHeader === "authorization" && profile.apiKey ? `Bearer ${profile.apiKey}` : profile.apiKey);
     }
-    setHeaderIfMissing(headers, "anthropic-version", "2023-06-01");
+    if (!shouldOmitAnthropicVersion(profile)) {
+      setHeaderIfMissing(headers, "anthropic-version", "2023-06-01");
+    }
     if (shouldAddAnthropicDirectBrowserAccess(profile)) {
       setHeaderIfMissing(headers, "anthropic-dangerous-direct-browser-access", "true");
     }
@@ -7162,6 +7164,18 @@ function shouldAddAnthropicDirectBrowserAccess(profile) {
   return baseURL === "https://api.anthropic.com" || baseURL.startsWith("https://api.anthropic.com/");
 }
 
+function shouldOmitAnthropicVersion(profile) {
+  return isTrueValue(profile?.bodyExtra?.omitAnthropicVersion)
+    || isTrueValue(profile?.bodyExtra?.skipAnthropicVersion)
+    || isTrueValue(profile?.bodyExtra?.dropAnthropicVersion)
+    || isTrueValue(profile?.bodyExtra?.omitAnthropicVersionHeader)
+    || isTrueValue(profile?.bodyExtra?.skipAnthropicVersionHeader)
+    || isTrueValue(profile?.bodyExtra?.dropAnthropicVersionHeader)
+    || isTrueValue(profile?.omitAnthropicVersion)
+    || isTrueValue(profile?.skipAnthropicVersion)
+    || isTrueValue(profile?.dropAnthropicVersion);
+}
+
 function normalizeAuthHeaderName(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return "";
@@ -7246,6 +7260,12 @@ function providerBodyExtra(bodyExtra) {
     anthropicAuthHeader: _anthropicAuthHeader,
     directBrowserAccess: _directBrowserAccess,
     anthropicDirectBrowserAccess: _anthropicDirectBrowserAccess,
+    omitAnthropicVersion: _omitAnthropicVersion,
+    skipAnthropicVersion: _skipAnthropicVersion,
+    dropAnthropicVersion: _dropAnthropicVersion,
+    omitAnthropicVersionHeader: _omitAnthropicVersionHeader,
+    skipAnthropicVersionHeader: _skipAnthropicVersionHeader,
+    dropAnthropicVersionHeader: _dropAnthropicVersionHeader,
     tokenLimitField: _tokenLimitField,
     openAIChatTokenField: _openAIChatTokenField,
     chatTokenField: _chatTokenField,
@@ -7614,6 +7634,7 @@ function providerOkResponseLooksLikeFallbackError(body, text, protocol = "") {
   const parsed = safeParseJSON(text);
   if (!parsed) return false;
   if (streamErrorText(parsed)) return true;
+  if (protocol === "anthropic_messages" && rejectedAnthropicVersionHeader(String(text || "").toLowerCase())) return true;
   if (!providerStructuredUnsupportedFields(body, text, protocol).length) return false;
   return /unsupported|unrecognized|not supported|unknown (?:field|parameter|argument)|extra_forbidden|not permitted|invalid|forbidden/.test(String(text || "").toLowerCase());
 }
@@ -7707,6 +7728,9 @@ function providerUnsupportedOptionalFields(protocol, body, text, usedFallback = 
   }
   if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
     fields.push("tool_choice");
+  }
+  if (protocol === "anthropic_messages" && rejectedAnthropicVersionHeader(detail)) {
+    fields.push("headers.anthropic-version");
   }
   const rejectedAnthropicContentField = rejectedAnthropicMessagesContentField(body, detail);
   if (protocol === "anthropic_messages" && rejectedAnthropicContentField) {
@@ -7842,6 +7866,11 @@ function rejectedAnthropicMessagesContentField(body, detail) {
   return "";
 }
 
+function rejectedAnthropicVersionHeader(detail) {
+  return /anthropic[-_\s]?version|headers?[.\s_-]*anthropic[-_\s]?version|unknown header|unsupported header|invalid header|not allowed header|forbidden header/.test(detail)
+    && /anthropic[-_\s]?version/.test(detail);
+}
+
 function anthropicMessagesHaveStringContent(body) {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   return messages.some((message) => typeof message?.content === "string");
@@ -7962,6 +7991,10 @@ function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = 
   if (fields.includes("messages.content.document")) {
     nextExtra.omitAnthropicDocument = true;
     removeFromArray(omitFields, "messages.content.document");
+  }
+  if (fields.includes("headers.anthropic-version")) {
+    nextExtra.omitAnthropicVersion = true;
+    removeFromArray(omitFields, "headers.anthropic-version");
   }
   return mergeProviderBodyOmitFields(nextExtra, omitFields);
 }

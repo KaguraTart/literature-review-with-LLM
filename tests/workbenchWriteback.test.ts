@@ -510,6 +510,7 @@ describe("workbench writeback helpers", () => {
       subagent: { endpoint: "http://127.0.0.1:3335/mcp" },
       directBrowserAccess: true,
       anthropicDirectBrowserAccess: false,
+      omitAnthropicVersion: true,
       pdfInputFileField: "file_url",
       omitAnthropicDocument: true,
       imageURLFormat: "string"
@@ -2144,6 +2145,13 @@ describe("workbench writeback helpers", () => {
       customHeaders: {},
       bodyExtra: { directBrowserAccess: false }
     })).not.toHaveProperty("anthropic-dangerous-direct-browser-access");
+    expect(helpers.headersForProfile({
+      protocol: "anthropic_messages",
+      baseURL: "https://anthropic-router.example/v1",
+      apiKey: "routed-secret",
+      customHeaders: {},
+      bodyExtra: { authHeader: "authorization", omitAnthropicVersion: true }
+    })).not.toHaveProperty("anthropic-version");
   });
 
   it("flushes the final workbench stream event without a trailing newline", async () => {
@@ -6355,6 +6363,42 @@ describe("workbench writeback helpers", () => {
     ]));
     expect(fetchCalls[1].body.messages[0].content).toBe("hello");
     expect(fetchCalls[1].body).not.toHaveProperty("omitAnthropicDocument");
+  });
+
+  it("retries workbench Anthropic requests without version headers when a router rejects them", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      fetchCalls.push({ headers: init.headers, body: JSON.parse(init.body) });
+      if (init.headers?.["anthropic-version"]) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({ error: { message: "Unsupported header: anthropic-version" } })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ content: [{ type: "text", text: "ok" }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      id: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      baseURL: "https://router.example/v1",
+      capabilities: { ...providerProfile().capabilities, pdfBase64: false }
+    }, [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "text", text: "context" }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].headers).toMatchObject({ "anthropic-version": "2023-06-01" });
+    expect(fetchCalls[1].headers).not.toHaveProperty("anthropic-version");
+    expect(fetchCalls[1].body).not.toHaveProperty("omitAnthropicVersion");
   });
 
   it("downgrades Anthropic-compatible optional fields across multiple workbench attempts", async () => {

@@ -254,6 +254,7 @@ describe("preferences local-agent config helpers", () => {
       subagent: { endpoint: "http://127.0.0.1:3335/mcp" },
       directBrowserAccess: true,
       anthropicDirectBrowserAccess: false,
+      omitAnthropicVersion: true,
       pdfInputFileField: "file_url",
       omitAnthropicDocument: true,
       imageURLFormat: "string",
@@ -280,6 +281,12 @@ describe("preferences local-agent config helpers", () => {
     expect((helpers as any).omitProviderRequestBodyFields(body, fields)).toMatchObject({
       messages: [{ role: "user", content: [{ type: "text", text: "ping" }] }]
     });
+    expect((helpers as any).providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      body,
+      400,
+      "Unsupported header: anthropic-version"
+    )).toEqual(["headers.anthropic-version"]);
   });
 
   it("converts OpenAI Chat image URL objects to strings in preferences fallback helpers", () => {
@@ -838,6 +845,14 @@ describe("preferences local-agent config helpers", () => {
       customHeaders: {},
       bodyExtra: { directBrowserAccess: false }
     })).not.toHaveProperty("anthropic-dangerous-direct-browser-access");
+    expect(helpers.headersForProfile({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://anthropic-router.example/v1",
+      apiKey: "routed-secret",
+      customHeaders: {},
+      bodyExtra: { authHeader: "authorization", omitAnthropicVersion: true }
+    })).not.toHaveProperty("anthropic-version");
     expect(helpers.profileHasUsableAuth({
       protocol: "openai_chat",
       endpointMode: "base_url",
@@ -1840,7 +1855,7 @@ describe("preferences local-agent config helpers", () => {
     }, "en-US");
 
     expect(guide).toContain("Protocol: Anthropic Messages");
-    expect(guide).toContain("Auth: API key is sent as Authorization: Bearer.");
+    expect(guide).toContain("Auth: API key is sent as Authorization: Bearer; anthropic-version is included.");
     expect(guide).toContain("SAMBANOVA_ANTHROPIC_API_KEY=...");
     expect(guide).toContain("SAMBANOVA_ANTHROPIC_MODEL=Meta-Llama-3.1-8B-Instruct");
     expect(guide).toContain("--include sambanova-anthropic");
@@ -2454,6 +2469,36 @@ describe("preferences local-agent config helpers", () => {
     expect(retriedBody).toMatchObject({ max_tokens: 32 });
     expect(retriedBody.messages[0].content).toContain("SYSTEM:\nYou are a provider connection test endpoint");
     expect(retriedBody.messages[0].content).toContain("ping");
+    expect(elements.get("zms-status").value).toBe("Connection OK");
+  });
+
+  it("retries settings connection tests without Anthropic version headers when rejected", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      initialModel: "claude-compatible",
+      fetchResponses: [
+        {
+          __fetchOk: false,
+          __fetchStatus: 400,
+          __fetchBody: {
+            error: {
+              message: "Unsupported header: anthropic-version"
+            }
+          }
+        },
+        { content: [{ type: "text", text: "pong" }] }
+      ]
+    });
+    elements.get("zms-provider").value = "anthropic_compatible";
+    elements.get("zms-activeProfileId").value = "anthropic-compatible";
+    elements.get("zms-profileName").value = "Anthropic Compatible";
+    elements.get("zms-profileProtocol").value = "anthropic_messages";
+    elements.get("zms-baseURL").value = "https://router.example";
+
+    await controller.testConnection();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].init.headers).toMatchObject({ "anthropic-version": "2023-06-01" });
+    expect(fetchCalls[1].init.headers).not.toHaveProperty("anthropic-version");
     expect(elements.get("zms-status").value).toBe("Connection OK");
   });
 

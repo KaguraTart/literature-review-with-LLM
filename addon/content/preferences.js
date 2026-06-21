@@ -724,7 +724,9 @@ function headersForProfile(profile) {
       const authHeader = anthropicAuthHeaderName(profile);
       setHeaderIfMissing(headers, authHeader, authHeader === "authorization" && profile.apiKey ? `Bearer ${profile.apiKey}` : profile.apiKey);
     }
-    setHeaderIfMissing(headers, "anthropic-version", "2023-06-01");
+    if (!shouldOmitAnthropicVersion(profile)) {
+      setHeaderIfMissing(headers, "anthropic-version", "2023-06-01");
+    }
     if (shouldAddAnthropicDirectBrowserAccess(profile)) {
       setHeaderIfMissing(headers, "anthropic-dangerous-direct-browser-access", "true");
     }
@@ -768,6 +770,14 @@ function withoutBlankHeaders(headers) {
   return headers;
 }
 
+function providerRequestHeadersWithFallback(headers, fields) {
+  if (!Array.isArray(fields) || !fields.includes("headers.anthropic-version")) return headers;
+  const next = { ...(headers || {}) };
+  const key = headerKey(next, "anthropic-version");
+  if (key) delete next[key];
+  return next;
+}
+
 function usesAzureOpenAIAuth(profile) {
   const id = String(profile?.id || "").toLowerCase();
   const baseURL = String(profile?.baseURL || "");
@@ -802,6 +812,18 @@ function shouldAddAnthropicDirectBrowserAccess(profile) {
   if (explicit === true || String(explicit).toLowerCase() === "true") return true;
   const baseURL = String(profile?.baseURL || "").replace(/\/+$/, "");
   return baseURL === "https://api.anthropic.com" || baseURL.startsWith("https://api.anthropic.com/");
+}
+
+function shouldOmitAnthropicVersion(profile) {
+  return isTrueValue(profile?.bodyExtra?.omitAnthropicVersion)
+    || isTrueValue(profile?.bodyExtra?.skipAnthropicVersion)
+    || isTrueValue(profile?.bodyExtra?.dropAnthropicVersion)
+    || isTrueValue(profile?.bodyExtra?.omitAnthropicVersionHeader)
+    || isTrueValue(profile?.bodyExtra?.skipAnthropicVersionHeader)
+    || isTrueValue(profile?.bodyExtra?.dropAnthropicVersionHeader)
+    || isTrueValue(profile?.omitAnthropicVersion)
+    || isTrueValue(profile?.skipAnthropicVersion)
+    || isTrueValue(profile?.dropAnthropicVersion);
 }
 
 function normalizeAuthHeaderName(value) {
@@ -915,13 +937,19 @@ function providerAuthGuide(profile, provider, zh = false) {
     return zh ? "本地接口；通常不需要 API Key，若网关要求可填写。" : "Local endpoint; API key is usually optional unless your gateway requires one.";
   }
   if (provider === "anthropic") {
-    return zh ? "API Key 会作为 x-api-key 发送，并自动附带 anthropic-version。" : "API key is sent as x-api-key with anthropic-version.";
+    if (shouldOmitAnthropicVersion(profile)) {
+      return zh ? "API Key 会作为 x-api-key 发送；已关闭 anthropic-version header。" : "API key is sent as x-api-key; anthropic-version is disabled.";
+    }
+    return zh ? "API Key 会作为 x-api-key 发送，并附带 anthropic-version。" : "API key is sent as x-api-key with anthropic-version.";
   }
   if (profile.protocol === "anthropic_messages") {
     const header = normalizeAuthHeaderName(profile?.bodyExtra?.authHeader || profile?.bodyExtra?.anthropicAuthHeader) || "authorization";
-    return header === "x-api-key"
-      ? (zh ? "API Key 会作为 x-api-key 发送。" : "API key is sent as x-api-key.")
-      : (zh ? "API Key 会作为 Authorization: Bearer 发送。" : "API key is sent as Authorization: Bearer.");
+    const versionText = shouldOmitAnthropicVersion(profile)
+      ? (zh ? "；不附带 anthropic-version。" : "; anthropic-version is disabled.")
+      : (zh ? "；会附带 anthropic-version。" : "; anthropic-version is included.");
+    return (header === "x-api-key"
+      ? (zh ? "API Key 会作为 x-api-key 发送" : "API key is sent as x-api-key")
+      : (zh ? "API Key 会作为 Authorization: Bearer 发送" : "API key is sent as Authorization: Bearer")) + versionText;
   }
   if (provider === "azure_openai") {
     return zh ? "默认使用 Bearer；如 Azure 网关要求 api-key，请在自定义 Headers JSON 填写 api-key。" : "Uses Bearer by default; if your Azure gateway requires api-key, set it in Custom headers JSON.";
@@ -1194,11 +1222,12 @@ function connectionTestRequestForProfile(profile) {
 
 async function runProviderConnectionTest(profile, request) {
   let body = request.body;
+  let headers = request.headers;
   const usedFallbackFields = [];
   let lastResponse = null;
   let lastText = "";
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    const response = await fetch(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(body) });
+    const response = await fetch(request.url, { method: "POST", headers, body: JSON.stringify(body) });
     const text = await response.text();
     lastResponse = response;
     lastText = text;
@@ -1207,6 +1236,7 @@ async function runProviderConnectionTest(profile, request) {
     if (!fallbackFields.length) return { response, text };
     usedFallbackFields.push(...fallbackFields);
     body = omitProviderRequestBodyFields(body, fallbackFields, usedFallbackFields);
+    headers = providerRequestHeadersWithFallback(headers, fallbackFields);
   }
   return { response: lastResponse, text: lastText };
 }
@@ -1935,6 +1965,12 @@ function providerBodyExtra(bodyExtra) {
     anthropicAuthHeader: _anthropicAuthHeader,
     directBrowserAccess: _directBrowserAccess,
     anthropicDirectBrowserAccess: _anthropicDirectBrowserAccess,
+    omitAnthropicVersion: _omitAnthropicVersion,
+    skipAnthropicVersion: _skipAnthropicVersion,
+    dropAnthropicVersion: _dropAnthropicVersion,
+    omitAnthropicVersionHeader: _omitAnthropicVersionHeader,
+    skipAnthropicVersionHeader: _skipAnthropicVersionHeader,
+    dropAnthropicVersionHeader: _dropAnthropicVersionHeader,
     tokenLimitField: _tokenLimitField,
     openAIChatTokenField: _openAIChatTokenField,
     chatTokenField: _chatTokenField,
@@ -2086,6 +2122,9 @@ function providerCompatibilityFallbackFields(protocol, body, status, text, usedF
   if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
     fields.push("tool_choice");
   }
+  if (protocol === "anthropic_messages" && rejectedAnthropicVersionHeader(detail)) {
+    fields.push("headers.anthropic-version");
+  }
   const rejectedAnthropicContentField = rejectedAnthropicMessagesContentField(body, detail);
   if (protocol === "anthropic_messages" && rejectedAnthropicContentField) {
     fields.push(rejectedAnthropicContentField);
@@ -2120,6 +2159,7 @@ function providerOkResponseLooksLikeFallbackError(body, text, protocol = "") {
   const parsed = safeParseJSON(text);
   if (!parsed) return false;
   if (providerResponseErrorDetail(parsed)) return true;
+  if (protocol === "anthropic_messages" && rejectedAnthropicVersionHeader(String(text || "").toLowerCase())) return true;
   if (!providerStructuredUnsupportedFields(body, text, protocol).length) return false;
   return /unsupported|unrecognized|not supported|unknown (?:field|parameter|argument)|extra_forbidden|not permitted|invalid|forbidden/.test(String(text || "").toLowerCase());
 }
@@ -2225,6 +2265,11 @@ function rejectedAnthropicMessagesContentField(body, detail) {
     return "messages.content";
   }
   return "";
+}
+
+function rejectedAnthropicVersionHeader(detail) {
+  return /anthropic[-_\s]?version|headers?[.\s_-]*anthropic[-_\s]?version|unknown header|unsupported header|invalid header|not allowed header|forbidden header/.test(detail)
+    && /anthropic[-_\s]?version/.test(detail);
 }
 
 function anthropicMessagesHaveStringContent(body) {
@@ -3356,6 +3401,10 @@ function normalizeBoolean(value, fallback = false) {
     if (["false", "no", "off"].includes(lowered)) return false;
   }
   return fallback;
+}
+
+function isTrueValue(value) {
+  return value === true || String(value || "").trim().toLowerCase() === "true";
 }
 
 function jsonObjectFromTextarea(id, controller) {

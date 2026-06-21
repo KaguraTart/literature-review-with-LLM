@@ -683,6 +683,19 @@ describe("provider adapters", () => {
     expect(providerCompatibilityFallbackFields(
       "anthropic_messages",
       anthropicBody,
+      400,
+      "Unsupported header: anthropic-version"
+    )).toEqual(["headers.anthropic-version"]);
+    expect(providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      anthropicBody,
+      200,
+      JSON.stringify({ error: { message: "Unsupported header: anthropic-version" } })
+    )).toEqual(["headers.anthropic-version"]);
+    expect(omitProviderRequestBodyFields(anthropicBody, ["headers.anthropic-version"])).toEqual(anthropicBody);
+    expect(providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      anthropicBody,
       422,
       JSON.stringify({
         detail: [
@@ -999,6 +1012,22 @@ describe("provider adapters", () => {
       customHeaders: {},
       bodyExtra: { directBrowserAccess: false }
     })).not.toHaveProperty("anthropic-dangerous-direct-browser-access");
+    expect(headersFor({
+      ...profile,
+      protocol: "anthropic_messages",
+      baseURL: "https://anthropic-router.example/v1",
+      apiKey: "routed-secret",
+      customHeaders: {},
+      bodyExtra: { authHeader: "authorization", omitAnthropicVersion: true }
+    })).toMatchObject({ authorization: "Bearer routed-secret" });
+    expect(headersFor({
+      ...profile,
+      protocol: "anthropic_messages",
+      baseURL: "https://anthropic-router.example/v1",
+      apiKey: "routed-secret",
+      customHeaders: {},
+      bodyExtra: { authHeader: "authorization", omitAnthropicVersion: true }
+    })).not.toHaveProperty("anthropic-version");
   });
 
   it("does not leak local-agent config into provider request bodies", () => {
@@ -1014,6 +1043,7 @@ describe("provider adapters", () => {
           authHeader: "authorization",
           directBrowserAccess: true,
           anthropicDirectBrowserAccess: false,
+          omitAnthropicVersion: true,
           pdfInputFileField: "file_url",
           omitAnthropicDocument: true,
           imageURLFormat: "string",
@@ -1032,6 +1062,7 @@ describe("provider adapters", () => {
     expect(body).not.toHaveProperty("subagent");
     expect(body).not.toHaveProperty("directBrowserAccess");
     expect(body).not.toHaveProperty("anthropicDirectBrowserAccess");
+    expect(body).not.toHaveProperty("omitAnthropicVersion");
     expect(body).not.toHaveProperty("imageURLFormat");
     expect(body).not.toHaveProperty("anthropicTextContentFormat");
     expect(body).not.toHaveProperty("omitAnthropicDocument");

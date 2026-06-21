@@ -2966,6 +2966,44 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[2].body).not.toHaveProperty("stream");
   });
 
+  it("retries bootstrap Anthropic requests without version headers when a router rejects them", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 400,
+          error: { message: "Unsupported header: anthropic-version" }
+        },
+        {
+          content: [{ type: "text", text: "anthropic header fallback summary" }]
+        }
+      ]
+    });
+
+    const result = await helpers.callAnthropic({
+      provider: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "routed-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+
+    expect(result.markdown).toBe("anthropic header fallback summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].headers).toMatchObject({ "anthropic-version": "2023-06-01" });
+    expect(fetchCalls[1].headers).not.toHaveProperty("anthropic-version");
+  });
+
   it("extracts wrapped Anthropic usage metadata in direct summaries", async () => {
     const { helpers } = loadBootstrapProviderHelpers({
       payload: {
