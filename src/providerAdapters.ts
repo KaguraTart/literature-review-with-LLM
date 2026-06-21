@@ -834,17 +834,17 @@ function anthropicMessages(request: ModelRequest): Array<Record<string, unknown>
     });
   }
   const inputText = request.input?.type === "text" ? request.input.text : "";
-  if (!contentBlocks.length && !inputText) return mergeConsecutiveAnthropicMessages(messages);
+  if (!contentBlocks.length && !inputText) return formatAnthropicMessages(mergeConsecutiveAnthropicMessages(messages), request.profile);
   const lastUserIndex = findLastIndex(messages, (message) => message.role === "user");
   if (lastUserIndex >= 0) {
     const baseText = String(messages[lastUserIndex].content || "");
     contentBlocks.push({ type: "text", text: inputText ? `${baseText}\n\nCONTEXT:\n${inputText}` : baseText });
     messages[lastUserIndex] = { role: "user", content: contentBlocks };
-    return mergeConsecutiveAnthropicMessages(messages);
+    return formatAnthropicMessages(mergeConsecutiveAnthropicMessages(messages), request.profile);
   }
   contentBlocks.push({ type: "text", text: inputText ? `CONTEXT:\n${inputText}` : "" });
   messages.push({ role: "user", content: contentBlocks });
-  return mergeConsecutiveAnthropicMessages(messages);
+  return formatAnthropicMessages(mergeConsecutiveAnthropicMessages(messages), request.profile);
 }
 
 function inputImages(request: ModelRequest): Array<{ name?: string; mimeType: string; base64: string }> {
@@ -868,6 +868,20 @@ function openAIChatImagePart(image: { mimeType?: string; base64?: string }, prof
 function openAIChatImageURLFormat(value: unknown): "object" | "string" {
   const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]+/g, "");
   return normalized === "string" || normalized === "dataurl" || normalized === "urlstring" ? "string" : "object";
+}
+
+function formatAnthropicMessages(messages: AnthropicMessage[], profile: ProviderProfile): AnthropicMessage[] {
+  if (anthropicTextContentFormat(profile.bodyExtra?.anthropicTextContentFormat ?? profile.bodyExtra?.anthropicTextContent) !== "blocks") {
+    return messages;
+  }
+  return messages.map((message) => typeof message.content === "string"
+    ? { ...message, content: [{ type: "text", text: message.content }] }
+    : message);
+}
+
+function anthropicTextContentFormat(value: unknown): "string" | "blocks" {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]+/g, "");
+  return normalized === "block" || normalized === "blocks" || normalized === "array" || normalized === "contentblocks" || normalized === "textblocks" ? "blocks" : "string";
 }
 
 function mergeConsecutiveAnthropicMessages(messages: AnthropicMessage[]): AnthropicMessage[] {
@@ -940,6 +954,8 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
     systemFallbackToUser: _systemFallbackToUser,
     pdfInputFileField: _pdfInputFileField,
     imageURLFormat: _imageURLFormat,
+    anthropicTextContentFormat: _anthropicTextContentFormat,
+    anthropicTextContent: _anthropicTextContent,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,
@@ -950,10 +966,10 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
 }
 
 export function providerCompatibilityFallbackFields(protocol: string, body: Record<string, unknown>, status: number, text: string, usedFallback: boolean | string[] = false): string[] {
-  if (usedFallback === true || !["openai_chat", "openai_responses", "anthropic_messages"].includes(protocol) || !providerFallbackEligibleStatus(body, status, text)) return [];
+  if (usedFallback === true || !["openai_chat", "openai_responses", "anthropic_messages"].includes(protocol) || !providerFallbackEligibleStatus(body, status, text, protocol)) return [];
   const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
   const detail = String(text || "").toLowerCase();
-  const fields: string[] = providerStructuredUnsupportedFields(body, text);
+  const fields: string[] = providerStructuredUnsupportedFields(body, text, protocol);
   if (body?.stream_options !== undefined && /stream_options|stream options|stream option/.test(detail)) {
     fields.push("stream_options");
   }
@@ -1039,6 +1055,10 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
     fields.push("tool_choice");
   }
+  const rejectedAnthropicContentField = rejectedAnthropicMessagesContentField(body, detail);
+  if (protocol === "anthropic_messages" && rejectedAnthropicContentField) {
+    fields.push(rejectedAnthropicContentField);
+  }
   const rejectedImageURLField = rejectedOpenAIChatImageURLField(body, detail);
   if (protocol === "openai_chat" && rejectedImageURLField) {
     fields.push(rejectedImageURLField);
@@ -1050,18 +1070,18 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
 }
 
-function providerFallbackEligibleStatus(body: Record<string, unknown>, status: number, text: string): boolean {
+function providerFallbackEligibleStatus(body: Record<string, unknown>, status: number, text: string, protocol = ""): boolean {
   const numericStatus = Number(status);
   if (numericStatus === 400 || numericStatus === 422) return true;
   if (numericStatus !== 200) return false;
-  return providerOkResponseLooksLikeFallbackError(body, text);
+  return providerOkResponseLooksLikeFallbackError(body, text, protocol);
 }
 
-function providerOkResponseLooksLikeFallbackError(body: Record<string, unknown>, text: string): boolean {
+function providerOkResponseLooksLikeFallbackError(body: Record<string, unknown>, text: string, protocol = ""): boolean {
   const parsed = safeParseJSON(text);
   if (!parsed) return false;
   if (streamErrorText(parsed)) return true;
-  if (!providerStructuredUnsupportedFields(body, text).length) return false;
+  if (!providerStructuredUnsupportedFields(body, text, protocol).length) return false;
   return /unsupported|unrecognized|not supported|unknown (?:field|parameter|argument)|extra_forbidden|not permitted|invalid|forbidden/.test(String(text || "").toLowerCase());
 }
 
@@ -1094,19 +1114,20 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "stop_sequences",
   "tools",
   "tool_choice",
+  "messages.content",
   "image_url.url",
   "input_file.file_data",
   "input_file.file_url"
 ]);
 
-function providerStructuredUnsupportedFields(body: Record<string, unknown>, text: string): string[] {
+function providerStructuredUnsupportedFields(body: Record<string, unknown>, text: string, protocol = ""): string[] {
   const parsed = safeParseJSON(text);
   if (!parsed) return [];
   const hints: string[] = [];
   collectProviderFieldHints(parsed, hints);
   return hints
     .map((value) => normalizeProviderFieldHint(value))
-    .filter((field) => field && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && providerFallbackFieldPresent(body, field));
+    .filter((field) => field && (protocol === "anthropic_messages" || field !== "messages.content") && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && providerFallbackFieldPresent(body, field));
 }
 
 function collectProviderFieldHints(value: unknown, hints: string[]): void {
@@ -1127,8 +1148,24 @@ function collectProviderFieldHintValue(value: unknown, hints: string[]): void {
     return;
   }
   if (Array.isArray(value)) {
+    const path = providerFieldHintArrayPath(value);
+    if (path) hints.push(path);
     for (const item of value) collectProviderFieldHintValue(item, hints);
   }
+}
+
+function providerFieldHintArrayPath(value: unknown[]): string {
+  let path = "";
+  for (const item of value) {
+    if (typeof item === "number" || (typeof item === "string" && /^\d+$/.test(item))) {
+      path += `[${item}]`;
+      continue;
+    }
+    if (typeof item !== "string" || !item.trim()) return "";
+    const text = item.trim();
+    path += path ? `.${text}` : text;
+  }
+  return path.includes(".") || path.includes("[") ? path : "";
 }
 
 function isProviderFieldHintKey(key: string): boolean {
@@ -1145,16 +1182,31 @@ function normalizeProviderFieldHint(value: string): string {
   if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
   if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
   if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(normalized)) return "image_url.url";
+  if (/messages?(?:\.\d+|\[\d+\])?\.content|messages?content/.test(normalized)) return "messages.content";
   return normalized
     .split(".")[0]
     .trim();
 }
 
 function providerFallbackFieldPresent(body: Record<string, unknown>, field: string): boolean {
+  if (field === "messages.content") return anthropicMessagesHaveStringContent(body);
   if (field === "image_url.url") return openAIChatImageURLHasObjectURL(body);
   if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
   if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
   return body?.[field] !== undefined;
+}
+
+function rejectedAnthropicMessagesContentField(body: Record<string, unknown>, detail: string): string {
+  if (!anthropicMessagesHaveStringContent(body)) return "";
+  if (/messages?(?:[.\[]\d+\]?)*\.?content|message content|content.*(?:array|list|block)|(?:array|list|block).*content|valid list|list_type/.test(detail)) {
+    return "messages.content";
+  }
+  return "";
+}
+
+function anthropicMessagesHaveStringContent(body: Record<string, unknown>): boolean {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message: any) => typeof message?.content === "string");
 }
 
 function rejectedOpenAIChatImageURLField(body: Record<string, unknown>, detail: string): string {
@@ -1227,9 +1279,20 @@ export function omitProviderRequestBodyFields(body: Record<string, unknown>, fie
       switchOpenAIChatImageURLToString(next);
       continue;
     }
+    if (field === "messages.content") {
+      switchAnthropicStringMessagesToTextBlocks(next);
+      continue;
+    }
     delete next[field];
   }
   return next;
+}
+
+function switchAnthropicStringMessagesToTextBlocks(body: Record<string, unknown>): void {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message: any) => typeof message?.content === "string"
+    ? { ...message, content: [{ type: "text", text: message.content }] }
+    : message);
 }
 
 function switchOpenAIChatImageURLToString(body: Record<string, unknown>): void {

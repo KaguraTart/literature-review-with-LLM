@@ -88,6 +88,7 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "stop_sequences",
   "tools",
   "tool_choice",
+  "messages.content",
   "image_url.url",
   "input_file.file_data",
   "input_file.file_url"
@@ -7164,7 +7165,7 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
     return withProviderBodyDefaults(profile, {
       model: profile.model,
       system,
-      messages: anthropicMessages(messages, requestInput, baseText, anthropicSystemInUser ? system : ""),
+      messages: anthropicMessages(messages, requestInput, baseText, anthropicSystemInUser ? system : "", profile),
       max_tokens: Number(pref("maxOutputTokens")) || 8192,
       stream
     });
@@ -7225,6 +7226,8 @@ function providerBodyExtra(bodyExtra) {
     systemFallbackToUser: _systemFallbackToUser,
     pdfInputFileField: _pdfInputFileField,
     imageURLFormat: _imageURLFormat,
+    anthropicTextContentFormat: _anthropicTextContentFormat,
+    anthropicTextContent: _anthropicTextContent,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,
@@ -7472,8 +7475,8 @@ async function requestModelWithRetry(profile, messages, outputLanguage, systemPr
 
 function providerCompatibilityFallback(profile, body, status, text, usedFallback, streamEnabled) {
   if (!["openai_chat", "openai_responses", "anthropic_messages"].includes(profile?.protocol)) return null;
-  if (!providerFallbackEligibleStatus(body, status, text)) return null;
-  const fields = providerUnsupportedOptionalFields(body, text, usedFallback);
+  if (!providerFallbackEligibleStatus(body, status, text, profile?.protocol)) return null;
+  const fields = providerUnsupportedOptionalFields(profile?.protocol, body, text, usedFallback);
   if (!fields.length) return null;
   const nextUsedFields = Array.from(new Set([...(Array.isArray(usedFallback) ? usedFallback : []), ...fields]));
   return {
@@ -7533,26 +7536,26 @@ function responseFromText(response, text) {
   };
 }
 
-function providerFallbackEligibleStatus(body, status, text) {
+function providerFallbackEligibleStatus(body, status, text, protocol = "") {
   const numericStatus = Number(status);
   if (numericStatus === 400 || numericStatus === 422) return true;
   if (numericStatus !== 200) return false;
-  return providerOkResponseLooksLikeFallbackError(body, text);
+  return providerOkResponseLooksLikeFallbackError(body, text, protocol);
 }
 
-function providerOkResponseLooksLikeFallbackError(body, text) {
+function providerOkResponseLooksLikeFallbackError(body, text, protocol = "") {
   const parsed = safeParseJSON(text);
   if (!parsed) return false;
   if (streamErrorText(parsed)) return true;
-  if (!providerStructuredUnsupportedFields(body, text).length) return false;
+  if (!providerStructuredUnsupportedFields(body, text, protocol).length) return false;
   return /unsupported|unrecognized|not supported|unknown (?:field|parameter|argument)|extra_forbidden|not permitted|invalid|forbidden/.test(String(text || "").toLowerCase());
 }
 
-function providerUnsupportedOptionalFields(body, text, usedFallback = []) {
+function providerUnsupportedOptionalFields(protocol, body, text, usedFallback = []) {
   if (usedFallback === true) return [];
   const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
   const detail = String(text || "").toLowerCase();
-  const fields = providerStructuredUnsupportedFields(body, text);
+  const fields = providerStructuredUnsupportedFields(body, text, protocol);
   if (body?.stream_options !== undefined && /stream_options|stream options|stream option/.test(detail)) {
     fields.push("stream_options");
   }
@@ -7638,25 +7641,29 @@ function providerUnsupportedOptionalFields(body, text, usedFallback = []) {
   if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
     fields.push("tool_choice");
   }
+  const rejectedAnthropicContentField = rejectedAnthropicMessagesContentField(body, detail);
+  if (protocol === "anthropic_messages" && rejectedAnthropicContentField) {
+    fields.push(rejectedAnthropicContentField);
+  }
   const rejectedImageURLField = rejectedOpenAIChatImageURLField(body, detail);
-  if (rejectedImageURLField) {
+  if (protocol === "openai_chat" && rejectedImageURLField) {
     fields.push(rejectedImageURLField);
   }
   const rejectedPDFField = rejectedOpenAIResponsesPdfFileField(body, detail);
-  if (rejectedPDFField) {
+  if (protocol === "openai_responses" && rejectedPDFField) {
     fields.push(rejectedPDFField);
   }
   return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
 }
 
-function providerStructuredUnsupportedFields(body, text) {
+function providerStructuredUnsupportedFields(body, text, protocol = "") {
   const parsed = parseProviderFallbackJSON(text);
   if (!parsed) return [];
   const hints = [];
   collectProviderFieldHints(parsed, hints);
   return hints
     .map((value) => normalizeProviderFieldHint(value))
-    .filter((field) => field && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && providerFallbackFieldPresent(body, field));
+    .filter((field) => field && (protocol === "anthropic_messages" || field !== "messages.content") && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && providerFallbackFieldPresent(body, field));
 }
 
 function parseProviderFallbackJSON(text) {
@@ -7685,8 +7692,24 @@ function collectProviderFieldHintValue(value, hints) {
     return;
   }
   if (Array.isArray(value)) {
+    const path = providerFieldHintArrayPath(value);
+    if (path) hints.push(path);
     for (const item of value) collectProviderFieldHintValue(item, hints);
   }
+}
+
+function providerFieldHintArrayPath(value) {
+  let path = "";
+  for (const item of value) {
+    if (typeof item === "number" || (typeof item === "string" && /^\d+$/.test(item))) {
+      path += `[${item}]`;
+      continue;
+    }
+    if (typeof item !== "string" || !item.trim()) return "";
+    const text = item.trim();
+    path += path ? `.${text}` : text;
+  }
+  return path.includes(".") || path.includes("[") ? path : "";
 }
 
 function isProviderFieldHintKey(key) {
@@ -7703,16 +7726,31 @@ function normalizeProviderFieldHint(value) {
   if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
   if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
   if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(normalized)) return "image_url.url";
+  if (/messages?(?:\.\d+|\[\d+\])?\.content|messages?content/.test(normalized)) return "messages.content";
   return normalized
     .split(".")[0]
     .trim();
 }
 
 function providerFallbackFieldPresent(body, field) {
+  if (field === "messages.content") return anthropicMessagesHaveStringContent(body);
   if (field === "image_url.url") return openAIChatImageURLHasObjectURL(body);
   if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
   if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
   return body?.[field] !== undefined;
+}
+
+function rejectedAnthropicMessagesContentField(body, detail) {
+  if (!anthropicMessagesHaveStringContent(body)) return "";
+  if (/messages?(?:[.\[]\d+\]?)*\.?content|message content|content.*(?:array|list|block)|(?:array|list|block).*content|valid list|list_type/.test(detail)) {
+    return "messages.content";
+  }
+  return "";
+}
+
+function anthropicMessagesHaveStringContent(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message) => typeof message?.content === "string");
 }
 
 function rejectedOpenAIChatImageURLField(body, detail) {
@@ -7779,6 +7817,10 @@ function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = 
   if (fields.includes("image_url.url")) {
     nextExtra.imageURLFormat = "string";
     removeFromArray(omitFields, "image_url.url");
+  }
+  if (fields.includes("messages.content")) {
+    nextExtra.anthropicTextContentFormat = "blocks";
+    removeFromArray(omitFields, "messages.content");
   }
   return mergeProviderBodyOmitFields(nextExtra, omitFields);
 }
@@ -8211,7 +8253,7 @@ function extractProviderConnectionText(protocol, text) {
   return extractResponseText(protocol, data);
 }
 
-function anthropicMessages(messages, requestInput, baseText, fallbackSystem = "") {
+function anthropicMessages(messages, requestInput, baseText, fallbackSystem = "", profile = null) {
   const mapped = messages.map((message) => ({ role: message.role, content: message.content }));
   const content = [];
   const systemText = fallbackSystemText(fallbackSystem);
@@ -8232,17 +8274,31 @@ function anthropicMessages(messages, requestInput, baseText, fallbackSystem = ""
   if (!content.length) {
     let nextMessages = contextText ? messagesWithAppendedAnthropicText(mapped, contextText) : mapped;
     if (systemText) nextMessages = messagesWithPrependedAnthropicText(nextMessages, systemText);
-    return mergeConsecutiveAnthropicMessages(nextMessages);
+    return formatAnthropicMessages(mergeConsecutiveAnthropicMessages(nextMessages), profile);
   }
   const text = contextText ? `${baseText}\n\n${contextText}` : baseText;
   content.push({ type: "text", text: systemText ? `${systemText}\n\n${text}` : text });
   const lastUserIndex = findLastIndex(mapped, (message) => message.role === "user");
   if (lastUserIndex >= 0) {
     mapped[lastUserIndex] = { role: "user", content };
-    return mergeConsecutiveAnthropicMessages(mapped);
+    return formatAnthropicMessages(mergeConsecutiveAnthropicMessages(mapped), profile);
   }
   mapped.push({ role: "user", content });
-  return mergeConsecutiveAnthropicMessages(mapped);
+  return formatAnthropicMessages(mergeConsecutiveAnthropicMessages(mapped), profile);
+}
+
+function formatAnthropicMessages(messages, profile) {
+  if (anthropicTextContentFormat(profile?.bodyExtra?.anthropicTextContentFormat ?? profile?.bodyExtra?.anthropicTextContent) !== "blocks") {
+    return messages;
+  }
+  return messages.map((message) => typeof message?.content === "string"
+    ? { ...message, content: [{ type: "text", text: message.content }] }
+    : message);
+}
+
+function anthropicTextContentFormat(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]+/g, "");
+  return normalized === "block" || normalized === "blocks" || normalized === "array" || normalized === "contentblocks" || normalized === "textblocks" ? "blocks" : "string";
 }
 
 function requestInputImages(requestInput) {

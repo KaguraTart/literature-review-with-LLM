@@ -577,6 +577,29 @@ describe("provider adapters", () => {
       400,
       "Unsupported parameters: stream, system prompt, metadata, thinking, top_p, stop_sequences"
     )).toEqual(["stream", "system", "metadata", "thinking", "top_p", "stop_sequences"]);
+    expect(providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      anthropicBody,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "list_type", loc: ["body", "messages", 0, "content"], msg: "Input should be a valid list" }
+        ]
+      })
+    )).toEqual(["messages.content"]);
+    expect(omitProviderRequestBodyFields(anthropicBody, ["messages.content"])).toMatchObject({
+      messages: [{ role: "user", content: [{ type: "text", text: "ping" }] }]
+    });
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      { model: "openai-compatible", messages: [{ role: "user", content: "ping" }] },
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "list_type", loc: ["body", "messages", 0, "content"], msg: "Input should be a valid list" }
+        ]
+      })
+    )).toEqual([]);
     const anthropicRetryBody = omitProviderRequestBodyFields(anthropicBody, ["stream", "system", "metadata", "thinking", "top_p", "stop_sequences"]);
     expect(anthropicRetryBody).not.toHaveProperty("system");
     expect((anthropicRetryBody.messages as any[])[0].content).toBe("SYSTEM:\nsystem\n\nping");
@@ -631,6 +654,18 @@ describe("provider adapters", () => {
       type: "image",
       source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" }
     });
+    const anthropicTextBlockBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        protocol: "anthropic_messages",
+        baseURL: "https://api.anthropic.com",
+        bodyExtra: { anthropicTextContentFormat: "blocks" }
+      },
+      input: { type: "text", text: "" }
+    });
+    expect((anthropicTextBlockBody.messages as any[])[0].content).toEqual([{ type: "text", text: "prompt" }]);
+    expect(anthropicTextBlockBody).not.toHaveProperty("anthropicTextContentFormat");
 
     expect(() => bodyFor({
       ...baseRequest,
@@ -836,6 +871,7 @@ describe("provider adapters", () => {
           anthropicDirectBrowserAccess: false,
           pdfInputFileField: "file_url",
           imageURLFormat: "string",
+          anthropicTextContentFormat: "blocks",
           omitFields: ["temperature", "n", "max_tokens"]
         }
       }
@@ -851,6 +887,7 @@ describe("provider adapters", () => {
     expect(body).not.toHaveProperty("directBrowserAccess");
     expect(body).not.toHaveProperty("anthropicDirectBrowserAccess");
     expect(body).not.toHaveProperty("imageURLFormat");
+    expect(body).not.toHaveProperty("anthropicTextContentFormat");
     expect(body).not.toHaveProperty("omitFields");
     expect(providerBodyExtra(request.profile.bodyExtra)).toEqual({ response_format: { type: "json_object" } });
   });

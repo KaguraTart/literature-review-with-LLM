@@ -1213,6 +1213,28 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("stream_options");
   });
 
+  it("converts Anthropic string messages to text blocks in bootstrap fallback helpers", () => {
+    const { helpers } = loadBootstrapProviderHelpers();
+    const body = {
+      model: "claude-compatible",
+      messages: [{ role: "user", content: "ping" }]
+    };
+    const fields = (helpers as any).providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      body,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "list_type", loc: ["body", "messages", 0, "content"], msg: "Input should be a valid list" }
+        ]
+      })
+    );
+    expect(fields).toEqual(["messages.content"]);
+    expect((helpers as any).omitProviderRequestBodyFields(body, fields)).toMatchObject({
+      messages: [{ role: "user", content: [{ type: "text", text: "ping" }] }]
+    });
+  });
+
   it("falls back when bootstrap OpenAI Chat endpoints reject JSON and token fields", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       __responses: [

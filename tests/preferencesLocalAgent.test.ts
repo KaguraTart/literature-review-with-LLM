@@ -255,8 +255,30 @@ describe("preferences local-agent config helpers", () => {
       directBrowserAccess: true,
       anthropicDirectBrowserAccess: false,
       pdfInputFileField: "file_url",
-      imageURLFormat: "string"
+      imageURLFormat: "string",
+      anthropicTextContentFormat: "blocks"
     })).toEqual({ extra_body: { reasoning_split: true } });
+  });
+
+  it("converts Anthropic string messages to text blocks in preferences fallback helpers", () => {
+    const body = {
+      model: "claude-compatible",
+      messages: [{ role: "user", content: "ping" }]
+    };
+    const fields = (helpers as any).providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      body,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "list_type", loc: ["body", "messages", 0, "content"], msg: "Input should be a valid list" }
+        ]
+      })
+    );
+    expect(fields).toEqual(["messages.content"]);
+    expect((helpers as any).omitProviderRequestBodyFields(body, fields)).toMatchObject({
+      messages: [{ role: "user", content: [{ type: "text", text: "ping" }] }]
+    });
   });
 
   it("builds a Responses connection test request from the edited profile", () => {

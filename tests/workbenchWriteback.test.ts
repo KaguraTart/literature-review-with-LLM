@@ -868,6 +868,15 @@ describe("workbench writeback helpers", () => {
       capabilities: { streaming: true },
       bodyExtra: { temperature: 0.2 }
     }, messages, "zh-CN", "system", requestInput, false)).toMatchObject({ temperature: 0.2 });
+
+    const anthropicTextBlockBody = helpers.bodyForProfile({
+      protocol: "anthropic_messages",
+      model: "model-a",
+      capabilities: { streaming: true },
+      bodyExtra: { anthropicTextContentFormat: "blocks" }
+    }, [{ role: "user", content: "plain question" }], "zh-CN", "system", { type: "text", text: "" }, false);
+    expect(anthropicTextBlockBody.messages[0].content).toEqual([{ type: "text", text: "plain question" }]);
+    expect(anthropicTextBlockBody).not.toHaveProperty("anthropicTextContentFormat");
   });
 
   it("passes image attachments into workbench provider request bodies", () => {
@@ -6057,6 +6066,77 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[3].body).not.toHaveProperty("metadata");
     expect(fetchCalls[3].body).not.toHaveProperty("system");
     expect(fetchCalls[3].body).not.toHaveProperty("stream");
+  });
+
+  it("falls back to Anthropic text blocks when a router rejects string content", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      if (typeof body.messages?.[0]?.content === "string") {
+        return {
+          ok: false,
+          status: 422,
+          text: async () => JSON.stringify({
+            detail: [
+              { type: "list_type", loc: ["body", "messages", 0, "content"], msg: "Input should be a valid list" }
+            ]
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ content: [{ type: "text", text: "ok" }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      id: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      baseURL: "https://router.example/v1",
+      capabilities: { ...providerProfile().capabilities, pdfBase64: false }
+    }, [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "text", text: "" }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body.messages[0].content).toBe("hello");
+    expect(fetchCalls[1].body.messages[0].content).toEqual([{ type: "text", text: "hello" }]);
+  });
+
+  it("does not apply the Anthropic text block fallback to OpenAI Chat requests", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      return {
+        ok: false,
+        status: 422,
+        text: async () => JSON.stringify({
+          detail: [
+            { type: "list_type", loc: ["body", "messages", 0, "content"], msg: "Input should be a valid list" }
+          ]
+        })
+      };
+    };
+
+    await expect(loaded.requestModelWithRetry({
+      ...providerProfile(),
+      id: "openai-compatible",
+      protocol: "openai_chat",
+      baseURL: "https://router.example/v1",
+      capabilities: { ...providerProfile().capabilities, pdfBase64: false }
+    }, [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "text", text: "" }, false)).rejects.toThrow(/HTTP 422/);
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].body.messages.find((message: any) => message.role === "user").content).toBe("hello");
   });
 
   it("falls back to non-streaming when an OpenAI Chat route rejects streaming", async () => {

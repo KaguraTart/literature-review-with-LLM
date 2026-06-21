@@ -46,6 +46,7 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "stop_sequences",
   "tools",
   "tool_choice",
+  "messages.content",
   "image_url.url",
   "input_file.file_data",
   "input_file.file_url"
@@ -681,6 +682,8 @@ function providerBodyExtra(bodyExtra) {
     systemFallbackToUser: _systemFallbackToUser,
     pdfInputFileField: _pdfInputFileField,
     imageURLFormat: _imageURLFormat,
+    anthropicTextContentFormat: _anthropicTextContentFormat,
+    anthropicTextContent: _anthropicTextContent,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,
@@ -724,10 +727,10 @@ function openAIChatOptionalDefaults(profile, defaults) {
 }
 
 function providerCompatibilityFallbackFields(protocol, body, status, text, usedFallback = false) {
-  if (usedFallback === true || !["openai_chat", "openai_responses", "anthropic_messages"].includes(protocol) || !providerFallbackEligibleStatus(body, status, text)) return [];
+  if (usedFallback === true || !["openai_chat", "openai_responses", "anthropic_messages"].includes(protocol) || !providerFallbackEligibleStatus(body, status, text, protocol)) return [];
   const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
   const detail = String(text || "").toLowerCase();
-  const fields = providerStructuredUnsupportedFields(body, text);
+  const fields = providerStructuredUnsupportedFields(body, text, protocol);
   if (body?.stream_options !== undefined && /stream_options|stream options|stream option/.test(detail)) {
     fields.push("stream_options");
   }
@@ -813,6 +816,10 @@ function providerCompatibilityFallbackFields(protocol, body, status, text, usedF
   if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
     fields.push("tool_choice");
   }
+  const rejectedAnthropicContentField = rejectedAnthropicMessagesContentField(body, detail);
+  if (protocol === "anthropic_messages" && rejectedAnthropicContentField) {
+    fields.push(rejectedAnthropicContentField);
+  }
   const rejectedImageURLField = rejectedOpenAIChatImageURLField(body, detail);
   if (protocol === "openai_chat" && rejectedImageURLField) {
     fields.push(rejectedImageURLField);
@@ -824,29 +831,29 @@ function providerCompatibilityFallbackFields(protocol, body, status, text, usedF
   return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
 }
 
-function providerFallbackEligibleStatus(body, status, text) {
+function providerFallbackEligibleStatus(body, status, text, protocol = "") {
   const numericStatus = Number(status);
   if (numericStatus === 400 || numericStatus === 422) return true;
   if (numericStatus !== 200) return false;
-  return providerOkResponseLooksLikeFallbackError(body, text);
+  return providerOkResponseLooksLikeFallbackError(body, text, protocol);
 }
 
-function providerOkResponseLooksLikeFallbackError(body, text) {
+function providerOkResponseLooksLikeFallbackError(body, text, protocol = "") {
   const parsed = safeParseJSON(text);
   if (!parsed) return false;
   if (streamErrorText(parsed)) return true;
-  if (!providerStructuredUnsupportedFields(body, text).length) return false;
+  if (!providerStructuredUnsupportedFields(body, text, protocol).length) return false;
   return /unsupported|unrecognized|not supported|unknown (?:field|parameter|argument)|extra_forbidden|not permitted|invalid|forbidden/.test(String(text || "").toLowerCase());
 }
 
-function providerStructuredUnsupportedFields(body, text) {
+function providerStructuredUnsupportedFields(body, text, protocol = "") {
   const parsed = safeParseJSON(text);
   if (!parsed) return [];
   const hints = [];
   collectProviderFieldHints(parsed, hints);
   return hints
     .map((value) => normalizeProviderFieldHint(value))
-    .filter((field) => field && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && providerFallbackFieldPresent(body, field));
+    .filter((field) => field && (protocol === "anthropic_messages" || field !== "messages.content") && PROVIDER_FALLBACK_BODY_FIELDS.has(field) && providerFallbackFieldPresent(body, field));
 }
 
 function collectProviderFieldHints(value, hints) {
@@ -867,8 +874,24 @@ function collectProviderFieldHintValue(value, hints) {
     return;
   }
   if (Array.isArray(value)) {
+    const path = providerFieldHintArrayPath(value);
+    if (path) hints.push(path);
     for (const item of value) collectProviderFieldHintValue(item, hints);
   }
+}
+
+function providerFieldHintArrayPath(value) {
+  let path = "";
+  for (const item of value) {
+    if (typeof item === "number" || (typeof item === "string" && /^\d+$/.test(item))) {
+      path += `[${item}]`;
+      continue;
+    }
+    if (typeof item !== "string" || !item.trim()) return "";
+    const text = item.trim();
+    path += path ? `.${text}` : text;
+  }
+  return path.includes(".") || path.includes("[") ? path : "";
 }
 
 function isProviderFieldHintKey(key) {
@@ -885,16 +908,31 @@ function normalizeProviderFieldHint(value) {
   if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
   if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
   if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(normalized)) return "image_url.url";
+  if (/messages?(?:\.\d+|\[\d+\])?\.content|messages?content/.test(normalized)) return "messages.content";
   return normalized
     .split(".")[0]
     .trim();
 }
 
 function providerFallbackFieldPresent(body, field) {
+  if (field === "messages.content") return anthropicMessagesHaveStringContent(body);
   if (field === "image_url.url") return openAIChatImageURLHasObjectURL(body);
   if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
   if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
   return body?.[field] !== undefined;
+}
+
+function rejectedAnthropicMessagesContentField(body, detail) {
+  if (!anthropicMessagesHaveStringContent(body)) return "";
+  if (/messages?(?:[.\[]\d+\]?)*\.?content|message content|content.*(?:array|list|block)|(?:array|list|block).*content|valid list|list_type/.test(detail)) {
+    return "messages.content";
+  }
+  return "";
+}
+
+function anthropicMessagesHaveStringContent(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message) => typeof message?.content === "string");
 }
 
 function rejectedOpenAIChatImageURLField(body, detail) {
@@ -967,9 +1005,20 @@ function omitProviderRequestBodyFields(body, fields, usedFallback = false) {
       switchOpenAIChatImageURLToString(next);
       continue;
     }
+    if (field === "messages.content") {
+      switchAnthropicStringMessagesToTextBlocks(next);
+      continue;
+    }
     delete next[field];
   }
   return next;
+}
+
+function switchAnthropicStringMessagesToTextBlocks(body) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message) => typeof message?.content === "string"
+    ? { ...message, content: [{ type: "text", text: message.content }] }
+    : message);
 }
 
 function switchOpenAIChatImageURLToString(body) {
