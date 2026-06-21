@@ -254,7 +254,8 @@ describe("preferences local-agent config helpers", () => {
       subagent: { endpoint: "http://127.0.0.1:3335/mcp" },
       directBrowserAccess: true,
       anthropicDirectBrowserAccess: false,
-      pdfInputFileField: "file_url"
+      pdfInputFileField: "file_url",
+      imageURLFormat: "string"
     })).toEqual({ extra_body: { reasoning_split: true } });
   });
 

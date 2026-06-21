@@ -401,6 +401,35 @@ describe("provider adapters", () => {
     ]);
     expect(providerCompatibilityFallbackFields("openai_chat", body, 422, "stream is not supported"))
       .toEqual(["stream", "stream_options"]);
+    const imageBody = {
+      model: "router-model",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Describe this image." },
+            { type: "image_url", image_url: { url: "data:image/png;base64,abc" } }
+          ]
+        }
+      ]
+    };
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      imageBody,
+      400,
+      JSON.stringify({
+        error: {
+          code: "unsupported_parameter",
+          message: "Unsupported request parameter",
+          param: "messages[0].content[1].image_url.url"
+        }
+      })
+    )).toEqual(["image_url.url"]);
+    const stringImageBody = omitProviderRequestBodyFields(imageBody, ["image_url.url"]);
+    expect(((stringImageBody.messages as any[])[0].content as any[])[1]).toEqual({
+      type: "image_url",
+      image_url: "data:image/png;base64,abc"
+    });
     const responsesBody = {
       model: "responses-model",
       input: [],
@@ -572,6 +601,15 @@ describe("provider adapters", () => {
     expect((chatBody.messages as any[]).at(-1).content).toEqual([
       { type: "text", text: "prompt\n\npaper text" },
       { type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } }
+    ]);
+    const stringImageChatBody = bodyFor({
+      ...baseRequest,
+      profile: { ...profile, bodyExtra: { imageURLFormat: "string" } },
+      input: imageInput
+    });
+    expect((stringImageChatBody.messages as any[]).at(-1).content).toEqual([
+      { type: "text", text: "prompt\n\npaper text" },
+      { type: "image_url", image_url: "data:image/png;base64,aW1hZ2U=" }
     ]);
 
     const responsesBody = bodyFor({
@@ -797,6 +835,7 @@ describe("provider adapters", () => {
           directBrowserAccess: true,
           anthropicDirectBrowserAccess: false,
           pdfInputFileField: "file_url",
+          imageURLFormat: "string",
           omitFields: ["temperature", "n", "max_tokens"]
         }
       }
@@ -811,6 +850,7 @@ describe("provider adapters", () => {
     expect(body).not.toHaveProperty("subagent");
     expect(body).not.toHaveProperty("directBrowserAccess");
     expect(body).not.toHaveProperty("anthropicDirectBrowserAccess");
+    expect(body).not.toHaveProperty("imageURLFormat");
     expect(body).not.toHaveProperty("omitFields");
     expect(providerBodyExtra(request.profile.bodyExtra)).toEqual({ response_format: { type: "json_object" } });
   });

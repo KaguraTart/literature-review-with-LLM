@@ -149,6 +149,52 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("falls back when an OpenAI-compatible smoke endpoint rejects image_url object fields", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-chat",
+        "--image",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_chat",
+        inputMode: "image",
+        text: "OK image fallback"
+      });
+      expect(requests).toHaveLength(2);
+      expect(requests[0].body.messages[1].content[1]).toMatchObject({
+        type: "image_url",
+        image_url: { url: expect.stringContaining("data:image/png;base64,") }
+      });
+      expect(requests[1].body.messages[1].content[1]).toEqual({
+        type: "image_url",
+        image_url: requests[0].body.messages[1].content[1].image_url.url
+      });
+    }, {
+      handler: (requestData, response) => {
+        const imagePart = requestData.body?.messages?.[1]?.content?.find?.((part: any) => part?.type === "image_url");
+        if (imagePart?.image_url && typeof imagePart.image_url === "object") {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "Unsupported request parameter",
+              param: "messages[1].content[1].image_url.url"
+            }
+          }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ choices: [{ message: { content: "OK image fallback" } }] }));
+      }
+    });
+  });
+
   it("falls back when an OpenAI-compatible smoke endpoint rejects JSON and token fields", async () => {
     await withMockProvider(async (baseURL, requests) => {
       const report = await runSmoke([

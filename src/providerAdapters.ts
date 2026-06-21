@@ -317,7 +317,7 @@ function openaiChatMessages(request: ModelRequest): Array<Record<string, unknown
   const images = inputImages(request);
   if (!images.length) return messages;
   const lastUserIndex = findLastIndex(messages, (message) => message.role === "user");
-  const imageParts = images.map((image) => ({ type: "image_url", image_url: { url: imageDataURL(image) } }));
+  const imageParts = images.map((image) => openAIChatImagePart(image, request.profile));
   if (lastUserIndex >= 0) {
     const baseText = String(messages[lastUserIndex].content || "");
     messages[lastUserIndex] = {
@@ -857,6 +857,19 @@ function imageDataURL(image: { mimeType?: string; base64?: string }): string {
   return `data:${image.mimeType || "image/png"};base64,${image.base64 || ""}`;
 }
 
+function openAIChatImagePart(image: { mimeType?: string; base64?: string }, profile: ProviderProfile): Record<string, unknown> {
+  const dataURL = imageDataURL(image);
+  return {
+    type: "image_url",
+    image_url: openAIChatImageURLFormat(profile.bodyExtra?.imageURLFormat) === "string" ? dataURL : { url: dataURL }
+  };
+}
+
+function openAIChatImageURLFormat(value: unknown): "object" | "string" {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]+/g, "");
+  return normalized === "string" || normalized === "dataurl" || normalized === "urlstring" ? "string" : "object";
+}
+
 function mergeConsecutiveAnthropicMessages(messages: AnthropicMessage[]): AnthropicMessage[] {
   const merged: AnthropicMessage[] = [];
   for (const message of messages) {
@@ -926,6 +939,7 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
     instructionsFallbackToUser: _instructionsFallbackToUser,
     systemFallbackToUser: _systemFallbackToUser,
     pdfInputFileField: _pdfInputFileField,
+    imageURLFormat: _imageURLFormat,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,
@@ -1025,6 +1039,10 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
     fields.push("tool_choice");
   }
+  const rejectedImageURLField = rejectedOpenAIChatImageURLField(body, detail);
+  if (protocol === "openai_chat" && rejectedImageURLField) {
+    fields.push(rejectedImageURLField);
+  }
   const rejectedPDFField = rejectedOpenAIResponsesPdfFileField(body, detail);
   if (protocol === "openai_responses" && rejectedPDFField) {
     fields.push(rejectedPDFField);
@@ -1076,6 +1094,7 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "stop_sequences",
   "tools",
   "tool_choice",
+  "image_url.url",
   "input_file.file_data",
   "input_file.file_url"
 ]);
@@ -1125,15 +1144,36 @@ function normalizeProviderFieldHint(value: string): string {
     .replace(/\[[^\]]+\]/g, "");
   if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
   if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
+  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(normalized)) return "image_url.url";
   return normalized
     .split(".")[0]
     .trim();
 }
 
 function providerFallbackFieldPresent(body: Record<string, unknown>, field: string): boolean {
+  if (field === "image_url.url") return openAIChatImageURLHasObjectURL(body);
   if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
   if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
   return body?.[field] !== undefined;
+}
+
+function rejectedOpenAIChatImageURLField(body: Record<string, unknown>, detail: string): string {
+  if (!openAIChatImageURLHasObjectURL(body)) return "";
+  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(detail)) return "image_url.url";
+  return "";
+}
+
+function openAIChatImageURLHasObjectURL(body: Record<string, unknown>): boolean {
+  return openAIChatImageParts(body).some((part) => {
+    const imageURL = part?.image_url;
+    return imageURL && typeof imageURL === "object" && !Array.isArray(imageURL) && imageURL.url !== undefined;
+  });
+}
+
+function openAIChatImageParts(body: Record<string, unknown>): Array<Record<string, any>> {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.flatMap((message: any) => Array.isArray(message?.content) ? message.content : [])
+    .filter((part: any) => part?.type === "image_url" && part && typeof part === "object");
 }
 
 function rejectedOpenAIResponsesPdfFileField(body: Record<string, unknown>, detail: string): string {
@@ -1183,9 +1223,29 @@ export function omitProviderRequestBodyFields(body: Record<string, unknown>, fie
       switchOpenAIResponsesInputFileField(next, "file_url", "file_data");
       continue;
     }
+    if (field === "image_url.url") {
+      switchOpenAIChatImageURLToString(next);
+      continue;
+    }
     delete next[field];
   }
   return next;
+}
+
+function switchOpenAIChatImageURLToString(body: Record<string, unknown>): void {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message: any) => {
+    const content = Array.isArray(message?.content) ? message.content : null;
+    if (!content) return message;
+    return {
+      ...message,
+      content: content.map((part: any) => {
+        const imageURL = part?.image_url;
+        if (part?.type !== "image_url" || !imageURL || typeof imageURL !== "object" || Array.isArray(imageURL) || imageURL.url === undefined) return part;
+        return { ...part, image_url: imageURL.url };
+      })
+    };
+  });
 }
 
 function switchOpenAIResponsesInputFileField(body: Record<string, unknown>, from: "file_data" | "file_url", to: "file_data" | "file_url"): void {

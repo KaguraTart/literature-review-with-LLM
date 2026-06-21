@@ -508,7 +508,8 @@ describe("workbench writeback helpers", () => {
       subagent: { endpoint: "http://127.0.0.1:3335/mcp" },
       directBrowserAccess: true,
       anthropicDirectBrowserAccess: false,
-      pdfInputFileField: "file_url"
+      pdfInputFileField: "file_url",
+      imageURLFormat: "string"
     })).toEqual({ response_format: { type: "json_object" } });
   });
 
@@ -891,6 +892,17 @@ describe("workbench writeback helpers", () => {
       { type: "text", text: "请解释这张图" },
       { type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } }
     ]);
+    const stringImageChatBody = helpers.bodyForProfile({
+      protocol: "openai_chat",
+      model: "model-a",
+      capabilities: { streaming: true, imageBase64: true },
+      bodyExtra: { imageURLFormat: "string" }
+    }, messages, "zh-CN", "system", requestInput, false);
+    expect(stringImageChatBody.messages[1].content).toEqual([
+      { type: "text", text: "请解释这张图" },
+      { type: "image_url", image_url: "data:image/png;base64,aW1hZ2U=" }
+    ]);
+    expect(stringImageChatBody).not.toHaveProperty("imageURLFormat");
 
     const responsesBody = helpers.bodyForProfile({
       protocol: "openai_responses",
@@ -5697,6 +5709,57 @@ describe("workbench writeback helpers", () => {
     });
     expect(fetchCalls[1].body).toMatchObject({ stream: true });
     expect(fetchCalls[1].body).not.toHaveProperty("stream_options");
+  });
+
+  it("downgrades unsupported OpenAI Chat image_url object fields in the workbench request path", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "Unsupported request parameter",
+              param: "messages[1].content[1].image_url.url"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        body: {},
+        json: async () => ({ choices: [{ message: { content: "ok" } }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      protocol: "openai_chat",
+      capabilities: { ...providerProfile().capabilities, imageBase64: true, streaming: false }
+    }, [
+      { role: "user", content: "describe" }
+    ], "zh-CN", "system", {
+      type: "text",
+      source: "text_mode",
+      images: [{ name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+    }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body.messages[1].content[1]).toEqual({
+      type: "image_url",
+      image_url: { url: "data:image/png;base64,aW1hZ2U=" }
+    });
+    expect(fetchCalls[1].body.messages[1].content[1]).toEqual({
+      type: "image_url",
+      image_url: "data:image/png;base64,aW1hZ2U="
+    });
   });
 
   it("downgrades unsupported OpenAI Chat JSON and token fields in the workbench request path", async () => {

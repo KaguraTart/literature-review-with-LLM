@@ -88,6 +88,7 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "stop_sequences",
   "tools",
   "tool_choice",
+  "image_url.url",
   "input_file.file_data",
   "input_file.file_url"
 ]);
@@ -7180,7 +7181,7 @@ function bodyForProfile(profile, messages, outputLanguage, systemPrompt, request
   }
   return withOpenAIChatBodyDefaults(profile, {
     model: profile.model,
-    messages: [{ role: "system", content: system }, ...openaiChatMessages(messages, requestInput)],
+    messages: [{ role: "system", content: system }, ...openaiChatMessages(messages, requestInput, profile)],
     ...openAIChatOptionalDefaults(profile, {
       temperature: Number(pref("temperature")) || 1,
       n: 1
@@ -7223,6 +7224,7 @@ function providerBodyExtra(bodyExtra) {
     instructionsFallbackToUser: _instructionsFallbackToUser,
     systemFallbackToUser: _systemFallbackToUser,
     pdfInputFileField: _pdfInputFileField,
+    imageURLFormat: _imageURLFormat,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,
@@ -7355,12 +7357,12 @@ function normalizePdfInputFileField(value) {
   return normalized === "fileurl" || normalized === "url" ? "file_url" : "file_data";
 }
 
-function openaiChatMessages(messages, requestInput = {}) {
+function openaiChatMessages(messages, requestInput = {}, profile = null) {
   const mapped = messages.map((message) => ({ role: message.role, content: message.content }));
   const images = requestInputImages(requestInput);
   if (!images.length) return mapped;
   const lastUserIndex = findLastIndex(mapped, (message) => message.role === "user");
-  const imageParts = images.map((image) => ({ type: "image_url", image_url: { url: imageDataURL(image) } }));
+  const imageParts = images.map((image) => openAIChatImagePart(image, profile));
   if (lastUserIndex >= 0) {
     const baseText = String(mapped[lastUserIndex].content || "");
     mapped[lastUserIndex] = {
@@ -7374,6 +7376,19 @@ function openaiChatMessages(messages, requestInput = {}) {
   }
   mapped.push({ role: "user", content: imageParts });
   return mapped;
+}
+
+function openAIChatImagePart(image, profile) {
+  const dataURL = imageDataURL(image);
+  return {
+    type: "image_url",
+    image_url: openAIChatImageURLFormat(profile?.bodyExtra?.imageURLFormat) === "string" ? dataURL : { url: dataURL }
+  };
+}
+
+function openAIChatImageURLFormat(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]+/g, "");
+  return normalized === "string" || normalized === "dataurl" || normalized === "urlstring" ? "string" : "object";
 }
 
 function appendOpenAIResponsesPart(input, lastUserIndex, part) {
@@ -7623,6 +7638,10 @@ function providerUnsupportedOptionalFields(body, text, usedFallback = []) {
   if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
     fields.push("tool_choice");
   }
+  const rejectedImageURLField = rejectedOpenAIChatImageURLField(body, detail);
+  if (rejectedImageURLField) {
+    fields.push(rejectedImageURLField);
+  }
   const rejectedPDFField = rejectedOpenAIResponsesPdfFileField(body, detail);
   if (rejectedPDFField) {
     fields.push(rejectedPDFField);
@@ -7683,15 +7702,36 @@ function normalizeProviderFieldHint(value) {
     .replace(/\[[^\]]+\]/g, "");
   if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
   if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
+  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(normalized)) return "image_url.url";
   return normalized
     .split(".")[0]
     .trim();
 }
 
 function providerFallbackFieldPresent(body, field) {
+  if (field === "image_url.url") return openAIChatImageURLHasObjectURL(body);
   if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
   if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
   return body?.[field] !== undefined;
+}
+
+function rejectedOpenAIChatImageURLField(body, detail) {
+  if (!openAIChatImageURLHasObjectURL(body)) return "";
+  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(detail)) return "image_url.url";
+  return "";
+}
+
+function openAIChatImageURLHasObjectURL(body) {
+  return openAIChatImageParts(body).some((part) => {
+    const imageURL = part?.image_url;
+    return imageURL && typeof imageURL === "object" && !Array.isArray(imageURL) && imageURL.url !== undefined;
+  });
+}
+
+function openAIChatImageParts(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.flatMap((message) => Array.isArray(message?.content) ? message.content : [])
+    .filter((part) => part?.type === "image_url" && part && typeof part === "object");
 }
 
 function rejectedOpenAIResponsesPdfFileField(body, detail) {
@@ -7735,6 +7775,10 @@ function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = 
   if (fields.includes("input_file.file_url")) {
     nextExtra.pdfInputFileField = "file_data";
     removeFromArray(omitFields, "input_file.file_url");
+  }
+  if (fields.includes("image_url.url")) {
+    nextExtra.imageURLFormat = "string";
+    removeFromArray(omitFields, "image_url.url");
   }
   return mergeProviderBodyOmitFields(nextExtra, omitFields);
 }

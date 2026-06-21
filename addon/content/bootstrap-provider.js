@@ -46,6 +46,7 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "stop_sequences",
   "tools",
   "tool_choice",
+  "image_url.url",
   "input_file.file_data",
   "input_file.file_url"
 ]);
@@ -388,13 +389,13 @@ function normalizePdfInputFileField(value) {
   return normalized === "fileurl" || normalized === "url" ? "file_url" : "file_data";
 }
 
-function openAIChatSummaryMessages(request) {
+function openAIChatSummaryMessages(request, profile) {
   const userText = request.input.type === "text" ? `${request.prompt}\n\n${request.input.text}` : request.prompt;
   const images = requestInputImages(request.input);
   const userContent = images.length
     ? [
       { type: "text", text: userText },
-      ...images.map((image) => ({ type: "image_url", image_url: { url: imageDataURL(image) } }))
+      ...images.map((image) => openAIChatImagePart(image, profile))
     ]
     : userText;
   return [
@@ -409,6 +410,19 @@ function requestInputImages(input) {
 
 function imageDataURL(image) {
   return `data:${image?.mimeType || "image/png"};base64,${image?.base64 || ""}`;
+}
+
+function openAIChatImagePart(image, profile) {
+  const dataURL = imageDataURL(image);
+  return {
+    type: "image_url",
+    image_url: openAIChatImageURLFormat(profile?.bodyExtra?.imageURLFormat) === "string" ? dataURL : { url: dataURL }
+  };
+}
+
+function openAIChatImageURLFormat(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]+/g, "");
+  return normalized === "string" || normalized === "dataurl" || normalized === "urlstring" ? "string" : "object";
 }
 
 function withProviderBodyDefaults(profile, body) {
@@ -666,6 +680,7 @@ function providerBodyExtra(bodyExtra) {
     instructionsFallbackToUser: _instructionsFallbackToUser,
     systemFallbackToUser: _systemFallbackToUser,
     pdfInputFileField: _pdfInputFileField,
+    imageURLFormat: _imageURLFormat,
     omitFields: _omitFields,
     omitBodyFields: _omitBodyFields,
     removeFields: _removeFields,
@@ -798,6 +813,10 @@ function providerCompatibilityFallbackFields(protocol, body, status, text, usedF
   if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
     fields.push("tool_choice");
   }
+  const rejectedImageURLField = rejectedOpenAIChatImageURLField(body, detail);
+  if (protocol === "openai_chat" && rejectedImageURLField) {
+    fields.push(rejectedImageURLField);
+  }
   const rejectedPDFField = rejectedOpenAIResponsesPdfFileField(body, detail);
   if (protocol === "openai_responses" && rejectedPDFField) {
     fields.push(rejectedPDFField);
@@ -865,15 +884,36 @@ function normalizeProviderFieldHint(value) {
     .replace(/\[[^\]]+\]/g, "");
   if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
   if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
+  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(normalized)) return "image_url.url";
   return normalized
     .split(".")[0]
     .trim();
 }
 
 function providerFallbackFieldPresent(body, field) {
+  if (field === "image_url.url") return openAIChatImageURLHasObjectURL(body);
   if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
   if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
   return body?.[field] !== undefined;
+}
+
+function rejectedOpenAIChatImageURLField(body, detail) {
+  if (!openAIChatImageURLHasObjectURL(body)) return "";
+  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl/.test(detail)) return "image_url.url";
+  return "";
+}
+
+function openAIChatImageURLHasObjectURL(body) {
+  return openAIChatImageParts(body).some((part) => {
+    const imageURL = part?.image_url;
+    return imageURL && typeof imageURL === "object" && !Array.isArray(imageURL) && imageURL.url !== undefined;
+  });
+}
+
+function openAIChatImageParts(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.flatMap((message) => Array.isArray(message?.content) ? message.content : [])
+    .filter((part) => part?.type === "image_url" && part && typeof part === "object");
 }
 
 function rejectedOpenAIResponsesPdfFileField(body, detail) {
@@ -923,9 +963,29 @@ function omitProviderRequestBodyFields(body, fields, usedFallback = false) {
       switchOpenAIResponsesInputFileField(next, "file_url", "file_data");
       continue;
     }
+    if (field === "image_url.url") {
+      switchOpenAIChatImageURLToString(next);
+      continue;
+    }
     delete next[field];
   }
   return next;
+}
+
+function switchOpenAIChatImageURLToString(body) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message) => {
+    const content = Array.isArray(message?.content) ? message.content : null;
+    if (!content) return message;
+    return {
+      ...message,
+      content: content.map((part) => {
+        const imageURL = part?.image_url;
+        if (part?.type !== "image_url" || !imageURL || typeof imageURL !== "object" || Array.isArray(imageURL) || imageURL.url === undefined) return part;
+        return { ...part, image_url: imageURL.url };
+      })
+    };
+  });
 }
 
 function switchOpenAIResponsesInputFileField(body, from, to) {

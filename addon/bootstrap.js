@@ -532,7 +532,7 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
     stream: request.stream
   } : {
     model,
-    messages: openAIChatSummaryMessages(request),
+    messages: openAIChatSummaryMessages(request, summaryRequest),
     ...openAIChatOptionalDefaults(summaryRequest, {
       temperature: request.temperature,
       n: 1

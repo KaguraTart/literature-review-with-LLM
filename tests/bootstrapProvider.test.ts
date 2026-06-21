@@ -1609,6 +1609,89 @@ describe("bootstrap provider helpers", () => {
       { type: "text", text: "prompt\n\npaper text" },
       { type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } }
     ]);
+
+    await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true },
+      customHeaders: {},
+      bodyExtra: { imageURLFormat: "string" },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: {
+          type: "text",
+          text: "paper text",
+          images: [{ name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+        },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(fetchCalls[1].body.messages[1].content).toEqual([
+      { type: "text", text: "prompt\n\npaper text" },
+      { type: "image_url", image_url: "data:image/png;base64,aW1hZ2U=" }
+    ]);
+    expect(fetchCalls[1].body).not.toHaveProperty("imageURLFormat");
+  });
+
+  it("falls back when bootstrap OpenAI Chat endpoints reject image_url object fields", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 400,
+          error: {
+            code: "unsupported_parameter",
+            message: "Unsupported request parameter",
+            param: "messages[1].content[1].image_url.url"
+          }
+        },
+        {
+          choices: [{ message: { content: "image fallback summary" } }]
+        }
+      ]
+    });
+
+    const result = await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: {
+          type: "text",
+          text: "paper text",
+          images: [{ name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+        },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(result.markdown).toBe("image fallback summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body.messages[1].content[1]).toEqual({
+      type: "image_url",
+      image_url: { url: "data:image/png;base64,aW1hZ2U=" }
+    });
+    expect(fetchCalls[1].body.messages[1].content[1]).toEqual({
+      type: "image_url",
+      image_url: "data:image/png;base64,aW1hZ2U="
+    });
   });
 
   it("sends image attachments through bootstrap OpenAI Responses PDF bodies", async () => {
