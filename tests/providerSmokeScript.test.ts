@@ -42,6 +42,26 @@ const NAMED_LIVE_CASE_IDS = NAMED_LIVE_SPECS.map((entry) => entry.id);
 const BASIC_LIVE_CASES = BASIC_LIVE_CASE_IDS.join(",");
 const NAMED_LIVE_CASES = NAMED_LIVE_CASE_IDS.join(",");
 const ALL_LIVE_CASE_IDS = [...BASIC_LIVE_CASE_IDS, ...NAMED_LIVE_CASE_IDS];
+const CORE_LIVE_CASE_IDS = ["openai", "openai-compatible", "openai-responses-compatible", "anthropic", "anthropic-compatible"];
+const OPENAI_CHAT_LIVE_CASE_IDS = ["openai-compatible", ...NAMED_LIVE_CASE_IDS.filter((id) => !["azure-openai", "sambanova-responses", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"].includes(id))];
+const OPENAI_RESPONSES_LIVE_CASE_IDS = ["openai", "openai-responses-compatible", "azure-openai", "sambanova-responses"];
+const ANTHROPIC_MESSAGES_LIVE_CASE_IDS = ["anthropic", "anthropic-compatible", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"];
+const MAINSTREAM_LIVE_CASE_IDS = [
+  "openai",
+  "openai-compatible",
+  "openai-responses-compatible",
+  "anthropic",
+  "anthropic-compatible",
+  "minimax",
+  "gemini",
+  "deepseek",
+  "openrouter",
+  "groq",
+  "dashscope",
+  "siliconflow",
+  "ollama",
+  "lm-studio"
+];
 
 describe("provider smoke verifier", () => {
   it("calls an OpenAI-compatible chat endpoint with the expected request shape", async () => {
@@ -1369,6 +1389,20 @@ describe("provider smoke verifier", () => {
       liveProviderCases: true,
       count: ALL_LIVE_CASE_IDS.length
     });
+    expect(report.groups.map((group: any) => group.id)).toEqual([
+      "all",
+      "mainstream",
+      "core",
+      "openai-chat",
+      "openai-responses",
+      "anthropic-messages",
+      "remote",
+      "local"
+    ]);
+    expect(report.groups.find((group: any) => group.id === "mainstream").caseIds).toEqual(MAINSTREAM_LIVE_CASE_IDS);
+    expect(report.groups.find((group: any) => group.id === "openai-chat").caseIds).toEqual(OPENAI_CHAT_LIVE_CASE_IDS);
+    expect(report.groups.find((group: any) => group.id === "openai-responses").caseIds).toEqual(OPENAI_RESPONSES_LIVE_CASE_IDS);
+    expect(report.groups.find((group: any) => group.id === "anthropic-messages").caseIds).toEqual(ANTHROPIC_MESSAGES_LIVE_CASE_IDS);
     expect(report.cases.map((entry: any) => entry.id)).toEqual(ALL_LIVE_CASE_IDS);
     expect(report.cases.find((entry: any) => entry.id === "openai-compatible")).toMatchObject({
       profile: "openai-compatible",
@@ -1507,6 +1541,7 @@ describe("provider smoke verifier", () => {
       env: scrubProviderEnv()
     });
     expect(stdout).toContain("Provider live verification env templates:");
+    expect(stdout).toContain("# Include groups: all, mainstream, core, openai-chat, openai-responses, anthropic-messages, remote, local");
     expect(stdout).toContain("ANTHROPIC_COMPATIBLE_API_KEY=...");
     expect(stdout).toContain("ANTHROPIC_COMPATIBLE_BASE_URL=https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT");
     expect(stdout).toContain("# ANTHROPIC_COMPATIBLE_HEADERS_JSON={}");
@@ -1514,6 +1549,43 @@ describe("provider smoke verifier", () => {
     expect(stdout).toContain("npm run verify:provider:live -- --include anthropic-compatible");
     expect(stdout).not.toContain("# Image input check");
     expect(stdout).not.toContain("npm run verify:provider:image:live -- --include anthropic-compatible");
+  });
+
+  it("expands live provider include groups without breaking case-id compatibility", async () => {
+    const core = await runLive(["--list", "--include", "core", "--json"], scrubProviderEnv());
+    expect(core.cases.map((entry: any) => entry.id)).toEqual(CORE_LIVE_CASE_IDS);
+
+    const chat = await runLive(["--list", "--include", "openai-chat", "--json"], scrubProviderEnv());
+    expect(chat.cases.map((entry: any) => entry.id)).toEqual(OPENAI_CHAT_LIVE_CASE_IDS);
+    expect(chat.cases.every((entry: any) => entry.protocol === "openai_chat")).toBe(true);
+
+    const responses = await runLive(["--list", "--include", "openai-responses", "--json"], scrubProviderEnv());
+    expect(responses.cases.map((entry: any) => entry.id)).toEqual(OPENAI_RESPONSES_LIVE_CASE_IDS);
+    expect(responses.cases.every((entry: any) => entry.protocol === "openai_responses")).toBe(true);
+
+    const anthropicCase = await runLive(["--list", "--include", "anthropic", "--json"], scrubProviderEnv());
+    expect(anthropicCase.cases.map((entry: any) => entry.id)).toEqual(["anthropic"]);
+
+    const anthropicGroup = await runLive(["--list", "--include", "anthropic-messages", "--json"], scrubProviderEnv());
+    expect(anthropicGroup.cases.map((entry: any) => entry.id)).toEqual(ANTHROPIC_MESSAGES_LIVE_CASE_IDS);
+    expect(anthropicGroup.cases.every((entry: any) => entry.protocol === "anthropic_messages")).toBe(true);
+
+    const deduped = await runLive(["--list", "--include", "core,openai,anthropic-messages,core", "--json"], scrubProviderEnv());
+    expect(deduped.cases.map((entry: any) => entry.id)).toEqual([
+      ...CORE_LIVE_CASE_IDS,
+      "sambanova-anthropic",
+      "deepseek-anthropic",
+      "zai-anthropic"
+    ]);
+
+    let error: any;
+    try {
+      await runLive(["--list", "--include", "unknown-group", "--json"], scrubProviderEnv());
+    } catch (err) {
+      error = err;
+    }
+    expect(error?.stderr).toContain("Unknown live provider case or group: unknown-group");
+    expect(error?.stderr).toContain("openai-chat");
   });
 
   it("runs live provider env checks against mock endpoints without leaking secrets", async () => {

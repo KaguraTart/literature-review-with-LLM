@@ -79,6 +79,7 @@ const SETTINGS_ALIASES = [
 ];
 
 const LIVE_PROVIDER_IDS = PROVIDER_ORDER.filter((id) => id !== "local-agents");
+const LIVE_GROUP_IDS = ["all", "mainstream", "core", "openai-chat", "openai-responses", "anthropic-messages", "remote", "local"];
 
 function runLiveProviderJson(args: string[]) {
   return JSON.parse(execFileSync(process.execPath, ["scripts/verify-provider-live.mjs", ...args], {
@@ -221,7 +222,24 @@ describe("provider catalog consistency", () => {
 
     expect(catalog.liveProviderCases).toBe(true);
     expect(catalog.count).toBe(LIVE_PROVIDER_IDS.length);
+    expect(catalog.groups.map((group: any) => group.id)).toEqual(LIVE_GROUP_IDS);
     expect(cases.map((entry: any) => entry.id).sort()).toEqual([...LIVE_PROVIDER_IDS].sort());
+    for (const group of catalog.groups || []) {
+      expect(group.caseIds.length).toBeGreaterThan(0);
+      expect(group.caseIds.every((id: string) => LIVE_PROVIDER_IDS.includes(id))).toBe(true);
+    }
+    const byGroup = new Map((catalog.groups || []).map((group: any) => [group.id, group.caseIds]));
+    expect(byGroup.get("all")).toEqual(cases.map((entry: any) => entry.id));
+    expect(byGroup.get("openai-chat")).toEqual(
+      cases.filter((entry: any) => entry.protocol === "openai_chat").map((entry: any) => entry.id)
+    );
+    expect(byGroup.get("openai-responses")).toEqual(
+      cases.filter((entry: any) => entry.protocol === "openai_responses").map((entry: any) => entry.id)
+    );
+    expect(byGroup.get("anthropic-messages")).toEqual(
+      cases.filter((entry: any) => entry.protocol === "anthropic_messages").map((entry: any) => entry.id)
+    );
+    expect(byGroup.get("local")).toEqual(["ollama", "lm-studio"]);
 
     for (const entry of cases) {
       const profile = profiles.get(entry.profile);

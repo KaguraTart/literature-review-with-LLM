@@ -197,6 +197,10 @@ Optional live provider checks use your own API credentials:
 
 ```bash
 npm run verify:provider:live -- --list
+npm run verify:provider:live -- --list --include mainstream
+npm run verify:provider:live -- --include core --env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include openai-chat --stream --env-file .env.local
+npm run verify:provider:models:live -- --include anthropic-messages --env-file .env.local
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --stream
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:image:live -- --include openai
@@ -245,6 +249,8 @@ LM_STUDIO_MODEL=local-model LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1 npm run 
 The same naming pattern is available for `XAI_*`, `TOGETHER_*`, `KIMI_*`, `PERPLEXITY_*`, `DEEPSEEK_ANTHROPIC_*`, `ZAI_ANTHROPIC_*`, `ZHIPU_*`, `VOLCENGINE_*`, `QIANFAN_*`, and `HUNYUAN_*`. For remote named providers, add the matching `*_BASE_URL` only when you override the built-in endpoint or use a proxy. For local providers such as Ollama and LM Studio, `*_BASE_URL` is explicit in live checks so running all live checks without env config does not accidentally call a local port; API keys are optional unless your local server requires one.
 
 Run `npm run verify:provider:live -- --list --json` to print every live-check case with its protocol, profile id, and environment variable names.
+
+`--include` accepts case ids and verification groups. The built-in groups are `core` for the basic OpenAI / OpenAI-compatible / Anthropic cases, `openai-chat`, `openai-responses`, `anthropic-messages`, `mainstream`, `remote`, `local`, and `all`. Case ids still take priority, so `--include anthropic` checks only the official Anthropic case; use `--include anthropic-messages` for the whole Anthropic Messages protocol family.
 
 Run `npm run verify:provider:live -- --env-template --include openai-compatible` to print copyable env lines with default endpoint hints for selected live-check cases. Add `--json` if you want a machine-readable template for CI secrets or local shell setup. The same template command is shown in the Zotero settings guide and exported provider diagnostics.
 

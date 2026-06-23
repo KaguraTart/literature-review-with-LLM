@@ -436,6 +436,23 @@ const DEFAULT_CASES = [
   }
 ];
 
+const MAINSTREAM_CASE_IDS = [
+  "openai",
+  "openai-compatible",
+  "openai-responses-compatible",
+  "anthropic",
+  "anthropic-compatible",
+  "minimax",
+  "gemini",
+  "deepseek",
+  "openrouter",
+  "groq",
+  "dashscope",
+  "siliconflow",
+  "ollama",
+  "lm-studio"
+];
+
 const DEFAULT_PROMPT = "Reply with OK only.";
 const DEFAULT_CONTEXT = "Live provider verification context.";
 
@@ -647,6 +664,7 @@ export function providerLiveCaseCatalog(include = "") {
   return {
     liveProviderCases: true,
     count: cases.length,
+    groups: providerLiveCaseGroups(),
     cases: cases.map((entry) => ({
       id: entry.id,
       label: entry.label,
@@ -673,6 +691,7 @@ export function providerLiveEnvTemplate(include = "") {
   return {
     liveProviderEnvTemplate: true,
     count: cases.length,
+    groups: providerLiveCaseGroups(),
     cases: cases.map((entry) => providerEnvTemplateForCase(entry))
   };
 }
@@ -813,11 +832,80 @@ function selectedCases(include) {
     .filter(Boolean);
   if (!requested.length) return DEFAULT_CASES;
   const byId = new Map(DEFAULT_CASES.map((entry) => [entry.id, entry]));
-  return requested.map((id) => {
-    const entry = byId.get(id);
-    if (!entry) throw new Error(`Unknown live provider case: ${id}`);
-    return entry;
-  });
+  const byGroup = new Map(providerLiveCaseGroups().map((group) => [group.id, group]));
+  const selected = [];
+  const seen = new Set();
+  for (const id of requested) {
+    const entries = byId.has(id)
+      ? [byId.get(id)]
+      : byGroup.has(id)
+        ? byGroup.get(id).caseIds.map((caseId) => byId.get(caseId)).filter(Boolean)
+        : [];
+    if (!entries[0]) {
+      const choices = [...byId.keys(), ...byGroup.keys()].sort().join(", ");
+      throw new Error(`Unknown live provider case or group: ${id}. Available: ${choices}`);
+    }
+    for (const entry of entries) {
+      if (!entry || seen.has(entry.id)) continue;
+      selected.push(entry);
+      seen.add(entry.id);
+    }
+  }
+  return selected;
+}
+
+function providerLiveCaseGroups() {
+  const byProtocol = (protocol) => DEFAULT_CASES
+    .filter((entry) => entry.protocol === protocol)
+    .map((entry) => entry.id);
+  const localIds = DEFAULT_CASES
+    .filter((entry) => entry.apiKeyOptional === true)
+    .map((entry) => entry.id);
+  const remoteIds = DEFAULT_CASES
+    .filter((entry) => entry.apiKeyOptional !== true)
+    .map((entry) => entry.id);
+  return [
+    {
+      id: "all",
+      label: "All live provider cases",
+      caseIds: DEFAULT_CASES.map((entry) => entry.id)
+    },
+    {
+      id: "mainstream",
+      label: "Common hosted and local profiles for first-pass checks",
+      caseIds: MAINSTREAM_CASE_IDS
+    },
+    {
+      id: "core",
+      label: "Core protocol families: OpenAI, OpenAI-compatible, and Anthropic",
+      caseIds: ["openai", "openai-compatible", "openai-responses-compatible", "anthropic", "anthropic-compatible"]
+    },
+    {
+      id: "openai-chat",
+      label: "OpenAI-compatible Chat protocol profiles",
+      caseIds: byProtocol("openai_chat")
+    },
+    {
+      id: "openai-responses",
+      label: "OpenAI Responses protocol profiles",
+      caseIds: byProtocol("openai_responses")
+    },
+    {
+      id: "anthropic-messages",
+      label: "Anthropic Messages protocol profiles",
+      caseIds: byProtocol("anthropic_messages")
+    },
+    {
+      id: "remote",
+      label: "Remote hosted API profiles",
+      caseIds: remoteIds
+    },
+    {
+      id: "local",
+      label: "Local OpenAI-compatible runtime profiles",
+      caseIds: localIds
+    }
+  ];
 }
 
 function missingRequirements(entry, env, options = {}) {
@@ -1046,6 +1134,10 @@ function formatReport(report) {
 
 function formatCaseCatalog(catalog) {
   const lines = [
+    "Provider live verification case groups:",
+    "group\tcases",
+    ...(catalog.groups || []).map((group) => `${group.id}\t${group.caseIds.join(",")}`),
+    "",
     "Provider live verification cases:",
     "id\tprotocol\timageInput\tpdfInput\tmodelList\tapiKeyEnv\tmodelEnv\tbaseURLEnv\theadersEnv\tbodyExtraEnv"
   ];
@@ -1067,7 +1159,10 @@ function formatCaseCatalog(catalog) {
 }
 
 function formatEnvTemplate(template) {
-  const lines = ["Provider live verification env templates:"];
+  const lines = [
+    "Provider live verification env templates:",
+    "# Include groups: " + (template.groups || []).map((group) => group.id).join(", ")
+  ];
   for (const entry of template.cases || []) {
     lines.push("", `# ${entry.id} (${entry.protocol})`, "# Required for generation checks");
     for (const name of entry.requiredEnv || []) {
@@ -1105,6 +1200,10 @@ function usage() {
     "  npm run verify:provider:live -- --json",
     "  npm run verify:provider:models:live -- --json",
     "  npm run verify:provider:live -- --list",
+    "  npm run verify:provider:live -- --list --include mainstream",
+    "  npm run verify:provider:live -- --include core --env-file .env.local --fail-on-skip",
+    "  npm run verify:provider:live -- --include openai-chat --stream --env-file .env.local",
+    "  npm run verify:provider:models:live -- --include anthropic-messages --env-file .env.local",
     "  npm run verify:provider:live -- --env-template --include openai-compatible",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai",
     "  OPENAI_API_KEY=... npm run verify:provider:models:live -- --include openai",
@@ -1141,7 +1240,7 @@ function usage() {
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --stream",
     "",
     "Options:",
-    "  --include LIST           Comma-separated live case ids; named cases include built-in provider ids such as minimax, gemini, azure-openai, deepseek, openrouter, groq, github-models, fireworks, cerebras, nvidia-nim, sambanova, sambanova-responses, sambanova-anthropic, ollama, and lm-studio",
+    "  --include LIST           Comma-separated live case ids or groups. Groups: all, mainstream, core, openai-chat, openai-responses, anthropic-messages, remote, local",
     "  --list                   Print available live case ids and environment variable names, then exit",
     "  --env-template           Print copyable placeholder env lines for selected live case ids, then exit",
     "  --prompt TEXT            Override the smoke prompt",

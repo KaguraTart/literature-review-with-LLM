@@ -178,6 +178,10 @@ npm run check
 
 ```bash
 npm run verify:provider:live -- --list
+npm run verify:provider:live -- --list --include mainstream
+npm run verify:provider:live -- --include core --env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include openai-chat --stream --env-file .env.local
+npm run verify:provider:models:live -- --include anthropic-messages --env-file .env.local
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --stream
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:image:live -- --include openai
@@ -226,6 +230,8 @@ LM_STUDIO_MODEL=local-model LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1 npm run 
 同样的命名规则也适用于 `XAI_*`、`TOGETHER_*`、`KIMI_*`、`PERPLEXITY_*`、`DEEPSEEK_ANTHROPIC_*`、`ZAI_ANTHROPIC_*`、`ZHIPU_*`、`VOLCENGINE_*`、`QIANFAN_*` 和 `HUNYUAN_*`。远程命名厂商只有覆盖内置 endpoint 或使用代理时，才需要额外设置对应的 `*_BASE_URL`。Ollama、LM Studio 这类本地 provider 的 live 检查会显式要求 `*_BASE_URL`，这样在没有环境变量时不会误打到本机端口；API key 默认可选，除非你的本地服务要求鉴权。
 
 运行 `npm run verify:provider:live -- --list --json` 可以直接列出全部 live-check case、协议、profile id 和对应环境变量名。
+
+`--include` 支持填写 case id，也支持填写验证 group。内置 group 包括：`core`（基础 OpenAI / OpenAI-compatible / Anthropic）、`openai-chat`、`openai-responses`、`anthropic-messages`、`mainstream`、`remote`、`local` 和 `all`。如果 group 名和 case id 可能冲突，会优先按 case id 处理，所以 `--include anthropic` 只检查官方 Anthropic；要检查整个 Anthropic Messages 协议族，请使用 `--include anthropic-messages`。
 
 运行 `npm run verify:provider:live -- --env-template --include openai-compatible` 可以打印选中 live-check case 的可复制环境变量模板，并带上默认 endpoint 提示；如果要写进 CI secrets 或本地 shell 脚本，可以再加 `--json` 输出结构化模板。Zotero 设置页指南和导出的厂商诊断报告也会显示同一条模板命令。
 
