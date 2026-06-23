@@ -6660,6 +6660,71 @@ describe("workbench writeback helpers", () => {
     });
   });
 
+  it("drops OpenAI Chat image input when a compatible endpoint rejects images after format fallback", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      const content = body.messages?.[1]?.content || [];
+      const imagePart = Array.isArray(content) ? content.find((part: any) => part?.type === "image_url") : null;
+      if (imagePart?.image_url && typeof imagePart.image_url === "object") {
+        return {
+          ok: false,
+          status: 422,
+          text: async () => JSON.stringify({
+            detail: [
+              { type: "string_type", loc: ["body", "messages", 1, "content", 1, "image_url"], msg: "Input should be a valid string" }
+            ]
+          })
+        };
+      }
+      if (imagePart) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "image_url is not supported by this model"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        body: {},
+        json: async () => ({ choices: [{ message: { content: "ok" } }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      protocol: "openai_chat",
+      capabilities: { ...providerProfile().capabilities, imageBase64: true, streaming: false }
+    }, [
+      { role: "user", content: "describe" }
+    ], "zh-CN", "system", {
+      type: "text",
+      source: "text_mode",
+      text: "paper text",
+      images: [{ name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+    }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(3);
+    expect(fetchCalls[0].body.messages[1].content[1]).toEqual({
+      type: "image_url",
+      image_url: { url: "data:image/png;base64,aW1hZ2U=" }
+    });
+    expect(fetchCalls[1].body.messages[1].content[1]).toEqual({
+      type: "image_url",
+      image_url: "data:image/png;base64,aW1hZ2U="
+    });
+    expect(fetchCalls[2].body.messages[1].content).toBe("describe\n\nCONTEXT:\npaper text");
+  });
+
   it("downgrades unsupported OpenAI Chat JSON and token fields in the workbench request path", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: any[] = [];
@@ -6873,6 +6938,59 @@ describe("workbench writeback helpers", () => {
       file_url: "data:application/pdf;base64,abc123"
     });
     expect(fetchCalls[1].body.input[0].content[0]).not.toHaveProperty("file_data");
+  });
+
+  it("drops OpenAI Responses image input when a compatible endpoint rejects input_image", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      const content = body.input?.[0]?.content || [];
+      if (Array.isArray(content) && content.some((part: any) => part?.type === "input_image")) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              code: "unsupported_parameter",
+              message: "input_image is not supported by this model",
+              param: "input[0].content[2].input_image"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ output_text: "ok" })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      protocol: "openai_responses",
+      capabilities: { ...providerProfile().capabilities, imageBase64: true }
+    }, [
+      { role: "user", content: "describe" }
+    ], "zh-CN", "system", {
+      type: "text",
+      source: "text_mode",
+      text: "paper text",
+      images: [{ name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+    }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body.input[0].content).toContainEqual({
+      type: "input_image",
+      image_url: "data:image/png;base64,aW1hZ2U="
+    });
+    expect(fetchCalls[1].body.input[0].content).toEqual([
+      { type: "input_text", text: "describe" },
+      { type: "input_text", text: "CONTEXT:\npaper text" }
+    ]);
+    expect(fetchCalls[1].body).not.toHaveProperty("omitOpenAIResponsesImage");
   });
 
   it("drops Anthropic PDF document input when a compatible workbench endpoint rejects document blocks", async () => {

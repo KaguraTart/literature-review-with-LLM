@@ -530,6 +530,16 @@ describe("provider adapters", () => {
       type: "image_url",
       image_url: "data:image/png;base64,abc"
     });
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      stringImageBody,
+      400,
+      "image input is not supported by this model"
+    )).toEqual(["messages.content.image_url"]);
+    const textOnlyChatImageBody = omitProviderRequestBodyFields(stringImageBody, ["messages.content.image_url"]);
+    expect(((textOnlyChatImageBody.messages as any[])[0].content as any[])).toEqual([
+      { type: "text", text: "Describe this image." }
+    ]);
     const responsesBody = {
       model: "responses-model",
       input: [],
@@ -630,6 +640,33 @@ describe("provider adapters", () => {
     const textOnlyPDFRetryBody = omitProviderRequestBodyFields(fileURLRetryBody, ["input_file.file_url"], ["input_file.file_data"]);
     expect((textOnlyPDFRetryBody.input as any[])[0].content).toEqual([
       { type: "input_text", text: "ping" }
+    ]);
+    const responsesImageBody = {
+      model: "responses-model",
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: "Describe this image." },
+            { type: "input_image", image_url: "data:image/png;base64,abc" }
+          ]
+        }
+      ]
+    };
+    expect(providerCompatibilityFallbackFields(
+      "openai_responses",
+      responsesImageBody,
+      400,
+      JSON.stringify({
+        error: {
+          code: "unsupported_parameter",
+          message: "input_image is not supported by this model",
+          param: "input[0].content[1].input_image"
+        }
+      })
+    )).toEqual(["input.content.input_image"]);
+    expect((omitProviderRequestBodyFields(responsesImageBody, ["input.content.input_image"]).input as any[])[0].content).toEqual([
+      { type: "input_text", text: "Describe this image." }
     ]);
     expect(providerCompatibilityFallbackFields(
       "openai_responses",
@@ -814,6 +851,13 @@ describe("provider adapters", () => {
       { type: "text", text: "prompt\n\npaper text" },
       { type: "image_url", image_url: "data:image/png;base64,aW1hZ2U=" }
     ]);
+    const textOnlyChatBody = bodyFor({
+      ...baseRequest,
+      profile: { ...imageProfile, bodyExtra: { omitOpenAIChatImage: true } },
+      input: imageInput
+    });
+    expect((textOnlyChatBody.messages as any[]).at(-1).content).toBe("prompt\n\npaper text");
+    expect(textOnlyChatBody).not.toHaveProperty("omitOpenAIChatImage");
 
     const responsesBody = bodyFor({
       ...baseRequest,
@@ -824,6 +868,17 @@ describe("provider adapters", () => {
       type: "input_image",
       image_url: "data:image/png;base64,aW1hZ2U="
     });
+    const textOnlyResponsesBody = bodyFor({
+      ...baseRequest,
+      profile: { ...imageProfile, protocol: "openai_responses", bodyExtra: { omitOpenAIResponsesImage: true } },
+      input: imageInput
+    });
+    expect(JSON.stringify(textOnlyResponsesBody.input)).not.toContain("input_image");
+    expect((textOnlyResponsesBody.input as any[])[0].content).toContainEqual({
+      type: "input_text",
+      text: "prompt"
+    });
+    expect(textOnlyResponsesBody).not.toHaveProperty("omitOpenAIResponsesImage");
 
     const anthropicBody = bodyFor({
       ...baseRequest,

@@ -327,7 +327,7 @@ function openAIChatStreamOptions(): Record<string, unknown> {
 
 function openaiChatMessages(request: ModelRequest): Array<Record<string, unknown>> {
   const messages = withInputText(request).map((message) => ({ role: message.role, content: message.content as unknown }));
-  const images = inputImages(request);
+  const images = shouldOmitOpenAIChatImage(request.profile) ? [] : inputImages(request);
   if (!images.length) return messages;
   const lastUserIndex = findLastIndex(messages, (message) => message.role === "user");
   const imageParts = images.map((image) => openAIChatImagePart(image, request.profile));
@@ -788,18 +788,20 @@ function openaiResponsesInput(request: ModelRequest, fallbackSystem = ""): OpenA
       input.push({ role: "user", content: [filePart] });
     }
   }
-  for (const image of inputImages(request)) {
-    const imagePart = {
-      type: "input_image",
-      image_url: imageDataURL(image)
-    };
-    if (lastUserIndex >= 0) {
-      input[lastUserIndex] = {
-        ...input[lastUserIndex],
-        content: [...input[lastUserIndex].content, imagePart]
+  if (!shouldOmitOpenAIResponsesImage(request.profile)) {
+    for (const image of inputImages(request)) {
+      const imagePart = {
+        type: "input_image",
+        image_url: imageDataURL(image)
       };
-    } else {
-      input.push({ role: "user", content: [imagePart] });
+      if (lastUserIndex >= 0) {
+        input[lastUserIndex] = {
+          ...input[lastUserIndex],
+          content: [...input[lastUserIndex].content, imagePart]
+        };
+      } else {
+        input.push({ role: "user", content: [imagePart] });
+      }
     }
   }
   return input;
@@ -821,6 +823,20 @@ function shouldOmitPdfInputFile(profile: ProviderProfile): boolean {
     || isTrueValue(profile.bodyExtra?.dropPdfInputFile);
 }
 
+function shouldOmitOpenAIChatImage(profile: ProviderProfile): boolean {
+  return isTrueValue(profile.bodyExtra?.omitOpenAIChatImage)
+    || isTrueValue(profile.bodyExtra?.skipOpenAIChatImage)
+    || isTrueValue(profile.bodyExtra?.dropOpenAIChatImage)
+    || shouldOmitGenericImageInput(profile);
+}
+
+function shouldOmitOpenAIResponsesImage(profile: ProviderProfile): boolean {
+  return isTrueValue(profile.bodyExtra?.omitOpenAIResponsesImage)
+    || isTrueValue(profile.bodyExtra?.skipOpenAIResponsesImage)
+    || isTrueValue(profile.bodyExtra?.dropOpenAIResponsesImage)
+    || shouldOmitGenericImageInput(profile);
+}
+
 function shouldOmitAnthropicDocument(profile: ProviderProfile): boolean {
   return isTrueValue(profile.bodyExtra?.omitAnthropicDocument)
     || isTrueValue(profile.bodyExtra?.skipAnthropicDocument)
@@ -836,7 +852,14 @@ function shouldOmitAnthropicImage(profile: ProviderProfile): boolean {
     || isTrueValue(profile.bodyExtra?.dropAnthropicImage)
     || isTrueValue(profile.bodyExtra?.omitImageBlock)
     || isTrueValue(profile.bodyExtra?.skipImageBlock)
-    || isTrueValue(profile.bodyExtra?.dropImageBlock);
+    || isTrueValue(profile.bodyExtra?.dropImageBlock)
+    || shouldOmitGenericImageInput(profile);
+}
+
+function shouldOmitGenericImageInput(profile: ProviderProfile): boolean {
+  return isTrueValue(profile.bodyExtra?.omitImageInput)
+    || isTrueValue(profile.bodyExtra?.skipImageInput)
+    || isTrueValue(profile.bodyExtra?.dropImageInput);
 }
 
 function normalizePdfInputFileField(value: unknown): "file_data" | "file_url" {
@@ -1034,6 +1057,12 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
     omitPdfInputFile: _omitPdfInputFile,
     skipPdfInputFile: _skipPdfInputFile,
     dropPdfInputFile: _dropPdfInputFile,
+    omitOpenAIChatImage: _omitOpenAIChatImage,
+    skipOpenAIChatImage: _skipOpenAIChatImage,
+    dropOpenAIChatImage: _dropOpenAIChatImage,
+    omitOpenAIResponsesImage: _omitOpenAIResponsesImage,
+    skipOpenAIResponsesImage: _skipOpenAIResponsesImage,
+    dropOpenAIResponsesImage: _dropOpenAIResponsesImage,
     omitAnthropicDocument: _omitAnthropicDocument,
     skipAnthropicDocument: _skipAnthropicDocument,
     dropAnthropicDocument: _dropAnthropicDocument,
@@ -1043,6 +1072,9 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
     omitImageBlock: _omitImageBlock,
     skipImageBlock: _skipImageBlock,
     dropImageBlock: _dropImageBlock,
+    omitImageInput: _omitImageInput,
+    skipImageInput: _skipImageInput,
+    dropImageInput: _dropImageInput,
     omitPdfDocument: _omitPdfDocument,
     skipPdfDocument: _skipPdfDocument,
     dropPdfDocument: _dropPdfDocument,
@@ -1167,6 +1199,10 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   if (protocol === "openai_chat" && rejectedImageURLField) {
     fields.push(rejectedImageURLField);
   }
+  const rejectedOpenAIChatImageField = rejectedImageURLField ? "" : rejectedOpenAIChatImageContentField(body, detail);
+  if (protocol === "openai_chat" && rejectedOpenAIChatImageField) {
+    fields.push(rejectedOpenAIChatImageField);
+  }
   const rejectedSystemRoleField = rejectedOpenAIChatSystemRoleField(body, detail);
   if (protocol === "openai_chat" && rejectedSystemRoleField) {
     fields.push(rejectedSystemRoleField);
@@ -1174,6 +1210,10 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   const rejectedPDFField = rejectedOpenAIResponsesPdfFileField(body, detail);
   if (protocol === "openai_responses" && rejectedPDFField) {
     fields.push(rejectedPDFField);
+  }
+  const rejectedResponsesImageField = rejectedOpenAIResponsesInputImageField(body, detail);
+  if (protocol === "openai_responses" && rejectedResponsesImageField) {
+    fields.push(rejectedResponsesImageField);
   }
   return Array.from(new Set(fields)).filter((field) => !usedFields.has(field));
 }
@@ -1227,7 +1267,9 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "messages.content.image",
   "messages.content.document",
   "messages.role.system",
+  "messages.content.image_url",
   "image_url.url",
+  "input.content.input_image",
   "input_file.file_data",
   "input_file.file_url"
 ]);
@@ -1294,6 +1336,7 @@ function normalizeProviderFieldHint(value: string): string {
     .replace(/\[[^\]]+\]/g, "");
   if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
   if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
+  if (/input(?:\.\d+|\[\d+\])?\.content.*input_image|inputcontent.*inputimage|(?:^|[^a-z0-9_])input_image(?:[^a-z0-9_]|$)|(?:^|[^a-z0-9_])inputimage(?:[^a-z0-9_]|$)/.test(normalized)) return "input.content.input_image";
   if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl|(?:^|[^a-z0-9_])image_url(?:[^a-z0-9_]|$)|(?:^|[^a-z0-9_])imageurl(?:[^a-z0-9_]|$)/.test(normalized)) return "image_url.url";
   if (/messages?(?:\.\d+|\[\d+\])?\.content.*(?:image|image\/|png|jpe?g|webp)|messages?content.*(?:image|image\/|png|jpe?g|webp)|(?:^|[^a-z0-9_])image(?:[^a-z0-9_]|$)/.test(normalized)) return "messages.content.image";
   if (/messages?(?:\.\d+|\[\d+\])?\.content.*(?:document|source|media_type|mediatype|base64|application\/pdf)|messages?content.*(?:document|source|media_type|mediatype|base64|applicationpdf)|(?:^|[^a-z0-9_])document(?:[^a-z0-9_]|$)/.test(normalized)) return "messages.content.document";
@@ -1309,7 +1352,9 @@ function providerFallbackFieldPresent(body: Record<string, unknown>, field: stri
   if (field === "messages.content.image") return anthropicMessagesHaveImageBlock(body);
   if (field === "messages.content.document") return anthropicMessagesHaveDocumentBlock(body);
   if (field === "messages.role.system") return openAIChatHasSystemMessage(body);
+  if (field === "messages.content.image_url") return openAIChatHasImagePart(body);
   if (field === "image_url.url") return openAIChatImageURLHasObjectURL(body);
+  if (field === "input.content.input_image") return openAIResponsesInputHasImage(body);
   if (field === "input_file.file_data") return openAIResponsesInputFileHasField(body, "file_data");
   if (field === "input_file.file_url") return openAIResponsesInputFileHasField(body, "file_url");
   return body?.[field] !== undefined;
@@ -1321,6 +1366,8 @@ function providerFallbackFieldSupported(body: Record<string, unknown>, field: st
   if (field === "messages.content.image") return protocol === "anthropic_messages";
   if (field === "messages.content.document") return protocol === "anthropic_messages";
   if (field === "messages.role.system") return protocol === "openai_chat";
+  if (field === "messages.content.image_url") return protocol === "openai_chat";
+  if (field === "input.content.input_image") return protocol === "openai_responses";
   if (PROVIDER_FALLBACK_BODY_FIELDS.has(field)) return true;
   return providerFallbackCustomBodyFieldPresent(body, field);
 }
@@ -1387,7 +1434,15 @@ function anthropicImageBlocks(body: Record<string, unknown>): Array<Record<strin
 
 function rejectedOpenAIChatImageURLField(body: Record<string, unknown>, detail: string): string {
   if (!openAIChatImageURLHasObjectURL(body)) return "";
-  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl|(?:^|[^a-z0-9_])image_url(?:[^a-z0-9_]|$)|image url|(?:^|[^a-z0-9_])imageurl(?:[^a-z0-9_]|$)/.test(detail)) return "image_url.url";
+  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl|(?:image_url|image url|imageurl).*string|string.*(?:image_url|image url|imageurl)|string_type|valid string/.test(detail)) return "image_url.url";
+  return "";
+}
+
+function rejectedOpenAIChatImageContentField(body: Record<string, unknown>, detail: string): string {
+  if (!openAIChatHasImagePart(body)) return "";
+  if (/messages?(?:[.\[]\d+\]?)*\.?content.*(?:image|image_url|image url)|(?:image_url|image url|imageurl).*(?:unsupported|not supported|unrecognized|unknown|invalid|extra_forbidden|not permitted|forbidden)|(?:unsupported|not supported|unrecognized|unknown|invalid|extra_forbidden|not permitted|forbidden).*(?:image_url|image url|imageurl)|(?:image|vision|input image).*(?:unsupported|not supported|not available|disabled)|(?:unsupported|not supported|not available|disabled).*(?:image|vision|input image)|image\/(?:png|jpe?g|webp)/.test(detail)) {
+    return "messages.content.image_url";
+  }
   return "";
 }
 
@@ -1411,6 +1466,10 @@ function openAIChatImageURLHasObjectURL(body: Record<string, unknown>): boolean 
   });
 }
 
+function openAIChatHasImagePart(body: Record<string, unknown>): boolean {
+  return openAIChatImageParts(body).length > 0;
+}
+
 function openAIChatImageParts(body: Record<string, unknown>): Array<Record<string, any>> {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   return messages.flatMap((message: any) => Array.isArray(message?.content) ? message.content : [])
@@ -1421,6 +1480,24 @@ function rejectedOpenAIResponsesPdfFileField(body: Record<string, unknown>, deta
   if (openAIResponsesInputFileHasField(body, "file_data") && /\bfile_data\b/.test(detail)) return "input_file.file_data";
   if (openAIResponsesInputFileHasField(body, "file_url") && /\bfile_url\b/.test(detail)) return "input_file.file_url";
   return "";
+}
+
+function rejectedOpenAIResponsesInputImageField(body: Record<string, unknown>, detail: string): string {
+  if (!openAIResponsesInputHasImage(body)) return "";
+  if (/input(?:[.\[]\d+\]?)*\.?content.*(?:input_image|image_url|image url|image)|input_image|inputimage|(?:image|vision|input image).*(?:unsupported|not supported|not available|disabled)|(?:unsupported|not supported|not available|disabled).*(?:image|vision|input image)|image\/(?:png|jpe?g|webp)/.test(detail)) {
+    return "input.content.input_image";
+  }
+  return "";
+}
+
+function openAIResponsesInputHasImage(body: Record<string, unknown>): boolean {
+  return openAIResponsesInputImageParts(body).length > 0;
+}
+
+function openAIResponsesInputImageParts(body: Record<string, unknown>): Array<Record<string, unknown>> {
+  const input = Array.isArray(body?.input) ? body.input : [];
+  return input.flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+    .filter((part: any) => part?.type === "input_image" && part && typeof part === "object");
 }
 
 function openAIResponsesInputFileHasField(body: Record<string, unknown>, field: "file_data" | "file_url"): boolean {
@@ -1476,6 +1553,14 @@ export function omitProviderRequestBodyFields(body: Record<string, unknown>, fie
       switchOpenAIChatImageURLToString(next);
       continue;
     }
+    if (field === "messages.content.image_url") {
+      removeOpenAIChatImageParts(next);
+      continue;
+    }
+    if (field === "input.content.input_image") {
+      removeOpenAIResponsesInputImages(next);
+      continue;
+    }
     if (field === "messages.role.system") {
       moveOpenAIChatSystemIntoMessages(next);
       continue;
@@ -1520,6 +1605,18 @@ function switchOpenAIChatImageURLToString(body: Record<string, unknown>): void {
   });
 }
 
+function removeOpenAIChatImageParts(body: Record<string, unknown>): void {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message: any) => {
+    const content = Array.isArray(message?.content) ? message.content : null;
+    if (!content) return message;
+    return {
+      ...message,
+      content: content.filter((part: any) => part?.type !== "image_url")
+    };
+  });
+}
+
 function switchOpenAIResponsesInputFileField(body: Record<string, unknown>, from: "file_data" | "file_url", to: "file_data" | "file_url"): void {
   const input = Array.isArray(body.input) ? body.input : [];
   body.input = input.map((item: any) => {
@@ -1542,6 +1639,17 @@ function removeOpenAIResponsesInputFiles(body: Record<string, unknown>): void {
     return {
       ...item,
       content: content.filter((part: any) => part?.type !== "input_file")
+    };
+  });
+}
+
+function removeOpenAIResponsesInputImages(body: Record<string, unknown>): void {
+  const input = Array.isArray(body.input) ? body.input : [];
+  body.input = input.map((item: any) => {
+    const content = Array.isArray(item?.content) ? item.content : [];
+    return {
+      ...item,
+      content: content.filter((part: any) => part?.type !== "input_image")
     };
   });
 }
