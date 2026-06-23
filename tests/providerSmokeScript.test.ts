@@ -149,6 +149,79 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("falls back when an OpenAI-compatible smoke stream returns an unsupported stream_options event", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-chat",
+        "--stream",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_chat",
+        stream: true,
+        text: "OK stream fallback"
+      });
+      expect(requests).toHaveLength(2);
+      expect(requests[0].body).toMatchObject({
+        stream: true,
+        stream_options: { include_usage: true }
+      });
+      expect(requests[1].body).toMatchObject({ stream: true });
+      expect(requests[1].body).not.toHaveProperty("stream_options");
+    }, {
+      handler: (requestData, response) => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        if (requestData.body?.stream_options) {
+          response.end("data: {\"error\":{\"message\":\"Unrecognized request argument supplied: stream_options\"}}\n\n");
+          return;
+        }
+        response.end("data: {\"choices\":[{\"delta\":{\"content\":\"OK stream fallback\"}}]}\n\ndata: [DONE]\n\n");
+      }
+    });
+  });
+
+  it("falls back to non-stream smoke verification when the stream event rejects streaming", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-chat",
+        "--stream",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_chat",
+        stream: false,
+        text: "OK non-stream fallback"
+      });
+      expect(requests).toHaveLength(2);
+      expect(requests[0].body).toMatchObject({
+        stream: true,
+        stream_options: { include_usage: true }
+      });
+      expect(requests[1].body).not.toHaveProperty("stream");
+      expect(requests[1].body).not.toHaveProperty("stream_options");
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.body?.stream === true) {
+          response.writeHead(200, { "content-type": "text/event-stream" });
+          response.end("data: {\"error\":{\"message\":\"streaming is not supported by this model\"}}\n\n");
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ choices: [{ message: { content: "OK non-stream fallback" } }] }));
+      }
+    });
+  });
+
   it("falls back when an OpenAI-compatible smoke endpoint rejects image_url object fields", async () => {
     await withMockProvider(async (baseURL, requests) => {
       const report = await runSmoke([

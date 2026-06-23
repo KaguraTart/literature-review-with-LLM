@@ -1624,10 +1624,15 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.state.systemPrompt,
       requestInput,
       this.state.stream,
-      this.state.abortController?.signal
+      this.state.abortController?.signal,
+      { parseStream: true, onDelta }
     );
     if (!response.ok) {
       throw new Error(providerErrorText(response.status, await response.text()));
+    }
+    if (response.zmsStreamText !== undefined) {
+      this.state.lastProviderUsage = response.zmsUsage || null;
+      return response.zmsStreamText;
     }
     if (response.zmsRequestedStream === true && response.body) {
       const text = await readStream(response, profile.protocol, onDelta);
@@ -8030,7 +8035,7 @@ function prependOpenAIResponsesPart(input, lastUserIndex, part) {
   return input.length - 1;
 }
 
-async function requestModelWithRetry(profile, messages, outputLanguage, systemPrompt, requestInput, streamEnabled, signal) {
+async function requestModelWithRetry(profile, messages, outputLanguage, systemPrompt, requestInput, streamEnabled, signal, options = {}) {
   let lastError;
   let requestProfile = profile;
   let requestStreamEnabled = streamEnabled;
@@ -8071,9 +8076,24 @@ async function requestModelWithRetry(profile, messages, outputLanguage, systemPr
         throw new Error(providerErrorText(response.status, okInspection.text || ""));
       }
       okInspection.response.zmsRequestedStream = okInspection.requestedStream;
+      if (options?.parseStream === true && okInspection.requestedStream === true && okInspection.response.body) {
+        try {
+          okInspection.response.zmsStreamText = await readStream(okInspection.response, requestProfile.protocol, options.onDelta || (() => undefined));
+        } catch (err) {
+          const fallback = providerStreamCompatibilityFallback(requestProfile, body, err, usedCompatibilityFallbackFields, requestStreamEnabled);
+          if (fallback && attempt < 3) {
+            requestProfile = fallback.profile;
+            requestStreamEnabled = fallback.streamEnabled;
+            usedCompatibilityFallbackFields = fallback.usedFields;
+            continue;
+          }
+          throw err;
+        }
+      }
       return okInspection.response;
     } catch (err) {
       if (err?.name === "AbortError") throw err;
+      if (err?.zmsProviderStreamError) throw err;
       if (err?.retryableProviderError === false) throw err;
       lastError = err;
       if (attempt < 3) {
@@ -8083,6 +8103,19 @@ async function requestModelWithRetry(profile, messages, outputLanguage, systemPr
     }
   }
   throw lastError;
+}
+
+function providerStreamCompatibilityFallback(profile, body, err, usedFallback, streamEnabled) {
+  if (err?.zmsPartialText) return null;
+  const message = streamCompatibilityErrorMessage(err);
+  if (!message) return null;
+  return providerCompatibilityFallback(profile, body, 200, JSON.stringify({ error: { message } }), usedFallback, streamEnabled);
+}
+
+function streamCompatibilityErrorMessage(err) {
+  const message = String(err?.message || err || "").trim();
+  if (!/^Stream error:/i.test(message)) return "";
+  return message.replace(/^Stream error:\s*/i, "").trim();
 }
 
 function providerCompatibilityFallback(profile, body, status, text, usedFallback, streamEnabled) {
@@ -8673,33 +8706,41 @@ async function readStream(response, protocol, onDelta) {
       onDelta(parsed.text);
     }
   };
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      if (isBlankStreamLine(line)) {
-        if (recordLines.length) consumeRecord(recordLines.join("\n"));
-        recordLines = [];
-        continue;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (isBlankStreamLine(line)) {
+          if (recordLines.length) consumeRecord(recordLines.join("\n"));
+          recordLines = [];
+          continue;
+        }
+        if (shouldStartNewStreamRecord(recordLines, line)) {
+          consumeRecord(recordLines.join("\n"));
+          recordLines = [];
+        }
+        recordLines.push(line);
       }
-      if (shouldStartNewStreamRecord(recordLines, line)) {
+    }
+    if (buffer) {
+      if (shouldStartNewStreamRecord(recordLines, buffer)) {
         consumeRecord(recordLines.join("\n"));
         recordLines = [];
       }
-      recordLines.push(line);
+      recordLines.push(buffer);
     }
-  }
-  if (buffer) {
-    if (shouldStartNewStreamRecord(recordLines, buffer)) {
-      consumeRecord(recordLines.join("\n"));
-      recordLines = [];
+    if (recordLines.length) consumeRecord(recordLines.join("\n"));
+  } catch (err) {
+    if (err && typeof err === "object") {
+      err.zmsProviderStreamError = true;
+      err.zmsPartialText = text;
     }
-    recordLines.push(buffer);
+    throw err;
   }
-  if (recordLines.length) consumeRecord(recordLines.join("\n"));
   response.zmsUsage = normalizeProviderUsage(usage);
   return text;
 }

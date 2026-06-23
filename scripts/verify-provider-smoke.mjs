@@ -81,33 +81,35 @@ export async function runProviderSmoke(options = {}) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const usedCompatibilityFallbackFields = [];
-    let response = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
-    let responseText = await response.text();
-    let parsed = parseResponseBody(responseText);
-    while (providerSmokeResponseNeedsFallback(profile.protocol, response, body, responseText, parsed)) {
-      const fields = providerCompatibilityFallbackFields(profile.protocol, body, response.status, responseText, usedCompatibilityFallbackFields);
-      if (fields.length) {
-        body = omitProviderRequestBodyFields(body, fields, usedCompatibilityFallbackFields);
-        headers = providerRequestHeadersWithFallback(headers, fields);
-        usedCompatibilityFallbackFields.push(...fields);
-        responseStream = body.stream === true;
-        response = await fetch(endpoint, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(body),
-          signal: controller.signal
-        });
-        responseText = await response.text();
-        parsed = parseResponseBody(responseText);
-        continue;
+    let response;
+    let responseText = "";
+    let parsed = null;
+    const applyFallbackFields = (fields) => {
+      body = omitProviderRequestBodyFields(body, fields, usedCompatibilityFallbackFields);
+      headers = providerRequestHeadersWithFallback(headers, fields);
+      usedCompatibilityFallbackFields.push(...fields);
+      responseStream = body.stream === true;
+    };
+    const fetchGeneration = async () => {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      responseText = await response.text();
+      parsed = parseResponseBody(responseText);
+    };
+    const applyResponseFallbacks = async () => {
+      while (providerSmokeResponseNeedsFallback(profile.protocol, response, body, responseText, parsed)) {
+        const fields = providerCompatibilityFallbackFields(profile.protocol, body, response.status, responseText, usedCompatibilityFallbackFields);
+        if (!fields.length) break;
+        applyFallbackFields(fields);
+        await fetchGeneration();
       }
-      break;
-    }
+    };
+    await fetchGeneration();
+    await applyResponseFallbacks();
     if (!response.ok) {
       return {
         ok: false,
@@ -129,7 +131,44 @@ export async function runProviderSmoke(options = {}) {
         error: responseError
       };
     }
-    const text = responseStream ? streamTextFromBody(profile.protocol, responseText) : extractResponseText(profile.protocol, parsed);
+    let text = "";
+    let usage = null;
+    for (let parseAttempt = 0; parseAttempt < 4; parseAttempt += 1) {
+      try {
+        text = responseStream ? streamTextFromBody(profile.protocol, responseText) : extractResponseText(profile.protocol, parsed);
+        usage = responseStream ? streamUsageFromBody(responseText) : extractProviderUsage(parsed);
+        break;
+      } catch (error) {
+        const fields = responseStream
+          ? providerStreamCompatibilityFallbackFields(profile.protocol, body, error, usedCompatibilityFallbackFields)
+          : [];
+        if (!fields.length || parseAttempt >= 3) throw error;
+        applyFallbackFields(fields);
+        await fetchGeneration();
+        await applyResponseFallbacks();
+        if (!response.ok) {
+          return {
+            ok: false,
+            status: response.status,
+            profile: profile.id,
+            protocol: profile.protocol,
+            endpoint,
+            error: providerErrorText(parsed, responseText)
+          };
+        }
+        const fallbackResponseError = providerResponseErrorText(parsed);
+        if (fallbackResponseError) {
+          return {
+            ok: false,
+            status: response.status,
+            profile: profile.id,
+            protocol: profile.protocol,
+            endpoint,
+            error: fallbackResponseError
+          };
+        }
+      }
+    }
     return {
       ok: true,
       status: response.status,
@@ -141,7 +180,7 @@ export async function runProviderSmoke(options = {}) {
       inputMode: smokeInputMode(options),
       contentTypes: requestContentTypes(body),
       text,
-      usage: responseStream ? streamUsageFromBody(responseText) : extractProviderUsage(parsed)
+      usage
     };
   } finally {
     clearTimeout(timer);
@@ -1174,6 +1213,18 @@ function providerSmokeResponseNeedsFallback(protocol, response, body, responseTe
   if (Number(response?.status) !== 200) return false;
   if (!providerResponseErrorText(parsed)) return false;
   return providerCompatibilityFallbackFields(protocol, body, 200, responseText).length > 0;
+}
+
+function providerStreamCompatibilityFallbackFields(protocol, body, error, usedFallback) {
+  const message = streamCompatibilityErrorMessage(error);
+  if (!message) return [];
+  return providerCompatibilityFallbackFields(protocol, body, 200, JSON.stringify({ error: { message } }), usedFallback);
+}
+
+function streamCompatibilityErrorMessage(error) {
+  const message = String(error?.message || error || "").trim();
+  if (!/^Stream error:/i.test(message)) return "";
+  return message.replace(/^Stream error:\s*/i, "").trim();
 }
 
 function providerErrorText(parsed, rawText) {

@@ -200,7 +200,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     shouldStream: (profile: any, streamEnabled?: boolean) => boolean;
     normalizeBoolean: (value: any, fallback?: boolean) => boolean;
     headersForProfile: (profile: any) => Record<string, string>;
-    requestModelWithRetry: (profile: any, messages: any[], outputLanguage: string, systemPrompt: string, requestInput: any, streamEnabled: boolean, signal?: AbortSignal) => Promise<any>;
+    requestModelWithRetry: (profile: any, messages: any[], outputLanguage: string, systemPrompt: string, requestInput: any, streamEnabled: boolean, signal?: AbortSignal, options?: any) => Promise<any>;
     workbenchFetchModelOptions: (request: { url: string; headers: Record<string, string> }) => Promise<Array<{ id: string; label: string }>>;
     readStream: (response: any, protocol: string, onDelta: (delta: string) => void) => Promise<string>;
     sessionFilenameFor: (sessionId: string) => string;
@@ -1852,6 +1852,150 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[0].body).toHaveProperty("max_output_tokens");
     expect(fetchCalls[1].body).not.toHaveProperty("max_output_tokens");
+  });
+
+  it("retries workbench streamed provider requests when the SSE error rejects stream_options", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    loaded.fetch = async (url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ url, body });
+      if (body.stream_options) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+          body: streamFromText("data: {\"error\":{\"message\":\"Unrecognized request argument supplied: stream_options\"}}\n\n")
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+        body: streamFromText("data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\ndata: [DONE]\n\n")
+      };
+    };
+    const deltas: string[] = [];
+
+    const response = await loaded.requestModelWithRetry(
+      {
+        id: "chat-router",
+        protocol: "openai_chat",
+        endpointMode: "base_url",
+        baseURL: "https://router.example/v1",
+        apiKey: "sk-test-secret",
+        model: "chat-model",
+        capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true },
+        bodyExtra: {}
+      },
+      [{ role: "user", content: "ping" }],
+      "en-US",
+      "system",
+      { type: "text", text: "paper text" },
+      true,
+      undefined,
+      { parseStream: true, onDelta: (delta: string) => deltas.push(delta) }
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.zmsStreamText).toBe("pong");
+    expect(deltas).toEqual(["pong"]);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({ stream: true, stream_options: { include_usage: true } });
+    expect(fetchCalls[1].body).toMatchObject({ stream: true });
+    expect(fetchCalls[1].body).not.toHaveProperty("stream_options");
+  });
+
+  it("retries workbench streamed provider requests without stream when the SSE error rejects streaming", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ body: any }> = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      if (body.stream === true) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+          body: streamFromText("data: {\"error\":{\"message\":\"stream is not supported by this model\"}}\n\n")
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { "content-type": "application/json" },
+        text: async () => JSON.stringify({ choices: [{ message: { content: "non-stream pong" } }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry(
+      {
+        id: "chat-router",
+        protocol: "openai_chat",
+        endpointMode: "base_url",
+        baseURL: "https://router.example/v1",
+        apiKey: "sk-test-secret",
+        model: "chat-model",
+        capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true },
+        bodyExtra: {}
+      },
+      [{ role: "user", content: "ping" }],
+      "en-US",
+      "system",
+      { type: "text", text: "paper text" },
+      true,
+      undefined,
+      { parseStream: true, onDelta: () => undefined }
+    );
+
+    expect(await response.json()).toMatchObject({ choices: [{ message: { content: "non-stream pong" } }] });
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({ stream: true, stream_options: { include_usage: true } });
+    expect(fetchCalls[1].body).not.toHaveProperty("stream");
+    expect(fetchCalls[1].body).not.toHaveProperty("stream_options");
+  });
+
+  it("does not retry workbench streams after visible text has already arrived", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ body: any }> = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      fetchCalls.push({ body: JSON.parse(init.body) });
+      return {
+        ok: true,
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+        body: streamFromText([
+          "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}",
+          "",
+          "data: {\"error\":{\"message\":\"Unrecognized request argument supplied: stream_options\"}}",
+          ""
+        ].join("\n"))
+      };
+    };
+    const deltas: string[] = [];
+
+    await expect(loaded.requestModelWithRetry(
+      {
+        id: "chat-router",
+        protocol: "openai_chat",
+        endpointMode: "base_url",
+        baseURL: "https://router.example/v1",
+        apiKey: "sk-test-secret",
+        model: "chat-model",
+        capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true },
+        bodyExtra: {}
+      },
+      [{ role: "user", content: "ping" }],
+      "en-US",
+      "system",
+      { type: "text", text: "paper text" },
+      true,
+      undefined,
+      { parseStream: true, onDelta: (delta: string) => deltas.push(delta) }
+    )).rejects.toThrow("stream_options");
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(deltas).toEqual(["partial"]);
   });
 
   it("loads wrapped model-list pages in the workbench", async () => {
