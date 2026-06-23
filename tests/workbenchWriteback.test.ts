@@ -199,6 +199,10 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     readStream: (response: any, protocol: string, onDelta: (delta: string) => void) => Promise<string>;
     sessionFilenameFor: (sessionId: string) => string;
     sessionIdFromPath: (path: string) => string;
+    sessionScopeKey: (item: any) => string;
+    sessionDirForItem: (outputDir: string, item: any) => string;
+    sessionDirsForItem: (outputDir: string, item: any) => string[];
+    sessionMarkdownPath: (outputDir: string, item: any, sessionId: string) => string;
     recentSessionFiles: (paths: string[]) => string[];
     latestSessionForItem: (item: any, outputDir: string) => Promise<any>;
     candidateJsonlPath: (outputDir: string, item: any) => string;
@@ -2436,6 +2440,42 @@ describe("workbench writeback helpers", () => {
       "/tmp/chat-02.jsonl",
       "/tmp/chat-10.jsonl"
     ]);
+  });
+
+  it("scopes attachment sessions to the parent paper while reading legacy attachment history", async () => {
+    const files = new Map([
+      ["/tmp/zms/sessions/PARENT", ""],
+      ["/tmp/zms/sessions/ATTACH", ""]
+    ]);
+    const loaded = loadWorkbenchHelpers(files, {
+      getChildren: async (dir: string) => {
+        if (dir.endsWith("/PARENT")) return ["/tmp/zms/sessions/PARENT/chat-100.jsonl"];
+        if (dir.endsWith("/ATTACH")) return ["/tmp/zms/sessions/ATTACH/chat-200.jsonl"];
+        return [];
+      }
+    });
+    loaded.__zoteroItems.set(7, {
+      id: 7,
+      key: "PARENT",
+      isRegularItem: () => true
+    });
+    const attachment = {
+      key: "ATTACH",
+      parentItemID: 7,
+      isRegularItem: () => false
+    };
+
+    expect(loaded.sessionScopeKey(attachment)).toBe("PARENT");
+    expect(loaded.sessionDirForItem("/tmp/zms", attachment)).toBe("/tmp/zms/sessions/PARENT");
+    expect(loaded.sessionDirsForItem("/tmp/zms", attachment)).toEqual([
+      "/tmp/zms/sessions/PARENT",
+      "/tmp/zms/sessions/ATTACH"
+    ]);
+    expect(loaded.sessionMarkdownPath("/tmp/zms", attachment, "chat-123")).toBe("/tmp/zms/sessions/PARENT/chat-123.md");
+    await expect(loaded.latestSessionForItem(attachment, "/tmp/zms")).resolves.toEqual({
+      path: "/tmp/zms/sessions/ATTACH/chat-200.jsonl",
+      sessionId: "chat-200"
+    });
   });
 
   it("returns no latest session when the item session directory is missing", async () => {
@@ -5021,6 +5061,58 @@ describe("workbench writeback helpers", () => {
     expect(workbench.state.sessionId).toBe("chat-older");
     expect(workbench.sessionPath()).toBe("/tmp/out/sessions/ITEM/chat-older.jsonl");
     expect(workbench.state.messages).toEqual([{ role: "user", content: "old" }]);
+  });
+
+  it("saves attachment-launched chats under the parent paper session and links Markdown to the parent item", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const parentItem = {
+      id: 7,
+      key: "PARENT",
+      isRegularItem: () => true,
+      getAttachments: () => [],
+      getField: (field: string) => field === "title" ? "Parent Paper" : ""
+    };
+    loaded.__zoteroItems.set(7, parentItem);
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.item = {
+      key: "ATTACH",
+      parentItemID: 7,
+      isRegularItem: () => false
+    };
+    workbench.state.sessionId = "chat-attachment";
+    workbench.state.profile = {
+      id: "openai",
+      name: "OpenAI",
+      protocol: "openai_responses",
+      model: "model-a"
+    };
+    workbench.state.uiLanguage = "zh-CN";
+    workbench.state.outputLanguage = "zh-CN";
+    workbench.state.messages = [{ role: "user", content: "question" }, { role: "assistant", content: "answer" }];
+    workbench.renderSessions = async () => undefined;
+    workbench.setStatus = () => undefined;
+    workbench.t = (key: string) => key;
+
+    await workbench.saveSession();
+
+    const jsonlPath = "/tmp/out/sessions/PARENT/chat-attachment.jsonl";
+    const markdownPath = "/tmp/out/sessions/PARENT/chat-attachment.md";
+    expect(files.has(jsonlPath)).toBe(true);
+    expect(files.has(markdownPath)).toBe(true);
+    const lines = (files.get(jsonlPath) || "").trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    expect(lines[0]).toMatchObject({
+      role: "user",
+      itemKey: "PARENT",
+      sourceItemKey: "ATTACH"
+    });
+    expect(loaded.__linkedAttachments[0]).toMatchObject({
+      file: markdownPath,
+      parentItemID: 7,
+      contentType: "text/markdown",
+      title: "Markdown Chat - PARENT chat-attachment.md"
+    });
   });
 
   it("keeps per-message provider metadata when saving a mixed-profile session", async () => {

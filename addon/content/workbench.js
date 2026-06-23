@@ -863,12 +863,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     if (!list) return;
     list.textContent = "";
     try {
-      if (!await IOUtils.exists(this.sessionDir())) {
-        renderEmptySessionList(list, this.t("noSessions"));
-        return;
-      }
-      const children = await IOUtils.getChildren(this.sessionDir());
-      const recent = recentSessionFiles(children);
+      const recent = await sessionFilesForItem(this.state.item, this.state.outputDir);
       if (!recent.length) {
         renderEmptySessionList(list, this.t("noSessions"));
         return;
@@ -1577,7 +1572,7 @@ var ZoteroMarkdownSummaryWorkbench = {
   },
 
   sessionDir() {
-    return PathUtils.join(this.state.outputDir, "sessions", this.state.item?.key || "unknown");
+    return sessionDirForItem(this.state.outputDir, this.state.item);
   },
 
   sessionPath() {
@@ -1588,10 +1583,13 @@ var ZoteroMarkdownSummaryWorkbench = {
     try {
       await ensureDirectory(this.sessionDir());
       const compactionEntry = this.state.compaction || null;
+      const scopeKey = sessionScopeKey(this.state.item);
+      const sourceItemKey = this.state.item?.key || "";
       const allLines = [
         ...this.state.messages.map((message) => JSON.stringify({
           ...message,
-          itemKey: this.state.item?.key,
+          itemKey: scopeKey,
+          sourceItemKey,
           profileId: message.profileId || this.state.profile?.id,
           profileName: message.profileName || this.state.profile?.name,
           protocol: message.protocol || this.state.profile?.protocol,
@@ -1601,7 +1599,8 @@ var ZoteroMarkdownSummaryWorkbench = {
         })),
         ...(compactionEntry ? [JSON.stringify({
           ...compactionEntry,
-          itemKey: this.state.item?.key,
+          itemKey: scopeKey,
+          sourceItemKey,
           profileId: this.state.profile?.id,
           profileName: this.state.profile?.name
         })] : [])
@@ -1613,7 +1612,8 @@ var ZoteroMarkdownSummaryWorkbench = {
       const mdPath = sessionMarkdownPath(this.state.outputDir, this.state.item, this.state.sessionId);
       await writeText(mdPath, renderSessionAsMarkdown(this.state.messages, this.t, compactionEntry?.summary));
       if (this.state.item) {
-        await linkOrCreateChatAttachment(this.state.item, this.state.item.key, mdPath, this.state.sessionId);
+        const ownerItem = sessionOwnerItem(this.state.item) || this.state.item;
+        await linkOrCreateChatAttachment(ownerItem, scopeKey, mdPath, this.state.sessionId);
       }
       await this.renderSessions();
       if (!options.quiet) this.setStatus(this.t("saved"));
@@ -9123,8 +9123,48 @@ function newSessionId() {
   return `chat-${Date.now()}`;
 }
 
+function sessionScopeKey(item) {
+  return sessionIdentityKeys(item)[0] || "unknown";
+}
+
+function sessionIdentityKeys(item) {
+  const keys = [];
+  const ownerKey = sessionOwnerItem(item)?.key || "";
+  if (ownerKey) keys.push(ownerKey);
+  if (item?.key) keys.push(item.key);
+  return Array.from(new Set(keys.map((key) => sanitizeFilename(key)).filter(Boolean)));
+}
+
+function sessionOwnerItem(item) {
+  if (!item) return null;
+  try {
+    if (item.isRegularItem?.()) return item;
+  } catch (_err) {
+    // Fall back to parent lookup below.
+  }
+  const parentID = Number(item.parentItemID || item.parentID || item.getSource?.() || 0);
+  if (!parentID) return null;
+  try {
+    return Zotero.Items.get(parentID) || null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function sessionDirForKey(outputDir, key) {
+  return PathUtils.join(outputDir || "", "sessions", sanitizeFilename(key || "unknown"));
+}
+
+function sessionDirForItem(outputDir, item) {
+  return sessionDirForKey(outputDir, sessionScopeKey(item));
+}
+
+function sessionDirsForItem(outputDir, item) {
+  return sessionIdentityKeys(item).map((key) => sessionDirForKey(outputDir, key));
+}
+
 function sessionMarkdownPath(outputDir, item, sessionId) {
-  const safeKey = sanitizeFilename(item?.key || "unknown");
+  const safeKey = sessionScopeKey(item);
   const safeId = sanitizeFilename(sessionId || newSessionId());
   return PathUtils.join(outputDir || "", "sessions", safeKey, `${safeId}.md`);
 }
@@ -9161,12 +9201,30 @@ function renderSessionAsMarkdown(messages, t, compactionSummary) {
 
 async function latestSessionForItem(item, outputDir) {
   if (!item?.key || !outputDir) return null;
-  const dir = PathUtils.join(outputDir, "sessions", sanitizeFilename(item.key));
-  if (!await pathExists(dir)) return null;
-  const children = await IOUtils.getChildren(dir);
-  const files = recentSessionFiles(children);
+  const files = await sessionFilesForItem(item, outputDir);
   if (!files.length) return null;
   return { path: files[files.length - 1], sessionId: sessionIdFromPath(files[files.length - 1]) };
+}
+
+async function sessionFilesForItem(item, outputDir) {
+  if (!item?.key || !outputDir) return [];
+  const files = [];
+  const seen = new Set();
+  for (const dir of sessionDirsForItem(outputDir, item)) {
+    if (!dir || seen.has(`dir:${dir}`)) continue;
+    seen.add(`dir:${dir}`);
+    if (!await pathExists(dir)) continue;
+    try {
+      for (const path of await IOUtils.getChildren(dir)) {
+        if (seen.has(path)) continue;
+        seen.add(path);
+        files.push(path);
+      }
+    } catch (_err) {
+      // Keep listing other legacy/current session directories.
+    }
+  }
+  return recentSessionFiles(files);
 }
 
 function renderEmptySessionList(element, message) {
@@ -9255,8 +9313,19 @@ function chatAttachmentTitlePrefix(itemKey) {
 function recentSessionFiles(paths, limit = 50) {
   return (paths || [])
     .filter((path) => String(path || "").toLowerCase().endsWith(".jsonl"))
-    .sort((left, right) => String(left).localeCompare(String(right)))
+    .sort(compareSessionPath)
     .slice(-Math.max(1, limit));
+}
+
+function compareSessionPath(left, right) {
+  const leftId = sessionIdFromPath(left);
+  const rightId = sessionIdFromPath(right);
+  const leftStarted = sessionStartedAtFromId(leftId);
+  const rightStarted = sessionStartedAtFromId(rightId);
+  if (leftStarted !== rightStarted) return leftStarted - rightStarted;
+  const idOrder = leftId.localeCompare(rightId);
+  if (idOrder) return idOrder;
+  return String(left).localeCompare(String(right));
 }
 
 function candidateJsonlPath(outputDir, item) {
