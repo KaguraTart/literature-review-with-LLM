@@ -164,6 +164,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     assertRemoteProfileReady: (profile: any, translate?: (key: string) => string) => void;
     normalizeSkillId: (value: string) => string;
     builtInSkillTemplate: (skillId: string, outputLanguage: string) => string;
+    loadSkillTemplate: (outputDir: string, skillId: string, outputLanguage: string) => Promise<string>;
     defaultImageQuestion: (outputLanguage: string) => string;
     normalizePromptPackId: (value: string) => string;
     promptPackInstruction: (promptPackId: string, outputLanguage: string) => string;
@@ -272,7 +273,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     __searchResults: number[];
     ZoteroMarkdownSummaryWorkbench: {
       state: any;
-      loadSession: (path: string) => Promise<void>;
+      loadSession: (path: string, options?: any) => Promise<boolean>;
       renderMessages: () => void;
       renderSessions: () => Promise<void>;
       setStatus: (message: string) => void;
@@ -2683,6 +2684,61 @@ describe("workbench writeback helpers", () => {
     expect(loaded.resolvedOutputDir("/tmp/custom")).toBe("/tmp/custom");
   });
 
+  it("falls back to the built-in skill template when the configured output directory is unreadable", async () => {
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      exists: async (path: string) => {
+        if (path.includes("/skills/")) throw new Error("stale output directory");
+        return false;
+      }
+    });
+
+    const template = await loaded.loadSkillTemplate("/missing/out", "literature-review-synthesis", "zh-CN");
+
+    expect(template).toContain("跨论文综合");
+    expect(template).toContain("[metadata]");
+  });
+
+  it("builds a minimal paper context when PDF, annotations, notes, or metadata reads fail", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const context = await loaded.buildPaperContext(
+      {
+        key: "ITEM",
+        getField: (field: string) => {
+          if (field === "title") throw new Error("metadata read failed");
+          return "";
+        },
+        getCreators: () => {
+          throw new Error("creator read failed");
+        },
+        getNotes: () => {
+          throw new Error("note list failed");
+        }
+      },
+      {
+        get attachmentText() {
+          throw new Error("pdf text failed");
+        },
+        getAnnotations: () => {
+          throw new Error("annotation read failed");
+        },
+        getFilePathAsync: async () => {
+          throw new Error("path failed");
+        }
+      },
+      "/tmp/out"
+    );
+
+    expect(context.metadata.title).toBe("ITEM");
+    expect(context.diagnostics).toMatchObject({
+      hasPdf: true,
+      pdfPathAvailable: false,
+      fulltextChars: 0,
+      annotationCount: 0,
+      noteCount: 0
+    });
+    expect(context.chunks.some((chunk: any) => chunk.sourceType === "metadata")).toBe(true);
+  });
+
   it("scopes attachment sessions to the parent paper while reading legacy attachment history", async () => {
     const files = new Map([
       ["/tmp/zms/sessions/PARENT", ""],
@@ -2784,6 +2840,33 @@ describe("workbench writeback helpers", () => {
       { role: "user", content: "old question" },
       { role: "assistant", content: "old answer" }
     ]);
+  });
+
+  it("keeps the current conversation when a selected session file cannot be read", async () => {
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      readUTF8: async () => {
+        throw new Error("session file missing");
+      }
+    });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    const statuses: string[] = [];
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.item = { key: "ITEM" };
+    workbench.state.sessionId = "chat-current";
+    workbench.state.messages = [{ role: "user", content: "current question" }];
+    workbench.renderMessages = () => undefined;
+    workbench.renderSessions = async () => undefined;
+    workbench.setStatus = (message: string) => {
+      statuses.push(message);
+    };
+    workbench.t = (key: string) => key;
+
+    await expect(workbench.loadSession("/tmp/out/sessions/ITEM/chat-missing.jsonl", { resume: true })).resolves.toBe(false);
+
+    expect(workbench.state.sessionId).toBe("chat-current");
+    expect(workbench.state.messages).toEqual([{ role: "user", content: "current question" }]);
+    expect(statuses.at(-1)).toContain("sessionLoadFailed");
+    expect(statuses.at(-1)).toContain("session file missing");
   });
 
   it("builds collection-scoped candidate JSONL paths", () => {

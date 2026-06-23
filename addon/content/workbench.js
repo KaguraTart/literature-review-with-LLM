@@ -185,8 +185,14 @@ var ZoteroMarkdownSummaryWorkbench = {
       await this.renderSkills();
       const latest = await latestSessionForItem(this.state.item, this.state.outputDir);
       if (latest) {
-        await this.loadSession(latest.path, { resume: true });
-        this.setStatus(this.t("sessionResumed"));
+        const loaded = await this.loadSession(latest.path, { resume: true });
+        if (loaded) {
+          this.setStatus(this.t("sessionResumed"));
+        } else {
+          this.state.sessionId = newSessionId();
+          this.state.sessionStartedAt = Date.now();
+          this.setStatus(storageError ? `${this.t("outputDirUnavailable")}: ${storageError}` : this.t("ready"));
+        }
       } else {
         this.state.sessionId = newSessionId();
         this.state.sessionStartedAt = Date.now();
@@ -1180,8 +1186,10 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.renderMessages();
       await this.renderSessions();
       this.setStatus(options.resume ? this.t("sessionResumed") : this.t("ready"));
+      return true;
     } catch (err) {
-      this.setStatus(safeError(err));
+      this.setStatus(`${this.t("sessionLoadFailed")}: ${safeError(err)}`);
+      return false;
     }
   },
 
@@ -3986,13 +3994,13 @@ function isPdfAttachmentItem(item) {
 
 async function buildPaperContext(item, pdf, outputDir) {
   const metadata = {
-    title: item.getField("title") || item.key,
-    authors: item.getCreators?.().map((creator) => [creator.firstName, creator.lastName].filter(Boolean).join(" ")).filter(Boolean) || [],
-    year: item.getField("date") || "",
-    doi: item.getField("DOI") || "",
-    abstract: item.getField("abstractNote") || ""
+    title: safeItemField(item, "title") || item?.key || "",
+    authors: safeCreators(item),
+    year: safeItemField(item, "date"),
+    doi: safeItemField(item, "DOI"),
+    abstract: safeItemField(item, "abstractNote")
   };
-  const text = pdf ? String((await pdf.attachmentText) || "").trim() : "";
+  const text = await safePdfAttachmentText(pdf);
   const pdfPath = await safePdfPath(pdf);
   const annotationsText = await readPdfAnnotations(pdf);
   const annotationCount = countAnnotationEntries(pdf);
@@ -4056,6 +4064,31 @@ async function buildComparisonContexts(items, outputDir) {
   return contexts;
 }
 
+function safeItemField(item, field) {
+  try {
+    return item?.getField?.(field) || "";
+  } catch (_err) {
+    return "";
+  }
+}
+
+function safeCreators(item) {
+  try {
+    return item?.getCreators?.().map((creator) => [creator.firstName, creator.lastName].filter(Boolean).join(" ")).filter(Boolean) || [];
+  } catch (_err) {
+    return [];
+  }
+}
+
+async function safePdfAttachmentText(pdf) {
+  if (!pdf) return "";
+  try {
+    return String((await pdf.attachmentText) || "").trim();
+  } catch (_err) {
+    return "";
+  }
+}
+
 async function safePdfPath(pdf) {
   try {
     return pdf && typeof pdf.getFilePathAsync === "function" ? await pdf.getFilePathAsync() : "";
@@ -4075,17 +4108,21 @@ function countAnnotationEntries(pdf) {
 
 async function readPdfAnnotations(pdf) {
   if (!pdf || typeof pdf.getAnnotations !== "function") return "";
-  const annotations = pdf.getAnnotations() || [];
-  return annotations.map((annotation) => {
-    const parts = [
-      annotation.annotationType ? `type: ${annotation.annotationType}` : "",
-      annotation.annotationPageLabel ? `page: ${annotation.annotationPageLabel}` : "",
-      annotation.annotationText ? `text: ${annotation.annotationText}` : "",
-      annotation.annotationComment ? `comment: ${annotation.annotationComment}` : "",
-      annotation.annotationColor ? `color: ${annotation.annotationColor}` : ""
-    ].filter(Boolean);
-    return parts.join("\n");
-  }).filter(Boolean).join("\n\n");
+  try {
+    const annotations = pdf.getAnnotations() || [];
+    return annotations.map((annotation) => {
+      const parts = [
+        annotation.annotationType ? `type: ${annotation.annotationType}` : "",
+        annotation.annotationPageLabel ? `page: ${annotation.annotationPageLabel}` : "",
+        annotation.annotationText ? `text: ${annotation.annotationText}` : "",
+        annotation.annotationComment ? `comment: ${annotation.annotationComment}` : "",
+        annotation.annotationColor ? `color: ${annotation.annotationColor}` : ""
+      ].filter(Boolean);
+      return parts.join("\n");
+    }).filter(Boolean).join("\n\n");
+  } catch (_err) {
+    return "";
+  }
 }
 
 async function readChildNotes(item) {
@@ -4093,13 +4130,22 @@ async function readChildNotes(item) {
 }
 
 async function readChildNotesWithCount(item) {
-  const noteIds = typeof item.getNotes === "function" ? item.getNotes() : [];
+  let noteIds = [];
+  try {
+    noteIds = typeof item?.getNotes === "function" ? item.getNotes() : [];
+  } catch (_err) {
+    noteIds = [];
+  }
   const notes = [];
   for (const id of noteIds) {
-    const note = Zotero.Items.get(id);
-    const html = note?.getNote?.() || note?.getField?.("note") || "";
-    const text = htmlToText(html);
-    if (text) notes.push(text);
+    try {
+      const note = Zotero.Items.get(id);
+      const html = note?.getNote?.() || note?.getField?.("note") || "";
+      const text = htmlToText(html);
+      if (text) notes.push(text);
+    } catch (_err) {
+      // Keep the paper context usable even if one child note is corrupt.
+    }
   }
   return { text: notes.join("\n\n"), count: notes.length };
 }
@@ -6922,9 +6968,13 @@ async function ensureSkillTemplates(outputDir) {
 async function loadSkillTemplate(outputDir, skillId, outputLanguage) {
   const safeSkillId = normalizeSkillId(skillId) || "paper-deep-summary";
   const path = PathUtils.join(outputDir, "skills", `${safeSkillId}.md`);
-  if (await IOUtils.exists(path)) {
-    const text = await readText(path);
-    if (text.trim()) return `${text.trim()}\n\n${languageInstruction(outputLanguage)}`;
+  try {
+    if (await IOUtils.exists(path)) {
+      const text = await readText(path);
+      if (text.trim()) return `${text.trim()}\n\n${languageInstruction(outputLanguage)}`;
+    }
+  } catch (_err) {
+    // Use the built-in skill when the configured output directory is stale.
   }
   return builtInSkillTemplate(safeSkillId, outputLanguage);
 }
