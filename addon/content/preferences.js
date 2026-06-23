@@ -1052,7 +1052,9 @@ function providerSetupGuide(profile, language = "en-US") {
       `.env.local live 检查：${verify.envFileCommand}`,
       `终端 live 检查：${verify.liveCommand}`,
       `图片 live 检查：${verify.imageCommand || "当前档案不支持图片输入"}`,
+      ...(verify.imageOverrideCommand ? [`图片能力覆盖检查：${verify.imageOverrideCommand}`] : []),
       `PDF live 检查：${verify.pdfCommand || "当前档案使用 Zotero 文本抽取"}`,
+      ...(verify.pdfOverrideCommand ? [`PDF 能力覆盖检查：${verify.pdfOverrideCommand}`] : []),
       `模型列表 live 检查：${verify.modelsCommand}`
     ].join("\n");
   }
@@ -1070,7 +1072,9 @@ function providerSetupGuide(profile, language = "en-US") {
     `Env-file live check: ${verify.envFileCommand}`,
     `Terminal live check: ${verify.liveCommand}`,
     `Image live check: ${verify.imageCommand || "not supported by this profile"}`,
+    ...(verify.imageOverrideCommand ? [`Image capability override check: ${verify.imageOverrideCommand}`] : []),
     `PDF live check: ${verify.pdfCommand || "uses Zotero extracted text"}`,
+    ...(verify.pdfOverrideCommand ? [`PDF capability override check: ${verify.pdfOverrideCommand}`] : []),
     `Model-list live check: ${verify.modelsCommand}`
   ].join("\n");
 }
@@ -1139,6 +1143,7 @@ function providerLiveVerifyGuide(profile, provider = providerFromProfile(profile
   const envFileImageCommand = canUseImageInput(profile) ? `npm run verify:provider:image:live -- --include ${entry.include} --env-file .env.local` : "";
   const envFilePdfCommand = canUsePdfBase64Input(profile) ? `npm run verify:provider:pdf:live -- --include ${entry.include} --env-file .env.local` : "";
   const envFileModelsCommand = `npm run verify:provider:models:live -- --include ${entry.include} --env-file .env.local`;
+  const overrideCommands = providerCapabilityOverrideCommands(profile, provider, entry, prefix);
   return {
     ...entry,
     liveCommand,
@@ -1149,8 +1154,38 @@ function providerLiveVerifyGuide(profile, provider = providerFromProfile(profile
     envFileCommand,
     envFileImageCommand,
     envFilePdfCommand,
-    envFileModelsCommand
+    envFileModelsCommand,
+    ...overrideCommands
   };
+}
+
+function providerCapabilityOverrideCommands(profile, provider, entry, prefix) {
+  if (!shouldShowCapabilityOverrideGuide(profile, provider)) return {};
+  const envName = providerCapabilitiesEnvName(entry);
+  const commandPrefix = [prefix, `${envName}='${JSON.stringify({ imageBase64: true })}'`].filter(Boolean).join(" ");
+  const pdfPrefix = [prefix, `${envName}='${JSON.stringify({ pdfBase64: true })}'`].filter(Boolean).join(" ");
+  return {
+    capabilitiesEnv: envName,
+    imageOverrideCommand: canUseImageInput(profile)
+      ? ""
+      : `${commandPrefix} npm run verify:provider:image:live -- --include ${entry.include}`,
+    pdfOverrideCommand: canUsePdfBase64Input(profile) || profile?.protocol === "openai_chat"
+      ? ""
+      : `${pdfPrefix} npm run verify:provider:pdf:live -- --include ${entry.include}`
+  };
+}
+
+function shouldShowCapabilityOverrideGuide(profile, provider) {
+  const key = String(provider || "").replace(/-/g, "_");
+  if (["openai_compatible", "openai_responses_compatible", "anthropic_compatible"].includes(key)) return true;
+  if (profile?.endpointMode === "full_url") return true;
+  return providerBaseURLDiffers(profile, provider);
+}
+
+function providerCapabilitiesEnvName(entry) {
+  const key = String(entry?.apiKeyEnv || "").replace(/_API_KEY$/, "");
+  if (key) return `${key}_CAPABILITIES_JSON`;
+  return `${String(entry?.include || "PROVIDER").toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_CAPABILITIES_JSON`;
 }
 
 function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)) {

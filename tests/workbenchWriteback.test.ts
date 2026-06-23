@@ -2139,6 +2139,34 @@ describe("workbench writeback helpers", () => {
     expect(anthropicReport).not.toContain("anthropic-secret");
   });
 
+  it("renders capability override live checks for compatible provider diagnostics", () => {
+    const report = helpers.renderProviderDiagnosticsMarkdown({
+      id: "anthropic-compatible",
+      name: "Anthropic Router",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/anthropic",
+      apiKey: "router-secret",
+      model: "claude-router",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: { authHeader: "authorization" }
+    }, {
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+
+    expect(report).toContain("### Image Capability Override Check");
+    expect(report).toContain("ANTHROPIC_COMPATIBLE_CAPABILITIES_JSON='{\"imageBase64\":true}'");
+    expect(report).toContain("npm run verify:provider:image:live -- --include anthropic-compatible");
+    expect(report).toContain("### PDF Capability Override Check");
+    expect(report).toContain("ANTHROPIC_COMPATIBLE_CAPABILITIES_JSON='{\"pdfBase64\":true}'");
+    expect(report).toContain("npm run verify:provider:pdf:live -- --include anthropic-compatible");
+    expect(report).not.toContain("### Image Live Check");
+    expect(report).not.toContain("### PDF Live Check");
+    expect(report).not.toContain("router-secret");
+  });
+
   it("exports provider diagnostics from the latest workbench settings", async () => {
     const files = new Map<string, string>();
     const loaded = loadWorkbenchHelpers(files);

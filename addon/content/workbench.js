@@ -2528,11 +2528,27 @@ function renderProviderDiagnosticsMarkdown(profile, options = {}) {
       `\`\`\``,
       ""
     ] : []),
+    ...(verify.imageOverrideCommand ? [
+      `### ${labels.imageOverrideLiveCheck}`,
+      "",
+      `\`\`\`bash`,
+      verify.imageOverrideCommand,
+      `\`\`\``,
+      ""
+    ] : []),
     ...(canUsePdfBase64Input(profile) ? [
       `### ${labels.pdfLiveCheck}`,
       "",
       `\`\`\`bash`,
       verify.envFilePdfCommand || verify.pdfCommand || labels.notConfigured,
+      `\`\`\``,
+      ""
+    ] : []),
+    ...(verify.pdfOverrideCommand ? [
+      `### ${labels.pdfOverrideLiveCheck}`,
+      "",
+      `\`\`\`bash`,
+      verify.pdfOverrideCommand,
       `\`\`\``,
       ""
     ] : []),
@@ -2609,7 +2625,9 @@ function providerDiagnosticsLabels(outputLanguage) {
       envFileCheck: ".env.local live 检查",
       directLiveCheck: "直接 live 检查",
       imageLiveCheck: "图片 live 检查",
+      imageOverrideLiveCheck: "图片能力覆盖 live 检查",
       pdfLiveCheck: "PDF live 检查",
+      pdfOverrideLiveCheck: "PDF 能力覆盖 live 检查",
       modelListLiveCheck: "模型列表 live 检查",
       statusSnapshot: "当前状态快照",
       troubleshooting: "排查清单",
@@ -2677,7 +2695,9 @@ function providerDiagnosticsLabels(outputLanguage) {
     envFileCheck: ".env.local Live Check",
     directLiveCheck: "Direct Live Check",
     imageLiveCheck: "Image Live Check",
+    imageOverrideLiveCheck: "Image Capability Override Check",
     pdfLiveCheck: "PDF Live Check",
+    pdfOverrideLiveCheck: "PDF Capability Override Check",
     modelListLiveCheck: "Model-list Live Check",
     statusSnapshot: "Current Status Snapshot",
     troubleshooting: "Troubleshooting Checklist",
@@ -2845,7 +2865,9 @@ function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProvid
       modelsCommand: "npm run local-agent:service:doctor",
       envFileImageCommand: "",
       envFilePdfCommand: "",
-      envFileModelsCommand: "npm run local-agent:service:doctor"
+      envFileModelsCommand: "npm run local-agent:service:doctor",
+      imageOverrideCommand: "",
+      pdfOverrideCommand: ""
     };
   }
   const entry = providerLiveVerifyCaseForWorkbench(profile, provider);
@@ -2858,6 +2880,7 @@ function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProvid
   const livePrefix = assignments.join(" ");
   const modelAssignments = assignments.filter((item) => !entry.modelEnv || !item.startsWith(`${entry.modelEnv}=`));
   const modelPrefix = modelAssignments.join(" ");
+  const overrideCommands = providerCapabilityOverrideCommandsForWorkbench(profile, provider, entry, livePrefix);
   return {
     ...entry,
     envTemplateCommand: `npm run verify:provider:live -- --env-template --include ${entry.include}`,
@@ -2868,8 +2891,38 @@ function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProvid
     modelsCommand: `${modelPrefix ? `${modelPrefix} ` : ""}npm run verify:provider:models:live -- --include ${entry.include}`,
     envFileImageCommand: canUseImageInput(profile) ? `npm run verify:provider:image:live -- --include ${entry.include} --env-file .env.local` : "",
     envFilePdfCommand: canUsePdfBase64Input(profile) ? `npm run verify:provider:pdf:live -- --include ${entry.include} --env-file .env.local` : "",
-    envFileModelsCommand: `npm run verify:provider:models:live -- --include ${entry.include} --env-file .env.local`
+    envFileModelsCommand: `npm run verify:provider:models:live -- --include ${entry.include} --env-file .env.local`,
+    ...overrideCommands
   };
+}
+
+function providerCapabilityOverrideCommandsForWorkbench(profile, provider, entry, prefix) {
+  if (!shouldShowCapabilityOverrideGuideForWorkbench(profile, provider)) return {};
+  const envName = providerCapabilitiesEnvNameForWorkbench(entry);
+  const imagePrefix = [prefix, `${envName}='${JSON.stringify({ imageBase64: true })}'`].filter(Boolean).join(" ");
+  const pdfPrefix = [prefix, `${envName}='${JSON.stringify({ pdfBase64: true })}'`].filter(Boolean).join(" ");
+  return {
+    capabilitiesEnv: envName,
+    imageOverrideCommand: canUseImageInput(profile)
+      ? ""
+      : `${imagePrefix} npm run verify:provider:image:live -- --include ${entry.include}`,
+    pdfOverrideCommand: canUsePdfBase64Input(profile) || profile?.protocol === "openai_chat"
+      ? ""
+      : `${pdfPrefix} npm run verify:provider:pdf:live -- --include ${entry.include}`
+  };
+}
+
+function shouldShowCapabilityOverrideGuideForWorkbench(profile, provider) {
+  const key = String(provider || "").replace(/-/g, "_");
+  if (["openai_compatible", "openai_responses_compatible", "anthropic_compatible"].includes(key)) return true;
+  if (profile?.endpointMode === "full_url") return true;
+  return providerBaseURLDiffersForWorkbench(profile, provider);
+}
+
+function providerCapabilitiesEnvNameForWorkbench(entry) {
+  const key = String(entry?.apiKeyEnv || "").replace(/_API_KEY$/, "");
+  if (key) return `${key}_CAPABILITIES_JSON`;
+  return `${String(entry?.include || "PROVIDER").toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_CAPABILITIES_JSON`;
 }
 
 function providerLiveVerifyCaseForWorkbench(profile, provider = workbenchProviderFromProfile(profile, profile?.id || "")) {
