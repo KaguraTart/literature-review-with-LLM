@@ -1349,6 +1349,99 @@ describe("bootstrap provider helpers", () => {
     ]);
   });
 
+  it("removes image inputs in bootstrap fallback helpers when providers reject vision content", () => {
+    const { helpers } = loadBootstrapProviderHelpers();
+    const openAIChatBody = {
+      model: "router-model",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "describe" },
+            { type: "image_url", image_url: "data:image/png;base64,abc" }
+          ]
+        }
+      ]
+    };
+    const chatFields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      openAIChatBody,
+      400,
+      "image_url is not supported by this model"
+    );
+    expect(chatFields).toEqual(["messages.content.image_url"]);
+    expect((helpers as any).omitProviderRequestBodyFields(openAIChatBody, chatFields).messages[0].content).toEqual([
+      { type: "text", text: "describe" }
+    ]);
+
+    const responsesBody = {
+      model: "responses-model",
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_image", image_url: "data:image/png;base64,abc" },
+            { type: "input_text", text: "describe" }
+          ]
+        }
+      ]
+    };
+    const responsesFields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_responses",
+      responsesBody,
+      422,
+      "input_image is not supported"
+    );
+    expect(responsesFields).toEqual(["input.content.input_image"]);
+    expect((helpers as any).omitProviderRequestBodyFields(responsesBody, responsesFields).input[0].content).toEqual([
+      { type: "input_text", text: "describe" }
+    ]);
+
+    const anthropicBody = {
+      model: "claude-compatible",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "abc" } },
+            { type: "text", text: "describe" }
+          ]
+        }
+      ]
+    };
+    const anthropicFields = (helpers as any).providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      anthropicBody,
+      422,
+      "Unsupported image content block"
+    );
+    expect(anthropicFields).toEqual(["messages.content.image"]);
+    expect((helpers as any).omitProviderRequestBodyFields(anthropicBody, anthropicFields).messages[0].content).toEqual([
+      { type: "text", text: "describe" }
+    ]);
+  });
+
+  it("omits rejected optional router body fields in bootstrap fallback helpers", () => {
+    const { helpers } = loadBootstrapProviderHelpers();
+    const body = {
+      model: "router-model",
+      messages: [{ role: "user", content: "ping" }],
+      modalities: ["text"],
+      safety_settings: [{ category: "test" }]
+    };
+    const fields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      400,
+      "Unsupported parameters: modalities and safety_settings"
+    );
+    expect(fields).toEqual(["modalities", "safety_settings"]);
+    expect((helpers as any).omitProviderRequestBodyFields(body, fields)).toEqual({
+      model: "router-model",
+      messages: [{ role: "user", content: "ping" }]
+    });
+  });
+
   it("omits rejected custom body-extra fields in bootstrap fallback helpers", () => {
     const { helpers } = loadBootstrapProviderHelpers();
     const body = {

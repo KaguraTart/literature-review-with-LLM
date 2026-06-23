@@ -107,11 +107,11 @@
         <label id="zms-profileStatus-label" value="档案状态"/>
         <html:pre class="zms-profile-status" id="zms-profileStatus"></html:pre>
       </vbox>
-      <hbox align="center" class="zms-row">
+      <hbox align="center" class="zms-row zms-outputDir-row">
         <label class="zms-label" id="zms-outputDir-label" value="输出目录"/>
-        <html:input class="zms-field" id="zms-outputDir"/>
-        <button id="zms-choose-outputDir-button" label="选择文件夹" oncommand="ZoteroMarkdownSummaryPrefs.chooseOutputDir()"/>
-        <button id="zms-save-outputDir-button" label="保存路径" oncommand="ZoteroMarkdownSummaryPrefs.saveOutputDir()"/>
+        <html:input class="zms-field zms-outputDir-field" id="zms-outputDir"/>
+        <button class="zms-outputDir-button" id="zms-choose-outputDir-button" label="选择文件夹" oncommand="ZoteroMarkdownSummaryPrefs.chooseOutputDir()"/>
+        <button class="zms-outputDir-button" id="zms-save-outputDir-button" label="保存路径" oncommand="ZoteroMarkdownSummaryPrefs.saveOutputDir()"/>
       </hbox>
       <hbox align="center" class="zms-row">
         <label class="zms-label" id="zms-inputMode-label" value="输入模式"/>
