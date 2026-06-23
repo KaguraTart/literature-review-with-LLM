@@ -210,6 +210,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     sessionMarkdownPath: (outputDir: string, item: any, sessionId: string) => string;
     sessionMessagesFromText: (path: string, text: string) => any[];
     messagesFromSessionMarkdown: (markdown: string) => any[];
+    sessionFilesForItem: (item: any, outputDir: string) => Promise<string[]>;
     recentSessionFiles: (paths: string[]) => string[];
     latestSessionForItem: (item: any, outputDir: string) => Promise<any>;
     resolvedOutputDir: (value: string) => string;
@@ -2646,6 +2647,20 @@ describe("workbench writeback helpers", () => {
     ]);
   });
 
+  it("keeps linked Markdown chat sessions in the recent session list", () => {
+    expect(helpers.recentSessionFiles([
+      "/tmp/chat-01.jsonl",
+      "/tmp/readme.md",
+      "/tmp/chat-10.md",
+      "/tmp/chat-02.jsonl",
+      "/tmp/chat-02.md"
+    ])).toEqual([
+      "/tmp/chat-01.jsonl",
+      "/tmp/chat-02.jsonl",
+      "/tmp/chat-10.md"
+    ]);
+  });
+
   it("resolves empty or packaged output directories to the Zotero data directory", () => {
     const loaded = loadWorkbenchHelpers();
 
@@ -2685,7 +2700,7 @@ describe("workbench writeback helpers", () => {
       "/tmp/zms/sessions/ATTACH"
     ]);
     expect(loaded.sessionMarkdownPath("/tmp/zms", attachment, "chat-123")).toBe("/tmp/zms/sessions/PARENT/chat-123.md");
-    await expect(loaded.latestSessionForItem(attachment, "/tmp/zms")).resolves.toEqual({
+    await expect(loaded.latestSessionForItem(attachment, "/tmp/zms")).resolves.toMatchObject({
       path: "/tmp/zms/sessions/ATTACH/chat-200.jsonl",
       sessionId: "chat-200"
     });
@@ -2736,6 +2751,9 @@ describe("workbench writeback helpers", () => {
       sessionId: "chat-1700000000000",
       source: "markdown"
     });
+    await expect(loaded.sessionFilesForItem(item, "/tmp/zms")).resolves.toEqual([
+      "/old/sessions/ITEM/chat-1700000000000.md"
+    ]);
 
     const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
     workbench.state.outputDir = "/tmp/zms";

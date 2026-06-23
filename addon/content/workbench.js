@@ -9517,7 +9517,7 @@ function messagesFromSessionMarkdown(markdown) {
 async function latestSessionForItem(item, outputDir) {
   if (!item?.key) return null;
   const files = outputDir ? await sessionFilesForItem(item, outputDir) : [];
-  if (files.length) return { path: files[files.length - 1], sessionId: sessionIdFromPath(files[files.length - 1]) };
+  if (files.length) return sessionFileDescriptor(files[files.length - 1]);
   return latestLinkedChatSessionForItem(item);
 }
 
@@ -9539,6 +9539,11 @@ async function sessionFilesForItem(item, outputDir) {
       // Keep listing other legacy/current session directories.
     }
   }
+  for (const path of await linkedChatSessionPathsForItem(item)) {
+    if (seen.has(path)) continue;
+    seen.add(path);
+    files.push(path);
+  }
   return recentSessionFiles(files);
 }
 
@@ -9555,7 +9560,15 @@ async function latestLinkedChatSessionForItem(item) {
   const sorted = paths.slice().sort(compareSessionPath);
   const recent = recentSessionFiles(sorted);
   const path = recent.length ? recent[recent.length - 1] : sorted[sorted.length - 1];
-  return path ? { path, sessionId: sessionIdFromPath(path), source: path.toLowerCase().endsWith(".md") ? "markdown" : "jsonl" } : null;
+  return path ? sessionFileDescriptor(path) : null;
+}
+
+function sessionFileDescriptor(path) {
+  return {
+    path,
+    sessionId: sessionIdFromPath(path),
+    source: String(path || "").toLowerCase().endsWith(".md") ? "markdown" : "jsonl"
+  };
 }
 
 async function linkedChatSessionPathsForItem(item) {
@@ -9660,10 +9673,27 @@ function chatAttachmentTitlePrefix(itemKey) {
 }
 
 function recentSessionFiles(paths, limit = 50) {
-  return (paths || [])
-    .filter((path) => String(path || "").toLowerCase().endsWith(".jsonl"))
+  return dedupeSessionPaths(paths || [])
     .sort(compareSessionPath)
     .slice(-Math.max(1, limit));
+}
+
+function dedupeSessionPaths(paths) {
+  const byId = new Map();
+  for (const path of paths || []) {
+    const id = sessionIdFromPath(path);
+    if (!id) continue;
+    const previous = byId.get(id);
+    if (!previous || preferSessionPath(path, previous)) byId.set(id, path);
+  }
+  return Array.from(byId.values());
+}
+
+function preferSessionPath(candidate, current) {
+  const candidateLower = String(candidate || "").toLowerCase();
+  const currentLower = String(current || "").toLowerCase();
+  if (candidateLower.endsWith(".jsonl") && !currentLower.endsWith(".jsonl")) return true;
+  return false;
 }
 
 function compareSessionPath(left, right) {
