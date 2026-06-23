@@ -28,6 +28,7 @@ const REQUIRED_LOCAL_AGENT_TOOL_NAMES = [
   "extract_pdf_pages"
 ];
 const MODEL_LIST_MAX_PAGES = 5;
+const ZMS_DEFAULT_OUTPUT_DIR_NAME = "Literature Review with LLM";
 
 var ZoteroMarkdownSummaryPrefs = {
   prefix: "extensions.zoteroMarkdownSummary",
@@ -54,7 +55,14 @@ var ZoteroMarkdownSummaryPrefs = {
     for (const field of this.fields) {
       const element = document.getElementById(`zms-${field}`);
       if (!element) continue;
-      const value = Zotero.Prefs.get(`${this.prefix}.${field}`, true);
+      let value = Zotero.Prefs.get(`${this.prefix}.${field}`, true);
+      if (field === "outputDir") {
+        const resolved = resolvedOutputDir(value);
+        if (resolved !== value && shouldPersistResolvedOutputDir(value)) {
+          Zotero.Prefs.set(`${this.prefix}.outputDir`, resolved, true);
+        }
+        value = resolved;
+      }
       if (field === "stream") element.checked = !!value;
       else element.value = value ?? "";
     }
@@ -132,6 +140,11 @@ var ZoteroMarkdownSummaryPrefs = {
       const element = document.getElementById(`zms-${field}`);
       if (!element) continue;
       let value = field === "stream" ? element.checked : element.value;
+      if (field === "outputDir") {
+        value = resolvedOutputDir(value);
+        element.value = value;
+        if (element.dataset) element.dataset.zmsLastSaved = value;
+      }
       if (field === "maxOutputTokens") value = Number(value) || 8192;
       if (field === "temperature") value = Number(value) || 1;
       Zotero.Prefs.set(`${this.prefix}.${field}`, value, true);
@@ -147,7 +160,7 @@ var ZoteroMarkdownSummaryPrefs = {
   async saveOutputDir() {
     const element = document.getElementById("zms-outputDir");
     if (!element) return false;
-    const outputDir = String(element.value || "").trim();
+    const outputDir = resolvedOutputDir(element.value);
     element.value = outputDir;
     if (!this.save({ updateProfile: false, statusKey: "" })) return false;
     if (element.dataset) element.dataset.zmsLastSaved = outputDir;
@@ -739,6 +752,45 @@ var ZoteroMarkdownSummaryPrefs = {
 function runtimeLocale() {
   try {
     return Services.locale.appLocaleAsBCP47 || Services.locale.requestedLocale || "";
+  } catch (_err) {
+    return "";
+  }
+}
+
+function resolvedOutputDir(value) {
+  const raw = String(value || "").trim();
+  if (raw && !isLegacyPackagedOutputDir(raw)) return raw;
+  return defaultOutputDir();
+}
+
+function shouldPersistResolvedOutputDir(value) {
+  const raw = String(value || "").trim();
+  return !raw || isLegacyPackagedOutputDir(raw);
+}
+
+function isLegacyPackagedOutputDir(value) {
+  const normalized = String(value || "").trim().replace(/\\/g, "/");
+  return /\/Library\/CloudStorage\/OneDrive-[^/]+\/Zotero_PDFs\/Zotero_MD_Summaries$/.test(normalized);
+}
+
+function defaultOutputDir() {
+  const base = zoteroDataDirectory() || zoteroProfileDirectory();
+  if (base && PathUtils?.join) return PathUtils.join(base, ZMS_DEFAULT_OUTPUT_DIR_NAME);
+  return ZMS_DEFAULT_OUTPUT_DIR_NAME;
+}
+
+function zoteroDataDirectory() {
+  try {
+    return Zotero?.DataDirectory?.dir || "";
+  } catch (_err) {
+    return "";
+  }
+}
+
+function zoteroProfileDirectory() {
+  try {
+    const nsIFile = typeof Ci !== "undefined" ? Ci.nsIFile : undefined;
+    return Services?.dirsvc?.get?.("ProfD", nsIFile)?.path || "";
   } catch (_err) {
     return "";
   }

@@ -209,7 +209,11 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
       join: (...parts: string[]) => parts.filter(Boolean).join("/")
     },
     Zotero: {
+      DataDirectory: {
+        dir: "/tmp/zotero-data"
+      },
       Prefs: {
+        get: (key: string) => prefValues.get(key),
         set: (key: string, value: any) => {
           prefValues.set(key, value);
         }
@@ -2011,6 +2015,19 @@ describe("preferences local-agent config helpers", () => {
     expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("/tmp/new out");
     expect(madeDirectories).toContain("/tmp/new out");
     expect(elements.get("zms-status").value).toContain("Output directory saved");
+  });
+
+  it("migrates the packaged local output directory to the Zotero data directory", () => {
+    const { controller, elements, prefValues } = loadPreferencesController();
+    prefValues.set(
+      "extensions.zoteroMarkdownSummary.outputDir",
+      "/Users/example/Library/CloudStorage/OneDrive-Personal/Zotero_PDFs/Zotero_MD_Summaries"
+    );
+
+    controller.init();
+
+    expect(elements.get("zms-outputDir").value).toBe("/tmp/zotero-data/Literature Review with LLM");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("/tmp/zotero-data/Literature Review with LLM");
   });
 
   it("marks local-agent settings profiles as model-optional", () => {

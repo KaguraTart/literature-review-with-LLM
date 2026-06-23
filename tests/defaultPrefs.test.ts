@@ -9,6 +9,13 @@ function defaultProfiles() {
 }
 
 describe("default provider profiles", () => {
+  it("does not ship a machine-specific output directory", () => {
+    const prefs = readFileSync("addon/prefs.js", "utf8");
+    expect(prefs).toContain('pref("outputDir", "")');
+    expect(prefs).not.toMatch(/\/Users\/[^/]+\/Library\/CloudStorage/);
+    expect(prefs).not.toMatch(/OneDrive-[^/]+\/Zotero_PDFs/);
+  });
+
   it("includes mainstream OpenAI and Anthropic profile formats", () => {
     const profiles = defaultProfiles();
     expect(profiles.map((profile: any) => profile.id)).toEqual([

@@ -11,6 +11,11 @@
   max-width: 34em;
 }
 
+#zms-outputDir {
+  width: 46em;
+  max-width: 46em;
+}
+
 .zms-json {
   width: 58em;
   min-height: 14em;

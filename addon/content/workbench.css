@@ -10,6 +10,14 @@
   -moz-user-select: text;
 }
 
+#zms-workbench html,
+#zms-workbench body,
+#zms-workbench main {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+}
+
 .zms-workbench-shell {
   position: relative;
   display: grid;
@@ -292,9 +300,9 @@
 }
 
 .zms-message :not(button) {
-  user-select: text;
-  -moz-user-select: text;
-  -webkit-user-select: text;
+  user-select: text !important;
+  -moz-user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 .zms-message-user {
@@ -355,9 +363,10 @@
 .zms-message-body {
   overflow-wrap: anywhere;
   cursor: text;
-  user-select: text;
-  -moz-user-select: text;
-  -webkit-user-select: text;
+  user-select: text !important;
+  -moz-user-select: text !important;
+  -webkit-user-select: text !important;
+  touch-action: manipulation;
 }
 
 .zms-message-user .zms-message-body {
@@ -420,9 +429,22 @@
 .zms-markdown {
   color: #1d2733;
   overflow-wrap: anywhere;
-  user-select: text;
-  -moz-user-select: text;
-  -webkit-user-select: text;
+  user-select: text !important;
+  -moz-user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+.zms-markdown *,
+.zms-user-text,
+.zms-message-body pre,
+.zms-message-body code,
+.zms-message-body li,
+.zms-message-body p,
+.zms-message-body td,
+.zms-message-body th {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
 }
 
 .zms-markdown > :first-child {

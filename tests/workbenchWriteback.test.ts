@@ -71,6 +71,9 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
       },
       Zotero: {
         File: {},
+        DataDirectory: {
+          dir: "/tmp/zotero-data"
+        },
         Item: FakeZoteroItem,
         Search: class {
           libraryID = 0;
@@ -203,8 +206,11 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     sessionDirForItem: (outputDir: string, item: any) => string;
     sessionDirsForItem: (outputDir: string, item: any) => string[];
     sessionMarkdownPath: (outputDir: string, item: any, sessionId: string) => string;
+    sessionMessagesFromText: (path: string, text: string) => any[];
+    messagesFromSessionMarkdown: (markdown: string) => any[];
     recentSessionFiles: (paths: string[]) => string[];
     latestSessionForItem: (item: any, outputDir: string) => Promise<any>;
+    resolvedOutputDir: (value: string) => string;
     candidateJsonlPath: (outputDir: string, item: any) => string;
     importLedgerJsonlPath: (outputDir: string, item: any) => string;
     importableCandidateRecords: (records: any[]) => any[];
@@ -2430,6 +2436,7 @@ describe("workbench writeback helpers", () => {
   it("normalizes session file paths for item-key scoped JSONL history", () => {
     expect(helpers.sessionFilenameFor("../chat one.jsonl")).toBe("chat-one.jsonl");
     expect(helpers.sessionIdFromPath("/tmp/zms/sessions/ITEM/chat-42.jsonl")).toBe("chat-42");
+    expect(helpers.sessionIdFromPath("/tmp/zms/sessions/ITEM/chat-42.md")).toBe("chat-42");
     expect(helpers.recentSessionFiles([
       "/tmp/chat-01.jsonl",
       "/tmp/readme.md",
@@ -2440,6 +2447,15 @@ describe("workbench writeback helpers", () => {
       "/tmp/chat-02.jsonl",
       "/tmp/chat-10.jsonl"
     ]);
+  });
+
+  it("resolves empty or packaged output directories to the Zotero data directory", () => {
+    const loaded = loadWorkbenchHelpers();
+
+    expect(loaded.resolvedOutputDir("")).toBe("/tmp/zotero-data/Literature Review with LLM");
+    expect(loaded.resolvedOutputDir("/Users/example/Library/CloudStorage/OneDrive-Personal/Zotero_PDFs/Zotero_MD_Summaries"))
+      .toBe("/tmp/zotero-data/Literature Review with LLM");
+    expect(loaded.resolvedOutputDir("/tmp/custom")).toBe("/tmp/custom");
   });
 
   it("scopes attachment sessions to the parent paper while reading legacy attachment history", async () => {
@@ -2482,6 +2498,64 @@ describe("workbench writeback helpers", () => {
     const loaded = loadWorkbenchHelpers();
 
     await expect(loaded.latestSessionForItem({ key: "ITEM" }, "/tmp/zms")).resolves.toBeNull();
+  });
+
+  it("recovers chat history from linked Markdown session attachments when JSONL is unavailable", async () => {
+    const files = new Map([
+      [
+        "/old/sessions/ITEM/chat-1700000000000.md",
+        [
+          "---",
+          "source: zotero-markdown-summary workbench",
+          "---",
+          "",
+          "# Chat session",
+          "",
+          "### **You**",
+          "",
+          "old question",
+          "",
+          "### **Assistant**",
+          "",
+          "old answer",
+          "",
+          "_Usage: input 1, output 2_"
+        ].join("\n")
+      ]
+    ]);
+    const loaded = loadWorkbenchHelpers(files);
+    loaded.__zoteroItems.set(1, {
+      getField: () => "Markdown Chat - ITEM chat-1700000000000.md",
+      getFilePathAsync: async () => "/old/sessions/ITEM/chat-1700000000000.md"
+    });
+    const item = {
+      key: "ITEM",
+      getAttachments: () => [1],
+      isRegularItem: () => true
+    };
+
+    await expect(loaded.latestSessionForItem(item, "/tmp/zms")).resolves.toMatchObject({
+      path: "/old/sessions/ITEM/chat-1700000000000.md",
+      sessionId: "chat-1700000000000",
+      source: "markdown"
+    });
+
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/zms";
+    workbench.state.item = item;
+    workbench.state.sessionId = "chat-new";
+    workbench.renderMessages = () => undefined;
+    workbench.renderSessions = async () => undefined;
+    workbench.setStatus = () => undefined;
+    workbench.t = (key: string) => key;
+
+    await workbench.loadSession("/old/sessions/ITEM/chat-1700000000000.md");
+
+    expect(workbench.state.sessionId).toBe("chat-1700000000000");
+    expect(workbench.state.messages.map((message: any) => ({ role: message.role, content: message.content }))).toEqual([
+      { role: "user", content: "old question" },
+      { role: "assistant", content: "old answer" }
+    ]);
   });
 
   it("builds collection-scoped candidate JSONL paths", () => {
@@ -5582,6 +5656,41 @@ describe("workbench writeback helpers", () => {
       { name: "figure.png", mimeType: "image/png", size: 5 }
     ]);
     expect(workbench.state.pendingImages).toEqual([]);
+  });
+
+  it("starts a cross-paper review from the sessions action", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-input": "",
+      "zms-skill": ""
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.state.item = { key: "ITEM" };
+    workbench.state.profile = providerProfile();
+    workbench.state.messages = [];
+    workbench.state.outputLanguage = "zh-CN";
+    workbench.state.uiLanguage = "zh-CN";
+    const labels: Record<string, string> = {
+      crossReviewPrompt: "请生成跨论文综述",
+      "literature-review-synthesis-desc": "desc"
+    };
+    workbench.t = (key: string) => labels[key] || key;
+    workbench.saveSession = async () => undefined;
+    let captured: any = null;
+    workbench.callModel = async (content: string, skillId: string) => {
+      captured = { content, skillId };
+      return "answer";
+    };
+
+    await workbench.startCrossPaperReview();
+
+    expect(dom.elements.get("zms-skill").value).toBe("literature-review-synthesis");
+    expect(captured).toMatchObject({
+      content: "请生成跨论文综述",
+      skillId: "literature-review-synthesis"
+    });
+    expect(workbench.state.messages[0].content).toBe("请生成跨论文综述");
   });
 
   it("stores optional local OCR metadata on image messages without sending it to the remote model", async () => {

@@ -59,6 +59,7 @@ const LOCAL_AGENT_TOOL_NAMES = new Set(Object.values(LOCAL_AGENT_SKILLS));
 const LOCAL_AGENT_AGGREGATE_SKILLS = ["ask-all-agents", "ask-gemini-claude", "check-local-agents"];
 const ZMS_PREF_PREFIX = "extensions.zoteroMarkdownSummary";
 const ZMS_CHROME_CONTENT_URL = "chrome://zotero-markdown-summary/content/";
+const ZMS_DEFAULT_OUTPUT_DIR_NAME = "Literature Review with LLM";
 const MAX_COMPARISON_PAPERS = 5;
 const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "stream_options",
@@ -167,14 +168,18 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.state.context.comparisonContexts = this.state.comparisonContexts;
       this.state.contextDiagnostics = this.state.context.diagnostics || null;
       this.state.contextSourceHash = buildContextSourceHash(this.state.context, this.state.item, this.state.pdf);
-      await ensureDirectory(this.sessionDir());
-      await ensureSkillTemplates(this.state.outputDir);
+      let storageError = "";
+      try {
+        await ensureDirectory(this.sessionDir());
+        await ensureSkillTemplates(this.state.outputDir);
+      } catch (err) {
+        storageError = safeError(err);
+        this.state.storageError = storageError;
+      }
       this.renderPaper();
       this.renderProfiles();
       this.renderPromptPacks();
       await this.renderSkills();
-      // Try to resume the most recent conversation for this item so the
-      // user does not have to start over when they reopen the workbench.
       const latest = await latestSessionForItem(this.state.item, this.state.outputDir);
       if (latest) {
         await this.loadSession(latest.path, { resume: true });
@@ -182,7 +187,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       } else {
         this.state.sessionId = newSessionId();
         this.state.sessionStartedAt = Date.now();
-        this.setStatus(this.t("ready"));
+        this.setStatus(storageError ? `${this.t("outputDirUnavailable")}: ${storageError}` : this.t("ready"));
       }
       this.renderSessions();
       await this.loadCandidates({ quiet: true });
@@ -200,6 +205,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-export-comparison-report": () => this.exportComparisonReport(),
       "zms-export-visual-report": () => this.exportVisualExtractionReport(),
       "zms-export-review-draft": () => this.exportReviewDraft(),
+      "zms-start-cross-review": () => this.startCrossPaperReview(),
       "zms-export-proposal-note": () => this.exportProposalNote(),
       "zms-export-journal-outline": () => this.exportJournalOutline(),
       "zms-search-candidates": () => this.searchCandidates(),
@@ -432,7 +438,11 @@ var ZoteroMarkdownSummaryWorkbench = {
   },
 
   loadSettings() {
-    this.state.outputDir = pref("outputDir");
+    const storedOutputDir = pref("outputDir");
+    this.state.outputDir = resolvedOutputDir(storedOutputDir);
+    if (this.state.outputDir !== storedOutputDir && shouldPersistResolvedOutputDir(storedOutputDir)) {
+      setPref("outputDir", this.state.outputDir);
+    }
     this.state.outputLanguage = normalizeOutputLanguage(pref("outputLanguage"));
     this.state.promptPackId = normalizePromptPackId(pref("promptPackId"));
     this.state.inputMode = normalizeInputMode(pref("inputMode"));
@@ -515,6 +525,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-save-session", this.t("saveSession"));
     setText("zms-export-reading-log", this.t("exportReadingLog"));
     setText("zms-export-comparison-report", this.t("exportComparisonReport"));
+    setText("zms-start-cross-review", this.t("startCrossReview"));
     setText("zms-export-visual-report", this.t("exportVisualReport"));
     setText("zms-export-review-draft", this.t("exportReviewDraft"));
     setText("zms-export-proposal-note", this.t("exportProposalNote"));
@@ -1155,9 +1166,7 @@ var ZoteroMarkdownSummaryWorkbench = {
         await this.saveSession({ quiet: true });
       }
       const text = await readText(path);
-      this.state.messages = text.split(/\r?\n/).filter(Boolean)
-        .map((line) => safeParseJSON(line))
-        .filter(Boolean);
+      this.state.messages = sessionMessagesFromText(path, text);
       // Compaction markers live as the last entry when present. Drop them
       // from the live view; the marker is still kept on disk inside the
       // jsonl so the conversation can be re-derived if the user undoes.
@@ -1165,6 +1174,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.state.messages = this.state.messages.filter((m) => m?.role !== "compaction");
       const previousId = this.state.sessionId;
       this.state.sessionId = sessionIdFromPath(path) || this.state.sessionId;
+      if (!this.state.sessionId) this.state.sessionId = newSessionId();
       this.state.sessionStartedAt = sessionStartedAtFromId(this.state.sessionId);
       this.state.sessionIdBeforeResume = options.resume ? previousId : "";
       this.renderMessages();
@@ -1263,6 +1273,20 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.state.compacting = false;
       this.state.compactionScheduled = 0;
     }
+  },
+
+  async startCrossPaperReview() {
+    const skill = document.getElementById("zms-skill");
+    if (skill) {
+      skill.value = "literature-review-synthesis";
+      document.getElementById("zms-skill-description").textContent = this.t("literature-review-synthesis-desc");
+      this.renderSkillTrigger();
+    }
+    const input = document.getElementById("zms-input");
+    if (input && !String(input.value || "").trim()) {
+      input.value = this.t("crossReviewPrompt");
+    }
+    await this.send();
   },
 
   maybeScheduleAutoCompact() {
@@ -3564,6 +3588,45 @@ function pref(key) {
 
 function setPref(key, value) {
   Zotero.Prefs.set(`${ZMS_PREF_PREFIX}.${key}`, value, true);
+}
+
+function resolvedOutputDir(value) {
+  const raw = String(value || "").trim();
+  if (raw && !isLegacyPackagedOutputDir(raw)) return raw;
+  return defaultOutputDir();
+}
+
+function shouldPersistResolvedOutputDir(value) {
+  const raw = String(value || "").trim();
+  return !raw || isLegacyPackagedOutputDir(raw);
+}
+
+function isLegacyPackagedOutputDir(value) {
+  const normalized = String(value || "").trim().replace(/\\/g, "/");
+  return /\/Library\/CloudStorage\/OneDrive-[^/]+\/Zotero_PDFs\/Zotero_MD_Summaries$/.test(normalized);
+}
+
+function defaultOutputDir() {
+  const base = zoteroDataDirectory() || zoteroProfileDirectory();
+  if (base && PathUtils?.join) return PathUtils.join(base, ZMS_DEFAULT_OUTPUT_DIR_NAME);
+  return ZMS_DEFAULT_OUTPUT_DIR_NAME;
+}
+
+function zoteroDataDirectory() {
+  try {
+    return Zotero?.DataDirectory?.dir || "";
+  } catch (_err) {
+    return "";
+  }
+}
+
+function zoteroProfileDirectory() {
+  try {
+    const nsIFile = typeof Ci !== "undefined" ? Ci.nsIFile : undefined;
+    return Services?.dirsvc?.get?.("ProfD", nsIFile)?.path || "";
+  } catch (_err) {
+    return "";
+  }
 }
 
 function connectionTestBodyForProfile(profile) {
@@ -9279,8 +9342,13 @@ function sessionFilenameFor(sessionId) {
 
 function sessionIdFromPath(path) {
   const name = leafName(String(path || ""));
-  if (!name.toLowerCase().endsWith(".jsonl")) return "";
-  return normalizeSessionId(name.slice(0, -6));
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".jsonl")) return normalizeSessionId(name.slice(0, -6));
+  if (lower.endsWith(".md")) {
+    const id = normalizeSessionId(name.slice(0, -3));
+    return id.startsWith("chat-") ? id : "";
+  }
+  return "";
 }
 
 function sessionStartedAtFromId(sessionId) {
@@ -9380,11 +9448,38 @@ function renderSessionAsMarkdown(messages, t, compactionSummary) {
   return lines.join("\n");
 }
 
+function sessionMessagesFromText(path, text) {
+  const value = String(text || "");
+  if (String(path || "").toLowerCase().endsWith(".md")) return messagesFromSessionMarkdown(value);
+  return value.split(/\r?\n/).filter(Boolean)
+    .map((line) => safeParseJSON(line))
+    .filter(Boolean);
+}
+
+function messagesFromSessionMarkdown(markdown) {
+  const body = String(markdown || "").replace(/^---[\s\S]*?---\s*/m, "");
+  const messages = [];
+  const pattern = /^###\s+\*\*(You|Assistant)\*\*\s*$/gmi;
+  const matches = Array.from(body.matchAll(pattern));
+  for (let index = 0; index < matches.length; index += 1) {
+    const match = matches[index];
+    const next = matches[index + 1];
+    const raw = body.slice(match.index + match[0].length, next ? next.index : body.length);
+    const content = raw
+      .replace(/^\s+|\s+$/g, "")
+      .replace(/\n_Usage:[^\n]+_\s*$/i, "")
+      .trim();
+    if (!content) continue;
+    messages.push(makeMessage(match[1].toLowerCase() === "you" ? "user" : "assistant", content));
+  }
+  return messages;
+}
+
 async function latestSessionForItem(item, outputDir) {
-  if (!item?.key || !outputDir) return null;
-  const files = await sessionFilesForItem(item, outputDir);
-  if (!files.length) return null;
-  return { path: files[files.length - 1], sessionId: sessionIdFromPath(files[files.length - 1]) };
+  if (!item?.key) return null;
+  const files = outputDir ? await sessionFilesForItem(item, outputDir) : [];
+  if (files.length) return { path: files[files.length - 1], sessionId: sessionIdFromPath(files[files.length - 1]) };
+  return latestLinkedChatSessionForItem(item);
 }
 
 async function sessionFilesForItem(item, outputDir) {
@@ -9413,6 +9508,40 @@ function renderEmptySessionList(element, message) {
   note.className = "zms-session-empty";
   note.textContent = message;
   element.appendChild(note);
+}
+
+async function latestLinkedChatSessionForItem(item) {
+  const paths = await linkedChatSessionPathsForItem(item);
+  if (!paths.length) return null;
+  const sorted = paths.slice().sort(compareSessionPath);
+  const recent = recentSessionFiles(sorted);
+  const path = recent.length ? recent[recent.length - 1] : sorted[sorted.length - 1];
+  return path ? { path, sessionId: sessionIdFromPath(path), source: path.toLowerCase().endsWith(".md") ? "markdown" : "jsonl" } : null;
+}
+
+async function linkedChatSessionPathsForItem(item) {
+  const owner = sessionOwnerItem(item) || item;
+  const items = Array.from(new Set([owner, item].filter(Boolean)));
+  const prefixes = sessionIdentityKeys(item).map(chatAttachmentTitlePrefix);
+  const paths = [];
+  const seen = new Set();
+  for (const sourceItem of items) {
+    const attachmentIDs = typeof sourceItem?.getAttachments === "function" ? sourceItem.getAttachments() : [];
+    for (const id of attachmentIDs) {
+      const attachment = Zotero.Items.get(id);
+      if (!attachment) continue;
+      const title = attachment.getField?.("title") || attachment.title || "";
+      if (!prefixes.some((prefix) => title.startsWith(prefix))) continue;
+      const mdPath = await attachment.getFilePathAsync?.().catch(() => "") || attachment.attachmentPath || "";
+      if (!mdPath || !mdPath.toLowerCase().endsWith(".md")) continue;
+      const jsonlPath = mdPath.replace(/\.md$/i, ".jsonl");
+      const path = await pathExists(jsonlPath) ? jsonlPath : mdPath;
+      if (seen.has(path)) continue;
+      seen.add(path);
+      paths.push(path);
+    }
+  }
+  return paths;
 }
 
 async function summarizeMessagesWithLlm(messages, profile, t, setStatus) {
