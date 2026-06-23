@@ -399,7 +399,11 @@ const SOURCE_MARKERS = [
     files: ["addon/content/workbench.xhtml", "addon/content/workbench.js", "addon/content/messages.js", "tests/workbenchWriteback.test.ts"],
     markers: [
       "zms-export-comparison-report",
+      "zms-start-cross-review",
       "exportComparisonReport",
+      "startCrossPaperReview",
+      "crossReviewPromptWithScope",
+      "crossReviewNeedsSelection",
       "renderComparisonReportMarkdown",
       "comparisonReportMarkdownPath",
       "templateVersion: literature-matrix-v1",
@@ -407,7 +411,9 @@ const SOURCE_MARKERS = [
       "comparisonSynthesisRows",
       "comparisonPairwiseContrastRows",
       "comparisonGapLedgerRows",
-      "comparisonReportDone"
+      "comparisonReportDone",
+      "does not start a cross-paper review when no comparison papers are loaded",
+      "builds a scoped cross-paper review prompt"
     ]
   },
   {

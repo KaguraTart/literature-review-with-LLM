@@ -539,6 +539,8 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-export-reading-log", this.t("exportReadingLog"));
     setText("zms-export-comparison-report", this.t("exportComparisonReport"));
     setText("zms-start-cross-review", this.t("startCrossReview"));
+    const crossReviewButton = document.getElementById("zms-start-cross-review");
+    if (crossReviewButton) crossReviewButton.setAttribute("title", this.t("startCrossReviewTitle"));
     setText("zms-export-visual-report", this.t("exportVisualReport"));
     setText("zms-export-review-draft", this.t("exportReviewDraft"));
     setText("zms-export-proposal-note", this.t("exportProposalNote"));
@@ -1288,6 +1290,11 @@ var ZoteroMarkdownSummaryWorkbench = {
   },
 
   async startCrossPaperReview() {
+    const comparisonContexts = workbenchComparisonContexts(this.state);
+    if (!comparisonContexts.length) {
+      this.setStatus(this.t("crossReviewNeedsSelection"));
+      return false;
+    }
     const skill = document.getElementById("zms-skill");
     if (skill) {
       skill.value = "literature-review-synthesis";
@@ -1296,9 +1303,16 @@ var ZoteroMarkdownSummaryWorkbench = {
     }
     const input = document.getElementById("zms-input");
     if (input && !String(input.value || "").trim()) {
-      input.value = this.t("crossReviewPrompt");
+      input.value = crossReviewPromptWithScope(
+        this.t("crossReviewPrompt"),
+        this.state.item,
+        this.state.context,
+        comparisonContexts,
+        this.state.uiLanguage
+      );
     }
     await this.send();
+    return true;
   },
 
   maybeScheduleAutoCompact() {
@@ -4246,6 +4260,46 @@ function comparisonSummaryText(contexts, uiLanguage) {
   if (!entries.length) return "";
   const label = uiLanguage === "zh-CN" ? "对比论文" : "Comparison papers";
   return `${label}: ${entries.slice(0, MAX_COMPARISON_PAPERS).join(" | ")}`;
+}
+
+function workbenchComparisonContexts(state) {
+  const fromContext = Array.isArray(state?.context?.comparisonContexts) ? state.context.comparisonContexts : [];
+  const fromState = Array.isArray(state?.comparisonContexts) ? state.comparisonContexts : [];
+  return fromContext.length ? fromContext : fromState;
+}
+
+function crossReviewPromptWithScope(basePrompt, item, context, comparisonContexts, uiLanguage) {
+  const focalTitle = context?.metadata?.title || safeItemField(item, "title") || item?.key || "unknown";
+  const comparisons = (comparisonContexts || [])
+    .slice(0, MAX_COMPARISON_PAPERS)
+    .map((entry, index) => ({
+      index: index + 1,
+      title: entry?.metadata?.title || entry?.itemKey || `comparison-${index + 1}`,
+      year: entry?.metadata?.year || "",
+      key: entry?.itemKey || ""
+    }));
+  if (uiLanguage === "zh-CN") {
+    return [
+      basePrompt,
+      "",
+      "综述范围：",
+      `- 焦点论文：${focalTitle}`,
+      `- 对比论文数量：${comparisons.length}`,
+      ...comparisons.map((entry) => `- 对比论文 ${entry.index}：${[entry.title, entry.year, entry.key ? `key=${entry.key}` : ""].filter(Boolean).join("；")}`),
+      "",
+      "请优先输出可直接进入文献综述正文的分类、对比矩阵、研究空白和段落草稿；所有判断都要使用上下文中的证据标签。"
+    ].join("\n");
+  }
+  return [
+    basePrompt,
+    "",
+    "Review scope:",
+    `- Focal paper: ${focalTitle}`,
+    `- Comparison paper count: ${comparisons.length}`,
+    ...comparisons.map((entry) => `- Comparison paper ${entry.index}: ${[entry.title, entry.year, entry.key ? `key=${entry.key}` : ""].filter(Boolean).join("; ")}`),
+    "",
+    "Prioritize review-ready taxonomy, comparison matrix, research gaps, and draft paragraphs. Cite evidence labels from the provided context for every judgment."
+  ].join("\n");
 }
 
 function renderReadingLogMarkdown(context, options = {}) {

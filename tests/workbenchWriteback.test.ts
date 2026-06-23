@@ -259,6 +259,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     renderComparisonReportMarkdown: (context: any, options?: any) => string;
     visualExtractionReportMarkdownPath: (outputDir: string, item: any) => string;
     renderVisualExtractionReportMarkdown: (payload: any, options?: any) => string;
+    crossReviewPromptWithScope: (basePrompt: string, item: any, context: any, comparisonContexts: any[], uiLanguage: string) => string;
     citationNetworkSeedsForWorkbench: (records: any[], item: any, limit?: number) => any[];
     citationNetworkMetaText: (record: any) => string;
     applyCandidateDecisions: (records: any[], decisions: Record<string, any>, now: string) => any[];
@@ -6096,6 +6097,17 @@ describe("workbench writeback helpers", () => {
     workbench.state.messages = [];
     workbench.state.outputLanguage = "zh-CN";
     workbench.state.uiLanguage = "zh-CN";
+    workbench.state.context = {
+      metadata: { title: "焦点论文" },
+      comparisonContexts: [
+        {
+          itemKey: "CMP",
+          metadata: { title: "对比论文", year: "2025" },
+          chunks: []
+        }
+      ]
+    };
+    workbench.state.comparisonContexts = workbench.state.context.comparisonContexts;
     const labels: Record<string, string> = {
       crossReviewPrompt: "请生成跨论文综述",
       "literature-review-synthesis-desc": "desc"
@@ -6112,10 +6124,62 @@ describe("workbench writeback helpers", () => {
 
     expect(dom.elements.get("zms-skill").value).toBe("literature-review-synthesis");
     expect(captured).toMatchObject({
-      content: "请生成跨论文综述",
+      content: expect.stringContaining("请生成跨论文综述"),
       skillId: "literature-review-synthesis"
     });
-    expect(workbench.state.messages[0].content).toBe("请生成跨论文综述");
+    expect(captured.content).toContain("综述范围：");
+    expect(captured.content).toContain("焦点论文：焦点论文");
+    expect(captured.content).toContain("对比论文 1：对比论文；2025；key=CMP");
+    expect(workbench.state.messages[0].content).toContain("综述范围：");
+  });
+
+  it("does not start a cross-paper review when no comparison papers are loaded", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-input": "",
+      "zms-skill": ""
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.state.item = { key: "ITEM" };
+    workbench.state.profile = providerProfile();
+    workbench.state.messages = [];
+    workbench.state.context = { metadata: { title: "Single Paper" }, comparisonContexts: [] };
+    workbench.state.comparisonContexts = [];
+    const labels: Record<string, string> = {
+      crossReviewNeedsSelection: "needs multiple papers"
+    };
+    workbench.t = (key: string) => labels[key] || key;
+    let sent = 0;
+    workbench.send = async () => {
+      sent += 1;
+    };
+
+    await expect(workbench.startCrossPaperReview()).resolves.toBe(false);
+
+    expect(sent).toBe(0);
+    expect(dom.elements.get("zms-chat-status").textContent).toBe("needs multiple papers");
+    expect(dom.getElementById("zms-input").value).toBe("");
+  });
+
+  it("builds a scoped cross-paper review prompt", () => {
+    const loaded = loadWorkbenchHelpers();
+    const prompt = loaded.crossReviewPromptWithScope(
+      "Create review",
+      { key: "FOC", getField: () => "" },
+      { metadata: { title: "Focal Paper" } },
+      [
+        { itemKey: "CMP1", metadata: { title: "Comparison One", year: "2025" } },
+        { itemKey: "CMP2", metadata: { title: "Comparison Two", year: "" } }
+      ],
+      "en-US"
+    );
+
+    expect(prompt).toContain("Review scope:");
+    expect(prompt).toContain("Focal paper: Focal Paper");
+    expect(prompt).toContain("Comparison paper count: 2");
+    expect(prompt).toContain("Comparison paper 1: Comparison One; 2025; key=CMP1");
+    expect(prompt).toContain("Cite evidence labels");
   });
 
   it("stores optional local OCR metadata on image messages without sending it to the remote model", async () => {
