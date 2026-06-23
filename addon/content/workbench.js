@@ -3827,7 +3827,7 @@ function localAgentConnectionTestRequestForProfile(profile) {
         capabilities: {},
         clientInfo: {
           name: "literature-review-with-llm-workbench",
-          version: "0.1.4"
+          version: "0.1.5"
         }
       }
     }
