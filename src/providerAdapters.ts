@@ -356,6 +356,11 @@ function extractMessageContent(content: unknown, depth = 0): string {
   if (record && typeof record === "object") {
     if (isReasoningContent(record)) return "";
     if (typeof record.text === "string") return record.text;
+    if (record.text && typeof record.text === "object") {
+      const text = extractMessageContent(record.text, depth + 1);
+      if (text) return text;
+    }
+    if (typeof record.value === "string") return record.value;
     if (typeof record.output_text === "string") return record.output_text;
     if (typeof record.content === "string") return record.content;
     if (typeof record.completion === "string") return record.completion;

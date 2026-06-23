@@ -1518,6 +1518,7 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hidden\",\"content\":\"visible\"}}]}")).toBe("visible");
     expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"delta\":{\"content\":[{\"type\":\"reasoning\",\"text\":\"hidden\"},{\"type\":\"text\",\"text\":\"array text\"}]}}]}")).toBe("array text");
     expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"message\":{\"content\":[{\"type\":\"output_text\",\"text\":\"message text\"}]}}]}")).toBe("message text");
+    expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"message\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"message value text\",\"annotations\":[]}}]}}]}")).toBe("message value text");
     expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"delta\":{\"refusal\":\"stream refusal\"}}]}")).toBe("stream refusal");
     expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"delta\":{\"text\":\"oops\"}}]}")).toBe("oops");
     expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"delta\":{}},{\"delta\":{\"content\":\"second choice\"}}]}")).toBe("second choice");
@@ -1530,6 +1531,7 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"hidden reasoning\"}")).toBe("");
     expect(parseStreamChunk("openai_responses", "data: {\"data\":{\"type\":\"response.reasoning_text.delta\",\"delta\":\"wrapped hidden\"}}")).toBe("");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.content_part.done\",\"part\":{\"type\":\"output_text\",\"text\":\"snapshot part\"}}")).toBe("snapshot part");
+    expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.content_part.done\",\"part\":{\"type\":\"output_text\",\"text\":{\"value\":\"snapshot value part\"}}}")).toBe("snapshot value part");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_item.done\",\"item\":{\"content\":[{\"type\":\"output_text\",\"text\":\"snapshot item\"}]}}")).toBe("snapshot item");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_item.done\",\"item\":{\"content\":[{\"type\":\"refusal\",\"refusal\":\"snapshot refusal\"}]}}")).toBe("snapshot refusal");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.completed\",\"response\":{\"output\":[{\"content\":[{\"type\":\"output_text\",\"text\":\"snapshot response\"}]}]}}")).toBe("snapshot response");
@@ -1756,6 +1758,12 @@ describe("provider adapters", () => {
       choices: [{ message: { content: [{ type: "text", text: "part a" }, { type: "text", text: "part b" }] } }]
     } as any)).toBe("part a\npart b");
     expect(extractResponseText("openai_chat", {
+      choices: [{ message: { content: [{ type: "text", text: { value: "assistant value text", annotations: [] } }] } }]
+    } as any)).toBe("assistant value text");
+    expect(extractResponseText("openai_chat", {
+      choices: [{ message: { content: [{ type: "text", value: "assistant direct value" }] } }]
+    } as any)).toBe("assistant direct value");
+    expect(extractResponseText("openai_chat", {
       choices: [{ message: { content: [{ type: "reasoning", text: "hidden" }, { type: "output_text", text: "final" }] } }]
     } as any)).toBe("final");
     expect(extractResponseText("openai_chat", {
@@ -1764,6 +1772,12 @@ describe("provider adapters", () => {
     expect(extractResponseText("openai_chat", {
       choices: [{ delta: { content: [{ type: "text", text: "delta content" }] } }]
     } as any)).toBe("delta content");
+    expect(extractResponseText("openai_responses", {
+      output: [{ content: [{ type: "output_text", text: { value: "responses value text" } }] }]
+    } as any)).toBe("responses value text");
+    expect(extractResponseText("anthropic_messages", {
+      content: [{ type: "text", text: { value: "anthropic value text" } }]
+    } as any)).toBe("anthropic value text");
     expect(extractResponseText("openai_chat", {
       choices: [{ message: { content: null } }, { message: { content: "second choice text" } }]
     } as any)).toBe("second choice text");

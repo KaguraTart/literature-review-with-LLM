@@ -506,6 +506,11 @@ function extractOpenAIMessageContent(content, depth = 0) {
   if (typeof content === "object") {
     if (isOpenAIReasoningPart(content)) return "";
     if (typeof content?.text === "string") return content.text;
+    if (content?.text && typeof content.text === "object") {
+      const text = extractOpenAIMessageContent(content.text, depth + 1);
+      if (text) return text;
+    }
+    if (typeof content?.value === "string") return content.value;
     if (typeof content?.output_text === "string") return content.output_text;
     if (typeof content?.content === "string") return content.content;
     if (typeof content?.completion === "string") return content.completion;

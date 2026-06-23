@@ -3444,6 +3444,7 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.extractOpenAIStreamText({ type: "response.reasoning_summary_text.delta", delta: "hidden reasoning" })).toBe("");
     expect(helpers.extractOpenAIStreamText({ data: { type: "response.reasoning_text.delta", delta: "wrapped hidden" } })).toBe("");
     expect(helpers.extractOpenAIStreamText({ type: "response.content_part.done", part: { type: "output_text", text: "snapshot part" } })).toBe("snapshot part");
+    expect(helpers.extractOpenAIStreamText({ type: "response.content_part.done", part: { type: "output_text", text: { value: "snapshot value part" } } })).toBe("snapshot value part");
     expect(helpers.extractOpenAIStreamText({ type: "response.output_item.done", item: { content: [{ type: "refusal", refusal: "snapshot refusal" }] } })).toBe("snapshot refusal");
     expect(helpers.extractOpenAIStreamText({ type: "response.completed", response: { output_text: "snapshot response" } })).toBe("snapshot response");
     expect(helpers.extractOpenAIStreamText({ delta: { content: [{ text: "nested" }] } })).toBe("nested");
@@ -3464,6 +3465,9 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.extractOpenAIStreamText({
       choices: [{ message: { content: [{ type: "output_text", text: "message text" }] } }]
     })).toBe("message text");
+    expect(helpers.extractOpenAIStreamText({
+      choices: [{ message: { content: [{ type: "text", text: { value: "message value text", annotations: [] } }] } }]
+    })).toBe("message value text");
     expect(helpers.extractOpenAIStreamText({
       candidates: [{ content: { parts: [{ type: "thinking", text: "hidden" }, { text: "candidate stream" }] } }]
     })).toBe("candidate stream");

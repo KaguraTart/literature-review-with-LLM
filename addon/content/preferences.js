@@ -2102,6 +2102,11 @@ function modelTextFromValue(value, depth = 0) {
   if (typeof value === "object") {
     if (isReasoningModelPart(value)) return "";
     if (typeof value.text === "string") return value.text;
+    if (value.text && typeof value.text === "object") {
+      const text = modelTextFromValue(value.text, depth + 1);
+      if (text) return text;
+    }
+    if (typeof value.value === "string") return value.value;
     if (typeof value.output_text === "string") return value.output_text;
     if (typeof value.content === "string") return value.content;
     if (typeof value.completion === "string") return value.completion;
