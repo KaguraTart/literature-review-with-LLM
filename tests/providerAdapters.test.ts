@@ -744,6 +744,31 @@ describe("provider adapters", () => {
     expect((omitProviderRequestBodyFields(anthropicDocumentBody, ["messages.content.document"]).messages as any[])[0].content).toEqual([
       { type: "text", text: "ping" }
     ]);
+    const anthropicImageBody = {
+      model: "claude-compatible",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "abc" } },
+            { type: "text", text: "ping" }
+          ]
+        }
+      ]
+    };
+    expect(providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      anthropicImageBody,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "unsupported_media_type", loc: ["body", "messages", 0, "content", 0, "source", "media_type"], msg: "Unsupported media_type image/png" }
+        ]
+      })
+    )).toEqual(["messages.content.image"]);
+    expect((omitProviderRequestBodyFields(anthropicImageBody, ["messages.content.image"]).messages as any[])[0].content).toEqual([
+      { type: "text", text: "ping" }
+    ]);
     expect(providerCompatibilityFallbackFields(
       "openai_chat",
       { model: "openai-compatible", messages: [{ role: "user", content: "ping" }] },
@@ -809,6 +834,21 @@ describe("provider adapters", () => {
       type: "image",
       source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" }
     });
+    const anthropicTextOnlyImageBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...imageProfile,
+        protocol: "anthropic_messages",
+        baseURL: "https://api.anthropic.com",
+        bodyExtra: { omitAnthropicImage: true }
+      },
+      input: imageInput
+    });
+    expect(JSON.stringify(anthropicTextOnlyImageBody.messages)).not.toContain("\"image\"");
+    expect((anthropicTextOnlyImageBody.messages as any[])[0].content).toEqual([
+      { type: "text", text: "prompt\n\nCONTEXT:\npaper text" }
+    ]);
+    expect(anthropicTextOnlyImageBody).not.toHaveProperty("omitAnthropicImage");
     const anthropicSystemFallbackBody = bodyFor({
       ...baseRequest,
       profile: {

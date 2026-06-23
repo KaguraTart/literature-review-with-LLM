@@ -830,6 +830,15 @@ function shouldOmitAnthropicDocument(profile: ProviderProfile): boolean {
     || isTrueValue(profile.bodyExtra?.dropPdfDocument);
 }
 
+function shouldOmitAnthropicImage(profile: ProviderProfile): boolean {
+  return isTrueValue(profile.bodyExtra?.omitAnthropicImage)
+    || isTrueValue(profile.bodyExtra?.skipAnthropicImage)
+    || isTrueValue(profile.bodyExtra?.dropAnthropicImage)
+    || isTrueValue(profile.bodyExtra?.omitImageBlock)
+    || isTrueValue(profile.bodyExtra?.skipImageBlock)
+    || isTrueValue(profile.bodyExtra?.dropImageBlock);
+}
+
 function normalizePdfInputFileField(value: unknown): "file_data" | "file_url" {
   const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]/g, "");
   return normalized === "fileurl" || normalized === "url" ? "file_url" : "file_data";
@@ -870,15 +879,17 @@ function anthropicMessages(request: ModelRequest, fallbackSystem = ""): Array<Re
   }));
   const systemText = fallbackSystemText(fallbackSystem);
   const contentBlocks: Array<Record<string, unknown>> = [];
-  for (const image of inputImages(request)) {
-    contentBlocks.push({
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: image.mimeType || "image/png",
-        data: image.base64 ?? ""
-      }
-    });
+  if (!shouldOmitAnthropicImage(request.profile)) {
+    for (const image of inputImages(request)) {
+      contentBlocks.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: image.mimeType || "image/png",
+          data: image.base64 ?? ""
+        }
+      });
+    }
   }
   if (request.input?.type === "pdf_base64" && !shouldOmitAnthropicDocument(request.profile)) {
     contentBlocks.push({
@@ -1026,6 +1037,12 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
     omitAnthropicDocument: _omitAnthropicDocument,
     skipAnthropicDocument: _skipAnthropicDocument,
     dropAnthropicDocument: _dropAnthropicDocument,
+    omitAnthropicImage: _omitAnthropicImage,
+    skipAnthropicImage: _skipAnthropicImage,
+    dropAnthropicImage: _dropAnthropicImage,
+    omitImageBlock: _omitImageBlock,
+    skipImageBlock: _skipImageBlock,
+    dropImageBlock: _dropImageBlock,
     omitPdfDocument: _omitPdfDocument,
     skipPdfDocument: _skipPdfDocument,
     dropPdfDocument: _dropPdfDocument,
@@ -1142,6 +1159,10 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   if (protocol === "anthropic_messages" && rejectedAnthropicDocumentField) {
     fields.push(rejectedAnthropicDocumentField);
   }
+  const rejectedAnthropicImageField = rejectedAnthropicMessagesImageField(body, detail);
+  if (protocol === "anthropic_messages" && rejectedAnthropicImageField) {
+    fields.push(rejectedAnthropicImageField);
+  }
   const rejectedImageURLField = rejectedOpenAIChatImageURLField(body, detail);
   if (protocol === "openai_chat" && rejectedImageURLField) {
     fields.push(rejectedImageURLField);
@@ -1203,6 +1224,7 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "tools",
   "tool_choice",
   "messages.content",
+  "messages.content.image",
   "messages.content.document",
   "messages.role.system",
   "image_url.url",
@@ -1273,6 +1295,7 @@ function normalizeProviderFieldHint(value: string): string {
   if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
   if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
   if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl|(?:^|[^a-z0-9_])image_url(?:[^a-z0-9_]|$)|(?:^|[^a-z0-9_])imageurl(?:[^a-z0-9_]|$)/.test(normalized)) return "image_url.url";
+  if (/messages?(?:\.\d+|\[\d+\])?\.content.*(?:image|image\/|png|jpe?g|webp)|messages?content.*(?:image|image\/|png|jpe?g|webp)|(?:^|[^a-z0-9_])image(?:[^a-z0-9_]|$)/.test(normalized)) return "messages.content.image";
   if (/messages?(?:\.\d+|\[\d+\])?\.content.*(?:document|source|media_type|mediatype|base64|application\/pdf)|messages?content.*(?:document|source|media_type|mediatype|base64|applicationpdf)|(?:^|[^a-z0-9_])document(?:[^a-z0-9_]|$)/.test(normalized)) return "messages.content.document";
   if (/messages?(?:\.\d+|\[\d+\])?\.content|messages?content/.test(normalized)) return "messages.content";
   if (/messages?(?:\.\d+|\[\d+\])?\.role|messages?role/.test(normalized)) return "messages.role.system";
@@ -1283,6 +1306,7 @@ function normalizeProviderFieldHint(value: string): string {
 
 function providerFallbackFieldPresent(body: Record<string, unknown>, field: string): boolean {
   if (field === "messages.content") return anthropicMessagesHaveStringContent(body);
+  if (field === "messages.content.image") return anthropicMessagesHaveImageBlock(body);
   if (field === "messages.content.document") return anthropicMessagesHaveDocumentBlock(body);
   if (field === "messages.role.system") return openAIChatHasSystemMessage(body);
   if (field === "image_url.url") return openAIChatImageURLHasObjectURL(body);
@@ -1294,6 +1318,7 @@ function providerFallbackFieldPresent(body: Record<string, unknown>, field: stri
 function providerFallbackFieldSupported(body: Record<string, unknown>, field: string, protocol = ""): boolean {
   if (!field) return false;
   if (field === "messages.content") return protocol === "anthropic_messages";
+  if (field === "messages.content.image") return protocol === "anthropic_messages";
   if (field === "messages.content.document") return protocol === "anthropic_messages";
   if (field === "messages.role.system") return protocol === "openai_chat";
   if (PROVIDER_FALLBACK_BODY_FIELDS.has(field)) return true;
@@ -1332,14 +1357,32 @@ function rejectedAnthropicMessagesDocumentField(body: Record<string, unknown>, d
   return "";
 }
 
+function rejectedAnthropicMessagesImageField(body: Record<string, unknown>, detail: string): string {
+  if (!anthropicMessagesHaveImageBlock(body)) return "";
+  if (/messages?(?:[.\[]\d+\]?)*\.?content.*(?:image|source|media_type|media type|base64|image\/|png|jpe?g|webp)|content block.*image|image.*content block|unsupported image|image.*unsupported|vision.*(?:unsupported|not supported)|(?:unsupported|not supported|invalid).*image|image\/(?:png|jpe?g|webp)|media_type.*image/.test(detail)) {
+    return "messages.content.image";
+  }
+  return "";
+}
+
 function anthropicMessagesHaveDocumentBlock(body: Record<string, unknown>): boolean {
   return anthropicDocumentBlocks(body).length > 0;
+}
+
+function anthropicMessagesHaveImageBlock(body: Record<string, unknown>): boolean {
+  return anthropicImageBlocks(body).length > 0;
 }
 
 function anthropicDocumentBlocks(body: Record<string, unknown>): Array<Record<string, unknown>> {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   return messages.flatMap((message: any) => Array.isArray(message?.content) ? message.content : [])
     .filter((part: any) => part?.type === "document" && part && typeof part === "object");
+}
+
+function anthropicImageBlocks(body: Record<string, unknown>): Array<Record<string, unknown>> {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.flatMap((message: any) => Array.isArray(message?.content) ? message.content : [])
+    .filter((part: any) => part?.type === "image" && part && typeof part === "object");
 }
 
 function rejectedOpenAIChatImageURLField(body: Record<string, unknown>, detail: string): string {
@@ -1441,6 +1484,10 @@ export function omitProviderRequestBodyFields(body: Record<string, unknown>, fie
       switchAnthropicStringMessagesToTextBlocks(next);
       continue;
     }
+    if (field === "messages.content.image") {
+      removeAnthropicImageBlocks(next);
+      continue;
+    }
     if (field === "messages.content.document") {
       removeAnthropicDocumentBlocks(next);
       continue;
@@ -1507,6 +1554,18 @@ function removeAnthropicDocumentBlocks(body: Record<string, unknown>): void {
     return {
       ...message,
       content: content.filter((part: any) => part?.type !== "document")
+    };
+  });
+}
+
+function removeAnthropicImageBlocks(body: Record<string, unknown>): void {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message: any) => {
+    const content = Array.isArray(message?.content) ? message.content : null;
+    if (!content) return message;
+    return {
+      ...message,
+      content: content.filter((part: any) => part?.type !== "image")
     };
   });
 }

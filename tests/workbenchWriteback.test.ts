@@ -909,6 +909,19 @@ describe("workbench writeback helpers", () => {
       },
       expect.objectContaining({ type: "text" })
     ]));
+    const anthropicImageTextOnlyBody = helpers.bodyForProfile({
+      protocol: "anthropic_messages",
+      model: "model-a",
+      capabilities: { streaming: true, imageBase64: true },
+      bodyExtra: { omitAnthropicImage: true }
+    }, messages, "zh-CN", "system", {
+      type: "text",
+      text: "paper text",
+      images: [{ name: "screen.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+    }, false);
+    expect(JSON.stringify(anthropicImageTextOnlyBody.messages)).not.toContain("\"image\"");
+    expect(anthropicImageTextOnlyBody.messages[2].content).toBe("second question\n\nCONTEXT:\npaper text");
+    expect(anthropicImageTextOnlyBody).not.toHaveProperty("omitAnthropicImage");
     const anthropicTextOnlyBody = helpers.bodyForProfile({
       protocol: "anthropic_messages",
       model: "model-a",
@@ -6905,6 +6918,56 @@ describe("workbench writeback helpers", () => {
     ]));
     expect(fetchCalls[1].body.messages[0].content).toBe("hello");
     expect(fetchCalls[1].body).not.toHaveProperty("omitAnthropicDocument");
+  });
+
+  it("drops Anthropic image input when a compatible workbench endpoint rejects image blocks", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      const content = body.messages?.[0]?.content || [];
+      if (Array.isArray(content) && content.some((part: any) => part?.type === "image")) {
+        return {
+          ok: false,
+          status: 422,
+          text: async () => JSON.stringify({
+            detail: [
+              { type: "unsupported_media_type", loc: ["body", "messages", 0, "content", 0, "source", "media_type"], msg: "Unsupported media_type image/png" }
+            ]
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ content: [{ type: "text", text: "ok" }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      id: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      baseURL: "https://router.example/v1",
+      capabilities: { ...providerProfile().capabilities, imageBase64: true }
+    }, [
+      { role: "user", content: "describe" }
+    ], "zh-CN", "system", {
+      type: "text",
+      source: "text_mode",
+      text: "paper text",
+      images: [{ name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+    }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body.messages[0].content).toEqual(expect.arrayContaining([
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" } },
+      expect.objectContaining({ type: "text" })
+    ]));
+    expect(fetchCalls[1].body.messages[0].content).toBe("describe\n\nCONTEXT:\npaper text");
+    expect(fetchCalls[1].body).not.toHaveProperty("omitAnthropicImage");
   });
 
   it("retries workbench Anthropic requests without version headers when a router rejects them", async () => {
