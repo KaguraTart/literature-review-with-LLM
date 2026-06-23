@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error Executable .mjs helper exports are covered by runtime tests.
-import { parseArgs, readExtensionStatus, sha256 } from "../scripts/verify-installed-zotero.mjs";
+import { compareEntryHashMaps, parseArgs, readExtensionStatus, sha256 } from "../scripts/verify-installed-zotero.mjs";
 
 describe("installed Zotero package verifier", () => {
   it("parses profile, xpi, expected build, and comparison flags", () => {
@@ -48,5 +48,32 @@ describe("installed Zotero package verifier", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("compares installed package content by entry hashes instead of zip metadata", () => {
+    expect(compareEntryHashMaps(
+      new Map([
+        ["manifest.json", "a"],
+        ["content/preferences.xhtml", "b"]
+      ]),
+      new Map([
+        ["content/preferences.xhtml", "b"],
+        ["manifest.json", "a"]
+      ])
+    )).toEqual({ ok: true, message: "" });
+
+    expect(compareEntryHashMaps(
+      new Map([
+        ["manifest.json", "a"],
+        ["content/preferences.xhtml", "b"]
+      ]),
+      new Map([
+        ["manifest.json", "changed"],
+        ["content/extra.js", "c"]
+      ])
+    )).toEqual({
+      ok: false,
+      message: "missing content/preferences.xhtml; extra content/extra.js; changed manifest.json"
+    });
   });
 });

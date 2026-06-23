@@ -247,12 +247,14 @@ function main(argv = process.argv.slice(2)) {
 
   const expectedXpi = options.expectedXpi || DEFAULT_BUILD_XPI;
   let buildHash = "";
-  let installedHash = sha256(installedXpi);
+  let buildContentHash = "";
+  const installedHash = sha256(installedXpi);
+  const installedContentHash = xpiContentHash(installedXpi);
   if (!options.skipBuildCompare && existsSync(expectedXpi)) {
     buildHash = sha256(expectedXpi);
-    if (buildHash !== installedHash) {
-      fail(`Installed XPI does not match ${expectedXpi}`);
-    }
+    buildContentHash = xpiContentHash(expectedXpi);
+    const comparison = compareXpiContents(expectedXpi, installedXpi);
+    if (!comparison.ok) fail(`Installed XPI content does not match ${expectedXpi}: ${comparison.message}`);
   }
 
   const report = {
@@ -265,7 +267,9 @@ function main(argv = process.argv.slice(2)) {
     appDisabled: extensionStatus.appDisabled,
     version: extensionStatus.version,
     installedHash,
+    installedContentHash,
     buildHash: buildHash || null,
+    buildContentHash: buildContentHash || null,
     buildCompared: !!buildHash
   };
   console.log(JSON.stringify(report, null, 2));
@@ -328,6 +332,52 @@ function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
+function xpiContentHash(xpiPath) {
+  const hashes = xpiEntryHashes(xpiPath);
+  const digest = createHash("sha256");
+  for (const [entry, hash] of hashes) {
+    digest.update(entry);
+    digest.update("\0");
+    digest.update(hash);
+    digest.update("\0");
+  }
+  return digest.digest("hex");
+}
+
+function xpiEntryHashes(xpiPath) {
+  return [...unzipEntries(xpiPath)]
+    .filter((entry) => !entry.endsWith("/"))
+    .sort()
+    .map((entry) => [entry, sha256Entry(xpiPath, entry)]);
+}
+
+function sha256Entry(xpiPath, entry) {
+  return createHash("sha256")
+    .update(execFileSync("unzip", ["-p", xpiPath, entry]))
+    .digest("hex");
+}
+
+function compareXpiContents(expectedXpi, installedXpi) {
+  return compareEntryHashMaps(
+    new Map(xpiEntryHashes(expectedXpi)),
+    new Map(xpiEntryHashes(installedXpi))
+  );
+}
+
+function compareEntryHashMaps(expected, installed) {
+  const expectedEntries = [...expected.keys()].sort();
+  const installedEntries = [...installed.keys()].sort();
+  const missing = expectedEntries.filter((entry) => !installed.has(entry));
+  const extra = installedEntries.filter((entry) => !expected.has(entry));
+  const changed = expectedEntries.filter((entry) => installed.has(entry) && installed.get(entry) !== expected.get(entry));
+  if (!missing.length && !extra.length && !changed.length) return { ok: true, message: "" };
+  const parts = [];
+  if (missing.length) parts.push(`missing ${missing.slice(0, 5).join(", ")}`);
+  if (extra.length) parts.push(`extra ${extra.slice(0, 5).join(", ")}`);
+  if (changed.length) parts.push(`changed ${changed.slice(0, 5).join(", ")}`);
+  return { ok: false, message: parts.join("; ") };
+}
+
 function fail(message) {
   console.error(message);
   process.exit(1);
@@ -338,8 +388,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
 }
 
 export {
+  compareEntryHashMaps,
+  compareXpiContents,
   parseArgs,
   resolveProfileDir,
   readExtensionStatus,
-  sha256
+  sha256,
+  xpiContentHash
 };
