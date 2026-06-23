@@ -2241,6 +2241,8 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("npm run verify:provider:live -- --env-template --include deepseek");
     expect(report).toContain("### Draft .env.local");
     expect(report).toContain("npm run verify:provider:live -- --env-template --dotenv-template --include deepseek > .env.local");
+    expect(report).toContain("### .env.local Configuration Doctor");
+    expect(report).toContain("npm run verify:provider:live -- --doctor --include deepseek --env-file .env.local");
     expect(report).toContain("### .env.local Live Check");
     expect(report).toContain("npm run verify:provider:live -- --include deepseek --env-file .env.local");
     expect(report).toContain("### Image Live Check");

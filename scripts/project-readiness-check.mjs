@@ -251,7 +251,7 @@ const SOURCE_MARKERS = [
     id: "provider.settings-guide",
     description: "Settings page shows a provider setup guide with endpoint, auth, capability, and live-check commands without exposing API keys",
     files: ["addon/content/preferences.xhtml", "addon/content/preferences.js", "addon/content/messages.js", "tests/preferencesLocalAgent.test.ts"],
-    markers: ["zms-providerGuide", "providerSetupGuide", "providerLiveVerifyGuide", "envTemplateCommand", "envFileCommand", "imageCommand", "pdfCommand", "providerCapabilityOverrideCommands", "CAPABILITIES_JSON", "--env-template", "--dotenv-template", "--env-file", "OPENAI_COMPATIBLE_BASE_URL", "ANTHROPIC_COMPATIBLE_BASE_URL", "not.toContain", "routed-secret", "providerGuide"]
+    markers: ["zms-providerGuide", "providerSetupGuide", "providerLiveVerifyGuide", "envTemplateCommand", "dotenvTemplateCommand", "doctorCommand", "envFileCommand", "imageCommand", "pdfCommand", "providerCapabilityOverrideCommands", "CAPABILITIES_JSON", "--env-template", "--dotenv-template", "--doctor", "--env-file", "OPENAI_COMPATIBLE_BASE_URL", "ANTHROPIC_COMPATIBLE_BASE_URL", "not.toContain", "routed-secret", "providerGuide"]
   },
   {
     id: "preferences.output-dir-picker",
@@ -263,7 +263,7 @@ const SOURCE_MARKERS = [
     id: "provider.workbench-diagnostics-report",
     description: "Workbench can export a redacted provider diagnostics report with endpoint, auth, capability, model-list, request-preview, and live-check details",
     files: ["addon/content/workbench.xhtml", "addon/content/workbench.js", "addon/content/messages.js", "tests/workbenchWriteback.test.ts", "README.md", "README.zh-CN.md"],
-    markers: ["zms-export-provider-diagnostics", "renderProviderDiagnosticsMarkdown", "provider-diagnostics-v1", "providerDiagnosticsMarkdownPath", "providerRequestPreviews", "Redacted Request Preview", "Copyable Env Template", "Draft .env.local", "dotenvTemplateCommand", "--dotenv-template", "envTemplateCommand", "envFileCommand", "Image Live Check", "PDF Live Check", "Capability Override Check", "CAPABILITIES_JSON", "data:image/png;base64,[omitted]", "renders raw PDF request previews", "DEEPSEEK_API_KEY=...", "exports provider diagnostics from the latest workbench settings", "renders provider diagnostics without exposing credentials", "redacted provider diagnostics"]
+    markers: ["zms-export-provider-diagnostics", "renderProviderDiagnosticsMarkdown", "provider-diagnostics-v1", "providerDiagnosticsMarkdownPath", "providerRequestPreviews", "Redacted Request Preview", "Copyable Env Template", "Draft .env.local", ".env.local Configuration Doctor", "doctorCommand", "--doctor", "dotenvTemplateCommand", "--dotenv-template", "envTemplateCommand", "envFileCommand", "Image Live Check", "PDF Live Check", "Capability Override Check", "CAPABILITIES_JSON", "data:image/png;base64,[omitted]", "renders raw PDF request previews", "DEEPSEEK_API_KEY=...", "exports provider diagnostics from the latest workbench settings", "renders provider diagnostics without exposing credentials", "redacted provider diagnostics"]
   },
   {
     id: "provider.retry-boundary",

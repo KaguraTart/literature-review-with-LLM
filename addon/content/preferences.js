@@ -1050,6 +1050,7 @@ function providerSetupGuide(profile, language = "en-US") {
       `保存后测试：点击“测试连接”；失败信息会隐藏完整 API Key。`,
       `复制环境变量模板：${verify.envTemplateCommand}`,
       `.env.local 草稿：${verify.dotenvTemplateCommand}`,
+      `.env.local 配置预检：${verify.doctorCommand}`,
       `.env.local live 检查：${verify.envFileCommand}`,
       `终端 live 检查：${verify.liveCommand}`,
       `图片 live 检查：${verify.imageCommand || "当前档案不支持图片输入"}`,
@@ -1071,6 +1072,7 @@ function providerSetupGuide(profile, language = "en-US") {
     "After saving: click Test connection. Failure messages hide full API keys.",
     `Copy env template: ${verify.envTemplateCommand}`,
     `Draft .env.local: ${verify.dotenvTemplateCommand}`,
+    `.env.local config doctor: ${verify.doctorCommand}`,
     `Env-file live check: ${verify.envFileCommand}`,
     `Terminal live check: ${verify.liveCommand}`,
     `Image live check: ${verify.imageCommand || "not supported by this profile"}`,
@@ -1142,6 +1144,7 @@ function providerLiveVerifyGuide(profile, provider = providerFromProfile(profile
   const modelsCommand = `${modelPrefix ? `${modelPrefix} ` : ""}npm run verify:provider:models:live -- --include ${entry.include}`;
   const envTemplateCommand = `npm run verify:provider:live -- --env-template --include ${entry.include}`;
   const dotenvTemplateCommand = `npm run verify:provider:live -- --env-template --dotenv-template --include ${entry.include} > .env.local`;
+  const doctorCommand = `npm run verify:provider:live -- --doctor --include ${entry.include} --env-file .env.local`;
   const envFileCommand = `npm run verify:provider:live -- --include ${entry.include} --env-file .env.local`;
   const envFileImageCommand = canUseImageInput(profile) ? `npm run verify:provider:image:live -- --include ${entry.include} --env-file .env.local` : "";
   const envFilePdfCommand = canUsePdfBase64Input(profile) ? `npm run verify:provider:pdf:live -- --include ${entry.include} --env-file .env.local` : "";
@@ -1155,6 +1158,7 @@ function providerLiveVerifyGuide(profile, provider = providerFromProfile(profile
     modelsCommand,
     envTemplateCommand,
     dotenvTemplateCommand,
+    doctorCommand,
     envFileCommand,
     envFileImageCommand,
     envFilePdfCommand,
