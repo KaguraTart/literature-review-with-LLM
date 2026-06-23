@@ -4016,6 +4016,8 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("## Reconstructed Tables / Data");
     expect(report).toContain("| Delay | 12 ms | [image] |");
     expect(report).toContain("chartDataDraftCount: 3");
+    expect(report).toContain('chartQualityStatus: "reviewable-with-cautions"');
+    expect(report).toContain("chartQualityIssueCount: 1");
     expect(report).toContain("## Chart Data Drafts");
     expect(report).toContain("| 1 | reconstructed-table | Item | Value |");
     expect(report).toContain("| 2 | reconstructed-table | Axis X | Axis Y | Series | 1 | needs-review | [image] |");
@@ -4024,6 +4026,10 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("## Pixel / Coordinate Data Drafts");
     expect(report).toContain("| 1 | pixel-coordinate-table | figure.png | 1 | needs-review | [image] |");
     expect(report).toContain("| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] | [image] |");
+    expect(report).toContain("## Chart Data Quality Review");
+    expect(report).toContain("- Quality status: reviewable-with-cautions");
+    expect(report).toContain("| confidence | warning | high 0, medium 0, low 3, needs-review 1 |");
+    expect(report).toContain("Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.");
     expect(report).toContain("## Machine-Readable Data");
     expect(report).toContain("| 1 | 1 | Value | 12 ms | not labeled |");
     expect(report).toContain("| chart:1 | 1 | yNumber | 12 | [image] |");
@@ -4080,6 +4086,9 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("| 1 | reconstructed-table | 指标 | 数值 |");
     expect(files.get(reportPath)).toContain("## 像素/坐标数据草稿");
     expect(files.get(reportPath)).toContain("| 1 | pixel-coordinate-table | chart.png | 1 | needs-review | [image] |");
+    expect(files.get(reportPath)).toContain("## 图表数据质量审阅");
+    expect(files.get(reportPath)).toContain("- 质量状态: reviewable-with-cautions");
+    expect(files.get(reportPath)).toContain("在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。");
     expect(files.get(reportPath)).toContain("## 机器可读数据");
     expect(files.get(reportPath)).toContain("| 1 | 1 | 指标 | delay | 未标注 |");
     const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.json";
@@ -4116,6 +4125,11 @@ describe("workbench writeback helpers", () => {
         axisY: "12 ms",
         confidence: "low"
       }]
+    });
+    expect(parsed.chartQualityReview).toMatchObject({
+      status: "reviewable-with-cautions",
+      issueCount: 1,
+      recommendations: [{ id: "confidence" }]
     });
     expect(files.get(csvPath)).toContain("tableIndex,rowIndex,column,value,evidenceLabels,sourceAssistantMessageId,imageNames");
     expect(files.get(csvPath)).toContain("1,1,指标,delay,,assistant-visual,chart.png");

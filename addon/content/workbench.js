@@ -5627,6 +5627,10 @@ function visualExtractionReportData(payload, options = {}) {
   const images = Array.isArray(user?.images) ? user.images : [];
   const chartDataDrafts = visualExtractionChartDataDrafts(answer, tables, images);
   const pixelDataDrafts = visualExtractionPixelDataDrafts(answer, tables, images);
+  const chartQualityReview = visualExtractionChartQualityReview(chartDataDrafts, pixelDataDrafts, {
+    evidenceLabels,
+    images
+  });
   return {
     templateVersion: "visual-extraction-report-v2",
     generatedAt,
@@ -5653,6 +5657,7 @@ function visualExtractionReportData(payload, options = {}) {
     tables,
     chartDataDrafts,
     pixelDataDrafts,
+    chartQualityReview,
     evidenceLabels,
     originalAnswer: answer || "",
     labels
@@ -5666,6 +5671,10 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
   const tables = Array.isArray(data?.tables) ? data.tables : [];
   const chartDataDrafts = Array.isArray(data?.chartDataDrafts) ? data.chartDataDrafts : [];
   const pixelDataDrafts = Array.isArray(data?.pixelDataDrafts) ? data.pixelDataDrafts : [];
+  const chartQualityReview = data?.chartQualityReview || visualExtractionChartQualityReview(chartDataDrafts, pixelDataDrafts, {
+    evidenceLabels: data?.evidenceLabels || [],
+    images
+  });
   const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts);
   const imageInventory = images.length
     ? [
@@ -5690,6 +5699,8 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `reconstructedTableCount: ${tables.length}`,
     `chartDataDraftCount: ${chartDataDrafts.length}`,
     `pixelDataDraftCount: ${pixelDataDrafts.length}`,
+    `chartQualityStatus: ${yamlScalar(chartQualityReview.status || "")}`,
+    `chartQualityIssueCount: ${Number(chartQualityReview.issueCount) || 0}`,
     `reconstructedDataRowCount: ${reconstructedRows.length}`,
     "---",
     "",
@@ -5722,6 +5733,10 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `## ${labels.pixelDataDrafts}`,
     "",
     pixelDataDrafts.length ? visualExtractionPixelDataDraftsMarkdown(pixelDataDrafts, labels) : `- ${labels.noPixelDataDrafts}`,
+    "",
+    `## ${labels.chartQualityReview}`,
+    "",
+    visualExtractionChartQualityReviewMarkdown(chartQualityReview, labels),
     "",
     `## ${labels.structuredData}`,
     "",
@@ -6353,6 +6368,150 @@ function visualExtractionPixelDataDraftsMarkdown(drafts, labels) {
   return lines.join("\n");
 }
 
+function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDrafts = [], options = {}) {
+  const chartPoints = (chartDataDrafts || []).flatMap((draft) => draft?.points || []);
+  const pixelPoints = (pixelDataDrafts || []).flatMap((draft) => draft?.points || []);
+  const evidenceLabels = Array.from(new Set([
+    ...(options.evidenceLabels || []),
+    ...(chartDataDrafts || []).flatMap((draft) => draft?.evidenceLabels || []),
+    ...(pixelDataDrafts || []).flatMap((draft) => draft?.evidenceLabels || []),
+    ...chartPoints.flatMap((point) => point?.evidenceLabels || []),
+    ...pixelPoints.flatMap((point) => point?.evidenceLabels || [])
+  ]));
+  const checks = [
+    visualExtractionQualityCheck(
+      "chart-data",
+      chartPoints.length ? "pass" : "warning",
+      chartPoints.length ? `chart points: ${chartPoints.length}` : "no chart-data points parsed"
+    ),
+    visualExtractionQualityCheck(
+      "pixel-coordinates",
+      pixelPoints.length ? "pass" : "warning",
+      pixelPoints.length ? `pixel points: ${pixelPoints.length}` : "no pixel-coordinate points parsed"
+    ),
+    visualExtractionAxisCalibrationCheck(pixelPoints),
+    visualExtractionConfidenceCheck([...chartPoints, ...pixelPoints]),
+    visualExtractionEvidenceCheck(evidenceLabels),
+    visualExtractionPointCountCheck(chartPoints.length + pixelPoints.length)
+  ];
+  const issueCount = checks.filter((check) => check.status !== "pass").length;
+  const score = checks.reduce((sum, check) => sum + (check.status === "pass" ? 2 : check.status === "warning" ? 1 : 0), 0);
+  const maxScore = checks.length * 2;
+  const status = !chartPoints.length && !pixelPoints.length
+    ? "insufficient"
+    : checks.some((check) => check.status === "fail")
+      ? "needs-review"
+      : checks.some((check) => check.status === "warning")
+        ? "reviewable-with-cautions"
+        : "reviewable";
+  return {
+    status,
+    score,
+    maxScore,
+    issueCount,
+    imageCount: (options.images || []).length,
+    checks,
+    recommendations: visualExtractionQualityRecommendations(checks)
+  };
+}
+
+function visualExtractionQualityCheck(id, status, detail) {
+  return { id, status, detail: mdText(detail || "") };
+}
+
+function visualExtractionAxisCalibrationCheck(pixelPoints = []) {
+  if (!pixelPoints.length) return visualExtractionQualityCheck("axis-calibration", "warning", "no pixel points available for axis calibration");
+  const calibrated = pixelPoints.filter((point) =>
+    point?.pixelX !== null
+    && point?.pixelX !== undefined
+    && point?.pixelY !== null
+    && point?.pixelY !== undefined
+    && mdText(point?.axisX || "")
+    && mdText(point?.axisY || "")
+  ).length;
+  if (calibrated === pixelPoints.length) return visualExtractionQualityCheck("axis-calibration", "pass", `axis values present for ${calibrated}/${pixelPoints.length} pixel points`);
+  if (calibrated > 0) return visualExtractionQualityCheck("axis-calibration", "warning", `axis values present for ${calibrated}/${pixelPoints.length} pixel points`);
+  return visualExtractionQualityCheck("axis-calibration", "fail", "pixel points have no axis-value mapping");
+}
+
+function visualExtractionConfidenceCheck(points = []) {
+  if (!points.length) return visualExtractionQualityCheck("confidence", "warning", "no point-level confidence values");
+  const counts = { high: 0, medium: 0, low: 0, review: 0 };
+  for (const point of points) {
+    const confidence = String(point?.confidence || "").toLowerCase();
+    if (confidence === "high") counts.high += 1;
+    else if (confidence === "medium") counts.medium += 1;
+    else if (confidence === "low") counts.low += 1;
+    else counts.review += 1;
+  }
+  const detail = `high ${counts.high}, medium ${counts.medium}, low ${counts.low}, needs-review ${counts.review}`;
+  if (counts.high + counts.medium > 0) return visualExtractionQualityCheck("confidence", "pass", detail);
+  return visualExtractionQualityCheck("confidence", "warning", detail);
+}
+
+function visualExtractionEvidenceCheck(evidenceLabels = []) {
+  const labels = evidenceLabels || [];
+  if (labels.some((label) => /^\[image(?:\]|\s)/.test(label))) {
+    return visualExtractionQualityCheck("image-evidence", "pass", "image evidence label present");
+  }
+  if (labels.length) return visualExtractionQualityCheck("image-evidence", "warning", `evidence labels present but no [image]: ${labels.slice(0, 3).join(", ")}`);
+  return visualExtractionQualityCheck("image-evidence", "warning", "no evidence labels detected");
+}
+
+function visualExtractionPointCountCheck(pointCount) {
+  const count = Number(pointCount) || 0;
+  if (count >= 3) return visualExtractionQualityCheck("point-count", "pass", `points parsed: ${count}`);
+  if (count > 0) return visualExtractionQualityCheck("point-count", "warning", `only ${count} point(s) parsed`);
+  return visualExtractionQualityCheck("point-count", "fail", "no reusable data points parsed");
+}
+
+function visualExtractionQualityRecommendations(checks = []) {
+  const byId = new Map((checks || []).map((check) => [check.id, check]));
+  const recommendations = [];
+  if (byId.get("axis-calibration")?.status !== "pass") {
+    recommendations.push({ id: "axis-calibration" });
+  }
+  if (byId.get("confidence")?.status !== "pass") {
+    recommendations.push({ id: "confidence" });
+  }
+  if (byId.get("image-evidence")?.status !== "pass") {
+    recommendations.push({ id: "image-evidence" });
+  }
+  if (byId.get("point-count")?.status !== "pass") {
+    recommendations.push({ id: "point-count" });
+  }
+  return recommendations;
+}
+
+function visualExtractionChartQualityReviewMarkdown(review, labels) {
+  const checks = Array.isArray(review?.checks) ? review.checks : [];
+  const recommendations = Array.isArray(review?.recommendations) ? review.recommendations : [];
+  const lines = [
+    `- ${labels.qualityStatus}: ${review?.status || labels.unknown}`,
+    `- ${labels.qualityScore}: ${Number(review?.score) || 0}/${Number(review?.maxScore) || 0}`,
+    "",
+    `| ${labels.qualityCheck} | ${labels.reviewStatus} | ${labels.detail} |`,
+    "| --- | --- | --- |",
+    ...(checks.length ? checks.map((check) => `| ${markdownTableCell(check.id || "")} | ${markdownTableCell(check.status || "")} | ${markdownTableCell(check.detail || "")} |`) : [`| ${labels.unknown} | ${labels.unknown} | ${labels.noAnswer} |`])
+  ];
+  lines.push("", `### ${labels.recommendations}`, "");
+  if (recommendations.length) {
+    lines.push(...recommendations.map((item) => `- ${visualExtractionQualityRecommendationText(item, labels)}`));
+  } else {
+    lines.push(`- ${labels.noQualityIssues}`);
+  }
+  return lines.join("\n");
+}
+
+function visualExtractionQualityRecommendationText(item, labels) {
+  const id = typeof item === "string" ? item : item?.id || "";
+  if (id === "axis-calibration") return labels.recommendationAxisCalibration;
+  if (id === "confidence") return labels.recommendationConfidence;
+  if (id === "image-evidence") return labels.recommendationImageEvidence;
+  if (id === "point-count") return labels.recommendationPointCount;
+  return item?.text || id || labels.unknown;
+}
+
 function visualExtractionStructuredDataTable(rows, labels) {
   return [
     `| ${labels.table} | ${labels.row} | ${labels.column} | ${labels.value} | ${labels.evidenceLabels} |`,
@@ -6425,6 +6584,17 @@ function visualExtractionReportLabels(outputLanguage) {
       confidence: "置信度",
       noChartDataDrafts: "未能从重建表格、可校正 OCR 或回答文本中抽取图表数据草稿；需要人工放大原图或重新提问。",
       noPixelDataDrafts: "未能从回答中抽取像素/坐标数据草稿；需要使用多模态模型重新输出 Pixel X、Pixel Y、轴值和置信度。",
+      chartQualityReview: "图表数据质量审阅",
+      qualityStatus: "质量状态",
+      qualityScore: "质量分",
+      qualityCheck: "检查项",
+      detail: "细节",
+      recommendations: "复核建议",
+      noQualityIssues: "未发现结构化质量风险；正式使用前仍建议回到原图核对。",
+      recommendationAxisCalibration: "补充至少两个清晰坐标轴刻度/数值锚点，并对照原图核对 Pixel X/Y 到 Axis X/Y 的映射。",
+      recommendationConfidence: "在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。",
+      recommendationImageEvidence: "重新提问时要求模型用 [image] 标注直接视觉观察，并把文本上下文推断分开。",
+      recommendationPointCount: "放大原图或要求模型输出更密集的点表后，再用于跨论文实验对比。",
       structuredData: "机器可读数据",
       row: "行",
       column: "字段",
@@ -6433,7 +6603,7 @@ function visualExtractionReportLabels(outputLanguage) {
       reviewChecklist: "复核清单",
       checkReadableText: "核对 OCR 文本、标题、坐标轴、图例、表头和公式是否可读。",
       checkTableNumbers: "核对重建表格中的数字、单位、指标和数据集名称。",
-      checkChartDataDrafts: "核对图表数据草稿的轴、系列、单位、读数和置信度，不能直接作为最终数据。",
+      checkChartDataDrafts: "核对图表数据草稿的轴、系列、单位、读数、质量审阅结果和置信度，不能直接作为最终数据。",
       checkPixelDataDrafts: "核对像素/坐标草稿中的点位、像素坐标、轴值映射和置信度；必要时回到原图校准坐标轴。",
       checkImageEvidence: "区分直接视觉观察、论文上下文推断和低置信判断。",
       checkPdfLocation: "回到 PDF 原图位置核对页码、图号/表号和上下文。",
@@ -6494,6 +6664,17 @@ function visualExtractionReportLabels(outputLanguage) {
     confidence: "Confidence",
     noChartDataDrafts: "No chart data draft could be extracted from reconstructed tables, editable OCR, or answer text; zoom the original image or ask again.",
     noPixelDataDrafts: "No pixel / coordinate data draft could be extracted; ask a multimodal model to return Pixel X, Pixel Y, axis values, and confidence.",
+    chartQualityReview: "Chart Data Quality Review",
+    qualityStatus: "Quality status",
+    qualityScore: "Quality score",
+    qualityCheck: "Check",
+    detail: "Detail",
+    recommendations: "Review Recommendations",
+    noQualityIssues: "No structured quality risk was detected; still verify against the original figure before final use.",
+    recommendationAxisCalibration: "Add at least two visible axis tick/value anchors and verify Pixel X/Y to Axis X/Y mapping against the original chart.",
+    recommendationConfidence: "Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.",
+    recommendationImageEvidence: "Ask the model to mark direct visual observations with [image] and keep text-context inferences separate.",
+    recommendationPointCount: "Zoom the original figure or request a denser point table before using the data for cross-paper comparison.",
     structuredData: "Machine-Readable Data",
     row: "Row",
     column: "Column",
@@ -6502,7 +6683,7 @@ function visualExtractionReportLabels(outputLanguage) {
     reviewChecklist: "Review Checklist",
     checkReadableText: "Check OCR text, titles, axes, legends, headers, and formulas.",
     checkTableNumbers: "Verify reconstructed numbers, units, metrics, and dataset names.",
-    checkChartDataDrafts: "Verify chart-data draft axes, series, units, readings, and confidence before reuse.",
+    checkChartDataDrafts: "Verify chart-data draft axes, series, units, readings, quality-review flags, and confidence before reuse.",
     checkPixelDataDrafts: "Verify pixel / coordinate drafts, point labels, pixel coordinates, axis-value mapping, and confidence; recalibrate against the original image when needed.",
     checkImageEvidence: "Separate direct visual observations, paper-context inference, and low-confidence judgments.",
     checkPdfLocation: "Return to the PDF figure/table location and verify page, label, and context.",
