@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { runProviderModels, runProviderSmoke } from "./verify-provider-smoke.mjs";
+import { endpointFor, modelsEndpointFor } from "../src/providerAdapters.ts";
 
 const DEFAULT_CASES = [
   {
@@ -474,6 +475,11 @@ if (isMainModule()) {
       process.stdout.write(options.json ? `${JSON.stringify(template, null, 2)}\n` : textTemplate);
       process.exit(0);
     }
+    if (options.doctor) {
+      const report = providerLiveDoctor(options.include || "", options, process.env);
+      process.stdout.write(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatDoctorReport(report));
+      process.exit(0);
+    }
     const report = await runProviderLive(options, process.env);
     process.stdout.write(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report));
     if (!report.ok) process.exit(1);
@@ -597,6 +603,7 @@ function parseArgs(args) {
     list: false,
     envTemplate: false,
     dotenvTemplate: false,
+    doctor: false,
     help: false
   };
   for (let index = 0; index < args.length; index += 1) {
@@ -640,6 +647,8 @@ function parseArgs(args) {
       options.envTemplate = true;
     } else if (key === "--dotenv-template") {
       options.dotenvTemplate = true;
+    } else if (key === "--doctor") {
+      options.doctor = true;
     } else if (key === "--header" && value) {
       const [name, headerValue] = splitAssignment(value, "--header");
       options.customHeaders[name] = headerValue;
@@ -697,6 +706,170 @@ export function providerLiveEnvTemplate(include = "") {
     count: cases.length,
     groups: providerLiveCaseGroups(),
     cases: cases.map((entry) => providerEnvTemplateForCase(entry))
+  };
+}
+
+export function providerLiveDoctor(include = "", options = {}, env = process.env) {
+  const effectiveEnv = options.envFile ? envWithEnvFile(options.envFile, env) : env;
+  const cases = selectedCases(include);
+  const reports = cases.map((entry) => providerLiveDoctorCase(entry, options, effectiveEnv));
+  const counts = reports.reduce((acc, entry) => {
+    if (entry.status === "ready") acc.ready += 1;
+    if (entry.status === "missing") acc.missing += 1;
+    if (entry.status === "unsupported") acc.unsupported += 1;
+    if (entry.status === "invalid") acc.invalid += 1;
+    return acc;
+  }, { ready: 0, missing: 0, unsupported: 0, invalid: 0 });
+  return {
+    ok: true,
+    configurationReady: counts.missing === 0 && counts.unsupported === 0 && counts.invalid === 0,
+    liveProviderDoctor: true,
+    count: reports.length,
+    envFileLoaded: Boolean(options.envFile),
+    inputMode: liveInputMode(options),
+    models: Boolean(options.models),
+    stream: Boolean(options.stream),
+    counts,
+    cases: reports
+  };
+}
+
+function providerLiveDoctorCase(entry, options, env) {
+  try {
+    const customHeaders = customHeadersForCase(entry, options, env);
+    const capabilities = capabilitiesForCase(entry, options, env);
+    const bodyExtra = bodyExtraForCase(entry, options, env);
+    const unsupported = unsupportedInputReason(entry, options, capabilities);
+    const generationMissing = missingRequirements(entry, env, { models: false, customHeaders });
+    const modelListMissing = missingRequirements(entry, env, { models: true, customHeaders });
+    const activeMissing = options.models ? modelListMissing : generationMissing;
+    const defaults = runProfileDefault(entry.profile) || {};
+    const profile = doctorProfileForCase(entry, defaults, env, { customHeaders, capabilities, bodyExtra });
+    const endpoint = doctorEndpointForProfile(profile);
+    const modelsEndpoint = doctorModelsEndpointForProfile(profile);
+    const status = unsupported ? "unsupported" : activeMissing.length ? "missing" : "ready";
+    return {
+      id: entry.id,
+      label: entry.label,
+      profile: entry.profile,
+      protocol: entry.protocol,
+      status,
+      ready: status === "ready",
+      missing: activeMissing,
+      generationMissing,
+      modelListMissing,
+      unsupportedReason: unsupported,
+      endpoint,
+      modelsEndpoint,
+      model: profile.model || "",
+      modelSource: envValueSource(entry.modelEnv, env, defaults.model),
+      baseURL: profile.baseURL || "",
+      baseURLSource: envValueSource(entry.baseURLEnv, env, defaults.baseURL),
+      baseURLRequired: Boolean(entry.requireBaseURL),
+      auth: doctorAuthStatus(entry, env, customHeaders, endpoint),
+      capabilities: {
+        imageBase64: capabilities.imageBase64 === true,
+        pdfBase64: capabilities.pdfBase64 === true,
+        streaming: capabilities.streaming === true,
+        modelList: capabilities.modelList !== false
+      },
+      env: {
+        apiKeyEnv: entry.apiKeyEnv,
+        modelEnv: entry.modelEnv,
+        baseURLEnv: entry.baseURLEnv,
+        headersEnv: entry.headersEnv,
+        bodyExtraEnv: entry.bodyExtraEnv,
+        capabilitiesEnv: capabilitiesEnvForCase(entry)
+      },
+      commands: doctorCommandsForCase(entry)
+    };
+  } catch (error) {
+    return {
+      id: entry.id,
+      label: entry.label,
+      profile: entry.profile,
+      protocol: entry.protocol,
+      status: "invalid",
+      ready: false,
+      missing: [],
+      error: redactKnownSecrets(error?.message || String(error), env),
+      commands: doctorCommandsForCase(entry)
+    };
+  }
+}
+
+function doctorProfileForCase(entry, defaults, env, options) {
+  return {
+    ...defaults,
+    protocol: entry.protocol || defaults.protocol,
+    endpointMode: defaults.endpointMode || "base_url",
+    baseURL: String(env[entry.baseURLEnv] || defaults.baseURL || "").trim(),
+    fullURL: String(defaults.fullURL || "").trim(),
+    apiKey: String(env[entry.apiKeyEnv] || "").trim() ? "[configured]" : "",
+    model: String(env[entry.modelEnv] || defaults.model || "").trim(),
+    capabilities: {
+      ...(defaults.capabilities || {}),
+      ...(options.capabilities || {})
+    },
+    customHeaders: {
+      ...(defaults.customHeaders || {}),
+      ...(options.customHeaders || {})
+    },
+    bodyExtra: {
+      ...(defaults.bodyExtra || {}),
+      ...(options.bodyExtra || {})
+    }
+  };
+}
+
+function doctorEndpointForProfile(profile) {
+  try {
+    return endpointFor({
+      profile,
+      system: "",
+      messages: [],
+      input: { type: "text", text: "" },
+      maxOutputTokens: 1,
+      temperature: 0,
+      stream: false
+    });
+  } catch (error) {
+    return `unavailable: ${error?.message || String(error)}`;
+  }
+}
+
+function doctorModelsEndpointForProfile(profile) {
+  try {
+    return modelsEndpointFor(profile) || "";
+  } catch (error) {
+    return `unavailable: ${error?.message || String(error)}`;
+  }
+}
+
+function envValueSource(name, env, defaultValue = "") {
+  if (name && String(env[name] || "").trim()) return "env";
+  if (String(defaultValue || "").trim()) return "default";
+  return "missing";
+}
+
+function doctorAuthStatus(entry, env, customHeaders, endpoint) {
+  if (hasAuthHeader(customHeaders || {})) return "custom-header";
+  if (String(env[entry.apiKeyEnv] || "").trim()) return "api-key-env";
+  if (entry.allowLocalNoAuth && isLocalEndpoint(endpoint)) return "local-no-auth";
+  if (entry.apiKeyOptional && !String(env[entry.apiKeyEnv] || "").trim()) return "optional-missing";
+  return "missing";
+}
+
+function doctorCommandsForCase(entry) {
+  return {
+    generation: `npm run verify:provider:live -- --include ${entry.id}`,
+    generationWithEnvFile: `npm run verify:provider:live -- --include ${entry.id} --env-file .env.local`,
+    modelList: entry.modelList === false ? "" : `npm run verify:provider:models:live -- --include ${entry.id}`,
+    modelListWithEnvFile: entry.modelList === false ? "" : `npm run verify:provider:models:live -- --include ${entry.id} --env-file .env.local`,
+    image: caseSupportsImageInput(entry) ? `npm run verify:provider:image:live -- --include ${entry.id}` : "",
+    pdf: caseSupportsPdfInput(entry) ? `npm run verify:provider:pdf:live -- --include ${entry.id}` : "",
+    envTemplate: `npm run verify:provider:live -- --env-template --include ${entry.id}`,
+    dotenvTemplate: `npm run verify:provider:live -- --env-template --dotenv-template --include ${entry.id} > .env.local`
   };
 }
 
@@ -1227,6 +1400,42 @@ function formatDotenvTemplate(template) {
   return `${lines.join("\n")}\n`;
 }
 
+function formatDoctorReport(report) {
+  const lines = [
+    "Provider live configuration doctor",
+    `input: ${report.inputMode || "text"}`,
+    `configurationReady: ${report.configurationReady ? "yes" : "no"}`,
+    `ready: ${report.counts.ready}`,
+    `missing: ${report.counts.missing}`,
+    `unsupported: ${report.counts.unsupported}`,
+    `invalid: ${report.counts.invalid}`
+  ];
+  for (const entry of report.cases || []) {
+    lines.push("", `${entry.id}: ${entry.status}`);
+    if (entry.error) lines.push(`  error: ${entry.error}`);
+    if (entry.unsupportedReason) lines.push(`  unsupported: ${entry.unsupportedReason}`);
+    if (entry.missing?.length) lines.push(`  missing: ${entry.missing.join(", ")}`);
+    if (entry.protocol) lines.push(`  protocol: ${entry.protocol}`);
+    if (entry.endpoint) lines.push(`  endpoint: ${entry.endpoint}`);
+    if (entry.modelsEndpoint) lines.push(`  modelsEndpoint: ${entry.modelsEndpoint}`);
+    if (entry.model || entry.modelSource) lines.push(`  model: ${entry.model || "(missing)"} (${entry.modelSource || "missing"})`);
+    if (entry.baseURL || entry.baseURLSource) {
+      const required = entry.baseURLRequired ? ", required" : "";
+      lines.push(`  baseURL: ${entry.baseURL || "(missing)"} (${entry.baseURLSource || "missing"}${required})`);
+    }
+    if (entry.auth) lines.push(`  auth: ${entry.auth}`);
+    if (entry.capabilities) {
+      lines.push(`  capabilities: image=${entry.capabilities.imageBase64 ? "yes" : "no"}, pdf=${entry.capabilities.pdfBase64 ? "yes" : "no"}, stream=${entry.capabilities.streaming ? "yes" : "no"}, models=${entry.capabilities.modelList ? "yes" : "no"}`);
+    }
+    if (entry.generationMissing?.length) lines.push(`  generationMissing: ${entry.generationMissing.join(", ")}`);
+    if (entry.modelListMissing?.length) lines.push(`  modelListMissing: ${entry.modelListMissing.join(", ")}`);
+    if (entry.commands?.generationWithEnvFile) lines.push(`  next: ${entry.commands.generationWithEnvFile}`);
+    if (entry.commands?.modelListWithEnvFile) lines.push(`  models: ${entry.commands.modelListWithEnvFile}`);
+    if (entry.commands?.dotenvTemplate) lines.push(`  envDraft: ${entry.commands.dotenvTemplate}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 function uniqueEnvNames(names) {
   return [...new Set((names || []).filter(Boolean))];
 }
@@ -1243,6 +1452,8 @@ function usage() {
     "  npm run verify:provider:models:live -- --json",
     "  npm run verify:provider:live -- --list",
     "  npm run verify:provider:live -- --list --include mainstream",
+    "  npm run verify:provider:live -- --doctor --include core",
+    "  npm run verify:provider:live -- --doctor --include anthropic-compatible --env-file .env.local",
     "  npm run verify:provider:live -- --include core --env-file .env.local --fail-on-skip",
     "  npm run verify:provider:live -- --include openai-chat --stream --env-file .env.local",
     "  npm run verify:provider:models:live -- --include anthropic-messages --env-file .env.local",
@@ -1287,6 +1498,7 @@ function usage() {
     "  --list                   Print available live case ids and environment variable names, then exit",
     "  --env-template           Print copyable placeholder env lines for selected live case ids, then exit",
     "  --dotenv-template        With --env-template, print a plain KEY=value draft for a local env file",
+    "  --doctor                 Check selected env configuration and print safe next-step commands without calling providers",
     "  --prompt TEXT            Override the smoke prompt",
     "  --context TEXT           Override the smoke context",
     "  --timeout-ms NUMBER      Per-provider timeout",

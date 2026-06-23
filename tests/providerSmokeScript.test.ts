@@ -1581,6 +1581,106 @@ describe("provider smoke verifier", () => {
     expect(caught.stderr).toContain("--dotenv-template requires --env-template");
   });
 
+  it("prints a provider live doctor report without calling providers", async () => {
+    const report = await runLive(["--doctor", "--include", "openai-compatible,anthropic-compatible,ollama", "--json"], scrubProviderEnv({
+      OLLAMA_MODEL: "llama3.1",
+      OLLAMA_BASE_URL: "http://localhost:11434/v1"
+    }));
+
+    expect(report).toMatchObject({
+      ok: true,
+      configurationReady: false,
+      liveProviderDoctor: true,
+      count: 3,
+      inputMode: "text",
+      counts: {
+        ready: 1,
+        missing: 2,
+        unsupported: 0,
+        invalid: 0
+      }
+    });
+    const openaiCompatible = report.cases.find((entry: any) => entry.id === "openai-compatible");
+    expect(openaiCompatible).toMatchObject({
+      status: "missing",
+      missing: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_MODEL", "OPENAI_COMPATIBLE_BASE_URL"],
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      modelsEndpoint: "https://api.openai.com/v1/models",
+      auth: "missing",
+      commands: {
+        generationWithEnvFile: "npm run verify:provider:live -- --include openai-compatible --env-file .env.local",
+        dotenvTemplate: "npm run verify:provider:live -- --env-template --dotenv-template --include openai-compatible > .env.local"
+      }
+    });
+    const anthropicCompatible = report.cases.find((entry: any) => entry.id === "anthropic-compatible");
+    expect(anthropicCompatible).toMatchObject({
+      status: "missing",
+      missing: ["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_MODEL", "ANTHROPIC_COMPATIBLE_BASE_URL"],
+      protocol: "anthropic_messages"
+    });
+    const ollama = report.cases.find((entry: any) => entry.id === "ollama");
+    expect(ollama).toMatchObject({
+      status: "ready",
+      missing: [],
+      auth: "local-no-auth",
+      model: "llama3.1",
+      modelSource: "env",
+      baseURLSource: "env"
+    });
+
+    const { stdout } = await execFileAsync(process.execPath, [
+      "scripts/verify-provider-live.mjs",
+      "--doctor",
+      "--include",
+      "openai-compatible"
+    ], {
+      cwd: process.cwd(),
+      env: scrubProviderEnv()
+    });
+    expect(stdout).toContain("Provider live configuration doctor");
+    expect(stdout).toContain("openai-compatible: missing");
+    expect(stdout).toContain("missing: OPENAI_COMPATIBLE_API_KEY, OPENAI_COMPATIBLE_MODEL, OPENAI_COMPATIBLE_BASE_URL");
+    expect(stdout).toContain("envDraft: npm run verify:provider:live -- --env-template --dotenv-template --include openai-compatible > .env.local");
+  });
+
+  it("loads provider doctor env files without leaking secrets", async () => {
+    const root = mkdtempSync(join(tmpdir(), "provider-doctor-"));
+    try {
+      const envPath = join(root, ".env.local");
+      writeFileSync(envPath, [
+        "OPENAI_COMPATIBLE_API_KEY=doctor-openai-secret",
+        "OPENAI_COMPATIBLE_MODEL=compatible-model",
+        "OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:3000/v1",
+        "OPENAI_COMPATIBLE_HEADERS_JSON={\"Authorization\":\"Bearer doctor-header-secret\"}"
+      ].join("\n"));
+
+      const report = await runLive(["--doctor", "--include", "openai-compatible", "--env-file", envPath, "--json"], scrubProviderEnv());
+      expect(report).toMatchObject({
+        ok: true,
+        configurationReady: true,
+        envFileLoaded: true,
+        counts: {
+          ready: 1,
+          missing: 0,
+          unsupported: 0,
+          invalid: 0
+        }
+      });
+      const text = JSON.stringify(report);
+      expect(text).not.toContain("doctor-openai-secret");
+      expect(text).not.toContain("doctor-header-secret");
+      expect(report.cases[0]).toMatchObject({
+        status: "ready",
+        missing: [],
+        auth: "custom-header",
+        model: "compatible-model",
+        endpoint: "http://127.0.0.1:3000/v1/chat/completions"
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("expands live provider include groups without breaking case-id compatibility", async () => {
     const core = await runLive(["--list", "--include", "core", "--json"], scrubProviderEnv());
     expect(core.cases.map((entry: any) => entry.id)).toEqual(CORE_LIVE_CASE_IDS);

@@ -114,7 +114,13 @@ For local verification before entering the same values in Zotero, generate a loc
 npm run verify:provider:live -- --env-template --dotenv-template --include core > .env.local
 ```
 
-Then fill the relevant variables and run one of these checks:
+Fill the relevant variables, then run a no-network configuration preflight to catch missing API keys, model names, or Base URLs:
+
+```bash
+npm run verify:provider:live -- --doctor --include core --env-file .env.local
+```
+
+After the preflight is clean, run one of these checks:
 
 ```bash
 # Official OpenAI Responses format
@@ -280,6 +286,8 @@ The same naming pattern is available for `XAI_*`, `TOGETHER_*`, `KIMI_*`, `PERPL
 Run `npm run verify:provider:live -- --list --json` to print every live-check case with its protocol, profile id, and environment variable names.
 
 `--include` accepts case ids and verification groups. The built-in groups are `core` for the basic OpenAI / OpenAI-compatible / Anthropic cases, `openai-chat`, `openai-responses`, `anthropic-messages`, `mainstream`, `remote`, `local`, and `all`. Case ids still take priority, so `--include anthropic` checks only the official Anthropic case; use `--include anthropic-messages` for the whole Anthropic Messages protocol family.
+
+Run `npm run verify:provider:live -- --doctor --include core --env-file .env.local` to inspect local configuration without calling remote providers. The report lists missing environment variables, resolved endpoints, model source, auth status, input capabilities, and copyable next-step commands. API keys are reported only as configured or missing; secret values are not printed.
 
 Run `npm run verify:provider:live -- --env-template --include openai-compatible` to print copyable env lines with default endpoint hints for selected live-check cases. Add `--dotenv-template` to generate a plain `.env.local` draft, for example `npm run verify:provider:live -- --env-template --dotenv-template --include core > .env.local`. Add `--json` if you want a machine-readable template for CI secrets or local shell setup. The same template command is shown in the Zotero settings guide and exported provider diagnostics.
 
