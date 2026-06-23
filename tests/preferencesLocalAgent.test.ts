@@ -71,10 +71,15 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
     profileImageOff: "Image input disabled",
     profileStreamReady: "Streaming supported",
     profileStreamOff: "Streaming disabled",
-    profileLocalAgentReady: "Local agent configured"
+    profileLocalAgentReady: "Local agent configured",
+    outputDirSaved: "Output directory saved",
+    outputDirCreateFailed: "Output directory failed"
   };
+  const prefValues = new Map<string, any>();
+  const madeDirectories: string[] = [];
   const createElement = (id: string, props: Record<string, any> = {}) => {
     let text = props.textContent || "";
+    const eventListeners = new Map<string, Array<(event?: any) => void>>();
     const element: any = {
       id,
       localName: props.localName || "input",
@@ -82,8 +87,15 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
       checked: !!props.checked,
       children: [] as any[],
       attributes: {} as Record<string, string>,
+      dataset: {},
+      eventListeners,
       appendChild(child: any) {
         this.children.push(child);
+      },
+      addEventListener(type: string, listener: (event?: any) => void) {
+        const listeners = eventListeners.get(type) || [];
+        listeners.push(listener);
+        eventListeners.set(type, listeners);
       },
       setAttribute(name: string, value: string) {
         this.attributes[name] = String(value);
@@ -186,7 +198,9 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
     IOUtils: {
       exists: async (path: string) => path === "/tmp/out/skills",
       getChildren: async (path: string) => path === "/tmp/out/skills" ? [...skillFiles] : [],
-      makeDirectory: async () => undefined,
+      makeDirectory: async (path: string) => {
+        madeDirectories.push(path);
+      },
       writeUTF8: async (path: string) => {
         if (path.startsWith("/tmp/out/skills/")) skillFiles.add(path);
       }
@@ -196,7 +210,9 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
     },
     Zotero: {
       Prefs: {
-        set: () => undefined
+        set: (key: string, value: any) => {
+          prefValues.set(key, value);
+        }
       }
     },
     console
@@ -205,7 +221,9 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
   return {
     controller: (context as any).window.ZoteroMarkdownSummaryPrefs,
     elements,
-    fetchCalls
+    fetchCalls,
+    prefValues,
+    madeDirectories
   };
 }
 
@@ -1623,6 +1641,8 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.builtInSkillTemplate("figure-table-extractor", "zh-CN")).toContain("图表");
     expect(helpers.builtInSkillTemplate("literature-matrix-builder", "en-US")).toContain("literature matrix");
     expect(helpers.builtInSkillTemplate("literature-matrix-builder", "zh-CN")).toContain("[paper2:<id>]");
+    expect(helpers.builtInSkillTemplate("literature-review-synthesis", "zh-CN")).toContain("跨论文综合");
+    expect(helpers.builtInSkillTemplate("literature-review-synthesis", "en-US")).toContain("cross-paper synthesis");
     expect(helpers.builtInSkillTemplate("ask-all-agents", "en-US")).toContain("Gemini, Claude, and opencode");
     expect(helpers.builtInSkillTemplate("ask-gemini-claude", "en-US")).toContain("Gemini and Claude");
     expect(helpers.builtInSkillTemplate("check-local-agents", "en-US")).toContain("availability");
@@ -1982,6 +2002,17 @@ describe("preferences local-agent config helpers", () => {
     });
   });
 
+  it("persists edited output directory and creates it from the top settings field", async () => {
+    const { controller, elements, prefValues, madeDirectories } = loadPreferencesController();
+    elements.get("zms-outputDir").value = "/tmp/new out";
+
+    await expect(controller.saveOutputDir()).resolves.toBe(true);
+
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("/tmp/new out");
+    expect(madeDirectories).toContain("/tmp/new out");
+    expect(elements.get("zms-status").value).toContain("Output directory saved");
+  });
+
   it("marks local-agent settings profiles as model-optional", () => {
     const { controller, elements } = loadPreferencesController();
     elements.get("zms-activeProfileId").value = "local-agents";
@@ -2151,6 +2182,30 @@ describe("preferences local-agent config helpers", () => {
     expect(options.map((option: any) => option.value)).toEqual(["claude-opus-4-8", "claude-sonnet-4-5"]);
     expect(options.map((option: any) => option.label)).toEqual(["Claude Opus 4.8", "Claude Sonnet 4.5"]);
     expect(elements.get("zms-model").value).toBe("claude-opus-4-8");
+  });
+
+  it("retries settings model lists without a rejected Anthropic version header", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      fetchResponses: [
+        {
+          __fetchOk: false,
+          __fetchStatus: 400,
+          __fetchBody: { error: { message: "Unsupported header: anthropic-version" } }
+        },
+        { data: [{ id: "claude-compatible", display_name: "Claude Compatible" }] }
+      ]
+    });
+    elements.get("zms-profileProtocol").value = "anthropic_messages";
+    elements.get("zms-baseURL").value = "https://router.example";
+    elements.get("zms-profileCustomHeaders").value = "{}";
+
+    await controller.loadModels();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].init.headers["anthropic-version"]).toBe("2023-06-01");
+    expect(fetchCalls[1].init.headers["anthropic-version"]).toBeUndefined();
+    expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toEqual(["claude-compatible"]);
+    expect(elements.get("zms-status").value).toBe("Models loaded: 1");
   });
 
   it("follows bounded model-list pagination cursors in settings", async () => {

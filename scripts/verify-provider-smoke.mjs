@@ -151,7 +151,7 @@ export async function runProviderSmoke(options = {}) {
 export async function runProviderModels(options = {}) {
   const profile = buildProfile(options, { requireModel: false });
   const endpoint = modelsEndpointFor(profile);
-  const headers = headersFor(profile);
+  let headers = headersFor(profile);
   if (!endpoint) {
     return {
       ok: false,
@@ -185,18 +185,28 @@ export async function runProviderModels(options = {}) {
   const requests = [];
   const items = [];
   let nextUrl = endpoint;
+  const usedCompatibilityFallbackFields = [];
   try {
     for (let page = 0; nextUrl && page < maxPages; page += 1) {
       if (seenUrls.has(nextUrl)) break;
       seenUrls.add(nextUrl);
       requests.push(nextUrl);
-      const response = await fetch(nextUrl, {
-        method: "GET",
-        headers,
-        signal: controller.signal
-      });
-      const rawText = await response.text();
-      const parsed = parseResponseBody(rawText);
+      let response;
+      let rawText = "";
+      let parsed = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        response = await fetch(nextUrl, {
+          method: "GET",
+          headers,
+          signal: controller.signal
+        });
+        rawText = await response.text();
+        parsed = parseResponseBody(rawText);
+        const fallbackFields = providerCompatibilityFallbackFields(profile.protocol, {}, response.status, rawText, usedCompatibilityFallbackFields);
+        if (!fallbackFields.length) break;
+        headers = providerRequestHeadersWithFallback(headers, fallbackFields);
+        usedCompatibilityFallbackFields.push(...fallbackFields);
+      }
       if (!response.ok) {
         return {
           ok: false,

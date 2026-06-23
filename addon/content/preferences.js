@@ -9,6 +9,7 @@ const ZMS_BUILT_IN_SKILL_IDS = [
   "experiment-table-builder",
   "figure-table-extractor",
   "literature-matrix-builder",
+  "literature-review-synthesis",
   "citation-audit",
   "custom-summary",
   "ask-gemini",
@@ -63,6 +64,7 @@ var ZoteroMarkdownSummaryPrefs = {
     this.loadProfileEditor();
     this.refreshProviderGuide();
     this.bindProfileStatusEvents();
+    this.bindOutputDirEvents();
     document.getElementById("zms-skillId").value ||= "paper-deep-summary";
     this.refreshSkillMenu().then(() => this.loadSkillTemplateEditor());
   },
@@ -140,6 +142,28 @@ var ZoteroMarkdownSummaryPrefs = {
     this.refreshProviderGuide();
     if (options.statusKey !== "") this.setStatus(this.t(options.statusKey || "saved"));
     return true;
+  },
+
+  async saveOutputDir() {
+    const element = document.getElementById("zms-outputDir");
+    if (!element) return false;
+    const outputDir = String(element.value || "").trim();
+    element.value = outputDir;
+    if (!this.save({ updateProfile: false, statusKey: "" })) return false;
+    if (element.dataset) element.dataset.zmsLastSaved = outputDir;
+    if (!outputDir) {
+      this.setStatus(this.t("outputDirMissing"));
+      return false;
+    }
+    try {
+      await ensureDirectory(outputDir);
+      await this.refreshSkillMenu();
+      this.setStatus(`${this.t("outputDirSaved")}: ${outputDir}`);
+      return true;
+    } catch (err) {
+      this.setStatus(`${this.t("outputDirCreateFailed")}: ${safeError(err)}`);
+      return false;
+    }
   },
 
   upsertProfileFromEditor() {
@@ -625,6 +649,19 @@ var ZoteroMarkdownSummaryPrefs = {
     }
   },
 
+  bindOutputDirEvents() {
+    const element = document.getElementById("zms-outputDir");
+    if (!element || element.dataset?.zmsOutputDirBound === "1") return;
+    if (element.dataset) element.dataset.zmsLastSaved = String(element.value || "");
+    const saveIfChanged = () => {
+      if (element.dataset && element.dataset.zmsLastSaved === String(element.value || "")) return;
+      this.saveOutputDir();
+    };
+    element.addEventListener("change", saveIfChanged);
+    element.addEventListener("blur", saveIfChanged);
+    if (element.dataset) element.dataset.zmsOutputDirBound = "1";
+  },
+
   applyLanguage() {
     const lang = resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale());
     const setLabel = (id, key) => {
@@ -677,6 +714,7 @@ var ZoteroMarkdownSummaryPrefs = {
       setLabel(`zms-${key}-label`, key);
     }
     setLabel("zms-save-button", "save");
+    setLabel("zms-save-outputDir-button", "saveOutputDir");
     setLabel("zms-test-button", "test");
     setLabel("zms-load-models-button", "loadModels");
     setLabel("zms-load-profile-button", "loadProfile");
@@ -1246,7 +1284,8 @@ function modelListRequestForProfile(profile) {
   if (!url) return null;
   return {
     url,
-    headers: headersForProfile(profile)
+    headers: headersForProfile(profile),
+    profile
   };
 }
 
@@ -1372,15 +1411,26 @@ async function fetchModelOptions(request) {
   const items = [];
   const seenUrls = new Set();
   let nextUrl = request.url;
+  let headers = request.headers;
+  const usedFallbackFields = [];
   for (let page = 0; nextUrl && page < MODEL_LIST_MAX_PAGES; page += 1) {
     if (seenUrls.has(nextUrl)) break;
     seenUrls.add(nextUrl);
-    const response = await fetch(nextUrl, { method: "GET", headers: request.headers });
-    const text = await response.text();
+    let response;
+    let text = "";
+    let data = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      response = await fetch(nextUrl, { method: "GET", headers });
+      text = await response.text();
+      data = safeParseJSON(text);
+      const fallbackFields = providerCompatibilityFallbackFields(request.profile?.protocol, {}, response.status, text, usedFallbackFields);
+      if (!fallbackFields.length) break;
+      headers = providerRequestHeadersWithFallback(headers, fallbackFields);
+      usedFallbackFields.push(...fallbackFields);
+    }
     if (!response.ok) {
       throw new Error(providerErrorText(response.status, text));
     }
-    const data = safeParseJSON(text);
     const errorText = providerResponseErrorDetail(data);
     if (errorText) {
       throw new Error(`Provider error: ${redact(errorText)}`);
@@ -3679,6 +3729,9 @@ function builtInSkillTemplate(skillId, outputLanguage) {
   if (skillId === "literature-matrix-builder") {
     return literatureMatrixTemplate(common, outputLanguage);
   }
+  if (skillId === "literature-review-synthesis") {
+    return literatureReviewSynthesisTemplate(common, outputLanguage);
+  }
   if (skillId === "citation-audit") {
     return `${common}\n\nAudit the current summary or answer. List unsupported claims, weak evidence, and the source needed to verify each claim.`;
   }
@@ -3724,6 +3777,16 @@ function literatureMatrixTemplate(common, outputLanguage) {
     return `${common}\n\nliterature matrix を作成してください。Comparison paper がある場合は、焦点論文と比較論文を同時に比較してください。ない場合は、現在の論文だけで単一論文の行列を作成してください。各セルには [chunk:<id>]、[paper2:<id>]、または [metadata] のような根拠ラベルを付け、根拠が弱い場合は低信頼と明記してください。`;
   }
   return `${common}\n\nCreate a literature matrix. If the context contains Comparison papers, compare the focal paper against every comparison paper; otherwise build a single-paper matrix for the current paper first. Include a paper inventory, comparison matrix, cross-paper analysis, and review-draft notes. Every matrix cell must cite evidence labels such as [chunk:<id>], [paper2:<id>], or [metadata]. Mark unsupported cells as low-confidence instead of filling gaps.`;
+}
+
+function literatureReviewSynthesisTemplate(common, outputLanguage) {
+  if (outputLanguage === "zh-CN") {
+    return `${common}\n\n生成可直接用于文献综述写作的跨论文综合。若上下文包含 Comparison papers，请把焦点论文和所有对比论文一起综合；若只有当前论文，先输出单篇综述骨架并明确缺少对比论文。使用 Markdown，固定包含：综述主题与范围、论文分组与研究谱系、共同问题与核心共识、方法/数据/实验对比、关键分歧与证据强弱、研究空白、可写入正文的综述段落草稿、后续补充文献与验证清单。每个判断都必须引用 [metadata]、[chunk:<id>]、[paper2:<id>] 等证据标签；不要把低置信推断写成确定结论。`;
+  }
+  if (outputLanguage === "ja-JP") {
+    return `${common}\n\n文献レビュー執筆に使える横断的な統合を作成してください。Comparison papers がある場合は焦点論文と比較論文をまとめて扱い、ない場合は単一論文のレビュー骨子として不足を明記してください。各判断には [metadata]、[chunk:<id>]、[paper2:<id>] などの根拠ラベルを付けてください。`;
+  }
+  return `${common}\n\nCreate a cross-paper synthesis for literature-review writing. If the context contains Comparison papers, synthesize the focal paper together with every comparison paper; otherwise produce a single-paper review scaffold and state that comparison papers are missing. Include review scope, paper groups and lineage, shared problem and consensus, method/data/experiment comparison, disagreements and evidence strength, research gaps, draft review paragraphs, and follow-up verification. Every judgment must cite evidence labels such as [metadata], [chunk:<id>], or [paper2:<id>]. Mark low-confidence inferences explicitly.`;
 }
 
 function paperDeepSummaryTemplate(common, outputLanguage) {

@@ -277,8 +277,8 @@ const SOURCE_MARKERS = [
   {
     id: "provider.model-list-pagination",
     description: "Settings and workbench model list loading follow bounded pagination cursors",
-    files: ["addon/content/preferences.js", "addon/content/workbench.js", "tests/workbenchSession.test.ts"],
-    markers: ["fetchModelOptions", "nextModelListURL", "MODEL_LIST_MAX_PAGES", "workbenchFetchModelOptions", "workbenchNextModelListURL", "WORKBENCH_MODEL_LIST_MAX_PAGES", "follows bounded wrapped model-list pagination in the workbench"]
+    files: ["addon/content/preferences.js", "addon/content/workbench.js", "tests/preferencesLocalAgent.test.ts", "tests/workbenchSession.test.ts", "tests/workbenchWriteback.test.ts"],
+    markers: ["fetchModelOptions", "nextModelListURL", "MODEL_LIST_MAX_PAGES", "workbenchFetchModelOptions", "workbenchNextModelListURL", "WORKBENCH_MODEL_LIST_MAX_PAGES", "providerRequestHeadersWithFallback", "retries settings model lists without a rejected Anthropic version header", "retries workbench model lists without a rejected Anthropic version header", "follows bounded wrapped model-list pagination in the workbench"]
   },
   {
     id: "local-agents.bridge",
@@ -575,6 +575,7 @@ const SOURCE_MARKERS = [
       "zms-composer-toolbar",
       "zms-composer-profile",
       "zms-skill",
+      "literature-review-synthesis",
       "zms-send-button",
       "saveProfileSettings",
       "zms-attach-image"

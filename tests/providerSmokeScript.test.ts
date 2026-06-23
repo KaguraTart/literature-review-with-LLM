@@ -1073,6 +1073,39 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("retries Anthropic-compatible model-list checks without a rejected version header", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "anthropic-compatible",
+        "--base-url", baseURL,
+        "--api-key", "models-secret",
+        "--models",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        models: true,
+        protocol: "anthropic_messages",
+        modelCount: 1,
+        modelIds: ["claude-compatible"]
+      });
+      expect(requests).toHaveLength(2);
+      expect(requests[0].anthropicVersion).toBe("2023-06-01");
+      expect(requests[1].anthropicVersion).toBeUndefined();
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.anthropicVersion) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: { message: "Unsupported header: anthropic-version" } }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ data: [{ id: "claude-compatible" }] }));
+      }
+    });
+  });
+
   it("fails model-list checks when a 200 response contains a provider error", async () => {
     await withMockProvider(async (baseURL) => {
       let error: any;

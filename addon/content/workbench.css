@@ -334,6 +334,9 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 9px;
+  user-select: none;
+  -moz-user-select: none;
+  -webkit-user-select: none;
 }
 
 .zms-message-actions button {

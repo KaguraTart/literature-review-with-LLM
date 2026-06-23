@@ -9,6 +9,7 @@ describe("skills", () => {
       "experiment-table-builder",
       "figure-table-extractor",
       "literature-matrix-builder",
+      "literature-review-synthesis",
       "citation-audit",
       "custom-summary",
       "ask-gemini",
@@ -30,6 +31,7 @@ describe("skills", () => {
     expect(builtInSkillTemplate("citation-audit", "en-US")).toContain("evidence");
     expect(builtInSkillTemplate("figure-table-extractor", "en-US")).toContain("[image]");
     expect(builtInSkillTemplate("literature-matrix-builder", "en-US")).toContain("[paper2:<id>]");
+    expect(builtInSkillTemplate("literature-review-synthesis", "en-US")).toContain("cross-paper synthesis");
     expect(builtInSkillTemplate("paper-deep-summary", "ja-JP")).toContain("日本語");
   });
 

@@ -11,6 +11,7 @@ const ZMS_SKILL_IDS = [
   "experiment-table-builder",
   "figure-table-extractor",
   "literature-matrix-builder",
+  "literature-review-synthesis",
   "citation-audit",
   "custom-summary",
   "ask-gemini",
@@ -174,7 +175,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       await this.renderSkills();
       // Try to resume the most recent conversation for this item so the
       // user does not have to start over when they reopen the workbench.
-      const latest = this.state.comparisonContexts.length ? null : await latestSessionForItem(this.state.item, this.state.outputDir);
+      const latest = await latestSessionForItem(this.state.item, this.state.outputDir);
       if (latest) {
         await this.loadSession(latest.path, { resume: true });
         this.setStatus(this.t("sessionResumed"));
@@ -259,7 +260,6 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.state.escapeBound = true;
     }
     this.bindImageInput();
-    this.bindMessageSelection();
     this.bindCitationNetworkPolicyControls();
     const composer = document.getElementById("zms-composer");
     if (input && input.dataset?.zmsFocusBound !== "1") {
@@ -279,19 +279,6 @@ var ZoteroMarkdownSummaryWorkbench = {
       if (composer.dataset) composer.dataset.zmsFocusBound = "1";
     }
     this.updateComposerState();
-  },
-
-  bindMessageSelection() {
-    const messages = document.getElementById("zms-messages");
-    if (!messages || messages.dataset?.zmsSelectionBound === "1") return;
-    const keepNativeSelection = (event) => {
-      if (isInteractiveWorkbenchTarget(event?.target)) return;
-      event?.stopPropagation?.();
-    };
-    for (const eventName of ["pointerdown", "mousedown", "click", "dblclick"]) {
-      messages.addEventListener(eventName, keepNativeSelection);
-    }
-    if (messages.dataset) messages.dataset.zmsSelectionBound = "1";
   },
 
   bindImageInput() {
@@ -1470,15 +1457,22 @@ var ZoteroMarkdownSummaryWorkbench = {
         assistantMessage.usage = usage;
         renderMessageContent(assistantBody, assistantMessage);
       }
-      await this.saveSession();
-      this.setStatus(this.t("ready"));
+      const saved = await this.saveSession();
+      this.setStatus(saved === false ? this.t("answerReadySaveFailed") : this.t("ready"));
     } catch (err) {
       const errorText = safeError(err);
       if (assistantMessage && assistantBody) {
-        assistantMessage.content = errorText;
+        if (visibleMessageText(assistantMessage).trim()) {
+          assistantMessage.error = errorText;
+          this.setStatus(`${this.t("answerKeptAfterError")}: ${errorText}`);
+        } else {
+          assistantMessage.content = errorText;
+          this.setStatus(errorText);
+        }
         renderMessageContent(assistantBody, assistantMessage);
+      } else {
+        this.setStatus(errorText);
       }
-      this.setStatus(errorText);
     } finally {
       this.state.abortController = null;
       this.state.requestInFlight = false;
@@ -1623,8 +1617,10 @@ var ZoteroMarkdownSummaryWorkbench = {
       }
       await this.renderSessions();
       if (!options.quiet) this.setStatus(this.t("saved"));
+      return true;
     } catch (err) {
       this.setStatus(`${this.t("saveFailed")}: ${safeError(err)}`);
+      return false;
     }
   },
 
@@ -6677,6 +6673,7 @@ function builtInSkillTemplate(skillId, outputLanguage) {
   if (skillId === "experiment-table-builder") return `${common}\n\nBuild a Markdown table for datasets, baselines, metrics, ablations, results, and limitations.`;
   if (skillId === "figure-table-extractor") return figureTableTemplate(common, outputLanguage);
   if (skillId === "literature-matrix-builder") return literatureMatrixTemplate(common, outputLanguage);
+  if (skillId === "literature-review-synthesis") return literatureReviewSynthesisTemplate(common, outputLanguage);
   if (skillId === "citation-audit") return `${common}\n\nAudit claims and identify unsupported or weakly supported statements.`;
   if (skillId === "custom-summary") return `${common}\n\nFollow the user's custom research goal and produce a structured Markdown note.`;
   if (skillId === "ask-gemini") {
@@ -6718,6 +6715,16 @@ function literatureMatrixTemplate(common, outputLanguage) {
     return `${common}\n\nliterature matrix を作成してください。Comparison paper がある場合は、焦点論文と比較論文を同時に比較してください。ない場合は、現在の論文だけで単一論文の行列を作成してください。Markdown で、論文一覧、比較行列、横断分析、レビュー草稿の要点を含めてください。各セルには [chunk:<id>]、[paper2:<id>]、または [metadata] のような根拠ラベルを付け、根拠が弱い場合は低信頼と明記してください。`;
   }
   return `${common}\n\nCreate a literature matrix. If the context contains Comparison papers, compare the focal paper against every comparison paper; otherwise build a single-paper matrix for the current paper first. Use Markdown and include:\n\n1. Paper inventory: title, year, research object, problem type, and evidence labels.\n2. Comparison matrix: research question, method/model, data or scenario, experimental metrics, key findings, limitations, reusable ideas, and evidence labels.\n3. Cross-paper analysis: shared assumptions, decisive differences, evidence strength, possible contradictions, and mergeable research directions.\n4. Review-draft notes: section headings and 3-6 bullets that can be rewritten into a literature review.\n\nEvery matrix cell must cite evidence labels such as [chunk:<id>], [paper2:<id>], or [metadata]. Mark unsupported cells as low-confidence instead of filling gaps.`;
+}
+
+function literatureReviewSynthesisTemplate(common, outputLanguage) {
+  if (outputLanguage === "zh-CN") {
+    return `${common}\n\n生成可直接用于文献综述写作的跨论文综合。若上下文包含 Comparison papers，请把焦点论文和所有对比论文一起综合；若只有当前论文，先输出单篇综述骨架并明确缺少对比论文。使用 Markdown，固定包含：\n\n## 综述主题与范围\n## 论文分组与研究谱系\n## 共同问题与核心共识\n## 方法、数据与实验对比\n## 关键分歧与证据强弱\n## 研究空白与未解决问题\n## 可写入正文的综述段落草稿\n## 后续补充文献与验证清单\n\n每个判断都必须引用 [metadata]、[chunk:<id>]、[paper2:<id>] 等证据标签；不要把低置信推断写成确定结论。`;
+  }
+  if (outputLanguage === "ja-JP") {
+    return `${common}\n\n文献レビュー執筆に使える横断的な統合を作成してください。Comparison papers がある場合は焦点論文と比較論文をまとめて扱い、ない場合は単一論文のレビュー骨子として不足を明記してください。章はレビュー範囲、論文群の分類、共通課題、方法・データ・実験比較、相違点と証拠強度、研究ギャップ、本文に使える段落案、追加確認リストを含めてください。各判断には [metadata]、[chunk:<id>]、[paper2:<id>] などの根拠ラベルを付けてください。`;
+  }
+  return `${common}\n\nCreate a cross-paper synthesis for literature-review writing. If the context contains Comparison papers, synthesize the focal paper together with every comparison paper; otherwise produce a single-paper review scaffold and state that comparison papers are missing. Use Markdown with these sections:\n\n## Review Scope\n## Paper Groups And Research Lineage\n## Shared Problem And Core Consensus\n## Method, Data, And Experiment Comparison\n## Key Disagreements And Evidence Strength\n## Research Gaps And Open Questions\n## Draft Review Paragraphs\n## Follow-up Literature And Verification Checklist\n\nEvery judgment must cite evidence labels such as [metadata], [chunk:<id>], or [paper2:<id>]. Mark low-confidence inferences explicitly instead of presenting them as settled claims.`;
 }
 
 function languageInstruction(outputLanguage) {
@@ -7126,6 +7133,14 @@ function withoutBlankHeaders(headers) {
     if (!String(headers[key] || "").trim()) delete headers[key];
   }
   return headers;
+}
+
+function providerRequestHeadersWithFallback(headers, fields) {
+  if (!Array.isArray(fields) || !fields.includes("headers.anthropic-version")) return headers;
+  const next = { ...(headers || {}) };
+  const key = headerKey(next, "anthropic-version");
+  if (key) delete next[key];
+  return next;
 }
 
 function usesAzureOpenAIAuth(profile) {
@@ -7574,6 +7589,11 @@ function providerCompatibilityFallback(profile, body, status, text, usedFallback
     streamEnabled: fields.includes("stream") ? false : streamEnabled,
     usedFields: nextUsedFields
   };
+}
+
+function providerCompatibilityFallbackFields(protocol, body, status, text, usedFallback = false) {
+  if (usedFallback === true || !["openai_chat", "openai_responses", "anthropic_messages"].includes(protocol) || !providerFallbackEligibleStatus(body, status, text, protocol)) return [];
+  return providerUnsupportedOptionalFields(protocol, body, text, usedFallback);
 }
 
 async function inspectOkProviderResponseForFallback(response, profile, body, usedFallback, streamEnabled) {
@@ -11992,7 +12012,7 @@ function workbenchModelListRequestForProfile(profile) {
   if (!profile?.capabilities?.modelList || profile.endpointMode === "full_url") return null;
   const url = workbenchModelsEndpointForProfile(profile);
   if (!url) return null;
-  return { url, headers: headersForProfile(profile) };
+  return { url, headers: headersForProfile(profile), profile };
 }
 
 function workbenchModelsEndpointForProfile(profile) {
@@ -12009,15 +12029,26 @@ async function workbenchFetchModelOptions(request) {
   const items = [];
   const seen = new Set();
   let nextUrl = request.url;
+  let headers = request.headers;
+  const usedFallbackFields = [];
   for (let page = 0; nextUrl && page < WORKBENCH_MODEL_LIST_MAX_PAGES; page += 1) {
     if (seen.has(nextUrl)) break;
     seen.add(nextUrl);
-    const response = await fetch(nextUrl, { method: "GET", headers: request.headers });
-    const text = await response.text();
+    let response;
+    let text = "";
+    let data = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      response = await fetch(nextUrl, { method: "GET", headers });
+      text = await response.text();
+      data = safeParseJSON(text);
+      const fallbackFields = providerCompatibilityFallbackFields(request.profile?.protocol, {}, response.status, text, usedFallbackFields);
+      if (!fallbackFields.length) break;
+      headers = providerRequestHeadersWithFallback(headers, fallbackFields);
+      usedFallbackFields.push(...fallbackFields);
+    }
     if (!response.ok) {
       throw new Error(providerErrorText(response.status, text));
     }
-    const data = safeParseJSON(text);
     const errorText = streamErrorText(data);
     if (errorText) {
       throw new Error(`Provider error: ${redact(errorText)}`);

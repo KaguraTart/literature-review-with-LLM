@@ -1031,6 +1031,8 @@ describe("workbench writeback helpers", () => {
     expect(zh).toContain("## 表格/数据重建");
     expect(zh).toContain("项目、数值/文本、单位、来源、置信度、备注");
     expect(zh).toContain("不要把文本上下文推断伪装成图片观察");
+    expect(helpers.builtInSkillTemplate("literature-review-synthesis", "zh-CN")).toContain("跨论文综合");
+    expect(helpers.builtInSkillTemplate("literature-review-synthesis", "en-US")).toContain("cross-paper synthesis");
 
     const en = helpers.builtInSkillTemplate("figure-table-extractor", "en-US");
     expect(en).toContain("## Visual OCR Text");
@@ -1667,6 +1669,37 @@ describe("workbench writeback helpers", () => {
       "https://api.openai.com/v1/models",
       "https://api.openai.com/v1/models?after_id=model-b"
     ]);
+  });
+
+  it("retries workbench model lists without a rejected Anthropic version header", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; headers: Record<string, string> }> = [];
+    loaded.fetch = async (url: string, init: any) => {
+      fetchCalls.push({ url, headers: init.headers || {} });
+      if (init.headers?.["anthropic-version"]) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({ error: { message: "Unsupported header: anthropic-version" } })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: [{ id: "claude-compatible", display_name: "Claude Compatible" }] })
+      };
+    };
+
+    await expect(loaded.workbenchFetchModelOptions({
+      url: "https://router.example/v1/models",
+      headers: { authorization: "Bearer secret", "anthropic-version": "2023-06-01" },
+      profile: { protocol: "anthropic_messages" }
+    })).resolves.toEqual([
+      { id: "claude-compatible", label: "Claude Compatible" }
+    ]);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].headers["anthropic-version"]).toBe("2023-06-01");
+    expect(fetchCalls[1].headers["anthropic-version"]).toBeUndefined();
   });
 
   it("validates remote profile credentials before sending provider requests", () => {
@@ -5054,6 +5087,7 @@ describe("workbench writeback helpers", () => {
 
     const sendButton = dom.elements.get("zms-send");
     const input = dom.elements.get("zms-input");
+    const messages = dom.getElementById("zms-messages");
     expect(sendButton.eventListeners.get("click")).toHaveLength(1);
     expect(input.eventListeners.get("keydown")).toHaveLength(1);
     await sendButton.eventListeners.get("click")[0]({ preventDefault() {} });
@@ -5061,7 +5095,7 @@ describe("workbench writeback helpers", () => {
     expect(sendButton.dataset.zmsBound).toBe("1");
     expect(input.dataset.zmsShortcutBound).toBe("1");
     expect(input.dataset.zmsFocusBound).toBe("1");
-    expect(dom.elements.get("zms-messages").dataset.zmsSelectionBound).toBe("1");
+    expect(messages.eventListeners.get("mousedown")).toBeUndefined();
 
     await input.eventListeners.get("click")[0]();
     expect(input.focusCalls).toBe(1);
@@ -5091,7 +5125,7 @@ describe("workbench writeback helpers", () => {
     expect(prevented).toBe(1);
   });
 
-  it("keeps message text selection events from bubbling to outer focus handlers", () => {
+  it("does not intercept native message text selection events", () => {
     const loaded = loadWorkbenchHelpers();
     const dom = fakeDocument();
     (loaded as any).document = dom;
@@ -5099,23 +5133,11 @@ describe("workbench writeback helpers", () => {
 
     workbench.bindActions();
 
-    const messages = dom.elements.get("zms-messages");
-    const listener = messages.eventListeners.get("mousedown")[0];
-    let stopped = 0;
-    listener({
-      target: { tagName: "p" },
-      stopPropagation() {
-        stopped += 1;
-      }
-    });
-    listener({
-      target: { tagName: "button" },
-      stopPropagation() {
-        stopped += 1;
-      }
-    });
-
-    expect(stopped).toBe(1);
+    const messages = dom.getElementById("zms-messages");
+    expect(messages.eventListeners.get("pointerdown")).toBeUndefined();
+    expect(messages.eventListeners.get("mousedown")).toBeUndefined();
+    expect(messages.eventListeners.get("click")).toBeUndefined();
+    expect(messages.eventListeners.get("dblclick")).toBeUndefined();
   });
 
   it("opens the settings drawer from the single settings control", async () => {
@@ -5363,6 +5385,58 @@ describe("workbench writeback helpers", () => {
     expect(assistant.content).toBe("answer body");
     expect(assistant.usage).toEqual({ inputTokens: 12, outputTokens: 6, totalTokens: 18 });
     expect(loaded.answerTextForMessage(assistant)).toBe("answer body");
+  });
+
+  it("keeps generated answers visible when session saving fails", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-input": "question",
+      "zms-skill": ""
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.state.item = { key: "ITEM" };
+    workbench.state.profile = providerProfile();
+    workbench.state.messages = [];
+    workbench.state.outputLanguage = "zh-CN";
+    workbench.state.uiLanguage = "en-US";
+    workbench.t = (key: string) => key;
+    workbench.saveSession = async () => false;
+    workbench.callModel = async () => "answer body";
+
+    await workbench.send();
+
+    const assistant = workbench.state.messages.find((message: any) => message.role === "assistant");
+    expect(assistant.content).toBe("answer body");
+    expect(dom.elements.get("zms-chat-status").textContent).toBe("answerReadySaveFailed");
+  });
+
+  it("keeps streamed partial answers visible when a later request step fails", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-input": "question",
+      "zms-skill": ""
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.state.item = { key: "ITEM" };
+    workbench.state.profile = providerProfile();
+    workbench.state.messages = [];
+    workbench.state.outputLanguage = "zh-CN";
+    workbench.state.uiLanguage = "en-US";
+    workbench.t = (key: string) => key;
+    workbench.saveSession = async () => true;
+    workbench.callModel = async (_content: string, _skillId: string, onDelta: (delta: string) => void) => {
+      onDelta("partial answer");
+      throw new Error("disk path missing");
+    };
+
+    await workbench.send();
+
+    const assistant = workbench.state.messages.find((message: any) => message.role === "assistant");
+    expect(assistant.content).toBe("partial answer");
+    expect(assistant.error).toBe("disk path missing");
+    expect(dom.elements.get("zms-chat-status").textContent).toBe("answerKeptAfterError: disk path missing");
   });
 
   it("sends image-only messages with a localized default prompt", async () => {

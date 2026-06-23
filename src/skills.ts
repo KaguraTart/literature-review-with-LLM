@@ -7,7 +7,7 @@ export interface SkillDefinition {
   titleMessageId: string;
   descriptionMessageId: string;
   version: string;
-  inputScope: "current_paper";
+  inputScope: "current_paper" | "current_or_comparison_papers";
   evidencePolicy: "fulltext_or_abstract";
   templatePath: string;
   outputSchema: string;
@@ -59,10 +59,20 @@ export const defaultSkills: SkillDefinition[] = [
     titleMessageId: "skill-literature-matrix-builder-title",
     descriptionMessageId: "skill-literature-matrix-builder-description",
     version: "1",
-    inputScope: "current_paper",
+    inputScope: "current_or_comparison_papers",
     evidencePolicy: "fulltext_or_abstract",
     templatePath: "skills/literature-matrix-builder.md",
     outputSchema: "literature-matrix-v1"
+  },
+  {
+    id: "literature-review-synthesis",
+    titleMessageId: "skill-literature-review-synthesis-title",
+    descriptionMessageId: "skill-literature-review-synthesis-description",
+    version: "1",
+    inputScope: "current_or_comparison_papers",
+    evidencePolicy: "fulltext_or_abstract",
+    templatePath: "skills/literature-review-synthesis.md",
+    outputSchema: "literature-review-synthesis-v1"
   },
   {
     id: "citation-audit",
@@ -171,6 +181,9 @@ export function builtInSkillTemplate(skillId: SkillId, outputLanguage: OutputLan
   if (skillId === "literature-matrix-builder") {
     return literatureMatrixTemplate(common, outputLanguage);
   }
+  if (skillId === "literature-review-synthesis") {
+    return literatureReviewSynthesisTemplate(common, outputLanguage);
+  }
   if (skillId === "citation-audit") {
     return `${common}\n\nAudit the current summary or answer. List unsupported claims, weak evidence, and what source is needed.`;
   }
@@ -216,6 +229,16 @@ function literatureMatrixTemplate(common: string, outputLanguage: OutputLanguage
     return `${common}\n\nliterature matrix を作成してください。Comparison paper がある場合は、焦点論文と比較論文を同時に比較してください。ない場合は、現在の論文だけで単一論文の行列を作成してください。各セルには [chunk:<id>]、[paper2:<id>]、または [metadata] のような根拠ラベルを付け、根拠が弱い場合は低信頼と明記してください。`;
   }
   return `${common}\n\nCreate a literature matrix. If the context contains Comparison papers, compare the focal paper against every comparison paper; otherwise build a single-paper matrix for the current paper first. Include a paper inventory, comparison matrix, cross-paper analysis, and review-draft notes. Every matrix cell must cite evidence labels such as [chunk:<id>], [paper2:<id>], or [metadata]. Mark unsupported cells as low-confidence instead of filling gaps.`;
+}
+
+function literatureReviewSynthesisTemplate(common: string, outputLanguage: OutputLanguage): string {
+  if (outputLanguage === "zh-CN") {
+    return `${common}\n\n请做跨论文综合综述。若上下文包含 Comparison paper，请围绕焦点论文和所有对比论文组织；若只有当前论文，先给出可扩展的综述框架。输出 Markdown，至少包含：综述主题边界、研究谱系、方法维度、共识与分歧、证据矩阵、研究空白、可直接放入文献综述的段落草稿。每个判断必须标注 [chunk:<id>]、[paper2:<id>] 或 [metadata]；证据不足时写低置信度。`;
+  }
+  if (outputLanguage === "ja-JP") {
+    return `${common}\n\n複数論文を横断したレビュー統合を作成してください。Comparison paper がある場合は焦点論文と比較論文をまとめて扱い、現在の論文だけの場合は拡張可能なレビュー枠組みを提示してください。レビュー範囲、研究系譜、方法軸、合意と相違、エビデンス行列、研究ギャップ、文献レビュー用の段落草案を含めてください。判断には [chunk:<id>]、[paper2:<id>]、または [metadata] を付け、根拠が弱い場合は低信頼と明記してください。`;
+  }
+  return `${common}\n\nCreate a cross-paper synthesis for a literature review. If Comparison papers are present, organize the focal paper and every comparison paper together; if only the current paper is available, produce an expandable review framework first. Include review scope, research lineage, method dimensions, consensus and disagreement, evidence matrix, research gaps, and draft paragraphs that can be reused in a literature review. Cite every judgment with [chunk:<id>], [paper2:<id>], or [metadata]. Mark weak evidence as low-confidence.`;
 }
 
 function paperDeepSummaryTemplate(common: string, outputLanguage: OutputLanguage): string {
