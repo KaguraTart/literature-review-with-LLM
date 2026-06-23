@@ -750,6 +750,7 @@ var ZoteroMarkdownSummaryWorkbench = {
         if (!modelInput?.value?.trim()) {
           if (modelInput) modelInput.value = options[0].id;
         }
+        this.saveProfileSettings({ status: false });
         this.setStatus(`${this.t("modelListLoaded")}: ${options.length}`);
       } else {
         this.setStatus(this.t("modelListEmpty"));
@@ -1483,7 +1484,9 @@ var ZoteroMarkdownSummaryWorkbench = {
       if (assistantMessage && assistantBody) {
         if (visibleMessageText(assistantMessage).trim()) {
           assistantMessage.error = errorText;
-          this.setStatus(`${this.t("answerKeptAfterError")}: ${errorText}`);
+          const saved = await this.saveSession({ quiet: true });
+          const saveSuffix = saved === false ? ` (${this.t("answerReadySaveFailed")})` : "";
+          this.setStatus(`${this.t("answerKeptAfterError")}${saveSuffix}: ${errorText}`);
         } else {
           assistantMessage.content = errorText;
           this.setStatus(errorText);
@@ -3913,6 +3916,16 @@ function profileCompactLabel(profile, modelLabel = "Model") {
   const name = profile.name || profile.id || modelLabel;
   const model = profile.model || "";
   return model ? `${name} · ${model}` : name;
+}
+
+function normalizeModelOptions(modelOptions) {
+  return (modelOptions || [])
+    .map((entry) => typeof entry === "string" ? { id: entry, label: "" } : entry)
+    .map((entry) => ({
+      id: String(entry?.id || "").trim(),
+      label: String(entry?.label || "").trim()
+    }))
+    .filter((entry) => entry.id);
 }
 
 function focusElement(element) {

@@ -2073,6 +2073,62 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-profile-pdf-input").checked).toBe(false);
   });
 
+  it("persists the latest workbench API settings after loading model options", async () => {
+    const prefs: Record<string, any> = {};
+    const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument({
+      "zms-profile-name": "OpenAI Compatible Chat",
+      "zms-profile-base-url": "https://router.example/v1",
+      "zms-profile-api-key": "new-secret",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    const fetchCalls: Array<{ url: string; headers: Record<string, string> }> = [];
+    loaded.fetch = async (url: string, init: any) => {
+      fetchCalls.push({ url, headers: init.headers || {} });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: [{ id: "model-x" }, { id: "model-y", name: "Model Y" }] })
+      };
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => key;
+    const profile = {
+      id: "openai-compatible",
+      name: "OpenAI Compatible Chat",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://old.example/v1",
+      apiKey: "old-secret",
+      model: "",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    await workbench.loadModelsForWorkbench();
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0]).toMatchObject({
+      url: "https://router.example/v1/models",
+      headers: { authorization: "Bearer new-secret" }
+    });
+    expect(dom.getElementById("zms-profile-model").value).toBe("model-x");
+    expect(prefs.apiKey).toBe("new-secret");
+    expect(prefs.baseURL).toBe("https://router.example/v1");
+    expect(prefs.model).toBe("model-x");
+    expect(JSON.parse(prefs.profilesJson)[0]).toMatchObject({
+      apiKey: "new-secret",
+      baseURL: "https://router.example/v1",
+      model: "model-x"
+    });
+    expect(dom.elements.get("zms-chat-status").textContent).toBe("modelListLoaded: 2");
+  });
+
   it("keeps custom auth headers when building workbench provider headers", () => {
     expect(helpers.headersForProfile({
       protocol: "openai_chat",
@@ -5605,7 +5661,11 @@ describe("workbench writeback helpers", () => {
     workbench.state.outputLanguage = "zh-CN";
     workbench.state.uiLanguage = "en-US";
     workbench.t = (key: string) => key;
-    workbench.saveSession = async () => true;
+    let saved = 0;
+    workbench.saveSession = async () => {
+      saved += 1;
+      return true;
+    };
     workbench.callModel = async (_content: string, _skillId: string, onDelta: (delta: string) => void) => {
       onDelta("partial answer");
       throw new Error("disk path missing");
@@ -5616,7 +5676,41 @@ describe("workbench writeback helpers", () => {
     const assistant = workbench.state.messages.find((message: any) => message.role === "assistant");
     expect(assistant.content).toBe("partial answer");
     expect(assistant.error).toBe("disk path missing");
+    expect(saved).toBe(1);
     expect(dom.elements.get("zms-chat-status").textContent).toBe("answerKeptAfterError: disk path missing");
+  });
+
+  it("keeps partial answers visible and reports when the recovery save fails", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-input": "question",
+      "zms-skill": ""
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.state.item = { key: "ITEM" };
+    workbench.state.profile = providerProfile();
+    workbench.state.messages = [];
+    workbench.state.outputLanguage = "zh-CN";
+    workbench.state.uiLanguage = "en-US";
+    workbench.t = (key: string) => key;
+    let saved = 0;
+    workbench.saveSession = async () => {
+      saved += 1;
+      return false;
+    };
+    workbench.callModel = async (_content: string, _skillId: string, onDelta: (delta: string) => void) => {
+      onDelta("partial answer");
+      throw new Error("provider interrupted");
+    };
+
+    await workbench.send();
+
+    const assistant = workbench.state.messages.find((message: any) => message.role === "assistant");
+    expect(assistant.content).toBe("partial answer");
+    expect(assistant.error).toBe("provider interrupted");
+    expect(saved).toBe(1);
+    expect(dom.elements.get("zms-chat-status").textContent).toBe("answerKeptAfterError (answerReadySaveFailed): provider interrupted");
   });
 
   it("sends image-only messages with a localized default prompt", async () => {
