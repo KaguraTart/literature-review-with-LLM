@@ -632,6 +632,18 @@ var ZoteroMarkdownSummaryPrefs = {
     return text;
   },
 
+  checkProviderConfig() {
+    const element = document.getElementById("zms-profileStatus");
+    const draft = profileDraftFromEditor();
+    const lang = resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale());
+    const report = providerConfigDoctor(draft.profile, lang);
+    const ok = report.ok && !draft.errors.length;
+    const text = draft.errors.length ? `${report.text}\n${this.t("jsonInvalid")}` : report.text;
+    if (element) element.textContent = text;
+    this.setStatus(ok ? this.t("doctorOk") : `${this.t("doctorFailed")}: ${report.summary}`);
+    return ok;
+  },
+
   bindProfileStatusEvents() {
     const ids = [
       "zms-activeProfileId",
@@ -741,6 +753,7 @@ var ZoteroMarkdownSummaryPrefs = {
       setLabel(`zms-${key}-label`, key);
     }
     setLabel("zms-save-button", "save");
+    setLabel("zms-doctor-button", "doctor");
     setLabel("zms-choose-outputDir-button", "chooseOutputDir");
     setLabel("zms-save-outputDir-button", "saveOutputDir");
     setLabel("zms-test-button", "test");
@@ -1020,6 +1033,74 @@ function profileStatusText(profile, translate = (key) => key) {
   ];
   if (isLocalAgent) parts.push(t("profileLocalAgentReady"));
   return parts.filter(Boolean).join("\n");
+}
+
+function providerConfigDoctor(profile, language = "en-US") {
+  const zh = /^zh/i.test(String(language || ""));
+  const missing = [];
+  const warnings = [];
+  const endpoint = endpointForProfileSafe(profile);
+  const modelList = providerModelListGuide(profile);
+  const provider = providerFromProfile(profile);
+  const verify = providerLiveVerifyGuide(profile, provider);
+  const isLocalAgent = isLocalAgentProfile(profile);
+  const localEndpoint = isLocalEndpoint(endpoint);
+  const authReady = isLocalAgent || localEndpoint || verify.apiKeyOptional || profileHasUsableAuth(profile);
+  const model = String(profile?.model || "").trim();
+  const baseURL = String(profile?.baseURL || "").trim();
+  const fullURL = String(profile?.fullURL || "").trim();
+  const needsBaseURL = verify.includeBaseURL && profile?.endpointMode !== "full_url";
+  if (!endpoint) missing.push(zh ? "请求 endpoint" : "request endpoint");
+  if (needsBaseURL && (!baseURL || isPlaceholderEndpoint(baseURL))) missing.push("Base URL");
+  if (profile?.endpointMode === "full_url" && (!fullURL || isPlaceholderEndpoint(fullURL))) missing.push(zh ? "Full URL" : "Full URL");
+  if (!authReady) missing.push(zh ? "API Key 或自定义认证 header" : "API key or custom auth header");
+  if (!isLocalAgent && (!model || model === "...")) missing.push(zh ? "模型名称" : "model name");
+  if (profile?.protocol === "openai_chat" && profile?.capabilities?.pdfBase64 === true) {
+    warnings.push(zh ? "OpenAI Chat 档案会使用 Zotero 文本抽取，不能直接发送原始 PDF。" : "OpenAI Chat profiles use Zotero text extraction instead of raw PDF input.");
+  }
+  if (profile?.capabilities?.imageBase64 === true && profile?.protocol === "openai_chat" && provider === "openai_compatible") {
+    warnings.push(zh ? "通用兼容路由的图片能力取决于具体模型，发送前请用图片 live 检查确认。" : "Image support on generic compatible routes depends on the selected model; confirm with the image live check before use.");
+  }
+  const capabilityText = [
+    profile?.capabilities?.text !== false ? (zh ? "文本" : "text") : "",
+    canUseImageInput(profile) ? (zh ? "图片" : "image") : "",
+    canUsePdfBase64Input(profile) ? "PDF base64" : "",
+    profile?.capabilities?.streaming === true ? (zh ? "流式" : "streaming") : "",
+    profile?.capabilities?.modelList !== false ? (zh ? "模型列表" : "model list") : ""
+  ].filter(Boolean).join(", ") || (zh ? "未声明" : "none declared");
+  const authStatus = authReady
+    ? (localEndpoint ? (zh ? "本地接口，可不填 API Key" : "local endpoint, API key optional") : (zh ? "已配置" : "configured"))
+    : (zh ? "缺失" : "missing");
+  const ok = missing.length === 0;
+  const title = zh ? `配置预检：${ok ? "通过" : "未通过"}` : `Configuration preflight: ${ok ? "passed" : "failed"}`;
+  const lines = [
+    title,
+    `${zh ? "档案" : "Profile"}: ${profile?.name || profile?.id || provider || ""}`,
+    `${zh ? "协议" : "Protocol"}: ${providerProtocolLabel(profile?.protocol, zh)}`,
+    `${zh ? "请求 endpoint" : "Request endpoint"}: ${endpoint || (zh ? "未配置" : "not configured")}`,
+    `${zh ? "模型列表 endpoint" : "Model-list endpoint"}: ${modelList || (zh ? "不可用" : "not available")}`,
+    `${zh ? "模型" : "Model"}: ${model || (isLocalAgent ? (zh ? "可选" : "optional") : (zh ? "缺失" : "missing"))}`,
+    `${zh ? "鉴权" : "Auth"}: ${authStatus}`,
+    `${zh ? "能力" : "Capabilities"}: ${capabilityText}`,
+    `${zh ? "下一步" : "Next"}: ${verify.doctorCommand}`
+  ];
+  if (missing.length) {
+    lines.push(`${zh ? "缺失项" : "Missing"}: ${missing.join(", ")}`);
+  }
+  if (warnings.length) {
+    lines.push(`${zh ? "提醒" : "Notes"}: ${warnings.join(" ")}`);
+  }
+  return {
+    ok,
+    missing,
+    warnings,
+    summary: missing.length ? missing.join(", ") : (zh ? "可以继续测试连接" : "ready for connection test"),
+    text: lines.join("\n")
+  };
+}
+
+function isPlaceholderEndpoint(value) {
+  return /\bYOUR[-_A-Z0-9]*\b|example(?:\.com|[-_])/i.test(String(value || ""));
 }
 
 function providerSetupGuide(profile, language = "en-US") {

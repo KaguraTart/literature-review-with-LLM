@@ -251,7 +251,7 @@ const SOURCE_MARKERS = [
     id: "provider.settings-guide",
     description: "Settings page shows a provider setup guide with endpoint, auth, capability, and live-check commands without exposing API keys",
     files: ["addon/content/preferences.xhtml", "addon/content/preferences.js", "addon/content/messages.js", "tests/preferencesLocalAgent.test.ts"],
-    markers: ["zms-providerGuide", "providerSetupGuide", "providerLiveVerifyGuide", "envTemplateCommand", "dotenvTemplateCommand", "doctorCommand", "envFileCommand", "imageCommand", "pdfCommand", "providerCapabilityOverrideCommands", "CAPABILITIES_JSON", "--env-template", "--dotenv-template", "--doctor", "--env-file", "OPENAI_COMPATIBLE_BASE_URL", "ANTHROPIC_COMPATIBLE_BASE_URL", "not.toContain", "routed-secret", "providerGuide"]
+    markers: ["zms-providerGuide", "zms-doctor-button", "checkProviderConfig", "providerConfigDoctor", "doctorOk", "providerSetupGuide", "providerLiveVerifyGuide", "envTemplateCommand", "dotenvTemplateCommand", "doctorCommand", "envFileCommand", "imageCommand", "pdfCommand", "providerCapabilityOverrideCommands", "CAPABILITIES_JSON", "--env-template", "--dotenv-template", "--doctor", "--env-file", "OPENAI_COMPATIBLE_BASE_URL", "ANTHROPIC_COMPATIBLE_BASE_URL", "not.toContain", "routed-secret", "providerGuide"]
   },
   {
     id: "preferences.output-dir-picker",

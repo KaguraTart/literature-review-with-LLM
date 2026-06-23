@@ -35,6 +35,7 @@ function loadPreferencesHelpers() {
     builtInSkillTemplate: (skillId: string, outputLanguage: string) => string;
     providerDefaults: (provider: string) => any;
     providerSetupGuide: (profile: any, language?: string) => string;
+    providerConfigDoctor: (profile: any, language?: string) => any;
     defaultProviderProfiles: () => any[];
     mergeDefaultProviderProfiles: (profiles: any[]) => any[];
     normalizeProviderProfile: (profile: any) => any;
@@ -74,6 +75,8 @@ function loadPreferencesController(options: {
     resetProfiles: "Reset default profiles",
     testOk: "Connection OK",
     testFailed: "Connection failed",
+    doctorOk: "Configuration preflight passed",
+    doctorFailed: "Configuration preflight failed",
     noProfile: "No profile",
     profileProtocolStatus: "Protocol",
     profileModelStatus: "Model",
@@ -170,6 +173,7 @@ function loadPreferencesController(options: {
   createElement("zms-profile-options", { localName: "datalist" });
   createElement("zms-profileStatus", { localName: "pre" });
   createElement("zms-providerGuide", { localName: "pre" });
+  createElement("zms-doctor-button", { localName: "button" });
   setChecked("zms-stream", false);
   setChecked("zms-profileLocalAgentFallback", false);
   setChecked("zms-profileLocalAgentEnabled", false);
@@ -1914,6 +1918,28 @@ describe("preferences local-agent config helpers", () => {
     expect(summary).toContain("Authentication configured");
     expect(summary).not.toContain("sk-test-secret");
     expect(summary).not.toContain("routed-secret");
+  });
+
+  it("runs a no-network provider config preflight from the current settings form", () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController();
+    elements.get("zms-apiKey").value = "";
+    elements.get("zms-model").value = "";
+
+    expect(controller.checkProviderConfig()).toBe(false);
+    expect(fetchCalls).toHaveLength(0);
+    expect(elements.get("zms-status").value).toContain("Configuration preflight failed");
+    expect(elements.get("zms-profileStatus").textContent).toContain("Configuration preflight: failed");
+    expect(elements.get("zms-profileStatus").textContent).toContain("Missing: API key or custom auth header, model name");
+    expect(elements.get("zms-profileStatus").textContent).toContain("Next: npm run verify:provider:live -- --doctor --include openai --env-file .env.local");
+    expect(elements.get("zms-profileStatus").textContent).not.toContain("sk-test-secret");
+
+    elements.get("zms-apiKey").value = "doctor-secret";
+    elements.get("zms-model").value = "paper-model";
+    expect(controller.checkProviderConfig()).toBe(true);
+    expect(fetchCalls).toHaveLength(0);
+    expect(elements.get("zms-status").value).toContain("Configuration preflight passed");
+    expect(elements.get("zms-profileStatus").textContent).toContain("Configuration preflight: passed");
+    expect(elements.get("zms-profileStatus").textContent).not.toContain("doctor-secret");
   });
 
   it("renders a provider setup guide with endpoint and live-check commands", () => {
