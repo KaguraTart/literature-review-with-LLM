@@ -41,13 +41,31 @@ function loadPreferencesHelpers() {
   };
 }
 
-function loadPreferencesController(options: { fetchResponse?: any; fetchResponses?: any[]; fetchOk?: boolean; fetchStatus?: number; initialModel?: string; skillFiles?: string[] } = {}) {
+function loadPreferencesController(options: {
+  fetchResponse?: any;
+  fetchResponses?: any[];
+  fetchOk?: boolean;
+  fetchStatus?: number;
+  initialModel?: string;
+  skillFiles?: string[];
+  filePickerPath?: string;
+  filePickerReturn?: number;
+} = {}) {
   const code = readFileSync(resolve(process.cwd(), "addon/content/preferences.js"), "utf8");
   const elements = new Map<string, any>();
   const fetchCalls: Array<{ url: string; init: any }> = [];
   const skillFiles = new Set(options.skillFiles || []);
+  const filePickerConstants = {
+    modeGetFolder: 2,
+    returnOK: 0,
+    returnCancel: 1,
+    returnReplace: 2
+  };
+  const filePickerCalls: Array<{ title: string; mode: number; displayDirectory?: string }> = [];
   const messageMap: Record<string, string> = {
     apiKeyMissing: "API key missing",
+    chooseOutputDir: "Choose folder",
+    chooseOutputDirTitle: "Choose output folder",
     jsonInvalid: "Invalid JSON",
     modelListEmpty: "No models",
     modelListLoaded: "Models loaded",
@@ -73,6 +91,7 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
     profileStreamOff: "Streaming disabled",
     profileLocalAgentReady: "Local agent configured",
     outputDirSaved: "Output directory saved",
+    outputDirChooseFailed: "Output directory picker failed",
     outputDirCreateFailed: "Output directory failed"
   };
   const prefValues = new Map<string, any>();
@@ -208,6 +227,48 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
     PathUtils: {
       join: (...parts: string[]) => parts.filter(Boolean).join("/")
     },
+    Cc: {
+      "@mozilla.org/filepicker;1": {
+        createInstance: () => {
+          const picker: any = {
+            file: { path: options.filePickerPath || "/tmp/chosen output" },
+            init: (_parent: any, title: string, mode: number) => {
+              filePickerCalls.push({ title, mode });
+            },
+            open: (callback: (result: number) => void) => {
+              callback(options.filePickerReturn ?? filePickerConstants.returnOK);
+            }
+          };
+          Object.defineProperty(picker, "displayDirectory", {
+            set(value: any) {
+              const last = filePickerCalls[filePickerCalls.length - 1];
+              if (last) last.displayDirectory = value?.path || "";
+            }
+          });
+          return picker;
+        }
+      },
+      "@mozilla.org/file/local;1": {
+        createInstance: () => ({
+          path: "",
+          parent: null as any,
+          initWithPath(path: string) {
+            this.path = path;
+            this.parent = {
+              path: path.replace(/[\\/][^\\/]*$/, "") || path,
+              exists: () => true,
+              isDirectory: () => true
+            };
+          },
+          exists: () => true,
+          isDirectory: () => true
+        })
+      }
+    },
+    Ci: {
+      nsIFilePicker: filePickerConstants,
+      nsIFile: function nsIFile() {}
+    },
     Zotero: {
       DataDirectory: {
         dir: "/tmp/zotero-data"
@@ -227,7 +288,8 @@ function loadPreferencesController(options: { fetchResponse?: any; fetchResponse
     elements,
     fetchCalls,
     prefValues,
-    madeDirectories
+    madeDirectories,
+    filePickerCalls
   };
 }
 
@@ -2015,6 +2077,42 @@ describe("preferences local-agent config helpers", () => {
     expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("/tmp/new out");
     expect(madeDirectories).toContain("/tmp/new out");
     expect(elements.get("zms-status").value).toContain("Output directory saved");
+  });
+
+  it("chooses an output directory with the native folder picker and saves it", async () => {
+    const { controller, elements, prefValues, madeDirectories, filePickerCalls } = loadPreferencesController({
+      filePickerPath: "/tmp/picked output"
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      displayDirectory: "/tmp/out"
+    });
+    expect(elements.get("zms-outputDir").value).toBe("/tmp/picked output");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("/tmp/picked output");
+    expect(madeDirectories).toContain("/tmp/picked output");
+  });
+
+  it("keeps the current output directory when folder picking is cancelled", async () => {
+    const { controller, elements, prefValues, madeDirectories, filePickerCalls } = loadPreferencesController({
+      filePickerPath: "/tmp/ignored output",
+      filePickerReturn: 1
+    });
+    elements.get("zms-outputDir").value = "/tmp/current output";
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(false);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      displayDirectory: "/tmp/current output"
+    });
+    expect(elements.get("zms-outputDir").value).toBe("/tmp/current output");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBeUndefined();
+    expect(madeDirectories).not.toContain("/tmp/ignored output");
   });
 
   it("migrates the packaged local output directory to the Zotero data directory", () => {

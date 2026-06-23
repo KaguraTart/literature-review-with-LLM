@@ -251,6 +251,12 @@ const SOURCE_MARKERS = [
     markers: ["zms-providerGuide", "providerSetupGuide", "providerLiveVerifyGuide", "envTemplateCommand", "envFileCommand", "imageCommand", "pdfCommand", "--env-template", "--env-file", "OPENAI_COMPATIBLE_BASE_URL", "ANTHROPIC_COMPATIBLE_BASE_URL", "not.toContain", "routed-secret", "providerGuide"]
   },
   {
+    id: "preferences.output-dir-picker",
+    description: "Settings page lets users choose the output directory with the native folder picker and saves the selected path",
+    files: ["addon/content/preferences.xhtml", "addon/content/preferences.js", "addon/content/messages.js", "tests/preferencesLocalAgent.test.ts"],
+    markers: ["zms-choose-outputDir-button", "chooseOutputDir", "chooseOutputDirectory", "modeGetFolder", "chooseOutputDirTitle", "chooses an output directory with the native folder picker and saves it", "keeps the current output directory when folder picking is cancelled"]
+  },
+  {
     id: "provider.workbench-diagnostics-report",
     description: "Workbench can export a redacted provider diagnostics report with endpoint, auth, capability, model-list, request-preview, and live-check details",
     files: ["addon/content/workbench.xhtml", "addon/content/workbench.js", "addon/content/messages.js", "tests/workbenchWriteback.test.ts", "README.md", "README.zh-CN.md"],

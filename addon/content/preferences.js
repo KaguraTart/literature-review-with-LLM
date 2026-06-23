@@ -179,6 +179,20 @@ var ZoteroMarkdownSummaryPrefs = {
     }
   },
 
+  async chooseOutputDir() {
+    const element = document.getElementById("zms-outputDir");
+    if (!element) return false;
+    try {
+      const selected = await chooseOutputDirectory(element.value, this.t("chooseOutputDirTitle"));
+      if (!selected) return false;
+      element.value = selected;
+      return this.saveOutputDir();
+    } catch (err) {
+      this.setStatus(`${this.t("outputDirChooseFailed")}: ${safeError(err)}`);
+      return false;
+    }
+  },
+
   upsertProfileFromEditor() {
     let profiles;
     try {
@@ -727,6 +741,7 @@ var ZoteroMarkdownSummaryPrefs = {
       setLabel(`zms-${key}-label`, key);
     }
     setLabel("zms-save-button", "save");
+    setLabel("zms-choose-outputDir-button", "chooseOutputDir");
     setLabel("zms-save-outputDir-button", "saveOutputDir");
     setLabel("zms-test-button", "test");
     setLabel("zms-load-models-button", "loadModels");
@@ -794,6 +809,54 @@ function zoteroProfileDirectory() {
   } catch (_err) {
     return "";
   }
+}
+
+async function chooseOutputDirectory(currentPath, title) {
+  const cc = typeof Cc !== "undefined" ? Cc : undefined;
+  const ci = typeof Ci !== "undefined" ? Ci : undefined;
+  const nsIFilePicker = ci?.nsIFilePicker;
+  const pickerFactory = cc?.["@mozilla.org/filepicker;1"];
+  if (!pickerFactory || !nsIFilePicker) {
+    throw new Error("Folder picker is not available in this Zotero runtime");
+  }
+  const picker = pickerFactory.createInstance(nsIFilePicker);
+  picker.init(window, title || "Choose output folder", nsIFilePicker.modeGetFolder);
+  const displayDirectory = fileForDirectoryPicker(currentPath);
+  if (displayDirectory) picker.displayDirectory = displayDirectory;
+  const result = await openDirectoryPicker(picker);
+  const accepted = result === nsIFilePicker.returnOK || result === nsIFilePicker.returnReplace;
+  if (!accepted) return "";
+  return String(picker.file?.path || "").trim();
+}
+
+function fileForDirectoryPicker(path) {
+  const raw = String(path || "").trim();
+  if (!raw) return null;
+  try {
+    const cc = typeof Cc !== "undefined" ? Cc : undefined;
+    const ci = typeof Ci !== "undefined" ? Ci : undefined;
+    const fileFactory = cc?.["@mozilla.org/file/local;1"];
+    if (!fileFactory) return null;
+    const file = fileFactory.createInstance(ci?.nsIFile);
+    file.initWithPath(raw);
+    if (typeof file.exists === "function" && !file.exists()) {
+      return file.parent || null;
+    }
+    if (typeof file.isDirectory === "function" && !file.isDirectory()) {
+      return file.parent || null;
+    }
+    return file;
+  } catch (_err) {
+    return null;
+  }
+}
+
+async function openDirectoryPicker(picker) {
+  if (typeof picker.open === "function") {
+    return new Promise((resolve) => picker.open(resolve));
+  }
+  if (typeof picker.show === "function") return picker.show();
+  throw new Error("Folder picker cannot be opened");
 }
 
 function resolveUiLanguage(setting, locale) {
