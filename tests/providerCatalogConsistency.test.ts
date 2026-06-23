@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
@@ -76,6 +77,15 @@ const SETTINGS_ALIASES = [
   "lm_studio",
   "local_agents"
 ];
+
+const LIVE_PROVIDER_IDS = PROVIDER_ORDER.filter((id) => id !== "local-agents");
+
+function runLiveProviderJson(args: string[]) {
+  return JSON.parse(execFileSync(process.execPath, ["scripts/verify-provider-live.mjs", ...args], {
+    cwd: process.cwd(),
+    encoding: "utf8"
+  }));
+}
 
 function loadPreferencesHelpers() {
   const code = readFileSync(resolve(process.cwd(), "addon/content/preferences.js"), "utf8");
@@ -201,6 +211,78 @@ describe("provider catalog consistency", () => {
     }
     for (const id of ["minimax", "openai-compatible", "deepseek", "kimi", "groq", "openrouter", "ollama", "local-agents"]) {
       expect(byId.get(id)?.capabilities?.imageBase64).toBe(false);
+    }
+  });
+
+  it("keeps live provider verification cases aligned with the default provider catalog", () => {
+    const profiles = new Map(loadPreferencesHelpers().defaultProviderProfiles().map((profile) => [profile.id, profile]));
+    const catalog = runLiveProviderJson(["--list", "--json"]);
+    const cases = catalog.cases || [];
+
+    expect(catalog.liveProviderCases).toBe(true);
+    expect(catalog.count).toBe(LIVE_PROVIDER_IDS.length);
+    expect(cases.map((entry: any) => entry.id).sort()).toEqual([...LIVE_PROVIDER_IDS].sort());
+
+    for (const entry of cases) {
+      const profile = profiles.get(entry.profile);
+      expect(entry.profile).toBe(entry.id);
+      expect(profile).toBeTruthy();
+      expect(entry.protocol).toBe(profile.protocol);
+      expect(entry.apiKeyEnv).toMatch(/^[A-Z0-9_]+_API_KEY$/);
+      expect(entry.modelEnv).toMatch(/^[A-Z0-9_]+_MODEL$/);
+      expect(entry.baseURLEnv).toMatch(/^[A-Z0-9_]+_BASE_URL$/);
+      expect(entry.headersEnv).toMatch(/^[A-Z0-9_]+_HEADERS_JSON$/);
+      expect(entry.bodyExtraEnv).toMatch(/^[A-Z0-9_]+_BODY_EXTRA_JSON$/);
+      expect(entry.capabilitiesEnv).toMatch(/^[A-Z0-9_]+_CAPABILITIES_JSON$/);
+      expect(entry.imageInput).toBe(profile.capabilities?.imageBase64 === true);
+      expect(entry.pdfInput).toBe(profile.capabilities?.pdfBase64 === true && profile.protocol !== "openai_chat");
+    }
+  });
+
+  it("keeps live provider env templates complete enough to run generation checks", () => {
+    const catalog = runLiveProviderJson(["--list", "--json"]);
+    const catalogById = new Map((catalog.cases || []).map((entry: any) => [entry.id, entry]));
+    const template = runLiveProviderJson(["--env-template", "--json"]);
+    const cases = template.cases || [];
+
+    expect(template.liveProviderEnvTemplate).toBe(true);
+    expect(template.count).toBe(LIVE_PROVIDER_IDS.length);
+    expect(cases.map((entry: any) => entry.id).sort()).toEqual([...LIVE_PROVIDER_IDS].sort());
+
+    for (const entry of cases) {
+      const catalogEntry: any = catalogById.get(entry.id);
+      const required = new Set(entry.requiredEnv || []);
+      const modelRequired = new Set(entry.modelListRequiredEnv || []);
+      const optional = new Set(entry.optionalEnv || []);
+
+      expect(catalogEntry).toBeTruthy();
+      expect(entry.generationCommand).toBe(`npm run verify:provider:live -- --include ${entry.id}`);
+      expect(required.has(catalogEntry.modelEnv)).toBe(true);
+      if (catalogEntry.apiKeyOptional) {
+        expect(required.has(catalogEntry.apiKeyEnv)).toBe(false);
+      } else {
+        expect(required.has(catalogEntry.apiKeyEnv)).toBe(true);
+      }
+      if (catalogEntry.requireBaseURL) {
+        expect(required.has(catalogEntry.baseURLEnv)).toBe(true);
+      } else {
+        expect(optional.has(catalogEntry.baseURLEnv)).toBe(true);
+      }
+      expect(optional.has(catalogEntry.headersEnv)).toBe(true);
+      expect(optional.has(catalogEntry.bodyExtraEnv)).toBe(true);
+      expect(optional.has(catalogEntry.capabilitiesEnv)).toBe(true);
+      expect(entry.imageCommand).toBe(catalogEntry.imageInput ? `npm run verify:provider:image:live -- --include ${entry.id}` : "");
+      expect(entry.pdfCommand).toBe(catalogEntry.pdfInput ? `npm run verify:provider:pdf:live -- --include ${entry.id}` : "");
+      expect(entry.modelListCommand).toBe(
+        catalogEntry.modelList ? `npm run verify:provider:models:live -- --include ${entry.id}` : ""
+      );
+      if (catalogEntry.modelList) {
+        if (catalogEntry.apiKeyOptional) {
+          expect(modelRequired.has(catalogEntry.apiKeyEnv)).toBe(false);
+        } else {
+          expect(modelRequired.has(catalogEntry.apiKeyEnv)).toBe(true);
+        }
+      }
     }
   });
 });
