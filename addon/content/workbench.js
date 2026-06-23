@@ -2529,6 +2529,14 @@ function renderProviderDiagnosticsMarkdown(profile, options = {}) {
     verify.envTemplateCommand || labels.notConfigured,
     `\`\`\``,
     "",
+    ...(verify.dotenvTemplateCommand ? [
+      `### ${labels.dotenvTemplate}`,
+      "",
+      `\`\`\`bash`,
+      verify.dotenvTemplateCommand,
+      `\`\`\``,
+      ""
+    ] : []),
     `### ${labels.envFileCheck}`,
     "",
     `\`\`\`bash`,
@@ -2643,6 +2651,7 @@ function providerDiagnosticsLabels(outputLanguage) {
       previewPdf: "原始 PDF",
       liveChecks: "终端 live 检查",
       envTemplate: "可复制环境变量模板",
+      dotenvTemplate: "生成 .env.local 草稿",
       envFileCheck: ".env.local live 检查",
       directLiveCheck: "直接 live 检查",
       imageLiveCheck: "图片 live 检查",
@@ -2713,6 +2722,7 @@ function providerDiagnosticsLabels(outputLanguage) {
     previewPdf: "raw PDF",
     liveChecks: "Terminal Live Checks",
     envTemplate: "Copyable Env Template",
+    dotenvTemplate: "Draft .env.local",
     envFileCheck: ".env.local Live Check",
     directLiveCheck: "Direct Live Check",
     imageLiveCheck: "Image Live Check",
@@ -2879,6 +2889,7 @@ function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProvid
     return {
       include: "local-agents",
       envTemplateCommand: "npm run local-agent:service:doctor",
+      dotenvTemplateCommand: "",
       envFileCommand: "npm run local-agent:service:check",
       liveCommand: "npm run local-agent:service:check",
       imageCommand: "",
@@ -2905,6 +2916,7 @@ function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProvid
   return {
     ...entry,
     envTemplateCommand: `npm run verify:provider:live -- --env-template --include ${entry.include}`,
+    dotenvTemplateCommand: `npm run verify:provider:live -- --env-template --dotenv-template --include ${entry.include} > .env.local`,
     envFileCommand: `npm run verify:provider:live -- --include ${entry.include} --env-file .env.local`,
     liveCommand: `${livePrefix ? `${livePrefix} ` : ""}npm run verify:provider:live -- --include ${entry.include}`,
     imageCommand: canUseImageInput(profile) ? `${livePrefix ? `${livePrefix} ` : ""}npm run verify:provider:image:live -- --include ${entry.include}` : "",
