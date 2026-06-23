@@ -47,8 +47,8 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 Download the latest XPI from the GitHub release page:
 
-- [v0.1.7 release](https://github.com/KaguraTart/literature-review-with-LLM/releases/tag/v0.1.7)
-- [literature-review-with-llm.xpi](https://github.com/KaguraTart/literature-review-with-LLM/releases/download/v0.1.7/literature-review-with-llm.xpi)
+- [Latest release](https://github.com/KaguraTart/literature-review-with-LLM/releases/latest)
+- [literature-review-with-llm.xpi](https://github.com/KaguraTart/literature-review-with-LLM/releases/latest/download/literature-review-with-llm.xpi)
 
 Then install it in Zotero:
 
@@ -105,6 +105,35 @@ Provider notes:
 - Local Agents route through a local HTTP bridge instead of directly calling remote model APIs. The same bridge also exposes `ocr_image` for optional local OCR and `extract_pdf_pages` for best-effort local PDF page text extraction with OCR fallback for scanned pages.
 
 API keys are stored in Zotero preferences on your local machine. Do not commit `.env` files or local preference exports.
+
+### Provider Live-Check Recipes
+
+For local verification before entering the same values in Zotero, generate a local draft:
+
+```bash
+npm run verify:provider:live -- --env-template --dotenv-template --include core > .env.local
+```
+
+Then fill the relevant variables and run one of these checks:
+
+```bash
+# Official OpenAI Responses format
+npm run verify:provider:live -- --include openai --env-file .env.local --fail-on-skip
+
+# Generic OpenAI-compatible Chat format
+npm run verify:provider:live -- --include openai-compatible --env-file .env.local --fail-on-skip
+
+# Generic OpenAI-compatible Responses format
+npm run verify:provider:live -- --include openai-responses-compatible --env-file .env.local --fail-on-skip
+
+# Official Anthropic Messages format
+npm run verify:provider:live -- --include anthropic --env-file .env.local --fail-on-skip
+
+# Generic Anthropic-compatible Messages format
+npm run verify:provider:live -- --include anthropic-compatible --env-file .env.local --fail-on-skip
+```
+
+For local OpenAI-compatible runtimes, use `--include local` and fill `OLLAMA_MODEL` / `OLLAMA_BASE_URL` or `LM_STUDIO_MODEL` / `LM_STUDIO_BASE_URL`; API keys are optional unless your local gateway requires one.
 
 ## Local Agents
 

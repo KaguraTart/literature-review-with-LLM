@@ -4,6 +4,9 @@ import { basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const DEFAULT_XPI_PATH = "build/literature-review-with-llm.xpi";
+const LATEST_RELEASE_URL = "https://github.com/KaguraTart/literature-review-with-LLM/releases/latest";
+const LATEST_XPI_URL = "https://github.com/KaguraTart/literature-review-with-LLM/releases/latest/download/literature-review-with-llm.xpi";
+const VERSIONED_RELEASE_LINK_PATTERN = /https:\/\/github\.com\/KaguraTart\/literature-review-with-LLM\/releases\/(?:tag|download)\/v\d+\.\d+\.\d+/;
 
 const REQUIRED_FILES = [
   "addon/bootstrap.js",
@@ -676,6 +679,7 @@ export function collectReadinessChecks(options = {}) {
   addProfileChecks(checks);
   addSkillChecks(checks);
   addSourceMarkerChecks(checks);
+  addReadmeReleaseLinkChecks(checks);
   addXpiChecks(checks, normalizedOptions);
 
   return {
@@ -878,6 +882,33 @@ function addSourceMarkerChecks(checks) {
         `Marker not found in ${spec.files.join(", ")}`
       ));
     }
+  }
+}
+
+function addReadmeReleaseLinkChecks(checks) {
+  for (const file of ["README.md", "README.zh-CN.md"]) {
+    const text = readText(file);
+    checks.push(check(
+      `readme.release-link.latest.${file}`,
+      `${file} points users at the latest GitHub release page`,
+      text.includes(LATEST_RELEASE_URL),
+      file,
+      "Use the GitHub latest release URL instead of a fixed version tag"
+    ));
+    checks.push(check(
+      `readme.release-link.xpi.${file}`,
+      `${file} points users at the latest XPI download URL`,
+      text.includes(LATEST_XPI_URL),
+      file,
+      "Use the GitHub latest XPI URL instead of a fixed version download"
+    ));
+    checks.push(check(
+      `readme.release-link.no-versioned.${file}`,
+      `${file} does not contain stale fixed-version release links`,
+      !VERSIONED_RELEASE_LINK_PATTERN.test(text),
+      file,
+      "README release links should use /releases/latest"
+    ));
   }
 }
 

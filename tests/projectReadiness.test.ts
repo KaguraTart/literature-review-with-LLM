@@ -51,4 +51,16 @@ describe("project readiness check", () => {
     expect(checkById.get("package.script.verify:zip")).toBe("pass");
     expect(checkById.get("package.script.check-zip")).toBe("pass");
   });
+
+  it("keeps README download links on latest release URLs", () => {
+    const report = collectReadinessChecks({ includeXpi: false });
+    const checkById = new Map(report.checks.map((check: { id: string; status: string }) => [check.id, check.status]));
+
+    expect(checkById.get("readme.release-link.latest.README.md")).toBe("pass");
+    expect(checkById.get("readme.release-link.xpi.README.md")).toBe("pass");
+    expect(checkById.get("readme.release-link.no-versioned.README.md")).toBe("pass");
+    expect(checkById.get("readme.release-link.latest.README.zh-CN.md")).toBe("pass");
+    expect(checkById.get("readme.release-link.xpi.README.zh-CN.md")).toBe("pass");
+    expect(checkById.get("readme.release-link.no-versioned.README.zh-CN.md")).toBe("pass");
+  });
 });
