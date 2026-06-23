@@ -276,6 +276,78 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("falls back when a smoke endpoint rejects common router-only optional fields", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-chat",
+        "--body-extra-json", JSON.stringify({
+          modalities: ["text"],
+          response_modalities: ["text"],
+          audio: { voice: "alloy" },
+          prediction: { type: "content", content: "" },
+          service_tier: "auto",
+          store: false,
+          user: "end-user",
+          logit_bias: { "42": 1 },
+          web_search_options: { search_context_size: "low" },
+          search_options: { source: "web" },
+          safety_settings: [{ category: "harm", threshold: "block_none" }],
+          generation_config: { temperature: 0.1 },
+          thinking_config: { budget_tokens: 256 },
+          response_mime_type: "application/json",
+          response_schema: { type: "object" },
+          extra_body: { reasoning_split: true }
+        }),
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_chat",
+        text: "OK optional fallback"
+      });
+      expect(requests).toHaveLength(2);
+      for (const field of [
+        "modalities",
+        "response_modalities",
+        "audio",
+        "prediction",
+        "service_tier",
+        "store",
+        "user",
+        "logit_bias",
+        "web_search_options",
+        "search_options",
+        "safety_settings",
+        "generation_config",
+        "thinking_config",
+        "response_mime_type",
+        "response_schema",
+        "extra_body"
+      ]) {
+        expect(requests[0].body).toHaveProperty(field);
+        expect(requests[1].body).not.toHaveProperty(field);
+      }
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.body?.modalities || requestData.body?.extra_body) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({
+            error: {
+              message: "Unsupported parameters: modalities, response_modalities, audio, prediction, service_tier, store, user, logit_bias, web_search_options, search_options, safety_settings, generation_config, thinking_config, response_mime_type, response_schema, extra_body"
+            }
+          }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ choices: [{ message: { content: "OK optional fallback" } }] }));
+      }
+    });
+  });
+
   it("falls back when a smoke endpoint wraps an unsupported-parameter error in a 200 response", async () => {
     await withMockProvider(async (baseURL, requests) => {
       const report = await runSmoke([

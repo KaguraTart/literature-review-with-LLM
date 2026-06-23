@@ -1397,7 +1397,7 @@ describe("workbench writeback helpers", () => {
           status: 400,
           text: async () => JSON.stringify({
             error: {
-              message: "Unsupported parameters: presence_penalty, frequency_penalty, seed, top_logprobs, logprobs, parallel_tool_calls, reasoning_effort, stop"
+              message: "Unsupported parameters: presence_penalty, frequency_penalty, seed, top_logprobs, logprobs, parallel_tool_calls, reasoning_effort, stop, modalities, response_modalities, audio, prediction, service_tier, store, user, logit_bias, web_search_options, search_options, safety_settings, generation_config, thinking_config, response_mime_type, response_schema, extra_body"
             }
           })
         };
@@ -1425,7 +1425,23 @@ describe("workbench writeback helpers", () => {
         logprobs: true,
         parallel_tool_calls: false,
         reasoning_effort: "low",
-        stop: ["END"]
+        stop: ["END"],
+        modalities: ["text"],
+        response_modalities: ["text"],
+        audio: { voice: "alloy" },
+        prediction: { type: "content", content: "" },
+        service_tier: "auto",
+        store: false,
+        user: "end-user",
+        logit_bias: { "42": 1 },
+        web_search_options: { search_context_size: "low" },
+        search_options: { source: "web" },
+        safety_settings: [{ category: "harm", threshold: "block_none" }],
+        generation_config: { temperature: 0.1 },
+        thinking_config: { budget_tokens: 256 },
+        response_mime_type: "application/json",
+        response_schema: { type: "object" },
+        extra_body: { reasoning_split: true }
       }
     };
 
@@ -1448,7 +1464,23 @@ describe("workbench writeback helpers", () => {
       logprobs: true,
       parallel_tool_calls: false,
       reasoning_effort: "low",
-      stop: ["END"]
+      stop: ["END"],
+      modalities: ["text"],
+      response_modalities: ["text"],
+      audio: { voice: "alloy" },
+      prediction: { type: "content", content: "" },
+      service_tier: "auto",
+      store: false,
+      user: "end-user",
+      logit_bias: { "42": 1 },
+      web_search_options: { search_context_size: "low" },
+      search_options: { source: "web" },
+      safety_settings: [{ category: "harm", threshold: "block_none" }],
+      generation_config: { temperature: 0.1 },
+      thinking_config: { budget_tokens: 256 },
+      response_mime_type: "application/json",
+      response_schema: { type: "object" },
+      extra_body: { reasoning_split: true }
     });
     expect(fetchCalls[1].body).not.toHaveProperty("presence_penalty");
     expect(fetchCalls[1].body).not.toHaveProperty("frequency_penalty");
@@ -1458,6 +1490,22 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("parallel_tool_calls");
     expect(fetchCalls[1].body).not.toHaveProperty("reasoning_effort");
     expect(fetchCalls[1].body).not.toHaveProperty("stop");
+    expect(fetchCalls[1].body).not.toHaveProperty("modalities");
+    expect(fetchCalls[1].body).not.toHaveProperty("response_modalities");
+    expect(fetchCalls[1].body).not.toHaveProperty("audio");
+    expect(fetchCalls[1].body).not.toHaveProperty("prediction");
+    expect(fetchCalls[1].body).not.toHaveProperty("service_tier");
+    expect(fetchCalls[1].body).not.toHaveProperty("store");
+    expect(fetchCalls[1].body).not.toHaveProperty("user");
+    expect(fetchCalls[1].body).not.toHaveProperty("logit_bias");
+    expect(fetchCalls[1].body).not.toHaveProperty("web_search_options");
+    expect(fetchCalls[1].body).not.toHaveProperty("search_options");
+    expect(fetchCalls[1].body).not.toHaveProperty("safety_settings");
+    expect(fetchCalls[1].body).not.toHaveProperty("generation_config");
+    expect(fetchCalls[1].body).not.toHaveProperty("thinking_config");
+    expect(fetchCalls[1].body).not.toHaveProperty("response_mime_type");
+    expect(fetchCalls[1].body).not.toHaveProperty("response_schema");
+    expect(fetchCalls[1].body).not.toHaveProperty("extra_body");
   });
 
   it("retries workbench OpenAI Chat requests without rejected system role", async () => {

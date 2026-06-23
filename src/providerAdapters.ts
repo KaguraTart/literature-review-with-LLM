@@ -1180,6 +1180,7 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
     fields.push("tool_choice");
   }
+  fields.push(...providerUnsupportedOptionalBodyFields(body, detail));
   if (protocol === "anthropic_messages" && rejectedAnthropicVersionHeader(detail)) {
     fields.push("headers.anthropic-version");
   }
@@ -1263,6 +1264,22 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "stop_sequences",
   "tools",
   "tool_choice",
+  "modalities",
+  "response_modalities",
+  "audio",
+  "prediction",
+  "service_tier",
+  "store",
+  "user",
+  "logit_bias",
+  "web_search_options",
+  "search_options",
+  "safety_settings",
+  "generation_config",
+  "thinking_config",
+  "response_mime_type",
+  "response_schema",
+  "extra_body",
   "messages.content",
   "messages.content.image",
   "messages.content.document",
@@ -1274,6 +1291,31 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "input_file.file_url"
 ]);
 const PROVIDER_REQUIRED_BODY_FIELDS = new Set(["model", "messages", "input"]);
+
+const PROVIDER_OPTIONAL_BODY_FIELD_PATTERNS: Array<[string, RegExp]> = [
+  ["modalities", /\bmodalities?\b|response modalities?/],
+  ["response_modalities", /response_modalities|response modalities?|\bmodalities?\b/],
+  ["audio", /\baudio\b|voice|speech/],
+  ["prediction", /\bprediction\b|predicted output/],
+  ["service_tier", /service_tier|service tier/],
+  ["store", /(?:^|[^a-z0-9_])store(?:[^a-z0-9_]|$)|stored output/],
+  ["user", /(?:^|[^a-z0-9_])user(?:[^a-z0-9_]|$)|end[-\s]?user/],
+  ["logit_bias", /logit_bias|logit bias/],
+  ["web_search_options", /web_search_options|web search|web-search/],
+  ["search_options", /search_options|search options/],
+  ["safety_settings", /safety_settings|safety settings|safety_setting/],
+  ["generation_config", /generation_config|generation config/],
+  ["thinking_config", /thinking_config|thinking config|thinking budget|thought config/],
+  ["response_mime_type", /response_mime_type|response mime|mime_type|mime type/],
+  ["response_schema", /response_schema|response schema/],
+  ["extra_body", /extra_body|extra body/]
+];
+
+function providerUnsupportedOptionalBodyFields(body: Record<string, unknown>, detail: string): string[] {
+  return PROVIDER_OPTIONAL_BODY_FIELD_PATTERNS
+    .filter(([field, pattern]) => body?.[field] !== undefined && pattern.test(detail))
+    .map(([field]) => field);
+}
 
 function providerStructuredUnsupportedFields(body: Record<string, unknown>, text: string, protocol = ""): string[] {
   const parsed = safeParseJSON(text);

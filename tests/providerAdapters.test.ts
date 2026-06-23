@@ -416,6 +416,58 @@ describe("provider adapters", () => {
       "reasoning_effort",
       "stop"
     ]);
+    const routerOptionalBody = {
+      model: "router-model",
+      messages: [],
+      modalities: ["text"],
+      response_modalities: ["text"],
+      audio: { voice: "alloy" },
+      prediction: { type: "content", content: "" },
+      service_tier: "auto",
+      store: false,
+      user: "end-user",
+      logit_bias: { "42": 1 },
+      web_search_options: { search_context_size: "low" },
+      search_options: { source: "web" },
+      safety_settings: [{ category: "harm", threshold: "block_none" }],
+      generation_config: { temperature: 0.1 },
+      thinking_config: { budget_tokens: 256 },
+      response_mime_type: "application/json",
+      response_schema: { type: "object" },
+      extra_body: { reasoning_split: true }
+    };
+    const routerOptionalFields = [
+      "modalities",
+      "response_modalities",
+      "audio",
+      "prediction",
+      "service_tier",
+      "store",
+      "user",
+      "logit_bias",
+      "web_search_options",
+      "search_options",
+      "safety_settings",
+      "generation_config",
+      "thinking_config",
+      "response_mime_type",
+      "response_schema",
+      "extra_body"
+    ];
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      routerOptionalBody,
+      400,
+      "Unsupported parameters: modalities, response_modalities, audio, prediction, service_tier, store, user, logit_bias, web_search_options, search_options, safety_settings, generation_config, thinking_config, response_mime_type, response_schema, extra_body"
+    )).toEqual(routerOptionalFields);
+    const strippedRouterOptionalBody = omitProviderRequestBodyFields(routerOptionalBody, routerOptionalFields);
+    for (const field of routerOptionalFields) {
+      expect(strippedRouterOptionalBody).not.toHaveProperty(field);
+    }
+    expect(strippedRouterOptionalBody).toEqual({
+      model: "router-model",
+      messages: []
+    });
     expect(providerCompatibilityFallbackFields("openai_chat", body, 422, "stream is not supported"))
       .toEqual(["stream", "stream_options"]);
     const customBody = {
