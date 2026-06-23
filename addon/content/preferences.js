@@ -1225,11 +1225,11 @@ function providerLiveVerifyGuide(profile, provider = providerFromProfile(profile
   const modelsCommand = `${modelPrefix ? `${modelPrefix} ` : ""}npm run verify:provider:models:live -- --include ${entry.include}`;
   const envTemplateCommand = `npm run verify:provider:live -- --env-template --include ${entry.include}`;
   const dotenvTemplateCommand = `npm run verify:provider:live -- --env-template --dotenv-template --include ${entry.include} > .env.local`;
-  const doctorCommand = `npm run verify:provider:live -- --doctor --include ${entry.include} --env-file .env.local`;
-  const envFileCommand = `npm run verify:provider:live -- --include ${entry.include} --env-file .env.local`;
-  const envFileImageCommand = canUseImageInput(profile) ? `npm run verify:provider:image:live -- --include ${entry.include} --env-file .env.local` : "";
-  const envFilePdfCommand = canUsePdfBase64Input(profile) ? `npm run verify:provider:pdf:live -- --include ${entry.include} --env-file .env.local` : "";
-  const envFileModelsCommand = `npm run verify:provider:models:live -- --include ${entry.include} --env-file .env.local`;
+  const doctorCommand = `npm run verify:provider:live -- --doctor --include ${entry.include} --provider-env-file .env.local`;
+  const envFileCommand = `npm run verify:provider:live -- --include ${entry.include} --provider-env-file .env.local`;
+  const envFileImageCommand = canUseImageInput(profile) ? `npm run verify:provider:image:live -- --include ${entry.include} --provider-env-file .env.local` : "";
+  const envFilePdfCommand = canUsePdfBase64Input(profile) ? `npm run verify:provider:pdf:live -- --include ${entry.include} --provider-env-file .env.local` : "";
+  const envFileModelsCommand = `npm run verify:provider:models:live -- --include ${entry.include} --provider-env-file .env.local`;
   const overrideCommands = providerCapabilityOverrideCommands(profile, provider, entry, prefix);
   return {
     ...entry,

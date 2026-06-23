@@ -97,26 +97,26 @@ npm run verify:provider:live -- --env-template --dotenv-template --include core 
 填好对应变量后，先做一次不触网的配置预检，确认 API key、模型名和 Base URL 没有漏填：
 
 ```bash
-npm run verify:provider:live -- --doctor --include core --env-file .env.local
+npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local
 ```
 
 预检通过后，按实际接口类型运行：
 
 ```bash
 # OpenAI 官方 Responses 格式
-npm run verify:provider:live -- --include openai --env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include openai --provider-env-file .env.local --fail-on-skip
 
 # 通用 OpenAI-compatible Chat 格式
-npm run verify:provider:live -- --include openai-compatible --env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include openai-compatible --provider-env-file .env.local --fail-on-skip
 
 # 通用 OpenAI-compatible Responses 格式
-npm run verify:provider:live -- --include openai-responses-compatible --env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include openai-responses-compatible --provider-env-file .env.local --fail-on-skip
 
 # Anthropic 官方 Messages 格式
-npm run verify:provider:live -- --include anthropic --env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include anthropic --provider-env-file .env.local --fail-on-skip
 
 # 通用 Anthropic-compatible Messages 格式
-npm run verify:provider:live -- --include anthropic-compatible --env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include anthropic-compatible --provider-env-file .env.local --fail-on-skip
 ```
 
 本地 OpenAI-compatible 运行时可用 `--include local` 检查，并填写 `OLLAMA_MODEL` / `OLLAMA_BASE_URL` 或 `LM_STUDIO_MODEL` / `LM_STUDIO_BASE_URL`；除非本地网关要求鉴权，API key 可以留空。
@@ -214,9 +214,9 @@ npm run check
 ```bash
 npm run verify:provider:live -- --list
 npm run verify:provider:live -- --list --include mainstream
-npm run verify:provider:live -- --include core --env-file .env.local --fail-on-skip
-npm run verify:provider:live -- --include openai-chat --stream --env-file .env.local
-npm run verify:provider:models:live -- --include anthropic-messages --env-file .env.local
+npm run verify:provider:live -- --include core --provider-env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include openai-chat --stream --provider-env-file .env.local
+npm run verify:provider:models:live -- --include anthropic-messages --provider-env-file .env.local
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --stream
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:image:live -- --include openai
@@ -268,17 +268,17 @@ LM_STUDIO_MODEL=local-model LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1 npm run 
 
 `--include` 支持填写 case id，也支持填写验证 group。内置 group 包括：`core`（基础 OpenAI / OpenAI-compatible / Anthropic）、`openai-chat`、`openai-responses`、`anthropic-messages`、`mainstream`、`remote`、`local` 和 `all`。如果 group 名和 case id 可能冲突，会优先按 case id 处理，所以 `--include anthropic` 只检查官方 Anthropic；要检查整个 Anthropic Messages 协议族，请使用 `--include anthropic-messages`。
 
-运行 `npm run verify:provider:live -- --doctor --include core --env-file .env.local` 可以只检查本地配置完整性，不会调用远程接口。输出会列出每个 case 的缺失环境变量、解析后的 endpoint、模型来源、鉴权状态、输入能力和下一步可复制命令；API key 只显示是否已配置，不会打印明文。
+运行 `npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local` 可以只检查本地配置完整性，不会调用远程接口。输出会列出每个 case 的缺失环境变量、解析后的 endpoint、模型来源、鉴权状态、输入能力和下一步可复制命令；API key 只显示是否已配置，不会打印明文。doctor 模式下即使指定的 env 文件还没创建，也会把它作为 warning 继续诊断，方便先看到必须填写的变量；真正的 live 检查仍要求指定的 env 文件存在。
 
 运行 `npm run verify:provider:live -- --env-template --include openai-compatible` 可以打印选中 live-check case 的可复制环境变量模板，并带上默认 endpoint 提示；加 `--dotenv-template` 可以生成普通 `.env.local` 草稿，例如 `npm run verify:provider:live -- --env-template --dotenv-template --include core > .env.local`。如果要写进 CI secrets 或本地 shell 脚本，可以再加 `--json` 输出结构化模板。Zotero 设置页指南和导出的厂商诊断报告也会显示同一条模板命令。
 
 live 检查也可以读取不提交到仓库的本地 env 文件：
 
 ```bash
-npm run verify:provider:live -- --include openai-compatible --env-file .env.local
+npm run verify:provider:live -- --include openai-compatible --provider-env-file .env.local
 ```
 
-`--env-file` 读取 `KEY=value` 行，也支持可选的 `export KEY=value`；它只补充缺失或空值，当前 shell 里已经存在的环境变量优先。
+`--provider-env-file` 读取 `KEY=value` 行，也支持可选的 `export KEY=value`；它只补充缺失或空值，当前 shell 里已经存在的环境变量优先。`--env-file` 仍作为兼容别名保留，但建议使用较长的参数名，避免和较新 Node.js CLI 选项冲突。
 
 live 检查也支持请求头和请求体覆盖。自定义网关可使用重复的 `--header name=value`，或使用更细的环境变量，例如 `OPENAI_COMPATIBLE_HEADERS_JSON`、`OPENAI_RESPONSES_COMPATIBLE_HEADERS_JSON`、`ANTHROPIC_COMPATIBLE_HEADERS_JSON`。`--body-extra-json` 会作用于本次选择的所有 case；也可以使用 `OPENAI_COMPATIBLE_BODY_EXTRA_JSON`、`OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON`、`ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON`、`OPENAI_BODY_EXTRA_JSON`、`ANTHROPIC_BODY_EXTRA_JSON`。
 

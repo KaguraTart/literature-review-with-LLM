@@ -2242,13 +2242,13 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("### Draft .env.local");
     expect(report).toContain("npm run verify:provider:live -- --env-template --dotenv-template --include deepseek > .env.local");
     expect(report).toContain("### .env.local Configuration Doctor");
-    expect(report).toContain("npm run verify:provider:live -- --doctor --include deepseek --env-file .env.local");
+    expect(report).toContain("npm run verify:provider:live -- --doctor --include deepseek --provider-env-file .env.local");
     expect(report).toContain("### .env.local Live Check");
-    expect(report).toContain("npm run verify:provider:live -- --include deepseek --env-file .env.local");
+    expect(report).toContain("npm run verify:provider:live -- --include deepseek --provider-env-file .env.local");
     expect(report).toContain("### Image Live Check");
-    expect(report).toContain("npm run verify:provider:image:live -- --include deepseek --env-file .env.local");
+    expect(report).toContain("npm run verify:provider:image:live -- --include deepseek --provider-env-file .env.local");
     expect(report).toContain("### Model-list Live Check");
-    expect(report).toContain("npm run verify:provider:models:live -- --include deepseek --env-file .env.local");
+    expect(report).toContain("npm run verify:provider:models:live -- --include deepseek --provider-env-file .env.local");
     expect(report).toContain("npm run verify:provider:live -- --include deepseek");
     expect(report).toContain("`Authorization`");
     expect(report).toContain("## Redacted Request Preview");
@@ -2405,7 +2405,7 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("DEEPSEEK_MODEL=deepseek-chat");
     expect(report).toContain("npm run verify:provider:live -- --env-template --include deepseek");
     expect(report).toContain("npm run verify:provider:live -- --env-template --dotenv-template --include deepseek > .env.local");
-    expect(report).toContain("npm run verify:provider:live -- --include deepseek --env-file .env.local");
+    expect(report).toContain("npm run verify:provider:live -- --include deepseek --provider-env-file .env.local");
     expect(report).not.toContain("new-secret");
     expect(report).not.toContain("old-secret");
     expect(workbench.state.profile.apiKey).toBe("new-secret");

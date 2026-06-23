@@ -1608,7 +1608,7 @@ describe("provider smoke verifier", () => {
       modelsEndpoint: "https://api.openai.com/v1/models",
       auth: "missing",
       commands: {
-        generationWithEnvFile: "npm run verify:provider:live -- --include openai-compatible --env-file .env.local",
+        generationWithEnvFile: "npm run verify:provider:live -- --include openai-compatible --provider-env-file .env.local",
         dotenvTemplate: "npm run verify:provider:live -- --env-template --dotenv-template --include openai-compatible > .env.local"
       }
     });
@@ -1679,6 +1679,62 @@ describe("provider smoke verifier", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("lets provider doctor continue when the env file is not created yet", async () => {
+    const missingEnvPath = join(tmpdir(), `provider-doctor-missing-${Date.now()}.env`);
+    const report = await runLive(["--doctor", "--include", "openai-compatible", "--provider-env-file", missingEnvPath, "--json"], scrubProviderEnv());
+
+    expect(report).toMatchObject({
+      ok: true,
+      configurationReady: false,
+      envFileLoaded: false,
+      envFileMissing: true,
+      envFilePath: missingEnvPath,
+      warnings: [expect.stringContaining("Env file not found")]
+    });
+    expect(report.cases[0]).toMatchObject({
+      id: "openai-compatible",
+      status: "missing",
+      missing: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_MODEL", "OPENAI_COMPATIBLE_BASE_URL"],
+      commands: {
+        dotenvTemplate: "npm run verify:provider:live -- --env-template --dotenv-template --include openai-compatible > .env.local"
+      }
+    });
+
+    const { stdout } = await execFileAsync(process.execPath, [
+      "scripts/verify-provider-live.mjs",
+      "--doctor",
+      "--include",
+      "openai-compatible",
+      "--provider-env-file",
+      missingEnvPath
+    ], {
+      cwd: process.cwd(),
+      env: scrubProviderEnv()
+    });
+    expect(stdout).toContain(`envFile: ${missingEnvPath} (missing)`);
+    expect(stdout).toContain("warning: Env file not found");
+    expect(stdout).toContain("missing: OPENAI_COMPATIBLE_API_KEY, OPENAI_COMPATIBLE_MODEL, OPENAI_COMPATIBLE_BASE_URL");
+    expect(stdout).toContain("envDraft: npm run verify:provider:live -- --env-template --dotenv-template --include openai-compatible > .env.local");
+  });
+
+  it("still rejects live provider checks when the requested env file is missing", async () => {
+    const missingEnvPath = join(tmpdir(), `provider-live-missing-${Date.now()}.env`);
+    await expect(execFileAsync(process.execPath, [
+      "scripts/verify-provider-live.mjs",
+      "--include",
+      "openai-compatible",
+      "--provider-env-file",
+      missingEnvPath,
+      "--json"
+    ], {
+      cwd: process.cwd(),
+      env: scrubProviderEnv(),
+      maxBuffer: 1024 * 1024
+    })).rejects.toMatchObject({
+      stderr: expect.stringContaining("no such file or directory")
+    });
   });
 
   it("expands live provider include groups without breaking case-id compatibility", async () => {
@@ -1792,7 +1848,7 @@ describe("provider smoke verifier", () => {
         const report = await runLive([
           "--include",
           "openai-compatible",
-          "--env-file",
+          "--provider-env-file",
           envPath,
           "--json"
         ], scrubProviderEnv({

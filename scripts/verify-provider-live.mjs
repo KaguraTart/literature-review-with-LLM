@@ -659,7 +659,7 @@ function parseArgs(args) {
     } else if (key === "--capabilities-json" && value) {
       options.capabilities = parseJSONOption(value, "--capabilities-json");
       index += 1;
-    } else if (key === "--env-file" && value) {
+    } else if ((key === "--provider-env-file" || key === "--env-file") && value) {
       options.envFile = value;
       index += 1;
     } else if (key === "--json") {
@@ -710,7 +710,8 @@ export function providerLiveEnvTemplate(include = "") {
 }
 
 export function providerLiveDoctor(include = "", options = {}, env = process.env) {
-  const effectiveEnv = options.envFile ? envWithEnvFile(options.envFile, env) : env;
+  const envFileState = envWithOptionalEnvFile(options.envFile, env);
+  const effectiveEnv = envFileState.env;
   const cases = selectedCases(include);
   const reports = cases.map((entry) => providerLiveDoctorCase(entry, options, effectiveEnv));
   const counts = reports.reduce((acc, entry) => {
@@ -725,7 +726,10 @@ export function providerLiveDoctor(include = "", options = {}, env = process.env
     configurationReady: counts.missing === 0 && counts.unsupported === 0 && counts.invalid === 0,
     liveProviderDoctor: true,
     count: reports.length,
-    envFileLoaded: Boolean(options.envFile),
+    envFileLoaded: envFileState.loaded,
+    envFileMissing: envFileState.missing,
+    envFilePath: envFileState.path,
+    warnings: envFileState.warnings,
     inputMode: liveInputMode(options),
     models: Boolean(options.models),
     stream: Boolean(options.stream),
@@ -863,9 +867,9 @@ function doctorAuthStatus(entry, env, customHeaders, endpoint) {
 function doctorCommandsForCase(entry) {
   return {
     generation: `npm run verify:provider:live -- --include ${entry.id}`,
-    generationWithEnvFile: `npm run verify:provider:live -- --include ${entry.id} --env-file .env.local`,
+    generationWithEnvFile: `npm run verify:provider:live -- --include ${entry.id} --provider-env-file .env.local`,
     modelList: entry.modelList === false ? "" : `npm run verify:provider:models:live -- --include ${entry.id}`,
-    modelListWithEnvFile: entry.modelList === false ? "" : `npm run verify:provider:models:live -- --include ${entry.id} --env-file .env.local`,
+    modelListWithEnvFile: entry.modelList === false ? "" : `npm run verify:provider:models:live -- --include ${entry.id} --provider-env-file .env.local`,
     image: caseSupportsImageInput(entry) ? `npm run verify:provider:image:live -- --include ${entry.id}` : "",
     pdf: caseSupportsPdfInput(entry) ? `npm run verify:provider:pdf:live -- --include ${entry.id}` : "",
     envTemplate: `npm run verify:provider:live -- --env-template --include ${entry.id}`,
@@ -971,6 +975,25 @@ function envWithEnvFile(path, env) {
     if (!String(result[key] ?? "").trim()) result[key] = value;
   }
   return result;
+}
+
+function envWithOptionalEnvFile(path, env) {
+  const base = env || {};
+  if (!path) {
+    return { env: base, loaded: false, missing: false, path: "", warnings: [] };
+  }
+  try {
+    return { env: envWithEnvFile(path, base), loaded: true, missing: false, path, warnings: [] };
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    return {
+      env: base,
+      loaded: false,
+      missing: true,
+      path,
+      warnings: [`Env file not found: ${path}. Run the env draft command, then fill in the required values.`]
+    };
+  }
 }
 
 function parseEnvFile(text, label = ".env") {
@@ -1410,6 +1433,13 @@ function formatDoctorReport(report) {
     `unsupported: ${report.counts.unsupported}`,
     `invalid: ${report.counts.invalid}`
   ];
+  if (report.envFilePath) {
+    const state = report.envFileLoaded ? "loaded" : report.envFileMissing ? "missing" : "not loaded";
+    lines.push(`envFile: ${report.envFilePath} (${state})`);
+  }
+  for (const warning of report.warnings || []) {
+    lines.push(`warning: ${warning}`);
+  }
   for (const entry of report.cases || []) {
     lines.push("", `${entry.id}: ${entry.status}`);
     if (entry.error) lines.push(`  error: ${entry.error}`);
@@ -1453,10 +1483,10 @@ function usage() {
     "  npm run verify:provider:live -- --list",
     "  npm run verify:provider:live -- --list --include mainstream",
     "  npm run verify:provider:live -- --doctor --include core",
-    "  npm run verify:provider:live -- --doctor --include anthropic-compatible --env-file .env.local",
-    "  npm run verify:provider:live -- --include core --env-file .env.local --fail-on-skip",
-    "  npm run verify:provider:live -- --include openai-chat --stream --env-file .env.local",
-    "  npm run verify:provider:models:live -- --include anthropic-messages --env-file .env.local",
+    "  npm run verify:provider:live -- --doctor --include anthropic-compatible --provider-env-file .env.local",
+    "  npm run verify:provider:live -- --include core --provider-env-file .env.local --fail-on-skip",
+    "  npm run verify:provider:live -- --include openai-chat --stream --provider-env-file .env.local",
+    "  npm run verify:provider:models:live -- --include anthropic-messages --provider-env-file .env.local",
     "  npm run verify:provider:live -- --env-template --include openai-compatible",
     "  npm run verify:provider:live -- --env-template --dotenv-template --include core > .env.local",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai",
@@ -1473,7 +1503,7 @@ function usage() {
     "  OPENAI_COMPATIBLE_API_KEY=... OPENAI_COMPATIBLE_BASE_URL=... npm run verify:provider:models:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_MODEL=... OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:live -- --include openai-compatible",
     "  OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 npm run verify:provider:models:live -- --include openai-compatible",
-    "  npm run verify:provider:live -- --include openai-compatible --env-file .env.local",
+    "  npm run verify:provider:live -- --include openai-compatible --provider-env-file .env.local",
     "  MINIMAX_API_KEY=... npm run verify:provider:live -- --include minimax",
     "  GEMINI_API_KEY=... GEMINI_MODEL=... npm run verify:provider:live -- --include gemini",
     "  AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=... AZURE_OPENAI_BASE_URL=... npm run verify:provider:live -- --include azure-openai",
@@ -1513,7 +1543,8 @@ function usage() {
     "  --header name=value       Add or override a request header for all selected cases",
     "  --body-extra-json JSON    Merge extra request-body fields for all selected generation cases",
     "  --capabilities-json JSON  Override profile capabilities for all selected checks",
-    "  --env-file PATH           Load KEY=value lines from a local env file; shell env values take precedence",
+    "  --provider-env-file PATH Load KEY=value lines from a local env file; shell env values take precedence",
+    "  --env-file PATH          Compatibility alias for --provider-env-file",
     "  --json                   Print machine-readable JSON"
   ].join("\n") + "\n";
 }

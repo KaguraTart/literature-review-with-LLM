@@ -2926,15 +2926,15 @@ function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProvid
     ...entry,
     envTemplateCommand: `npm run verify:provider:live -- --env-template --include ${entry.include}`,
     dotenvTemplateCommand: `npm run verify:provider:live -- --env-template --dotenv-template --include ${entry.include} > .env.local`,
-    doctorCommand: `npm run verify:provider:live -- --doctor --include ${entry.include} --env-file .env.local`,
-    envFileCommand: `npm run verify:provider:live -- --include ${entry.include} --env-file .env.local`,
+    doctorCommand: `npm run verify:provider:live -- --doctor --include ${entry.include} --provider-env-file .env.local`,
+    envFileCommand: `npm run verify:provider:live -- --include ${entry.include} --provider-env-file .env.local`,
     liveCommand: `${livePrefix ? `${livePrefix} ` : ""}npm run verify:provider:live -- --include ${entry.include}`,
     imageCommand: canUseImageInput(profile) ? `${livePrefix ? `${livePrefix} ` : ""}npm run verify:provider:image:live -- --include ${entry.include}` : "",
     pdfCommand: canUsePdfBase64Input(profile) ? `${livePrefix ? `${livePrefix} ` : ""}npm run verify:provider:pdf:live -- --include ${entry.include}` : "",
     modelsCommand: `${modelPrefix ? `${modelPrefix} ` : ""}npm run verify:provider:models:live -- --include ${entry.include}`,
-    envFileImageCommand: canUseImageInput(profile) ? `npm run verify:provider:image:live -- --include ${entry.include} --env-file .env.local` : "",
-    envFilePdfCommand: canUsePdfBase64Input(profile) ? `npm run verify:provider:pdf:live -- --include ${entry.include} --env-file .env.local` : "",
-    envFileModelsCommand: `npm run verify:provider:models:live -- --include ${entry.include} --env-file .env.local`,
+    envFileImageCommand: canUseImageInput(profile) ? `npm run verify:provider:image:live -- --include ${entry.include} --provider-env-file .env.local` : "",
+    envFilePdfCommand: canUsePdfBase64Input(profile) ? `npm run verify:provider:pdf:live -- --include ${entry.include} --provider-env-file .env.local` : "",
+    envFileModelsCommand: `npm run verify:provider:models:live -- --include ${entry.include} --provider-env-file .env.local`,
     ...overrideCommands
   };
 }

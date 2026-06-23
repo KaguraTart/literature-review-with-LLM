@@ -117,26 +117,26 @@ npm run verify:provider:live -- --env-template --dotenv-template --include core 
 Fill the relevant variables, then run a no-network configuration preflight to catch missing API keys, model names, or Base URLs:
 
 ```bash
-npm run verify:provider:live -- --doctor --include core --env-file .env.local
+npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local
 ```
 
 After the preflight is clean, run one of these checks:
 
 ```bash
 # Official OpenAI Responses format
-npm run verify:provider:live -- --include openai --env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include openai --provider-env-file .env.local --fail-on-skip
 
 # Generic OpenAI-compatible Chat format
-npm run verify:provider:live -- --include openai-compatible --env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include openai-compatible --provider-env-file .env.local --fail-on-skip
 
 # Generic OpenAI-compatible Responses format
-npm run verify:provider:live -- --include openai-responses-compatible --env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include openai-responses-compatible --provider-env-file .env.local --fail-on-skip
 
 # Official Anthropic Messages format
-npm run verify:provider:live -- --include anthropic --env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include anthropic --provider-env-file .env.local --fail-on-skip
 
 # Generic Anthropic-compatible Messages format
-npm run verify:provider:live -- --include anthropic-compatible --env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include anthropic-compatible --provider-env-file .env.local --fail-on-skip
 ```
 
 For local OpenAI-compatible runtimes, use `--include local` and fill `OLLAMA_MODEL` / `OLLAMA_BASE_URL` or `LM_STUDIO_MODEL` / `LM_STUDIO_BASE_URL`; API keys are optional unless your local gateway requires one.
@@ -233,9 +233,9 @@ Optional live provider checks use your own API credentials:
 ```bash
 npm run verify:provider:live -- --list
 npm run verify:provider:live -- --list --include mainstream
-npm run verify:provider:live -- --include core --env-file .env.local --fail-on-skip
-npm run verify:provider:live -- --include openai-chat --stream --env-file .env.local
-npm run verify:provider:models:live -- --include anthropic-messages --env-file .env.local
+npm run verify:provider:live -- --include core --provider-env-file .env.local --fail-on-skip
+npm run verify:provider:live -- --include openai-chat --stream --provider-env-file .env.local
+npm run verify:provider:models:live -- --include anthropic-messages --provider-env-file .env.local
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --stream
 OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:image:live -- --include openai
@@ -287,17 +287,17 @@ Run `npm run verify:provider:live -- --list --json` to print every live-check ca
 
 `--include` accepts case ids and verification groups. The built-in groups are `core` for the basic OpenAI / OpenAI-compatible / Anthropic cases, `openai-chat`, `openai-responses`, `anthropic-messages`, `mainstream`, `remote`, `local`, and `all`. Case ids still take priority, so `--include anthropic` checks only the official Anthropic case; use `--include anthropic-messages` for the whole Anthropic Messages protocol family.
 
-Run `npm run verify:provider:live -- --doctor --include core --env-file .env.local` to inspect local configuration without calling remote providers. The report lists missing environment variables, resolved endpoints, model source, auth status, input capabilities, and copyable next-step commands. API keys are reported only as configured or missing; secret values are not printed.
+Run `npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local` to inspect local configuration without calling remote providers. The report lists missing environment variables, resolved endpoints, model source, auth status, input capabilities, and copyable next-step commands. API keys are reported only as configured or missing; secret values are not printed. In doctor mode, a missing env file is reported as a warning and the check continues so you can still see the required variables; actual live checks still require the requested env file to exist.
 
 Run `npm run verify:provider:live -- --env-template --include openai-compatible` to print copyable env lines with default endpoint hints for selected live-check cases. Add `--dotenv-template` to generate a plain `.env.local` draft, for example `npm run verify:provider:live -- --env-template --dotenv-template --include core > .env.local`. Add `--json` if you want a machine-readable template for CI secrets or local shell setup. The same template command is shown in the Zotero settings guide and exported provider diagnostics.
 
 You can keep live-check credentials in a local env file that is not committed:
 
 ```bash
-npm run verify:provider:live -- --include openai-compatible --env-file .env.local
+npm run verify:provider:live -- --include openai-compatible --provider-env-file .env.local
 ```
 
-`--env-file` reads `KEY=value` lines, supports optional `export KEY=value`, and only fills missing or empty values; variables already present in the shell take precedence.
+`--provider-env-file` reads `KEY=value` lines, supports optional `export KEY=value`, and only fills missing or empty values; variables already present in the shell take precedence. `--env-file` remains a compatibility alias, but the longer name is preferred because it avoids collisions with newer Node.js CLI options.
 
 Live checks also accept request headers and request-body overrides. Use repeated `--header name=value` or per-case env vars such as `OPENAI_COMPATIBLE_HEADERS_JSON`, `OPENAI_RESPONSES_COMPATIBLE_HEADERS_JSON`, and `ANTHROPIC_COMPATIBLE_HEADERS_JSON` for custom gateways. Use `--body-extra-json` for all selected cases, or per-case env vars such as `OPENAI_COMPATIBLE_BODY_EXTRA_JSON`, `OPENAI_RESPONSES_COMPATIBLE_BODY_EXTRA_JSON`, `ANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON`, `OPENAI_BODY_EXTRA_JSON`, and `ANTHROPIC_BODY_EXTRA_JSON`.
 
