@@ -47,8 +47,8 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 Download the latest XPI from the GitHub release page:
 
-- [v0.1.1 release](https://github.com/KaguraTart/literature-review-with-LLM/releases/tag/v0.1.1)
-- [literature-review-with-llm.xpi](https://github.com/KaguraTart/literature-review-with-LLM/releases/download/v0.1.1/literature-review-with-llm.xpi)
+- [v0.1.2 release](https://github.com/KaguraTart/literature-review-with-LLM/releases/tag/v0.1.2)
+- [literature-review-with-llm.xpi](https://github.com/KaguraTart/literature-review-with-LLM/releases/download/v0.1.2/literature-review-with-llm.xpi)
 
 Then install it in Zotero:
 

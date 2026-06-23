@@ -1422,7 +1422,7 @@ function localAgentConnectionTestRequestForProfile(profile) {
         capabilities: {},
         clientInfo: {
           name: "zotero-markdown-summary-settings",
-          version: "0.1.1"
+          version: "0.1.2"
         }
       }
     }

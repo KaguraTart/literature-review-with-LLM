@@ -321,7 +321,7 @@ async function route(method, params) {
       capabilities: { tools: {} },
       serverInfo: {
         name: "local-agent-mcp",
-        version: "0.1.1"
+        version: "0.1.2"
       }
     };
   }
