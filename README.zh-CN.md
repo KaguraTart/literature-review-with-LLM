@@ -233,7 +233,7 @@ LM_STUDIO_MODEL=local-model LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1 npm run 
 
 `--include` 支持填写 case id，也支持填写验证 group。内置 group 包括：`core`（基础 OpenAI / OpenAI-compatible / Anthropic）、`openai-chat`、`openai-responses`、`anthropic-messages`、`mainstream`、`remote`、`local` 和 `all`。如果 group 名和 case id 可能冲突，会优先按 case id 处理，所以 `--include anthropic` 只检查官方 Anthropic；要检查整个 Anthropic Messages 协议族，请使用 `--include anthropic-messages`。
 
-运行 `npm run verify:provider:live -- --env-template --include openai-compatible` 可以打印选中 live-check case 的可复制环境变量模板，并带上默认 endpoint 提示；如果要写进 CI secrets 或本地 shell 脚本，可以再加 `--json` 输出结构化模板。Zotero 设置页指南和导出的厂商诊断报告也会显示同一条模板命令。
+运行 `npm run verify:provider:live -- --env-template --include openai-compatible` 可以打印选中 live-check case 的可复制环境变量模板，并带上默认 endpoint 提示；加 `--dotenv-template` 可以生成普通 `.env.local` 草稿，例如 `npm run verify:provider:live -- --env-template --dotenv-template --include core > .env.local`。如果要写进 CI secrets 或本地 shell 脚本，可以再加 `--json` 输出结构化模板。Zotero 设置页指南和导出的厂商诊断报告也会显示同一条模板命令。
 
 live 检查也可以读取不提交到仓库的本地 env 文件：
 

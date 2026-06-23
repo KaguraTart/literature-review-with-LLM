@@ -1929,6 +1929,7 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).toContain("OPENAI_API_KEY=...");
     expect(guide).toContain("OPENAI_MODEL=gpt-4.1");
     expect(guide).toContain("Copy env template: npm run verify:provider:live -- --env-template --include openai");
+    expect(guide).toContain("Draft .env.local: npm run verify:provider:live -- --env-template --dotenv-template --include openai > .env.local");
     expect(guide).toContain("Env-file live check: npm run verify:provider:live -- --include openai --env-file .env.local");
     expect(guide).toContain("npm run verify:provider:live -- --include openai");
     expect(guide).toContain("npm run verify:provider:models:live -- --include openai");
@@ -1949,6 +1950,7 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).toContain("ANTHROPIC_COMPATIBLE_MODEL=claude-router");
     expect(guide).toContain("ANTHROPIC_COMPATIBLE_BASE_URL=https://router.example/anthropic");
     expect(guide).toContain("Copy env template: npm run verify:provider:live -- --env-template --include anthropic-compatible");
+    expect(guide).toContain("Draft .env.local: npm run verify:provider:live -- --env-template --dotenv-template --include anthropic-compatible > .env.local");
     expect(guide).toContain("Env-file live check: npm run verify:provider:live -- --include anthropic-compatible --env-file .env.local");
     expect(guide).toContain("--include anthropic-compatible");
     expect(guide).toContain("Image capability override check: ANTHROPIC_COMPATIBLE_API_KEY=... ANTHROPIC_COMPATIBLE_MODEL=claude-router ANTHROPIC_COMPATIBLE_BASE_URL=https://router.example/anthropic ANTHROPIC_COMPATIBLE_CAPABILITIES_JSON='{\"imageBase64\":true}' npm run verify:provider:image:live -- --include anthropic-compatible");

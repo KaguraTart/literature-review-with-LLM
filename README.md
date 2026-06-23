@@ -252,7 +252,7 @@ Run `npm run verify:provider:live -- --list --json` to print every live-check ca
 
 `--include` accepts case ids and verification groups. The built-in groups are `core` for the basic OpenAI / OpenAI-compatible / Anthropic cases, `openai-chat`, `openai-responses`, `anthropic-messages`, `mainstream`, `remote`, `local`, and `all`. Case ids still take priority, so `--include anthropic` checks only the official Anthropic case; use `--include anthropic-messages` for the whole Anthropic Messages protocol family.
 
-Run `npm run verify:provider:live -- --env-template --include openai-compatible` to print copyable env lines with default endpoint hints for selected live-check cases. Add `--json` if you want a machine-readable template for CI secrets or local shell setup. The same template command is shown in the Zotero settings guide and exported provider diagnostics.
+Run `npm run verify:provider:live -- --env-template --include openai-compatible` to print copyable env lines with default endpoint hints for selected live-check cases. Add `--dotenv-template` to generate a plain `.env.local` draft, for example `npm run verify:provider:live -- --env-template --dotenv-template --include core > .env.local`. Add `--json` if you want a machine-readable template for CI secrets or local shell setup. The same template command is shown in the Zotero settings guide and exported provider diagnostics.
 
 You can keep live-check credentials in a local env file that is not committed:
 

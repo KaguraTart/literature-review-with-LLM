@@ -1549,6 +1549,36 @@ describe("provider smoke verifier", () => {
     expect(stdout).toContain("npm run verify:provider:live -- --include anthropic-compatible");
     expect(stdout).not.toContain("# Image input check");
     expect(stdout).not.toContain("npm run verify:provider:image:live -- --include anthropic-compatible");
+
+    const { stdout: dotenvStdout } = await execFileAsync(process.execPath, [
+      "scripts/verify-provider-live.mjs",
+      "--env-template",
+      "--dotenv-template",
+      "--include",
+      "openai-compatible,anthropic-compatible"
+    ], {
+      cwd: process.cwd(),
+      env: scrubProviderEnv()
+    });
+    expect(dotenvStdout).toContain("# Literature Review with LLM provider live-check env draft");
+    expect(dotenvStdout).toContain("OPENAI_COMPATIBLE_API_KEY=");
+    expect(dotenvStdout).toContain("OPENAI_COMPATIBLE_MODEL=");
+    expect(dotenvStdout).toContain("OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1");
+    expect(dotenvStdout).toContain("# OPENAI_COMPATIBLE_HEADERS_JSON={}");
+    expect(dotenvStdout).toContain("ANTHROPIC_COMPATIBLE_BASE_URL=https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT");
+    expect(dotenvStdout).not.toContain("OPENAI_COMPATIBLE_API_KEY=...");
+    expect(dotenvStdout).not.toContain("npm run verify:provider:live");
+  });
+
+  it("rejects dotenv templates outside env-template mode", async () => {
+    let caught: any = null;
+    try {
+      await runLive(["--dotenv-template", "--json"], scrubProviderEnv());
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught.stderr).toContain("--dotenv-template requires --env-template");
   });
 
   it("expands live provider include groups without breaking case-id compatibility", async () => {

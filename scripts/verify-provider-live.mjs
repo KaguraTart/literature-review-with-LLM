@@ -470,7 +470,8 @@ if (isMainModule()) {
     }
     if (options.envTemplate) {
       const template = providerLiveEnvTemplate(options.include || "");
-      process.stdout.write(options.json ? `${JSON.stringify(template, null, 2)}\n` : formatEnvTemplate(template));
+      const textTemplate = options.dotenvTemplate ? formatDotenvTemplate(template) : formatEnvTemplate(template);
+      process.stdout.write(options.json ? `${JSON.stringify(template, null, 2)}\n` : textTemplate);
       process.exit(0);
     }
     const report = await runProviderLive(options, process.env);
@@ -595,6 +596,7 @@ function parseArgs(args) {
     json: false,
     list: false,
     envTemplate: false,
+    dotenvTemplate: false,
     help: false
   };
   for (let index = 0; index < args.length; index += 1) {
@@ -636,6 +638,8 @@ function parseArgs(args) {
       options.list = true;
     } else if (key === "--env-template") {
       options.envTemplate = true;
+    } else if (key === "--dotenv-template") {
+      options.dotenvTemplate = true;
     } else if (key === "--header" && value) {
       const [name, headerValue] = splitAssignment(value, "--header");
       options.customHeaders[name] = headerValue;
@@ -776,6 +780,9 @@ function caseModelListRequiredEnv(entry) {
 }
 
 function validateLiveOptions(options) {
+  if (options.dotenvTemplate && !options.envTemplate) {
+    throw new Error("--dotenv-template requires --env-template");
+  }
   if (options.models && (options.image || options.pdf)) {
     throw new Error("--image and --pdf verify generation inputs and cannot be combined with --models");
   }
@@ -1194,6 +1201,41 @@ function formatEnvTemplate(template) {
   return `${lines.join("\n")}\n`;
 }
 
+function formatDotenvTemplate(template) {
+  const lines = [
+    "# Literature Review with LLM provider live-check env draft",
+    "# Include groups: " + (template.groups || []).map((group) => group.id).join(", "),
+    "# Keep real API keys local; do not commit this file."
+  ];
+  for (const entry of template.cases || []) {
+    const requiredEnv = uniqueEnvNames([
+      ...(entry.requiredEnv || []),
+      ...(entry.modelListRequiredEnv || [])
+    ]);
+    lines.push("", `# ${entry.id} (${entry.protocol})`, "# Required");
+    for (const name of requiredEnv) {
+      const value = entry.requiredEnvValues?.[name] ?? entry.modelListRequiredEnvValues?.[name] ?? "";
+      lines.push(`${name}=${dotenvValue(value)}`);
+    }
+    if (entry.optionalEnv?.length) {
+      lines.push("# Optional");
+      for (const name of uniqueEnvNames(entry.optionalEnv)) {
+        lines.push(`# ${name}=${dotenvValue(entry.optionalEnvValues?.[name])}`);
+      }
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function uniqueEnvNames(names) {
+  return [...new Set((names || []).filter(Boolean))];
+}
+
+function dotenvValue(value) {
+  const text = String(value ?? "").trim();
+  return text === "..." ? "" : text;
+}
+
 function usage() {
   return [
     "Usage:",
@@ -1205,6 +1247,7 @@ function usage() {
     "  npm run verify:provider:live -- --include openai-chat --stream --env-file .env.local",
     "  npm run verify:provider:models:live -- --include anthropic-messages --env-file .env.local",
     "  npm run verify:provider:live -- --env-template --include openai-compatible",
+    "  npm run verify:provider:live -- --env-template --dotenv-template --include core > .env.local",
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai",
     "  OPENAI_API_KEY=... npm run verify:provider:models:live -- --include openai",
     "  OPENAI_RESPONSES_COMPATIBLE_API_KEY=... OPENAI_RESPONSES_COMPATIBLE_MODEL=... OPENAI_RESPONSES_COMPATIBLE_BASE_URL=... npm run verify:provider:live -- --include openai-responses-compatible",
@@ -1243,6 +1286,7 @@ function usage() {
     "  --include LIST           Comma-separated live case ids or groups. Groups: all, mainstream, core, openai-chat, openai-responses, anthropic-messages, remote, local",
     "  --list                   Print available live case ids and environment variable names, then exit",
     "  --env-template           Print copyable placeholder env lines for selected live case ids, then exit",
+    "  --dotenv-template        With --env-template, print a plain KEY=value draft for a local env file",
     "  --prompt TEXT            Override the smoke prompt",
     "  --context TEXT           Override the smoke context",
     "  --timeout-ms NUMBER      Per-provider timeout",
