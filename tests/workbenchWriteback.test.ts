@@ -194,6 +194,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     requestMessagesWithHistory: (messages: any[], latestUserText: string, requestPrompt: string, options?: { limit?: number; compaction?: any }) => any[];
     bodyForProfile: (profile: any, messages: any[], outputLanguage: string, systemPrompt: string, requestInput?: any, streamEnabled?: boolean) => any;
     connectionTestBodyForProfile: (profile: any) => any;
+    connectionTestRequestForProfile: (profile: any) => any;
+    runWorkbenchProviderConnectionTest: (profile: any, request: any) => Promise<{ response: any; text: string }>;
     shouldStream: (profile: any, streamEnabled?: boolean) => boolean;
     normalizeBoolean: (value: any, fallback?: boolean) => boolean;
     headersForProfile: (profile: any) => Record<string, string>;
@@ -1183,6 +1185,145 @@ describe("workbench writeback helpers", () => {
 
     expect(() => helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({ content: [] })))
       .toThrow("No text returned from model");
+  });
+
+  it("retries workbench settings connection tests with provider compatibility fallbacks", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; headers: Record<string, string>; body: any }> = [];
+    loaded.fetch = async (url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ url, headers: init.headers || {}, body });
+      if (body.instructions !== undefined) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({ error: { message: "Unsupported parameter: instructions" } })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ output: [{ content: [{ type: "output_text", text: "pong" }] }] })
+      };
+    };
+    const profile = {
+      id: "openai-responses-compatible",
+      name: "OpenAI Compatible Responses",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "router-secret",
+      model: "response-model",
+      capabilities: { text: true, imageBase64: true, pdfBase64: true, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {}
+    };
+
+    const request = loaded.connectionTestRequestForProfile(profile);
+    const { response, text } = await loaded.runWorkbenchProviderConnectionTest(profile, request);
+
+    expect(response.ok).toBe(true);
+    expect(loaded.extractProviderConnectionText(profile.protocol, text)).toBe("pong");
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toHaveProperty("instructions");
+    expect(fetchCalls[1].body).not.toHaveProperty("instructions");
+    expect(fetchCalls[1].body.input[0].content[0].text).toContain("SYSTEM:\nYou are a provider connection test endpoint");
+  });
+
+  it("uses compatibility fallbacks from the workbench save-and-test action", async () => {
+    const prefs: Record<string, any> = {};
+    const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument({
+      "zms-profile-name": "OpenAI Compatible Responses",
+      "zms-profile-base-url": "https://router.example/v1",
+      "zms-profile-api-key": "router-secret",
+      "zms-profile-model": "response-model"
+    });
+    (loaded as any).document = dom;
+    const fetchCalls: Array<{ body: any }> = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      if (body.instructions !== undefined) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({ error: { message: "Unsupported parameter: instructions" } })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ output: [{ content: [{ type: "output_text", text: "pong" }] }] })
+      };
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => key;
+    const profile = {
+      id: "openai-responses-compatible",
+      name: "OpenAI Compatible Responses",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://old.example/v1",
+      apiKey: "old-secret",
+      model: "",
+      capabilities: { text: true, imageBase64: true, pdfBase64: true, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    await workbench.testProfileSettings();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toHaveProperty("instructions");
+    expect(fetchCalls[1].body).not.toHaveProperty("instructions");
+    expect(dom.elements.get("zms-chat-status").textContent).toBe("testOk");
+    expect(prefs.apiKey).toBe("router-secret");
+    expect(prefs.model).toBe("response-model");
+  });
+
+  it("retries workbench settings connection tests without rejected Anthropic version headers", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ headers: Record<string, string> }> = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      fetchCalls.push({ headers: init.headers || {} });
+      if (init.headers?.["anthropic-version"]) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({ error: { message: "Unsupported header: anthropic-version" } })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ content: [{ type: "text", text: "pong" }] })
+      };
+    };
+    const profile = {
+      id: "anthropic-compatible",
+      name: "Anthropic Compatible Messages",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://router.example",
+      apiKey: "router-secret",
+      model: "claude-compatible",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: { authHeader: "authorization" }
+    };
+
+    const request = loaded.connectionTestRequestForProfile(profile);
+    const { response, text } = await loaded.runWorkbenchProviderConnectionTest(profile, request);
+
+    expect(response.ok).toBe(true);
+    expect(loaded.extractProviderConnectionText(profile.protocol, text)).toBe("pong");
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].headers["anthropic-version"]).toBe("2023-06-01");
+    expect(fetchCalls[1].headers["anthropic-version"]).toBeUndefined();
   });
 
   it("fails workbench model listing when a 200 response contains a provider error", async () => {

@@ -699,12 +699,8 @@ var ZoteroMarkdownSummaryWorkbench = {
     try {
       assertRemoteProfileReady(profile, (key) => this.t(key));
       this.setStatus(this.t("testing"));
-      const response = await fetch(endpointForProfile(profile), {
-        method: "POST",
-        headers: headersForProfile(profile),
-        body: JSON.stringify(withProviderBodyDefaults(profile, connectionTestBodyForProfile(profile)))
-      });
-      const text = await response.text();
+      const request = connectionTestRequestForProfile(profile);
+      const { response, text } = await runWorkbenchProviderConnectionTest(profile, request);
       if (!response.ok) {
         this.setStatus(`${this.t("testFailed")}: ${providerErrorText(response.status, text)}`);
         return;
@@ -3668,6 +3664,36 @@ function connectionTestBodyForProfile(profile) {
     ...openAIChatOptionalDefaults(profile, { n: 1 }),
     stream: false
   };
+}
+
+function connectionTestRequestForProfile(profile) {
+  const body = connectionTestBodyForProfile(profile);
+  return {
+    url: endpointForProfile(profile),
+    headers: headersForProfile(profile),
+    body: profile?.protocol === "openai_chat" ? withOpenAIChatBodyDefaults(profile, body) : withProviderBodyDefaults(profile, body)
+  };
+}
+
+async function runWorkbenchProviderConnectionTest(profile, request) {
+  let requestProfile = profile;
+  let currentRequest = request;
+  const usedFallbackFields = [];
+  let lastResponse = null;
+  let lastText = "";
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const response = await fetch(currentRequest.url, { method: "POST", headers: currentRequest.headers, body: JSON.stringify(currentRequest.body) });
+    const text = await response.text();
+    lastResponse = response;
+    lastText = text;
+    const fallback = providerCompatibilityFallback(requestProfile, currentRequest.body, response.status, text, usedFallbackFields, false);
+    if (response.ok && !fallback) return { response, text };
+    if (!fallback) return { response, text };
+    requestProfile = fallback.profile;
+    usedFallbackFields.splice(0, usedFallbackFields.length, ...fallback.usedFields);
+    currentRequest = connectionTestRequestForProfile(requestProfile);
+  }
+  return { response: lastResponse, text: lastText };
 }
 
 async function verifyLocalAgentConnection(profile) {
