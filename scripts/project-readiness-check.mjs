@@ -563,8 +563,11 @@ const SOURCE_MARKERS = [
       "zms-message-copy",
       "copyAnswer",
       "copied",
+      "copySelectedWorkbenchText",
+      "selectedWorkbenchText",
       "-moz-user-select: text",
-      "copies assistant Markdown from the prominent answer button"
+      "copies assistant Markdown from the prominent answer button",
+      "copies the current native selection when it comes from message text"
     ]
   },
   {

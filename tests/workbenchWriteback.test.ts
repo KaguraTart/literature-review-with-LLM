@@ -215,6 +215,8 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     recentSessionFiles: (paths: string[]) => string[];
     latestSessionForItem: (item: any, outputDir: string) => Promise<any>;
     resolvedOutputDir: (value: string) => string;
+    selectedWorkbenchText: () => string;
+    copySelectedWorkbenchText: (event: any) => boolean;
     candidateJsonlPath: (outputDir: string, item: any) => string;
     importLedgerJsonlPath: (outputDir: string, item: any) => string;
     importableCandidateRecords: (records: any[]) => any[];
@@ -328,9 +330,13 @@ function fakeDocument(values: Record<string, string> = {}) {
           this[name] = value;
         },
         append(...children: any[]) {
+          for (const child of children) {
+            if (child && typeof child === "object") child.parentNode = this;
+          }
           this.children.push(...children);
         },
         appendChild(child: any) {
+          if (child && typeof child === "object") child.parentNode = this;
           this.children.push(child);
           return child;
         }
@@ -362,9 +368,13 @@ function fakeDocument(values: Record<string, string> = {}) {
       (this as any)[name] = value;
     },
     append(...children: any[]) {
+      for (const child of children) {
+        if (child && typeof child === "object") child.parentNode = this;
+      }
       this.children.push(...children);
     },
     appendChild(child: any) {
+      if (child && typeof child === "object") child.parentNode = this;
       this.children.push(child);
       return child;
     }
@@ -5629,6 +5639,72 @@ describe("workbench writeback helpers", () => {
     expect(messages.eventListeners.get("mousedown")).toBeUndefined();
     expect(messages.eventListeners.get("click")).toBeUndefined();
     expect(messages.eventListeners.get("dblclick")).toBeUndefined();
+  });
+
+  it("copies the current native selection when it comes from message text", () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    const messages = dom.getElementById("zms-messages");
+    const body = dom.createElement("div");
+    const textNode = { nodeType: 3, parentNode: body };
+    messages.appendChild(body);
+
+    (loaded as any).window.getSelection = () => ({
+      anchorNode: textNode,
+      focusNode: textNode,
+      rangeCount: 1,
+      toString: () => "selected answer text",
+      getRangeAt: () => ({ commonAncestorContainer: body })
+    });
+
+    let copied = "";
+    let prevented = 0;
+    const result = loaded.copySelectedWorkbenchText({
+      clipboardData: {
+        setData(type: string, value: string) {
+          if (type === "text/plain") copied = value;
+        }
+      },
+      preventDefault() {
+        prevented += 1;
+      }
+    });
+
+    expect(result).toBe(true);
+    expect(copied).toBe("selected answer text");
+    expect(prevented).toBe(1);
+    expect(loaded.selectedWorkbenchText()).toBe("selected answer text");
+  });
+
+  it("does not override copy events for selections outside the message list", () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    const outside = dom.createElement("textarea");
+    const textNode = { nodeType: 3, parentNode: outside };
+
+    (loaded as any).window.getSelection = () => ({
+      anchorNode: textNode,
+      focusNode: textNode,
+      rangeCount: 1,
+      toString: () => "settings field",
+      getRangeAt: () => ({ commonAncestorContainer: outside })
+    });
+
+    let prevented = 0;
+    expect(loaded.copySelectedWorkbenchText({
+      clipboardData: {
+        setData() {
+          throw new Error("should not write clipboard data");
+        }
+      },
+      preventDefault() {
+        prevented += 1;
+      }
+    })).toBe(false);
+    expect(prevented).toBe(0);
+    expect(loaded.selectedWorkbenchText()).toBe("");
   });
 
   it("opens the settings drawer from the single settings control", async () => {

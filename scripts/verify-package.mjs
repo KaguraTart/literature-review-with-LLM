@@ -452,6 +452,8 @@ const requiredMarkers = [
   [workbenchJs, "profileCompactLabel", "compact model profile label"],
   [workbenchJs, "zms-message-copy", "prominent answer copy control"],
   [workbenchJs, "copyText(answerTextForMessage", "answer copy excludes folded reasoning"],
+  [workbenchJs, "copySelectedWorkbenchText", "native selected answer copy helper"],
+  [workbenchJs, "selectedWorkbenchText", "message selection text extraction"],
   [workbenchJs, "saveProfileSettings", "workbench provider settings persistence"],
   [workbenchJs, "localOcrForImage", "workbench optional local OCR request"],
   [workbenchJs, "syncLocalOcrPreference", "workbench local OCR preference persistence"],

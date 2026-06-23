@@ -274,6 +274,10 @@ var ZoteroMarkdownSummaryWorkbench = {
       });
       this.state.escapeBound = true;
     }
+    if (!this.state.copySelectionBound && typeof document.addEventListener === "function") {
+      document.addEventListener?.("copy", (event) => copySelectedWorkbenchText(event));
+      this.state.copySelectionBound = true;
+    }
     this.bindImageInput();
     this.bindCitationNetworkPolicyControls();
     const composer = document.getElementById("zms-composer");
@@ -12557,12 +12561,70 @@ async function copyText(text) {
     // Fall through to the Zotero/XUL clipboard helper.
   }
   try {
-    const helper = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
-    helper.copyString(value);
-    return true;
+    return copyTextWithXulClipboard(value);
   } catch (_err) {
     return false;
   }
+}
+
+function copySelectedWorkbenchText(event) {
+  const text = selectedWorkbenchText();
+  if (!text) return false;
+  try {
+    if (event?.clipboardData?.setData) {
+      event.clipboardData.setData("text/plain", text);
+      event.preventDefault?.();
+      return true;
+    }
+  } catch (_err) {
+    // Fall through to the Zotero/XUL clipboard helper.
+  }
+  if (copyTextWithXulClipboard(text)) {
+    event?.preventDefault?.();
+    return true;
+  }
+  return false;
+}
+
+function selectedWorkbenchText() {
+  const selection = window.getSelection?.() || document.getSelection?.();
+  const text = String(selection?.toString?.() || "");
+  if (!text.trim()) return "";
+  const messages = document.getElementById("zms-messages");
+  if (messages && !selectionTouchesNode(selection, messages)) return "";
+  return text;
+}
+
+function selectionTouchesNode(selection, root) {
+  if (!selection || !root) return false;
+  const anchorNode = selection.anchorNode || null;
+  const focusNode = selection.focusNode || null;
+  if (nodeIsInside(anchorNode, root) || nodeIsInside(focusNode, root)) return true;
+  try {
+    const range = selection.rangeCount ? selection.getRangeAt(0) : null;
+    const common = range?.commonAncestorContainer || null;
+    if (nodeIsInside(common, root)) return true;
+    if (range?.intersectsNode) return !!range.intersectsNode(root);
+  } catch (_err) {
+    // Some XUL selections do not expose a DOM Range; anchor/focus checks are enough.
+  }
+  return false;
+}
+
+function nodeIsInside(node, root) {
+  let current = node?.nodeType === 1 ? node : node?.parentNode;
+  while (current) {
+    if (current === root) return true;
+    current = current.parentNode;
+  }
+  return false;
+}
+
+function copyTextWithXulClipboard(value) {
+  const helper = Cc?.["@mozilla.org/widget/clipboardhelper;1"]?.getService?.(Ci?.nsIClipboardHelper);
+  if (!helper?.copyString) return false;
+  helper.copyString(String(value || ""));
+  return true;
 }
 
 function safeError(err) {
