@@ -871,7 +871,9 @@ function doctorCommandsForCase(entry) {
     modelList: entry.modelList === false ? "" : `npm run verify:provider:models:live -- --include ${entry.id}`,
     modelListWithEnvFile: entry.modelList === false ? "" : `npm run verify:provider:models:live -- --include ${entry.id} --provider-env-file .env.local`,
     image: caseSupportsImageInput(entry) ? `npm run verify:provider:image:live -- --include ${entry.id}` : "",
+    imageWithEnvFile: caseSupportsImageInput(entry) ? `npm run verify:provider:image:live -- --include ${entry.id} --provider-env-file .env.local` : "",
     pdf: caseSupportsPdfInput(entry) ? `npm run verify:provider:pdf:live -- --include ${entry.id}` : "",
+    pdfWithEnvFile: caseSupportsPdfInput(entry) ? `npm run verify:provider:pdf:live -- --include ${entry.id} --provider-env-file .env.local` : "",
     envTemplate: `npm run verify:provider:live -- --env-template --include ${entry.id}`,
     dotenvTemplate: `npm run verify:provider:live -- --env-template --dotenv-template --include ${entry.id} > .env.local`
   };
@@ -1461,6 +1463,8 @@ function formatDoctorReport(report) {
     if (entry.modelListMissing?.length) lines.push(`  modelListMissing: ${entry.modelListMissing.join(", ")}`);
     if (entry.commands?.generationWithEnvFile) lines.push(`  next: ${entry.commands.generationWithEnvFile}`);
     if (entry.commands?.modelListWithEnvFile) lines.push(`  models: ${entry.commands.modelListWithEnvFile}`);
+    if (entry.commands?.imageWithEnvFile) lines.push(`  image: ${entry.commands.imageWithEnvFile}`);
+    if (entry.commands?.pdfWithEnvFile) lines.push(`  pdf: ${entry.commands.pdfWithEnvFile}`);
     if (entry.commands?.dotenvTemplate) lines.push(`  envDraft: ${entry.commands.dotenvTemplate}`);
   }
   return `${lines.join("\n")}\n`;

@@ -1641,6 +1641,25 @@ describe("provider smoke verifier", () => {
     expect(stdout).toContain("openai-compatible: missing");
     expect(stdout).toContain("missing: OPENAI_COMPATIBLE_API_KEY, OPENAI_COMPATIBLE_MODEL, OPENAI_COMPATIBLE_BASE_URL");
     expect(stdout).toContain("envDraft: npm run verify:provider:live -- --env-template --dotenv-template --include openai-compatible > .env.local");
+
+    const openai = await runLive(["--doctor", "--include", "openai", "--json"], scrubProviderEnv());
+    expect(openai.cases[0]).toMatchObject({
+      commands: {
+        imageWithEnvFile: "npm run verify:provider:image:live -- --include openai --provider-env-file .env.local",
+        pdfWithEnvFile: "npm run verify:provider:pdf:live -- --include openai --provider-env-file .env.local"
+      }
+    });
+    const { stdout: multimodalStdout } = await execFileAsync(process.execPath, [
+      "scripts/verify-provider-live.mjs",
+      "--doctor",
+      "--include",
+      "openai"
+    ], {
+      cwd: process.cwd(),
+      env: scrubProviderEnv()
+    });
+    expect(multimodalStdout).toContain("image: npm run verify:provider:image:live -- --include openai --provider-env-file .env.local");
+    expect(multimodalStdout).toContain("pdf: npm run verify:provider:pdf:live -- --include openai --provider-env-file .env.local");
   });
 
   it("loads provider doctor env files without leaking secrets", async () => {
