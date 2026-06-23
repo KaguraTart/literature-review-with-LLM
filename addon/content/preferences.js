@@ -1457,7 +1457,7 @@ function localAgentConnectionTestRequestForProfile(profile) {
         capabilities: {},
         clientInfo: {
           name: "zotero-markdown-summary-settings",
-          version: "0.1.5"
+          version: "0.1.6"
         }
       }
     }

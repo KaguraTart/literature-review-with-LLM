@@ -2910,7 +2910,7 @@ async function checkLocalAgentBridge(endpoint) {
         params: {
           protocolVersion: "2025-06-18",
           capabilities: {},
-          clientInfo: { name: "zotero-markdown-summary", version: "0.1.5" }
+          clientInfo: { name: "zotero-markdown-summary", version: "0.1.6" }
         }
       }),
       ...(controller ? { signal: controller.signal } : {})
