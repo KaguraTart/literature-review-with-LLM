@@ -2122,6 +2122,33 @@ describe("bootstrap provider helpers", () => {
       { type: "image_url", image_url: "data:image/png;base64,aW1hZ2U=" }
     ]);
     expect(fetchCalls[1].body).not.toHaveProperty("imageURLFormat");
+
+    await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true },
+      customHeaders: {},
+      bodyExtra: { omitOpenAIChatImage: true },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: {
+          type: "text",
+          text: "paper text",
+          images: [{ name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+        },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(fetchCalls[2].body.messages[1].content).toBe("prompt\n\npaper text");
+    expect(fetchCalls[2].body).not.toHaveProperty("omitOpenAIChatImage");
   });
 
   it("falls back when bootstrap OpenAI Chat endpoints reject image_url object fields", async () => {
@@ -2272,6 +2299,37 @@ describe("bootstrap provider helpers", () => {
       { type: "input_text", text: "prompt" }
     ]);
     expect(fetchCalls[2].body).not.toHaveProperty("omitPdfInputFile");
+
+    await helpers.callOpenAICompatible({
+      provider: "openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test-secret",
+      model: "response-model",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true },
+      customHeaders: {},
+      bodyExtra: { omitOpenAIResponsesImage: true },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: {
+          type: "pdf_base64",
+          base64: "cGRm",
+          filename: "paper.pdf",
+          images: [{ name: "figure.jpg", mimeType: "image/jpeg", base64: "aW1hZ2U=" }]
+        },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", true);
+
+    expect(fetchCalls[3].body.input[0].content).toEqual([
+      { type: "input_file", filename: "paper.pdf", file_data: "data:application/pdf;base64,cGRm" },
+      { type: "input_text", text: "prompt" }
+    ]);
+    expect(fetchCalls[3].body).not.toHaveProperty("omitOpenAIResponsesImage");
   });
 
   it("sends image attachments through bootstrap Anthropic message bodies", async () => {
@@ -2309,6 +2367,37 @@ describe("bootstrap provider helpers", () => {
       { type: "document", source: { type: "base64", media_type: "application/pdf", data: "cGRm" } },
       { type: "text", text: "prompt" }
     ]);
+
+    await helpers.callAnthropic({
+      provider: "anthropic",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "sk-test-secret",
+      model: "claude-model",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true },
+      customHeaders: {},
+      bodyExtra: { directBrowserAccess: false, omitImageInput: true },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: {
+          type: "pdf_base64",
+          base64: "cGRm",
+          filename: "paper.pdf",
+          images: [{ name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+        },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+
+    expect(fetchCalls[1].body.messages[0].content).toEqual([
+      { type: "document", source: { type: "base64", media_type: "application/pdf", data: "cGRm" } },
+      { type: "text", text: "prompt" }
+    ]);
+    expect(fetchCalls[1].body).not.toHaveProperty("omitImageInput");
   });
 
   it("rejects bootstrap image attachments when the provider profile disables image input", async () => {

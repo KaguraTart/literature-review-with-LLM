@@ -412,11 +412,13 @@ function openaiResponsesInputForSummary(request, profile = null, fallbackSystem 
   if (request.input.type === "pdf_base64" && !shouldOmitPdfInputFile(profile)) {
     content.unshift(openAIResponsesPdfFilePartForSummary(request.input, profile));
   }
-  for (const image of requestInputImages(request.input)) {
-    content.push({
-      type: "input_image",
-      image_url: imageDataURL(image)
-    });
+  if (!shouldOmitOpenAIResponsesImage(profile)) {
+    for (const image of requestInputImages(request.input)) {
+      content.push({
+        type: "input_image",
+        image_url: imageDataURL(image)
+      });
+    }
   }
   return [{ role: "user", content }];
 }
@@ -437,6 +439,20 @@ function shouldOmitPdfInputFile(profile) {
     || isTrueValue(profile?.bodyExtra?.dropPdfInputFile);
 }
 
+function shouldOmitOpenAIChatImage(profile) {
+  return isTrueValue(profile?.bodyExtra?.omitOpenAIChatImage)
+    || isTrueValue(profile?.bodyExtra?.skipOpenAIChatImage)
+    || isTrueValue(profile?.bodyExtra?.dropOpenAIChatImage)
+    || shouldOmitGenericImageInput(profile);
+}
+
+function shouldOmitOpenAIResponsesImage(profile) {
+  return isTrueValue(profile?.bodyExtra?.omitOpenAIResponsesImage)
+    || isTrueValue(profile?.bodyExtra?.skipOpenAIResponsesImage)
+    || isTrueValue(profile?.bodyExtra?.dropOpenAIResponsesImage)
+    || shouldOmitGenericImageInput(profile);
+}
+
 function shouldOmitAnthropicDocument(profile) {
   return isTrueValue(profile?.bodyExtra?.omitAnthropicDocument)
     || isTrueValue(profile?.bodyExtra?.skipAnthropicDocument)
@@ -446,6 +462,22 @@ function shouldOmitAnthropicDocument(profile) {
     || isTrueValue(profile?.bodyExtra?.dropPdfDocument);
 }
 
+function shouldOmitAnthropicImage(profile) {
+  return isTrueValue(profile?.bodyExtra?.omitAnthropicImage)
+    || isTrueValue(profile?.bodyExtra?.skipAnthropicImage)
+    || isTrueValue(profile?.bodyExtra?.dropAnthropicImage)
+    || isTrueValue(profile?.bodyExtra?.omitImageBlock)
+    || isTrueValue(profile?.bodyExtra?.skipImageBlock)
+    || isTrueValue(profile?.bodyExtra?.dropImageBlock)
+    || shouldOmitGenericImageInput(profile);
+}
+
+function shouldOmitGenericImageInput(profile) {
+  return isTrueValue(profile?.bodyExtra?.omitImageInput)
+    || isTrueValue(profile?.bodyExtra?.skipImageInput)
+    || isTrueValue(profile?.bodyExtra?.dropImageInput);
+}
+
 function normalizePdfInputFileField(value) {
   const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]/g, "");
   return normalized === "fileurl" || normalized === "url" ? "file_url" : "file_data";
@@ -453,7 +485,7 @@ function normalizePdfInputFileField(value) {
 
 function openAIChatSummaryMessages(request, profile) {
   const userText = request.input.type === "text" ? `${request.prompt}\n\n${request.input.text}` : request.prompt;
-  const images = requestInputImages(request.input);
+  const images = shouldOmitOpenAIChatImage(profile) ? [] : requestInputImages(request.input);
   const userContent = images.length
     ? [
       { type: "text", text: userText },
@@ -807,9 +839,24 @@ function providerBodyExtra(bodyExtra) {
     omitPdfInputFile: _omitPdfInputFile,
     skipPdfInputFile: _skipPdfInputFile,
     dropPdfInputFile: _dropPdfInputFile,
+    omitOpenAIChatImage: _omitOpenAIChatImage,
+    skipOpenAIChatImage: _skipOpenAIChatImage,
+    dropOpenAIChatImage: _dropOpenAIChatImage,
+    omitOpenAIResponsesImage: _omitOpenAIResponsesImage,
+    skipOpenAIResponsesImage: _skipOpenAIResponsesImage,
+    dropOpenAIResponsesImage: _dropOpenAIResponsesImage,
     omitAnthropicDocument: _omitAnthropicDocument,
     skipAnthropicDocument: _skipAnthropicDocument,
     dropAnthropicDocument: _dropAnthropicDocument,
+    omitAnthropicImage: _omitAnthropicImage,
+    skipAnthropicImage: _skipAnthropicImage,
+    dropAnthropicImage: _dropAnthropicImage,
+    omitImageBlock: _omitImageBlock,
+    skipImageBlock: _skipImageBlock,
+    dropImageBlock: _dropImageBlock,
+    omitImageInput: _omitImageInput,
+    skipImageInput: _skipImageInput,
+    dropImageInput: _dropImageInput,
     omitPdfDocument: _omitPdfDocument,
     skipPdfDocument: _skipPdfDocument,
     dropPdfDocument: _dropPdfDocument,

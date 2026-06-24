@@ -567,7 +567,7 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
 async function callAnthropic(summaryRequest, sourceHash) {
   const { baseURL, fullURL, endpointMode = "base_url", customHeaders = {}, bodyExtra = {}, apiKey, model, request } = summaryRequest;
   const content = [];
-  const images = requestInputImages(request.input);
+  const images = shouldOmitAnthropicImage(summaryRequest) ? [] : requestInputImages(request.input);
   if (images.length && summaryRequest.capabilities?.imageBase64 !== true) {
     throw new Error("当前接口档案不支持图片输入");
   }
