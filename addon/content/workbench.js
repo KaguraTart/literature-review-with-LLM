@@ -8220,7 +8220,12 @@ function providerOkResponseLooksLikeFallbackError(body, text, protocol = "") {
   if (!parsed) return false;
   if (streamErrorText(parsed)) return true;
   if (protocol === "anthropic_messages" && rejectedAnthropicVersionHeader(String(text || "").toLowerCase())) return true;
-  if (!providerStructuredUnsupportedFields(body, text, protocol).length) return false;
+  if (
+    !providerStructuredUnsupportedFields(body, text, protocol).length
+    && !providerUnsupportedCustomBodyFields(body, String(text || "").toLowerCase()).length
+  ) {
+    return false;
+  }
   return /unsupported|unrecognized|not supported|unknown (?:field|parameter|argument)|extra_forbidden|not permitted|invalid|forbidden/.test(String(text || "").toLowerCase());
 }
 
@@ -8315,6 +8320,7 @@ function providerUnsupportedOptionalFields(protocol, body, text, usedFallback = 
     fields.push("tool_choice");
   }
   fields.push(...providerUnsupportedOptionalBodyFields(body, detail));
+  fields.push(...providerUnsupportedCustomBodyFields(body, detail));
   if (protocol === "anthropic_messages" && rejectedAnthropicVersionHeader(detail)) {
     fields.push("headers.anthropic-version");
   }
@@ -8386,6 +8392,52 @@ function providerUnsupportedOptionalBodyFields(body, detail) {
   return PROVIDER_OPTIONAL_BODY_FIELD_PATTERNS
     .filter(([field, pattern]) => body?.[field] !== undefined && pattern.test(detail))
     .map(([field]) => field);
+}
+
+function providerUnsupportedCustomBodyFields(body, detail) {
+  const text = String(detail || "").toLowerCase();
+  if (!providerDetailLooksLikeUnsupportedField(text)) return [];
+  return Object.keys(body || {})
+    .filter((field) => !PROVIDER_REQUIRED_BODY_FIELDS.has(field))
+    .filter((field) => !PROVIDER_FALLBACK_BODY_FIELDS.has(field))
+    .filter((field) => providerFallbackCustomBodyFieldPresent(body, field))
+    .filter((field) => providerDetailMentionsField(text, field));
+}
+
+function providerDetailLooksLikeUnsupportedField(text) {
+  return /unsupported|unrecognized|not supported|does not support|unknown (?:field|parameter|argument)|unknown_field|unknown_parameter|extra_forbidden|not permitted|not allowed|forbidden|invalid/.test(text);
+}
+
+function providerDetailMentionsField(text, field) {
+  const fieldText = String(field || "").toLowerCase();
+  if (!fieldText) return false;
+  const pattern = providerFieldNamePattern(fieldText);
+  if (pattern?.test(text)) return true;
+  const normalizedText = normalizeProviderFieldWords(text);
+  const normalizedField = normalizeProviderFieldWords(fieldText);
+  return Boolean(normalizedField && normalizedText.includes(normalizedField));
+}
+
+function providerFieldNamePattern(field) {
+  const parts = String(field || "")
+    .toLowerCase()
+    .split(/[._\-\s]+/)
+    .filter(Boolean)
+    .map(escapeProviderRegExp);
+  if (!parts.length) return null;
+  return new RegExp(`(?:^|[^a-z0-9])${parts.join("[._\\-\\s]+")}(?:[^a-z0-9]|$)`);
+}
+
+function normalizeProviderFieldWords(value) {
+  return String(value || "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function escapeProviderRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function parseProviderFallbackJSON(text) {

@@ -571,6 +571,28 @@ describe("preferences local-agent config helpers", () => {
       })
     );
     expect(fields).toEqual(["router_extra"]);
+    expect((helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      400,
+      "Unsupported parameter: router_extra"
+    )).toEqual(["router_extra"]);
+    expect((helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      200,
+      JSON.stringify({ error: { message: "Unsupported parameter: router_extra" } })
+    )).toEqual(["router_extra"]);
+    expect((helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      {
+        model: "router-model",
+        messages: [],
+        "route-hint": true
+      },
+      400,
+      "Unknown argument route hint"
+    )).toEqual(["route-hint"]);
     expect((helpers as any).omitProviderRequestBodyFields(body, fields)).toEqual({
       model: "router-model",
       messages: []

@@ -496,6 +496,28 @@ describe("provider adapters", () => {
         }
       })
     )).toEqual(["router_extra"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      customBody,
+      400,
+      "Unsupported parameter: router_extra"
+    )).toEqual(["router_extra"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      customBody,
+      200,
+      JSON.stringify({ error: { message: "Unsupported parameter: router_extra" } })
+    )).toEqual(["router_extra"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      {
+        model: "router-model",
+        messages: [],
+        "route-hint": true
+      },
+      400,
+      "Unknown argument route hint"
+    )).toEqual(["route-hint"]);
     expect(omitProviderRequestBodyFields(customBody, ["router_extra"])).toEqual({
       model: "router-model",
       messages: []

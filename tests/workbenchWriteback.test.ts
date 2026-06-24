@@ -7786,12 +7786,7 @@ describe("workbench writeback helpers", () => {
         return {
           ok: false,
           status: 422,
-          text: async () => JSON.stringify({
-            error: {
-              message: "Extra inputs are not permitted",
-              extra_fields: ["router_extra"]
-            }
-          })
+          text: async () => "Unsupported parameter: router_extra"
         };
       }
       return {
