@@ -2771,6 +2771,64 @@ describe("workbench writeback helpers", () => {
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 2");
   });
 
+  it("keeps recommended workbench models when the online model list fails", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-profile-name": "OpenAI Compatible Chat",
+      "zms-profile-base-url": "https://router.example/v1",
+      "zms-profile-api-key": "new-secret",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    const fetchCalls: string[] = [];
+    loaded.fetch = async (url: string) => {
+      fetchCalls.push(url);
+      return {
+        ok: false,
+        status: 503,
+        text: async () => JSON.stringify({ error: { message: "temporary outage" } })
+      };
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelListFailedUsingRecommendations: "Online model list failed; kept recommendations",
+      modelSelectPlaceholder: "Choose a recommended model",
+      modelSelectCustom: "Custom model...",
+      recommendedModels: "Recommended",
+      onlineModels: "Online",
+      testFailed: "Connection failed"
+    }[key] || key);
+    const profile = {
+      id: "openai-compatible",
+      name: "OpenAI Compatible Chat",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "old-secret",
+      model: "",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    await workbench.loadModelsForWorkbench();
+
+    expect(fetchCalls).toEqual(["https://router.example/v1/models"]);
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("gpt-4.1-mini");
+    expect(dom.getElementById("zms-profile-model").value).toBe("gpt-4.1-mini");
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("gpt-4.1-mini");
+    expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual([
+      "OpenAI · Recommended",
+      "DeepSeek · Recommended",
+      "Qwen · Recommended"
+    ]);
+    expect(dom.elements.get("zms-chat-status").textContent).toContain("Online model list failed; kept recommendations");
+    expect(dom.elements.get("zms-chat-status").textContent).toContain("temporary outage");
+  });
+
   it("renders a localized provider preset dropdown in the workbench settings panel", () => {
     const loaded: any = loadWorkbenchHelpers();
     const dom = fakeDocument({

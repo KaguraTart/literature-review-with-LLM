@@ -939,6 +939,10 @@ var ZoteroMarkdownSummaryWorkbench = {
         this.setStatus(this.t("modelListEmpty"));
       }
     } catch (err) {
+      if (recommended.length) {
+        this.setStatus(`${this.t("modelListFailedUsingRecommendations")}: ${safeError(err)}`);
+        return;
+      }
       this.setStatus(`${this.t("testFailed")}: ${safeError(err)}`);
     }
   },

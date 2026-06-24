@@ -91,6 +91,7 @@ function loadPreferencesController(options: {
     modelListLoaded: "Models loaded",
     modelListUnavailable: "Model list unavailable",
     modelRecommendationsLoaded: "Recommended models loaded",
+    modelListFailedUsingRecommendations: "Online model list failed; kept recommendations",
     profilesReset: "Default provider profiles restored",
     resetProfiles: "Reset default profiles",
     testOk: "Connection OK",
@@ -3539,6 +3540,25 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toBe("Models loaded: 2");
   });
 
+  it("keeps recommended settings models when the online model list fails", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      fetchOk: false,
+      fetchStatus: 500,
+      fetchResponse: { error: { message: "temporary outage" } }
+    });
+
+    await controller.loadModels();
+
+    expect(fetchCalls).toHaveLength(1);
+    const optionValues = elements.get("zms-model-options").children.map((option: any) => option.value);
+    expect(optionValues).toContain("gpt-4.1");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("gpt-4.1");
+    expect(elements.get("zms-model").value).toBe("gpt-4.1");
+    expect(elements.get("zms-model-select").value).toBe("gpt-4.1");
+    expect(elements.get("zms-status").value).toContain("Online model list failed; kept recommendations");
+    expect(elements.get("zms-status").value).toContain("temporary outage");
+  });
+
   it("keeps an existing model when refreshing model options", async () => {
     const { controller, elements } = loadPreferencesController({
       initialModel: "manual-model",
@@ -4044,7 +4064,8 @@ describe("preferences local-agent config helpers", () => {
       }
     });
     await wrapped.controller.loadModels();
-    expect(wrapped.elements.get("zms-status").value).toContain("Connection failed: Provider error");
+    expect(wrapped.elements.get("zms-status").value).toContain("Online model list failed; kept recommendations");
+    expect(wrapped.elements.get("zms-status").value).toContain("Provider error");
     expect(wrapped.elements.get("zms-status").value).toContain("invalid_api_key");
     expect(wrapped.elements.get("zms-status").value).toContain("Invalid API key [redacted]");
     expect(wrapped.elements.get("zms-status").value).not.toContain("sk-test-secret");
@@ -4168,7 +4189,8 @@ describe("preferences local-agent config helpers", () => {
 
     await controller.loadModels();
 
-    expect(elements.get("zms-status").value).toContain("Connection failed: HTTP 429");
+    expect(elements.get("zms-status").value).toContain("Online model list failed; kept recommendations");
+    expect(elements.get("zms-status").value).toContain("HTTP 429");
     expect(elements.get("zms-status").value).toContain("rate_limit_exceeded");
     expect(elements.get("zms-status").value).toContain("rate_limit_error");
     expect(elements.get("zms-status").value).toContain("Bearer [redacted]");
@@ -4188,7 +4210,8 @@ describe("preferences local-agent config helpers", () => {
 
     await controller.loadModels();
 
-    expect(elements.get("zms-status").value).toContain("Connection failed: Provider error");
+    expect(elements.get("zms-status").value).toContain("Online model list failed; kept recommendations");
+    expect(elements.get("zms-status").value).toContain("Provider error");
     expect(elements.get("zms-status").value).toContain("invalid_api_key");
     expect(elements.get("zms-status").value).toContain("authentication_error");
     expect(elements.get("zms-status").value).toContain("Invalid API key [redacted]");

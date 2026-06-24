@@ -557,6 +557,10 @@ var ZoteroMarkdownSummaryPrefs = {
       syncModelSelectFromInput(displayOptions);
       this.setStatus(modelOptions.length ? `${this.t("modelListLoaded")}: ${modelOptions.length}` : `${this.t("modelRecommendationsLoaded")}: ${displayOptions.length}`);
     } catch (err) {
+      if (recommended.length) {
+        this.setStatus(`${this.t("modelListFailedUsingRecommendations")}: ${safeError(err)}`);
+        return;
+      }
       this.setStatus(`${this.t("testFailed")}: ${safeError(err)}`);
     }
   },
@@ -952,6 +956,7 @@ function prefFallbackMessage(key, lang) {
     modelListEmpty: zh ? "未返回在线模型，已保留推荐模型" : "No online models returned; kept recommendations",
     modelListLoading: zh ? "正在加载模型列表" : "Loading model list",
     modelRecommendationsLoaded: zh ? "已加载推荐模型" : "Recommended models loaded",
+    modelListFailedUsingRecommendations: zh ? "在线模型列表加载失败，已保留推荐模型" : "Online model list failed; kept recommendations",
     testOk: zh ? "连接成功" : "Connection succeeded",
     testFailed: zh ? "连接失败" : "Connection failed",
     onlineModels: zh ? "在线模型" : "Online",
