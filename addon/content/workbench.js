@@ -11043,6 +11043,7 @@ async function readStream(response, protocol, onDelta) {
 }
 
 const PROVIDER_RESPONSE_WRAPPER_KEYS = ["data", "result", "payload", "response", "message", "body", "completion"];
+const MODEL_LIST_RESPONSE_WRAPPER_KEYS = [...PROVIDER_RESPONSE_WRAPPER_KEYS, "meta", "metadata", "pagination", "paging", "page", "links"];
 const MODEL_TEXT_CONTAINER_KEYS = [
   "content",
   "output",
@@ -15593,7 +15594,7 @@ function workbenchModelListItemsFromResponse(data, depth = 0) {
   const direct = workbenchDirectModelListItemsFromResponse(data);
   if (direct.length) return direct;
   if (depth >= 2 || !data || typeof data !== "object" || Array.isArray(data)) return [];
-  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
+  for (const key of MODEL_LIST_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const items = workbenchModelListItemsFromResponse(value, depth + 1);
@@ -15605,13 +15606,17 @@ function workbenchModelListItemsFromResponse(data, depth = 0) {
 function workbenchNextModelListURL(currentUrl, data) {
   const envelope = workbenchModelListPaginationEnvelope(data);
   if (!envelope) return "";
-  const direct = workbenchStringField(envelope.next_page, envelope.nextPage, envelope.next);
+  const direct = workbenchStringField(envelope.next_page, envelope.nextPage, envelope.next, envelope.next_url, envelope.nextUrl, envelope.nextPageUrl);
   if (direct) return workbenchModelListURLFromNextValue(currentUrl, direct);
-  if (envelope.has_more !== true && envelope.hasMore !== true) return "";
+  const hasMore = envelope.has_more === true || envelope.hasMore === true;
+  const nextCursor = workbenchStringField(envelope.next_cursor, envelope.nextCursor);
+  const nextPageToken = workbenchStringField(envelope.next_page_token, envelope.nextPageToken, envelope.next_token, envelope.nextToken);
+  if (!hasMore && !nextCursor && !nextPageToken) return "";
   const pairs = [
     ["after_id", workbenchStringField(envelope.last_id, envelope.lastId, envelope.after_id, envelope.afterId)],
-    ["page_token", workbenchStringField(envelope.next_page_token, envelope.nextPageToken, envelope.next_token, envelope.nextToken)],
-    ["after", workbenchStringField(envelope.next_cursor, envelope.nextCursor, envelope.cursor, envelope.after)]
+    ["page_token", nextPageToken],
+    ["cursor", nextCursor],
+    ["after", hasMore ? workbenchStringField(envelope.cursor, envelope.after) : ""]
   ];
   for (const [param, token] of pairs) {
     if (token) return workbenchUrlWithQueryParam(currentUrl, param, token);
@@ -15621,19 +15626,14 @@ function workbenchNextModelListURL(currentUrl, data) {
 
 function workbenchDirectModelListItemsFromResponse(data) {
   if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.data)) return data.data;
-  if (Array.isArray(data?.models)) return data.models;
-  if (Array.isArray(data?.model)) return data.model;
-  if (Array.isArray(data?.items)) return data.items;
-  if (Array.isArray(data?.list)) return data.list;
-  if (Array.isArray(data?.model_list)) return data.model_list;
-  if (Array.isArray(data?.modelList)) return data.modelList;
-  if (Array.isArray(data?.available_models)) return data.available_models;
-  if (Array.isArray(data?.availableModels)) return data.availableModels;
-  if (Array.isArray(data?.model_names)) return data.model_names;
-  if (Array.isArray(data?.modelNames)) return data.modelNames;
+  const fields = ["data", "results", "objects", "entries", "models", "model", "items", "list", "model_list", "modelList", "available_models", "availableModels", "model_names", "modelNames"];
+  for (const field of fields) {
+    if (Array.isArray(data?.[field])) return data[field];
+  }
   if (Array.isArray(data?.models?.data)) return data.models.data;
   if (Array.isArray(data?.models?.items)) return data.models.items;
+  if (Array.isArray(data?.results?.data)) return data.results.data;
+  if (Array.isArray(data?.objects?.data)) return data.objects.data;
   return [];
 }
 
@@ -15641,7 +15641,7 @@ function workbenchModelListPaginationEnvelope(data, depth = 0) {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   if (workbenchHasModelListPaginationFields(data)) return data;
   if (depth >= 2) return null;
-  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
+  for (const key of MODEL_LIST_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const envelope = workbenchModelListPaginationEnvelope(value, depth + 1);
@@ -15651,7 +15651,20 @@ function workbenchModelListPaginationEnvelope(data, depth = 0) {
 }
 
 function workbenchHasModelListPaginationFields(data) {
-  return !!workbenchStringField(data?.next_page, data?.nextPage, data?.next)
+  return !!workbenchStringField(
+    data?.next_page,
+    data?.nextPage,
+    data?.next,
+    data?.next_url,
+    data?.nextUrl,
+    data?.nextPageUrl,
+    data?.next_cursor,
+    data?.nextCursor,
+    data?.next_page_token,
+    data?.nextPageToken,
+    data?.next_token,
+    data?.nextToken
+  )
     || data?.has_more === true
     || data?.hasMore === true;
 }

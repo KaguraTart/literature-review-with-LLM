@@ -3625,6 +3625,32 @@ describe("preferences local-agent config helpers", () => {
     expect(options.find((option: any) => option.value === "model-a")?.label).toBe("Model A");
   });
 
+  it("loads model-list pages with meta pagination cursors in settings", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      fetchResponses: [
+        {
+          results: [{ id: "router-model-b", display_name: "Router Model B" }],
+          meta: {
+            pagination: { next_cursor: "cursor-1" }
+          }
+        },
+        {
+          objects: [{ name: "router-model-a", label: "Router Model A" }]
+        }
+      ]
+    });
+
+    await controller.loadModels();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[1].url).toBe("https://api.openai.com/v1/models?cursor=cursor-1");
+    const options = elements.get("zms-model-options").children;
+    expect(options.map((option: any) => option.value).slice(0, 2)).toEqual(["router-model-a", "router-model-b"]);
+    expect(options.find((option: any) => option.value === "router-model-a")?.label).toBe("Router Model A");
+    expect(options.find((option: any) => option.value === "router-model-b")?.label).toBe("Router Model B");
+    expect(elements.get("zms-status").value).toBe("Models loaded: 2");
+  });
+
   it("loads model options with a custom authorization header and empty API key", async () => {
     const { controller, elements, fetchCalls } = loadPreferencesController({
       fetchResponse: { data: [{ id: "model-a" }] }

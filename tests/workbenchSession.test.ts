@@ -258,6 +258,32 @@ describe("workbench session helpers", () => {
     ]);
   });
 
+  it("follows link-based model-list pagination in the workbench", async () => {
+    const paged = loadWorkbenchHelpers({
+      fetchResponses: [
+        {
+          objects: [{ id: "model-c", display_name: "Model C" }],
+          links: { next: "/v1/models?page=2" }
+        },
+        {
+          results: [{ name: "model-a", label: "Model A" }]
+        }
+      ]
+    });
+
+    const options = await paged.workbenchFetchModelOptions({
+      url: "https://router.example/v1/models",
+      headers: { authorization: "Bearer sk-test-secret" }
+    });
+
+    expect(paged.fetchCalls).toHaveLength(2);
+    expect(paged.fetchCalls[1].url).toBe("https://router.example/v1/models?page=2");
+    expect(options).toEqual([
+      { id: "model-a", label: "Model A" },
+      { id: "model-c", label: "Model C" }
+    ]);
+  });
+
   it("extracts model text from wrapped provider responses in the workbench", () => {
     expect(helpers.extractResponseText("openai_chat", {
       data: { choices: [{ message: { content: "wrapped chat text" } }] }

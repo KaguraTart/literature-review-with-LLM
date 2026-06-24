@@ -2690,13 +2690,17 @@ async function fetchModelOptions(request) {
 function nextModelListURL(currentUrl, data) {
   const envelope = modelListPaginationEnvelope(data);
   if (!envelope) return "";
-  const direct = stringField(envelope.next_page, envelope.nextPage, envelope.next);
+  const direct = stringField(envelope.next_page, envelope.nextPage, envelope.next, envelope.next_url, envelope.nextUrl, envelope.nextPageUrl);
   if (direct) return modelListURLFromNextValue(currentUrl, direct);
-  if (envelope.has_more !== true && envelope.hasMore !== true) return "";
+  const hasMore = envelope.has_more === true || envelope.hasMore === true;
+  const nextCursor = stringField(envelope.next_cursor, envelope.nextCursor);
+  const nextPageToken = stringField(envelope.next_page_token, envelope.nextPageToken, envelope.next_token, envelope.nextToken);
+  if (!hasMore && !nextCursor && !nextPageToken) return "";
   const tokenPairs = [
     ["after_id", stringField(envelope.last_id, envelope.lastId, envelope.after_id, envelope.afterId)],
-    ["page_token", stringField(envelope.next_page_token, envelope.nextPageToken, envelope.next_token, envelope.nextToken)],
-    ["after", stringField(envelope.next_cursor, envelope.nextCursor, envelope.cursor, envelope.after)]
+    ["page_token", nextPageToken],
+    ["cursor", nextCursor],
+    ["after", hasMore ? stringField(envelope.cursor, envelope.after) : ""]
   ];
   for (const [param, token] of tokenPairs) {
     if (token) return urlWithQueryParam(currentUrl, param, token);
@@ -2768,7 +2772,7 @@ function modelListItemsFromResponse(data, depth = 0) {
   const direct = directModelListItemsFromResponse(data);
   if (direct.length) return direct;
   if (depth >= 2 || !data || typeof data !== "object" || Array.isArray(data)) return [];
-  for (const key of PREFERENCES_PROVIDER_RESPONSE_WRAPPER_KEYS) {
+  for (const key of PREFERENCES_MODEL_LIST_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const items = modelListItemsFromResponse(value, depth + 1);
@@ -2778,43 +2782,23 @@ function modelListItemsFromResponse(data, depth = 0) {
 }
 
 function directModelListItemsFromResponse(data) {
-  const source = Array.isArray(data)
-    ? data
-    : Array.isArray(data?.data)
-      ? data.data
-      : Array.isArray(data?.models)
-        ? data.models
-        : Array.isArray(data?.model)
-          ? data.model
-          : Array.isArray(data?.items)
-            ? data.items
-            : Array.isArray(data?.list)
-              ? data.list
-              : Array.isArray(data?.model_list)
-                ? data.model_list
-                : Array.isArray(data?.modelList)
-                  ? data.modelList
-                  : Array.isArray(data?.available_models)
-                    ? data.available_models
-                    : Array.isArray(data?.availableModels)
-                      ? data.availableModels
-                      : Array.isArray(data?.model_names)
-                        ? data.model_names
-                        : Array.isArray(data?.modelNames)
-                          ? data.modelNames
-                          : Array.isArray(data?.models?.data)
-                            ? data.models.data
-                            : Array.isArray(data?.models?.items)
-                              ? data.models.items
-                              : [];
-  return source;
+  if (Array.isArray(data)) return data;
+  const fields = ["data", "results", "objects", "entries", "models", "model", "items", "list", "model_list", "modelList", "available_models", "availableModels", "model_names", "modelNames"];
+  for (const field of fields) {
+    if (Array.isArray(data?.[field])) return data[field];
+  }
+  if (Array.isArray(data?.models?.data)) return data.models.data;
+  if (Array.isArray(data?.models?.items)) return data.models.items;
+  if (Array.isArray(data?.results?.data)) return data.results.data;
+  if (Array.isArray(data?.objects?.data)) return data.objects.data;
+  return [];
 }
 
 function modelListPaginationEnvelope(data, depth = 0) {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   if (hasModelListPaginationFields(data)) return data;
   if (depth >= 2) return null;
-  for (const key of PREFERENCES_PROVIDER_RESPONSE_WRAPPER_KEYS) {
+  for (const key of PREFERENCES_MODEL_LIST_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const envelope = modelListPaginationEnvelope(value, depth + 1);
@@ -2824,7 +2808,20 @@ function modelListPaginationEnvelope(data, depth = 0) {
 }
 
 function hasModelListPaginationFields(data) {
-  return !!stringField(data?.next_page, data?.nextPage, data?.next)
+  return !!stringField(
+    data?.next_page,
+    data?.nextPage,
+    data?.next,
+    data?.next_url,
+    data?.nextUrl,
+    data?.nextPageUrl,
+    data?.next_cursor,
+    data?.nextCursor,
+    data?.next_page_token,
+    data?.nextPageToken,
+    data?.next_token,
+    data?.nextToken
+  )
     || data?.has_more === true
     || data?.hasMore === true;
 }
@@ -3037,6 +3034,7 @@ function providerTextFromResponse(protocol, data) {
 }
 
 const PREFERENCES_PROVIDER_RESPONSE_WRAPPER_KEYS = ["data", "result", "payload", "response", "message", "body", "completion"];
+const PREFERENCES_MODEL_LIST_WRAPPER_KEYS = [...PREFERENCES_PROVIDER_RESPONSE_WRAPPER_KEYS, "meta", "metadata", "pagination", "paging", "page", "links"];
 const PREFERENCES_PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "stream_options",
   "stream",
