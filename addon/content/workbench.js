@@ -289,7 +289,11 @@ var ZoteroMarkdownSummaryWorkbench = {
     if (modelInput && modelInput.dataset?.zmsModelPickerBound !== "1") {
       const sync = () => this.syncWorkbenchModelSelect();
       modelInput.addEventListener("input", sync);
-      modelInput.addEventListener("change", sync);
+      modelInput.addEventListener("change", () => {
+        sync();
+        this.commitWorkbenchModelPickerSelection();
+      });
+      modelInput.addEventListener("blur", () => this.commitWorkbenchModelPickerSelection());
       if (modelInput.dataset) modelInput.dataset.zmsModelPickerBound = "1";
     }
     const localOcrInput = document.getElementById("zms-local-ocr-input");
@@ -1040,10 +1044,21 @@ var ZoteroMarkdownSummaryWorkbench = {
     if (selected && selected !== "__custom") {
       modelInput.value = selected;
       setWorkbenchCustomModelInputVisible(modelInput, false);
+      this.commitWorkbenchModelPickerSelection();
       return;
     }
     setWorkbenchCustomModelInputVisible(modelInput, true);
     modelInput.focus?.();
+  },
+
+  commitWorkbenchModelPickerSelection() {
+    const profile = this.profileFromSettingsPanel();
+    if (!profile) return null;
+    this.state.profile = profile;
+    this.renderProfileStatus();
+    this.renderProfileTrigger();
+    this.saveProfileSettings({ status: false });
+    return profile;
   },
 
   renderProfileStatus() {
