@@ -2895,7 +2895,79 @@ describe("workbench writeback helpers", () => {
     expect(dom.elements.get("zms-chat-status").textContent).toContain("Online model list failed; kept recommendations");
   });
 
-  it("filters workbench model recommendations by model family", async () => {
+  it("lets Cline API workbench users choose a model vendor before choosing a model", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-profile-name": "Cline API",
+      "zms-profile-base-url": "https://api.cline.bot/api/v1",
+      "zms-profile-api-key": "",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    loaded.fetch = async () => {
+      throw new Error("network should not be called without credentials");
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelRecommendationsLoaded: "Recommended models loaded",
+      modelSelectPlaceholder: "Choose provider model",
+      modelSelectCustom: "Custom/private model...",
+      modelVendorFilter: "Model vendor",
+      allModelVendors: "All model vendors",
+      recommendedModels: "Recommended",
+      modelFeatureImage: "image",
+      modelFeaturePdf: "PDF",
+      modelFeatureReasoning: "reasoning",
+      modelFeatureFast: "fast",
+      modelFeatureLocal: "local",
+      modelListFailedUsingRecommendations: "Online model list failed; kept recommendations",
+      apiKeyMissing: "API key missing"
+    }[key] || key);
+    const profile = {
+      id: "cline-api",
+      name: "Cline API",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.cline.bot/api/v1",
+      apiKey: "",
+      model: "",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    await workbench.loadModelsForWorkbench();
+
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-vendor-select"))).toEqual([
+      "",
+      "Anthropic",
+      "Google Gemini",
+      "OpenAI",
+      "DeepSeek",
+      "xAI",
+      "MiniMax"
+    ]);
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("anthropic/claude-sonnet-4-6");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("google/gemini-2.5-pro");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("minimax/minimax-m2.5");
+
+    dom.getElementById("zms-profile-model-vendor-select").value = "Google Gemini";
+    workbench.renderWorkbenchModelOptionsFromCache({ selectFirstVisible: true });
+
+    const modelSelect = dom.getElementById("zms-profile-model-select");
+    const filteredValues = selectOptionValues(modelSelect);
+    expect(filteredValues).toContain("google/gemini-2.5-pro");
+    expect(filteredValues).toContain("google/gemini-2.5-flash");
+    expect(filteredValues).not.toContain("anthropic/claude-sonnet-4-6");
+    expect(modelSelect.value).toBe("google/gemini-2.5-pro");
+    expect(dom.getElementById("zms-profile-model").value).toBe("google/gemini-2.5-pro");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
+  });
+
+  it("filters workbench model recommendations by model vendor", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const dom = fakeDocument({
       "zms-profile-name": "LiteLLM Proxy Chat",

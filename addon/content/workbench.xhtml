@@ -37,15 +37,15 @@
         <html:input id="zms-profile-api-key" type="password"/>
         <html:label id="zms-profile-model-label" for="zms-profile-model">Model</html:label>
         <html:div class="zms-profile-model-row">
-          <html:label class="zms-inline-control-label" id="zms-profile-model-vendor-filter-label" for="zms-profile-model-vendor-select">Model family</html:label>
+          <html:label class="zms-inline-control-label" id="zms-profile-model-vendor-filter-label" for="zms-profile-model-vendor-select">Model vendor</html:label>
           <html:select id="zms-profile-model-vendor-select"></html:select>
-          <html:label class="zms-inline-control-label" id="zms-profile-model-select-label" for="zms-profile-model-select">Recommended / online model</html:label>
+          <html:label class="zms-inline-control-label" id="zms-profile-model-select-label" for="zms-profile-model-select">Model dropdown</html:label>
           <html:select id="zms-profile-model-select"></html:select>
           <html:input id="zms-profile-model" type="text" hidden="hidden"/>
           <html:datalist id="zms-workbench-model-options"/>
           <html:button id="zms-load-models-workbench" class="zms-load-models-button" type="button" title="Load model list for the current provider">Load model list</html:button>
         </html:div>
-        <html:p id="zms-workbench-model-help" class="zms-muted">Choose a provider first, then pick a model from the dropdown. Load model list adds online models when an API key is available.</html:p>
+        <html:p id="zms-workbench-model-help" class="zms-muted">Choose a provider first. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Load model list shows built-in recommendations first and appends online models when an API key is available.</html:p>
         <html:details class="zms-settings-details">
           <html:summary id="zms-workbench-provider-env-heading">Paste env config</html:summary>
           <html:textarea id="zms-workbench-provider-env-text" class="zms-provider-env-text" placeholder="OPENAI_API_KEY=...&#10;OPENAI_MODEL=..."></html:textarea>

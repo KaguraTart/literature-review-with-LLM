@@ -93,8 +93,8 @@ function loadPreferencesController(options: {
     modelListUnavailable: "Model list unavailable",
     modelRecommendationsLoaded: "Recommended models loaded",
     modelListFailedUsingRecommendations: "Online model list failed; kept recommendations",
-    modelVendorFilter: "Model family",
-    allModelVendors: "All model families",
+    modelVendorFilter: "Model vendor",
+    allModelVendors: "All model vendors",
     modelFeatureImage: "image",
     modelFeaturePdf: "PDF",
     modelFeatureReasoning: "reasoning",
@@ -2977,8 +2977,8 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-baseURL-label").value).toBe("接口地址");
     expect(elements.get("zms-apiKey-label").value).toBe("API 密钥");
     expect(elements.get("zms-model-label").value).toBe("模型");
-    expect(elements.get("zms-model-vendor-filter-label").value).toBe("模型系列");
-    expect(elements.get("zms-model-select-label").value).toBe("推荐/在线模型");
+    expect(elements.get("zms-model-vendor-filter-label").value).toBe("模型厂商");
+    expect(elements.get("zms-model-select-label").value).toBe("模型下拉");
     expect(elements.get("zms-model-help").value).toContain("加载模型列表");
     expect(elements.get("zms-load-models-button").label).toBe("加载模型列表");
     expect(elements.get("zms-test-button").label).toBe("保存并测试");
@@ -3051,7 +3051,45 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toBe("Recommended models loaded: 6");
   });
 
-  it("filters settings model recommendations by model family", async () => {
+  it("lets Cline API users choose a model vendor before choosing a model", async () => {
+    const { controller, elements } = loadPreferencesController();
+    elements.get("zms-provider").value = "cline_api";
+    elements.get("zms-activeProfileId").value = "cline-api";
+    elements.get("zms-profileName").value = "Cline API";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "https://api.cline.bot/api/v1";
+    elements.get("zms-apiKey").value = "";
+    elements.get("zms-model").value = "";
+
+    await controller.loadModels();
+
+    expect(selectOptionValues(elements.get("zms-model-vendor-select"))).toEqual([
+      "",
+      "Anthropic",
+      "Google Gemini",
+      "OpenAI",
+      "DeepSeek",
+      "xAI",
+      "MiniMax"
+    ]);
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("anthropic/claude-sonnet-4-6");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("google/gemini-2.5-pro");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("openai/gpt-4o");
+    expect(selectGroupLabels(elements.get("zms-model-select"))).toContain("Google Gemini · Recommended");
+
+    elements.get("zms-model-vendor-select").value = "Google Gemini";
+    controller.renderModelOptionsFromCache({ selectFirstVisible: true });
+
+    const filteredValues = selectOptionValues(elements.get("zms-model-select"));
+    expect(filteredValues).toContain("google/gemini-2.5-pro");
+    expect(filteredValues).toContain("google/gemini-2.5-flash");
+    expect(filteredValues).not.toContain("anthropic/claude-sonnet-4-6");
+    expect(elements.get("zms-model-select").value).toBe("google/gemini-2.5-pro");
+    expect(elements.get("zms-model").value).toBe("google/gemini-2.5-pro");
+    expect(elements.get("zms-model").hidden).toBe(true);
+  });
+
+  it("filters settings model recommendations by model vendor", async () => {
     const { controller, elements } = loadPreferencesController();
     elements.get("zms-provider").value = "litellm_proxy_chat";
     elements.get("zms-activeProfileId").value = "litellm-proxy-chat";

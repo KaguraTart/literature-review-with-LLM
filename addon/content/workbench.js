@@ -5640,7 +5640,7 @@ function renderModelVendorFilter(select, entries, translate = (key) => key) {
   clearOptionsElement(select);
   const all = document.createElement("option");
   all.value = "";
-  all.textContent = translate("allModelVendors") || "All model families";
+  all.textContent = translate("allModelVendors") || "All model vendors";
   select.appendChild(all);
   for (const vendor of vendors) {
     const option = document.createElement("option");
@@ -5650,8 +5650,8 @@ function renderModelVendorFilter(select, entries, translate = (key) => key) {
   }
   select.value = vendors.includes(previous) ? previous : "";
   select.disabled = vendors.length <= 1;
-  select.setAttribute?.("aria-label", translate("modelVendorFilter") || "Model family");
-  select.setAttribute?.("title", translate("modelVendorFilter") || "Model family");
+  select.setAttribute?.("aria-label", translate("modelVendorFilter") || "Model vendor");
+  select.setAttribute?.("title", translate("modelVendorFilter") || "Model vendor");
   return vendors;
 }
 

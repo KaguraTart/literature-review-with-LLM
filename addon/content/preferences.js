@@ -922,13 +922,13 @@ function prefFallbackMessage(key, lang) {
     baseURL: zh ? "接口地址" : "Base URL",
     apiKey: zh ? "API 密钥" : "API Key",
     model: zh ? "模型" : "Model",
-    modelVendorFilter: zh ? "模型系列" : "Model family",
-    allModelVendors: zh ? "全部模型系列" : "All model families",
+    modelVendorFilter: zh ? "模型厂商" : "Model vendor",
+    allModelVendors: zh ? "全部模型厂商" : "All model vendors",
     modelSelectPlaceholder: zh ? "选择接口厂商推荐模型" : "Choose provider model",
-    modelSelectCustom: zh ? "自定义模型..." : "Custom model...",
+    modelSelectCustom: zh ? "自定义/私有部署模型..." : "Custom/private model...",
     modelPickerHelp: zh
-      ? "先选择接口厂商，模型下拉会自动显示该厂商的推荐模型；点击“加载模型列表”可追加在线模型。普通用户直接选下拉项，只有私有部署或自定义路由才选“自定义模型”。"
-      : "Choose a provider first; the model dropdown shows that provider's recommended models. Load model list adds online models when available. Most users can pick from the dropdown; use Custom model only for private deployments or custom routers.",
+      ? "先选接口厂商；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商，最后从模型下拉选择具体模型。点击“加载模型列表”会先显示内置推荐模型，有 API Key 时追加在线模型。"
+      : "Choose a provider first. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Load model list shows built-in recommendations first and appends online models when an API key is available.",
     onlineModels: zh ? "在线模型" : "Online",
     recommendedModels: zh ? "推荐模型" : "Recommended",
     providerEnv: zh ? "粘贴环境变量配置" : "Paste env config",
@@ -1167,11 +1167,11 @@ function applyPreferenceTextLabels(lang) {
     "zms-cap-jsonMode-label": zh ? "JSON 模式" : "JSON mode",
     "zms-cap-toolUse-label": zh ? "工具调用" : "Tool use",
     "zms-cap-modelList-label": zh ? "在线模型列表" : "Model list",
-    "zms-model-vendor-filter-label": zh ? "模型系列" : "Model family",
-    "zms-model-select-label": zh ? "推荐/在线模型" : "Recommended / online model",
+    "zms-model-vendor-filter-label": zh ? "模型厂商" : "Model vendor",
+    "zms-model-select-label": zh ? "模型下拉" : "Model dropdown",
     "zms-model-help": zh
-      ? "先选择接口厂商，模型下拉会自动显示该厂商的推荐模型；点击“加载模型列表”可追加在线模型。普通用户直接选下拉项，只有私有部署或自定义路由才选“自定义模型”。"
-      : "Choose a provider first; the model dropdown shows that provider's recommended models. Load model list adds online models when available. Most users can pick from the dropdown; use Custom model only for private deployments or custom routers.",
+      ? "先选接口厂商；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商，最后从模型下拉选择具体模型。点击“加载模型列表”会先显示内置推荐模型，有 API Key 时追加在线模型。"
+      : "Choose a provider first. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Load model list shows built-in recommendations first and appends online models when an API key is available.",
     "zms-local-agent-note-1": zh
       ? "按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"
       : "Configure endpoint/tool/timeout/payloadMode by skill id. Empty objects are allowed. ask-all/check fall back to ask-gemini / ask-claude / ask-opencode when no separate mapping is set; ask-gemini-claude can call only Gemini and Claude.",
@@ -1193,7 +1193,7 @@ function applyPreferenceTextLabels(lang) {
   }
   const modelVendor = document.getElementById("zms-model-vendor-select");
   if (modelVendor) {
-    const label = zh ? "模型系列" : "Model family";
+    const label = zh ? "模型厂商" : "Model vendor";
     modelVendor.setAttribute?.("aria-label", label);
     modelVendor.setAttribute?.("title", label);
   }
@@ -1217,7 +1217,7 @@ function applyPreferencePlaceholders(lang) {
   }
   const model = document.getElementById("zms-model");
   if (model) {
-    model.setAttribute?.("placeholder", zh ? "自定义模型名称" : "Custom model name");
+    model.setAttribute?.("placeholder", zh ? "自定义或私有部署模型名称" : "Custom or private model name");
   }
 }
 
@@ -3642,7 +3642,7 @@ function renderModelVendorFilter(select, entries, translate = (key) => key) {
   clearOptionsElement(select);
   const all = document.createElement("option");
   all.value = "";
-  all.textContent = translate("allModelVendors") || "All model families";
+  all.textContent = translate("allModelVendors") || "All model vendors";
   select.appendChild(all);
   for (const vendor of vendors) {
     const option = document.createElement("option");
@@ -3652,8 +3652,8 @@ function renderModelVendorFilter(select, entries, translate = (key) => key) {
   }
   select.value = vendors.includes(previous) ? previous : "";
   select.disabled = vendors.length <= 1;
-  select.setAttribute?.("aria-label", translate("modelVendorFilter") || "Model family");
-  select.setAttribute?.("title", translate("modelVendorFilter") || "Model family");
+  select.setAttribute?.("aria-label", translate("modelVendorFilter") || "Model vendor");
+  select.setAttribute?.("title", translate("modelVendorFilter") || "Model vendor");
   return vendors;
 }
 

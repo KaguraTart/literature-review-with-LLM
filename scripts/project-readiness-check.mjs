@@ -301,7 +301,7 @@ const SOURCE_MARKERS = [
     id: "provider.model-picker-presets",
     description: "Settings and workbench expose provider-specific recommended model dropdowns before falling back to custom model input",
     files: ["addon/content/provider-models.js", "addon/content/preferences.xhtml", "addon/content/preferences.js", "addon/content/workbench.xhtml", "addon/content/workbench.js", "tests/preferencesLocalAgent.test.ts", "tests/workbenchWriteback.test.ts", "tests/providerCatalogConsistency.test.ts"],
-    markers: ["MODEL_CATALOG", "zms-model-select", "zms-profile-model-select", "recommendedModelOptionsForProvider", "renderWorkbenchModelRecommendations", "appendGroupedModelSelectOptions", "Custom model", "自定义模型", "preloads recommended provider models without requiring an API key", "loads recommended workbench models before API credentials are configured", "tags aggregate-provider recommendations with concrete model vendors"]
+    markers: ["MODEL_CATALOG", "zms-model-select", "zms-profile-model-select", "recommendedModelOptionsForProvider", "renderWorkbenchModelRecommendations", "appendGroupedModelSelectOptions", "Custom/private model", "自定义/私有部署模型", "Model vendor", "模型厂商", "preloads recommended provider models without requiring an API key", "loads recommended workbench models before API credentials are configured", "tags aggregate-provider recommendations with concrete model vendors"]
   },
   {
     id: "local-agents.bridge",
@@ -939,6 +939,7 @@ function addReadmeUiTextChecks(checks) {
       file: "README.md",
       required: [
         { id: "load-model-list", marker: "`Load model list`" },
+        { id: "model-vendor", marker: "`Model vendor`" },
         { id: "restores-provider-credentials", marker: "switching back to a previously saved provider restores that provider's own key and model" }
       ],
       forbidden: [
@@ -950,6 +951,7 @@ function addReadmeUiTextChecks(checks) {
       file: "README.zh-CN.md",
       required: [
         { id: "load-model-list", marker: "`加载模型列表`" },
+        { id: "model-vendor", marker: "`模型厂商`" },
         { id: "restores-provider-credentials", marker: "切回已保存过的厂商时会恢复该厂商自己的 key 和模型" }
       ],
       forbidden: [
