@@ -3638,10 +3638,12 @@ describe("preferences local-agent config helpers", () => {
     const options = elements.get("zms-model-options").children;
     expect(options.map((option: any) => option.value).slice(0, 2)).toEqual(["claude-opus-4-8", "claude-sonnet-4-5"]);
     expect(options.map((option: any) => option.label).slice(0, 2)).toEqual(["Claude Opus 4.8", "Claude Sonnet 4.5"]);
-    expect(options.map((option: any) => option.value)).toContain("claude-sonnet-4-20250514");
+    expect(options.map((option: any) => option.value)).toContain("claude-sonnet-4-6");
+    expect(options.map((option: any) => option.value)).not.toContain("claude-3-5-sonnet-latest");
     const selectValues = selectOptionValues(elements.get("zms-model-select"));
     expect(selectValues.slice(0, 3)).toEqual(["", "claude-opus-4-8", "claude-sonnet-4-5"]);
-    expect(selectValues).toContain("claude-sonnet-4-20250514");
+    expect(selectValues).toContain("claude-sonnet-4-6");
+    expect(selectValues).not.toContain("claude-3-5-haiku-latest");
     expect(selectValues.at(-1)).toBe("__custom");
     expect(elements.get("zms-model-select").value).toBe("claude-opus-4-8");
     expect(elements.get("zms-model").value).toBe("claude-opus-4-8");
@@ -3669,7 +3671,8 @@ describe("preferences local-agent config helpers", () => {
     expect(fetchCalls[1].init.headers["anthropic-version"]).toBeUndefined();
     const optionValues = elements.get("zms-model-options").children.map((option: any) => option.value);
     expect(optionValues[0]).toBe("claude-compatible");
-    expect(optionValues).toContain("claude-sonnet-4-20250514");
+    expect(optionValues).toContain("claude-sonnet-4-6");
+    expect(optionValues).not.toContain("claude-3-5-sonnet-latest");
     expect(elements.get("zms-status").value).toBe("Models loaded: 1");
   });
 

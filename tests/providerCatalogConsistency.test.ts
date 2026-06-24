@@ -233,6 +233,23 @@ describe("provider catalog consistency", () => {
     expect(preferences.zmsRecommendedModelOptionsForProvider("deepseek")[0].vendor).toBe("DeepSeek");
   });
 
+  it("keeps official OpenAI and Anthropic recommendations current without changing cost-friendly defaults", () => {
+    const preferences = loadPreferencesHelpers();
+    const openaiIds = preferences.zmsRecommendedModelOptionsForProvider("openai").map((option) => option.id);
+    const anthropicIds = preferences.zmsRecommendedModelOptionsForProvider("anthropic").map((option) => option.id);
+    const anthropicCompatibleIds = preferences.zmsRecommendedModelOptionsForProvider("anthropic_compatible").map((option) => option.id);
+
+    expect(openaiIds[0]).toBe("gpt-5.4-mini");
+    expect(openaiIds).toContain("gpt-5.5");
+    expect(anthropicIds[0]).toBe("claude-sonnet-4-6");
+    expect(anthropicIds).toEqual(expect.arrayContaining(["claude-opus-4-8", "claude-opus-4-7", "claude-haiku-4-5"]));
+    expect(anthropicCompatibleIds).toEqual(expect.arrayContaining(["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5"]));
+    for (const stale of ["claude-sonnet-4-20250514", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"]) {
+      expect(anthropicIds).not.toContain(stale);
+      expect(anthropicCompatibleIds).not.toContain(stale);
+    }
+  });
+
   it("keeps bootstrap fallback provider defaults aligned with the editable catalog", () => {
     const preferences = loadPreferencesHelpers();
     const bootstrap = loadBootstrapSettingsHelpers();

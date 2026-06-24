@@ -2943,7 +2943,8 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-profile-api-key").value).toBe("");
     expect(dom.getElementById("zms-profile-model").value).toBe("claude-sonnet-4-6");
     expect(dom.getElementById("zms-workbench-provider").value).toBe("anthropic");
-    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("claude-3-5-haiku-latest");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("claude-opus-4-8");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).not.toContain("claude-3-5-haiku-latest");
 
     const saved = workbench.saveProfileSettings();
 
