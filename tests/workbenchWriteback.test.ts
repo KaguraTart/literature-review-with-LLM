@@ -2247,6 +2247,14 @@ describe("workbench writeback helpers", () => {
       baseURL: "http://127.0.0.1:11434/v1",
       customHeaders: {}
     }, translate)).not.toThrow();
+    expect(() => helpers.assertRemoteProfileReady({
+      apiKey: "",
+      model: "local-model",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "http://0.0.0.0:11434/v1",
+      customHeaders: {}
+    }, translate)).not.toThrow();
   });
 
   it("summarizes the active workbench profile without exposing credentials", () => {

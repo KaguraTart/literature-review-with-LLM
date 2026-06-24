@@ -1236,6 +1236,13 @@ describe("preferences local-agent config helpers", () => {
       apiKey: "",
       customHeaders: {}
     })).toBe(true);
+    expect(helpers.profileHasUsableAuth({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "http://0.0.0.0:11434/v1",
+      apiKey: "",
+      customHeaders: {}
+    })).toBe(true);
   });
 
   it("builds an Anthropic connection test request without duplicating v1", () => {

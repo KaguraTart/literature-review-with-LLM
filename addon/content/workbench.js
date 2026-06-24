@@ -9864,7 +9864,7 @@ function normalizeAuthHeaderName(value) {
 }
 
 function isLocalEndpoint(url) {
-  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|::1)(?::|\/|$)/.test(String(url || "").trim().toLowerCase());
+  return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|::1)(?::|\/|$)/.test(String(url || "").trim().toLowerCase());
 }
 
 function bodyForProfile(profile, messages, outputLanguage, systemPrompt, requestInput = {}, streamEnabled = true) {
