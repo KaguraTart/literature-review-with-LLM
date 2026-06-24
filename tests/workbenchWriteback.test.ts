@@ -400,6 +400,15 @@ function findNode(root: any, predicate: (node: any) => boolean): any {
   return null;
 }
 
+function findNodes(root: any, predicate: (node: any) => boolean, found: any[] = []): any[] {
+  if (!root) return found;
+  if (predicate(root)) found.push(root);
+  for (const child of root.children || []) {
+    findNodes(child, predicate, found);
+  }
+  return found;
+}
+
 function loadCandidateSourcesRuntime() {
   const code = readFileSync(resolve(process.cwd(), "addon/content/candidate-sources.js"), "utf8");
   const sandbox: any = { window: {}, URLSearchParams, console };
@@ -5092,6 +5101,117 @@ describe("workbench writeback helpers", () => {
       due: "2026-07-02",
       notes: "confirm legend"
     });
+  });
+
+  it("edits visual extraction review actions from the workbench settings panel", async () => {
+    const reportPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.md";
+    const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.json";
+    const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.csv";
+    const files = new Map<string, string>([
+      [jsonPath, JSON.stringify({
+        templateVersion: "visual-extraction-report-v2",
+        generatedAt: "2026-06-24T00:00:00.000Z",
+        collectionKey: "COL",
+        itemKey: "IMG",
+        reportPath,
+        jsonPath,
+        csvPath,
+        metadata: { title: "Visual Paper" },
+        images: [],
+        sections: [],
+        tables: [],
+        chartDataDrafts: [],
+        pixelDataDrafts: [],
+        calibrationAnchors: [],
+        chartQualityReview: { status: "reviewable-with-cautions", checks: [] },
+        chartReviewActions: [
+          {
+            queueId: "review-1",
+            actionId: "confirm-low-confidence-readings",
+            priority: "medium",
+            reviewState: "todo",
+            reviewer: "",
+            due: "",
+            notes: "",
+            checkId: "confidence",
+            status: "warning",
+            nextStep: "Confirm readings",
+            doneCriteria: "Readings confirmed",
+            detail: "high 0, medium 0, low 2, needs-review 1"
+          }
+        ],
+        evidenceLabels: [],
+        originalAnswer: ""
+      }, null, 2)]
+    ]);
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "IMG",
+      getCollections: () => [10]
+    };
+    const labels: Record<string, string> = {
+      visualReviewLoaded: "Review loaded",
+      visualReviewSaved: "Review saved",
+      visualReviewEmpty: "No actions",
+      visualReviewNoReport: "No report",
+      visualReviewLoadFailed: "Load failed",
+      visualReviewSaveFailed: "Save failed",
+      visualReviewState: "State",
+      visualReviewReviewer: "Reviewer",
+      visualReviewDue: "Due",
+      visualReviewNotes: "Notes",
+      "visualReviewState-todo": "Todo",
+      "visualReviewState-in-review": "In review",
+      "visualReviewState-done": "Done",
+      "visualReviewState-blocked": "Blocked",
+      "visualReviewState-discarded": "Discarded"
+    };
+    workbench.t = (key: string) => labels[key] || key;
+    await workbench.loadVisualReviewState();
+
+    const list = dom.elements.get("zms-visual-review-list");
+    expect(list.children).toHaveLength(1);
+    expect(dom.elements.get("zms-visual-review-status").textContent).toBe("Review loaded: 1");
+    const state = findNode(list, (node) => node.dataset?.visualReviewState === "review-1");
+    const reviewer = findNode(list, (node) => node.dataset?.visualReviewReviewer === "review-1");
+    const due = findNode(list, (node) => node.dataset?.visualReviewDue === "review-1");
+    const notes = findNode(list, (node) => node.dataset?.visualReviewNotes === "review-1");
+    state.value = "done";
+    reviewer.value = "Kagura";
+    due.value = "2026-07-03";
+    notes.value = "confirmed against source image";
+    (dom as any).querySelectorAll = (selector: string) => {
+      const keyBySelector: Record<string, string> = {
+        "[data-visual-review-state]": "visualReviewState",
+        "[data-visual-review-reviewer]": "visualReviewReviewer",
+        "[data-visual-review-due]": "visualReviewDue",
+        "[data-visual-review-notes]": "visualReviewNotes"
+      };
+      const key = keyBySelector[selector];
+      return key ? findNodes(list, (node) => node.dataset && Object.prototype.hasOwnProperty.call(node.dataset, key)) : [];
+    };
+
+    await expect(workbench.saveVisualReviewState()).resolves.toBe(true);
+
+    const parsed = JSON.parse(files.get(jsonPath) || "{}");
+    expect(parsed.chartReviewStateUpdatedAt).toMatch(/T/);
+    expect(parsed.chartReviewActions[0]).toMatchObject({
+      queueId: "review-1",
+      reviewState: "done",
+      reviewer: "Kagura",
+      due: "2026-07-03",
+      notes: "confirmed against source image"
+    });
+    expect(files.get(reportPath)).toContain("| medium | done | confirm-low-confidence-readings | confidence (warning) | Confirm readings | Readings confirmed | Kagura | 2026-07-03 | confirmed against source image | high 0, medium 0, low 2, needs-review 1 |");
+    expect(files.get(csvPath)).toContain("review-action:review-1,1,reviewState,done");
+    expect(files.get(csvPath)).toContain("review-action:review-1,1,reviewer,Kagura");
+    expect(dom.elements.get("zms-status").textContent).toContain(`Review saved: ${jsonPath}`);
   });
 
   it("marks dense point tables as dense chart-data drafts in visual extraction exports", async () => {

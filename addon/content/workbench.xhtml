@@ -93,6 +93,17 @@
           <html:button id="zms-copy-session" title="Copy the current conversation as Markdown">Copy session</html:button>
           <html:button id="zms-open-reader">Read Markdown</html:button>
         </html:div>
+        <html:section class="zms-visual-review-editor" aria-live="polite">
+          <html:div class="zms-visual-review-header">
+            <html:strong id="zms-visual-review-heading">Chart review</html:strong>
+            <html:div class="zms-visual-review-actions">
+              <html:button id="zms-load-visual-review">Load review</html:button>
+              <html:button id="zms-save-visual-review">Save review</html:button>
+            </html:div>
+          </html:div>
+          <html:p id="zms-visual-review-status" class="zms-muted">No visual report loaded.</html:p>
+          <html:div id="zms-visual-review-list" class="zms-list zms-visual-review-list"></html:div>
+        </html:section>
         <html:div id="zms-session-list" class="zms-list"></html:div>
       </html:details>
       <html:details class="zms-panel zms-settings-details" data-zms-panel="candidates">

@@ -45,6 +45,7 @@ const ZMS_CANDIDATE_EXCLUSION_REASONS = [
   "not_peer_reviewed",
   "other"
 ];
+const ZMS_VISUAL_REVIEW_STATES = ["todo", "in-review", "done", "blocked", "discarded"];
 const LOCAL_AGENT_SUBSKILLS = ["ask-gemini", "ask-claude", "ask-opencode"];
 const LOCAL_AGENT_SKILLS = {
   "ask-gemini": "ask_gemini",
@@ -162,7 +163,9 @@ var ZoteroMarkdownSummaryWorkbench = {
     candidates: [],
     candidatePath: "",
     settingsOpen: false,
-    pendingImages: []
+    pendingImages: [],
+    visualReviewReportData: null,
+    visualReviewPath: ""
   },
 
   async init() {
@@ -216,6 +219,7 @@ var ZoteroMarkdownSummaryWorkbench = {
         this.setStatus(storageError ? `${this.t("outputDirUnavailable")}: ${storageError}` : this.t("ready"));
       }
       this.renderSessions();
+      await this.loadVisualReviewState({ quiet: true });
       await this.loadCandidates({ quiet: true });
       this.queueComposerFocus();
     } catch (err) {
@@ -260,7 +264,9 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-load-models-workbench": () => this.loadModelsForWorkbench(),
       "zms-new-conversation": () => this.newConversation(),
       "zms-compact-context": () => this.compactContext({ auto: false }),
-      "zms-copy-session": () => this.copySession()
+      "zms-copy-session": () => this.copySession(),
+      "zms-load-visual-review": () => this.loadVisualReviewState(),
+      "zms-save-visual-review": () => this.saveVisualReviewState()
     };
     for (const [id, handler] of Object.entries(bindings)) {
       const element = document.getElementById(id);
@@ -516,6 +522,7 @@ var ZoteroMarkdownSummaryWorkbench = {
         await ensureDirectory(this.sessionDir());
         await this.renderSkills();
         await this.renderSessions();
+        await this.loadVisualReviewState({ quiet: true });
       }
       if (options.status !== false) this.setStatus(`${this.t("outputDirSaved")}: ${nextOutputDir}`);
       return true;
@@ -607,6 +614,9 @@ var ZoteroMarkdownSummaryWorkbench = {
     const crossReviewButton = document.getElementById("zms-start-cross-review");
     if (crossReviewButton) crossReviewButton.setAttribute("title", this.t("startCrossReviewTitle"));
     setText("zms-export-visual-report", this.t("exportVisualReport"));
+    setText("zms-visual-review-heading", this.t("visualReviewHeading"));
+    setText("zms-load-visual-review", this.t("loadVisualReview"));
+    setText("zms-save-visual-review", this.t("saveVisualReview"));
     setText("zms-export-review-draft", this.t("exportReviewDraft"));
     setText("zms-export-proposal-note", this.t("exportProposalNote"));
     setText("zms-export-journal-outline", this.t("exportJournalOutline"));
@@ -970,6 +980,88 @@ var ZoteroMarkdownSummaryWorkbench = {
       }
     } catch (_err) {
       renderEmptySessionList(list, this.t("sessionListUnavailable"));
+    }
+  },
+
+  async loadVisualReviewState(options = {}) {
+    const path = visualExtractionReportJsonPath(this.state.outputDir, this.state.item);
+    this.state.visualReviewPath = path;
+    try {
+      const data = await loadVisualExtractionReportData(path);
+      if (!data) {
+        this.state.visualReviewReportData = null;
+        this.renderVisualReviewState(this.t("visualReviewNoReport"));
+        if (!options.quiet) this.setStatus(`${this.t("visualReviewNoReport")}: ${path}`);
+        return false;
+      }
+      this.state.visualReviewReportData = data;
+      this.renderVisualReviewState();
+      if (!options.quiet) this.setStatus(`${this.t("visualReviewLoaded")}: ${data.chartReviewActions?.length || 0}`);
+      return true;
+    } catch (err) {
+      this.state.visualReviewReportData = null;
+      this.renderVisualReviewState(`${this.t("visualReviewLoadFailed")}: ${safeError(err)}`);
+      if (!options.quiet) this.setStatus(`${this.t("visualReviewLoadFailed")}: ${safeError(err)}`);
+      return false;
+    }
+  },
+
+  renderVisualReviewState(message = "") {
+    const status = document.getElementById("zms-visual-review-status");
+    const list = document.getElementById("zms-visual-review-list");
+    if (!status || !list) return;
+    const data = this.state.visualReviewReportData || {};
+    const actions = Array.isArray(data.chartReviewActions) ? data.chartReviewActions : [];
+    status.textContent = message || (actions.length
+      ? `${this.t("visualReviewLoaded")}: ${actions.length}`
+      : this.t("visualReviewEmpty"));
+    list.textContent = "";
+    if (Array.isArray(list.children)) list.children.length = 0;
+    if (!actions.length) {
+      renderEmptySessionList(list, message || this.t("visualReviewEmpty"));
+      return;
+    }
+    for (const action of actions) {
+      list.appendChild(visualReviewActionElement(action, (key) => this.t(key)));
+    }
+  },
+
+  async saveVisualReviewState() {
+    try {
+      const path = this.state.visualReviewPath || visualExtractionReportJsonPath(this.state.outputDir, this.state.item);
+      let data = this.state.visualReviewReportData || await loadVisualExtractionReportData(path);
+      if (!data) {
+        this.setStatus(`${this.t("visualReviewNoReport")}: ${path}`);
+        return false;
+      }
+      const updates = visualReviewActionUpdateMapFromDom();
+      const actions = applyVisualReviewActionUpdates(data.chartReviewActions || [], updates);
+      const now = new Date().toISOString();
+      data = {
+        ...data,
+        chartReviewActions: actions,
+        chartReviewStateUpdatedAt: now
+      };
+      await writeTextAtomic(path, renderVisualExtractionReportJson(data), `${path}.${Date.now()}.tmp`);
+      if (data.reportPath) {
+        await writeTextAtomic(data.reportPath, renderVisualExtractionReportMarkdownFromData(data, {
+          outputLanguage: this.state.outputLanguage,
+          reportPath: data.reportPath,
+          jsonPath: path,
+          csvPath: data.csvPath || ""
+        }), `${data.reportPath}.${Date.now()}.tmp`);
+      }
+      if (data.csvPath) {
+        await writeTextAtomic(data.csvPath, renderVisualExtractionReportCsv(data), `${data.csvPath}.${Date.now()}.tmp`);
+      }
+      this.state.visualReviewReportData = data;
+      this.state.visualReviewPath = path;
+      this.renderVisualReviewState();
+      this.setStatus(`${this.t("visualReviewSaved")}: ${path}`);
+      return true;
+    } catch (err) {
+      this.setStatus(`${this.t("visualReviewSaveFailed")}: ${safeError(err)}`);
+      return false;
     }
   },
 
@@ -1805,6 +1897,9 @@ var ZoteroMarkdownSummaryWorkbench = {
       await writeTextAtomic(reportPath, renderVisualExtractionReportMarkdownFromData(reportData, options), `${reportPath}.${Date.now()}.tmp`);
       await writeTextAtomic(jsonPath, renderVisualExtractionReportJson(reportData), `${jsonPath}.${Date.now()}.tmp`);
       await writeTextAtomic(csvPath, renderVisualExtractionReportCsv(reportData), `${csvPath}.${Date.now()}.tmp`);
+      this.state.visualReviewReportData = reportData;
+      this.state.visualReviewPath = jsonPath;
+      this.renderVisualReviewState();
       this.setStatus(`${this.t("visualReportDone")}: ${reportPath}`);
     } catch (err) {
       this.setStatus(`${this.t("visualReportFailed")}: ${safeError(err)}`);
@@ -7427,6 +7522,135 @@ function visualExtractionChartReviewActionQueueKey(action) {
   return mdText(action?.queueId || "").toLowerCase();
 }
 
+function visualReviewActionElement(action, translate = (key) => key) {
+  const queueId = mdText(action?.queueId || "");
+  const article = document.createElement("article");
+  article.className = "zms-visual-review-item";
+  article.dataset.visualReviewQueue = queueId;
+
+  const title = document.createElement("div");
+  title.className = "zms-visual-review-title";
+  title.textContent = [
+    queueId,
+    action?.priority || "",
+    action?.actionId || "",
+    action?.checkId ? `${action.checkId}${action.status ? ` (${action.status})` : ""}` : ""
+  ].filter(Boolean).join(" · ");
+
+  const grid = document.createElement("div");
+  grid.className = "zms-visual-review-grid";
+  appendVisualReviewControl(grid, translate("visualReviewState"), visualReviewStateSelect(action, translate));
+  appendVisualReviewControl(grid, translate("visualReviewReviewer"), visualReviewInput(action, "reviewer", "text", "visualReviewReviewer"));
+  appendVisualReviewControl(grid, translate("visualReviewDue"), visualReviewInput(action, "due", "date", "visualReviewDue"));
+  appendVisualReviewControl(grid, translate("visualReviewNotes"), visualReviewTextarea(action));
+
+  const detail = document.createElement("div");
+  detail.className = "zms-visual-review-detail";
+  detail.textContent = [action?.nextStep, action?.doneCriteria, action?.detail].filter(Boolean).join(" · ");
+  grid.appendChild(detail);
+
+  article.append(title, grid);
+  return article;
+}
+
+function appendVisualReviewControl(grid, labelText, control) {
+  const label = document.createElement("label");
+  label.textContent = labelText;
+  grid.append(label, control);
+}
+
+function visualReviewStateSelect(action, translate = (key) => key) {
+  const select = document.createElement("select");
+  select.dataset.visualReviewState = mdText(action?.queueId || "");
+  const selectedState = normalizeVisualReviewState(action?.reviewState || "todo");
+  for (const state of ZMS_VISUAL_REVIEW_STATES) {
+    const option = document.createElement("option");
+    option.value = state;
+    option.textContent = translate(`visualReviewState-${state}`) || state;
+    option.selected = state === selectedState;
+    select.appendChild(option);
+  }
+  select.value = selectedState;
+  return select;
+}
+
+function visualReviewInput(action, field, type, datasetKey) {
+  const input = document.createElement("input");
+  input.type = type;
+  input.value = mdText(action?.[field] || "");
+  input.dataset[datasetKey] = mdText(action?.queueId || "");
+  return input;
+}
+
+function visualReviewTextarea(action) {
+  const textarea = document.createElement("textarea");
+  textarea.value = mdText(action?.notes || "");
+  textarea.placeholder = "";
+  textarea.dataset.visualReviewNotes = mdText(action?.queueId || "");
+  return textarea;
+}
+
+function visualReviewActionUpdateMapFromDom() {
+  if (typeof document === "undefined") return {};
+  const updates = {};
+  for (const element of document.querySelectorAll("[data-visual-review-state]")) {
+    const queueId = element.dataset?.visualReviewState || "";
+    if (!queueId) continue;
+    updates[queueId] = {
+      ...(updates[queueId] || {}),
+      reviewState: normalizeVisualReviewState(element.value)
+    };
+  }
+  for (const element of document.querySelectorAll("[data-visual-review-reviewer]")) {
+    const queueId = element.dataset?.visualReviewReviewer || "";
+    if (!queueId) continue;
+    updates[queueId] = {
+      ...(updates[queueId] || {}),
+      reviewer: mdText(element.value || "")
+    };
+  }
+  for (const element of document.querySelectorAll("[data-visual-review-due]")) {
+    const queueId = element.dataset?.visualReviewDue || "";
+    if (!queueId) continue;
+    updates[queueId] = {
+      ...(updates[queueId] || {}),
+      due: mdText(element.value || "")
+    };
+  }
+  for (const element of document.querySelectorAll("[data-visual-review-notes]")) {
+    const queueId = element.dataset?.visualReviewNotes || "";
+    if (!queueId) continue;
+    updates[queueId] = {
+      ...(updates[queueId] || {}),
+      notes: mdText(element.value || "")
+    };
+  }
+  return updates;
+}
+
+function applyVisualReviewActionUpdates(actions, updates) {
+  return (actions || []).map((action) => {
+    const queueId = mdText(action?.queueId || "");
+    const update = queueId ? updates?.[queueId] : null;
+    if (!update) return action;
+    return {
+      ...action,
+      reviewState: normalizeVisualReviewState(update.reviewState || action.reviewState || "todo"),
+      reviewer: mdText(update.reviewer ?? action.reviewer ?? ""),
+      due: mdText(update.due ?? action.due ?? ""),
+      notes: mdText(update.notes ?? action.notes ?? "")
+    };
+  });
+}
+
+function normalizeVisualReviewState(value) {
+  const normalized = mdText(value || "").toLowerCase();
+  if (normalized === "in_review" || normalized === "in review" || normalized === "reviewing") return "in-review";
+  if (normalized === "complete" || normalized === "completed") return "done";
+  if (ZMS_VISUAL_REVIEW_STATES.includes(normalized)) return normalized;
+  return "todo";
+}
+
 function visualExtractionChartReviewActionForCheck(check, labels) {
   const id = mdText(check?.id || "");
   const status = mdText(check?.status || "");
@@ -11369,13 +11593,18 @@ async function appendImportLedgerEntries(path, entries) {
 }
 
 async function loadPreviousVisualExtractionChartReviewActions(path) {
+  const data = await loadVisualExtractionReportData(path);
+  return Array.isArray(data?.chartReviewActions) ? data.chartReviewActions : [];
+}
+
+async function loadVisualExtractionReportData(path) {
   const text = await readTextIfExists(path);
-  if (!text.trim()) return [];
+  if (!text.trim()) return null;
   try {
     const data = JSON.parse(text);
-    return Array.isArray(data?.chartReviewActions) ? data.chartReviewActions : [];
+    return data && typeof data === "object" && !Array.isArray(data) ? data : null;
   } catch (_err) {
-    return [];
+    return null;
   }
 }
 

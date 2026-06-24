@@ -22,7 +22,11 @@
 
 .zms-outputDir-control {
   max-width: 58em;
-  width: 58em;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(18em, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
 }
 
 #zms-outputDir.zms-outputDir-field {
@@ -33,7 +37,8 @@
 
 .zms-outputDir-button {
   min-width: 6.5em;
-  margin-left: 6px;
+  margin-left: 0;
+  white-space: nowrap;
 }
 
 .zms-json {

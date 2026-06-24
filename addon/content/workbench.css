@@ -212,6 +212,90 @@
   text-overflow: ellipsis;
 }
 
+.zms-visual-review-editor {
+  margin: 10px;
+  padding: 10px;
+  border: 1px solid #e2e7ed;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.zms-visual-review-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.zms-visual-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.zms-visual-review-actions button {
+  min-height: 27px;
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+
+.zms-visual-review-list {
+  display: grid;
+  gap: 8px;
+}
+
+.zms-visual-review-item {
+  padding: 8px;
+  border: 1px solid #d8dee5;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.zms-visual-review-title {
+  margin-bottom: 7px;
+  color: #263241;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.zms-visual-review-grid {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.zms-visual-review-grid label {
+  margin: 0;
+  color: #59687a;
+  font-size: 11px;
+}
+
+.zms-visual-review-grid input,
+.zms-visual-review-grid select,
+.zms-visual-review-grid textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+.zms-visual-review-grid textarea {
+  min-height: 52px;
+  resize: vertical;
+}
+
+.zms-visual-review-detail {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  color: #687687;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .zms-chat {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
