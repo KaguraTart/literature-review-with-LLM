@@ -5947,9 +5947,11 @@ function visualExtractionReportData(payload, options = {}) {
   const images = Array.isArray(user?.images) ? user.images : [];
   const chartDataDrafts = visualExtractionChartDataDrafts(answer, tables, images);
   const pixelDataDrafts = visualExtractionPixelDataDrafts(answer, tables, images);
+  const calibrationAnchors = visualExtractionCalibrationAnchors(answer, tables, pixelDataDrafts, images);
   const chartQualityReview = visualExtractionChartQualityReview(chartDataDrafts, pixelDataDrafts, {
     evidenceLabels,
-    images
+    images,
+    calibrationAnchors
   });
   return {
     templateVersion: "visual-extraction-report-v2",
@@ -5977,6 +5979,7 @@ function visualExtractionReportData(payload, options = {}) {
     tables,
     chartDataDrafts,
     pixelDataDrafts,
+    calibrationAnchors,
     chartQualityReview,
     evidenceLabels,
     originalAnswer: answer || "",
@@ -5991,11 +5994,13 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
   const tables = Array.isArray(data?.tables) ? data.tables : [];
   const chartDataDrafts = Array.isArray(data?.chartDataDrafts) ? data.chartDataDrafts : [];
   const pixelDataDrafts = Array.isArray(data?.pixelDataDrafts) ? data.pixelDataDrafts : [];
+  const calibrationAnchors = Array.isArray(data?.calibrationAnchors) ? data.calibrationAnchors : [];
   const chartQualityReview = data?.chartQualityReview || visualExtractionChartQualityReview(chartDataDrafts, pixelDataDrafts, {
     evidenceLabels: data?.evidenceLabels || [],
-    images
+    images,
+    calibrationAnchors
   });
-  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts);
+  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors);
   const imageInventory = images.length
     ? [
       `| ${labels.imageName} | ${labels.imageType} | ${labels.imageSize} | ${labels.localOcr} |`,
@@ -6019,6 +6024,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `reconstructedTableCount: ${tables.length}`,
     `chartDataDraftCount: ${chartDataDrafts.length}`,
     `pixelDataDraftCount: ${pixelDataDrafts.length}`,
+    `calibrationAnchorCount: ${calibrationAnchors.length}`,
     `chartQualityStatus: ${yamlScalar(chartQualityReview.status || "")}`,
     `chartQualityIssueCount: ${Number(chartQualityReview.issueCount) || 0}`,
     `reconstructedDataRowCount: ${reconstructedRows.length}`,
@@ -6053,6 +6059,10 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `## ${labels.pixelDataDrafts}`,
     "",
     pixelDataDrafts.length ? visualExtractionPixelDataDraftsMarkdown(pixelDataDrafts, labels) : `- ${labels.noPixelDataDrafts}`,
+    "",
+    `## ${labels.calibrationAnchors}`,
+    "",
+    calibrationAnchors.length ? visualExtractionCalibrationAnchorsMarkdown(calibrationAnchors, labels) : `- ${labels.noCalibrationAnchors}`,
     "",
     `## ${labels.chartQualityReview}`,
     "",
@@ -6092,7 +6102,12 @@ function renderVisualExtractionReportJson(data) {
 }
 
 function renderVisualExtractionReportCsv(data) {
-  const rows = visualExtractionStructuredRows(data?.tables || [], data?.chartDataDrafts || [], data?.pixelDataDrafts || []);
+  const rows = visualExtractionStructuredRows(
+    data?.tables || [],
+    data?.chartDataDrafts || [],
+    data?.pixelDataDrafts || [],
+    data?.calibrationAnchors || []
+  );
   const header = ["tableIndex", "rowIndex", "column", "value", "evidenceLabels", "sourceAssistantMessageId", "imageNames"];
   const imageNames = (data?.images || []).map((image) => image.name).filter(Boolean).join("; ");
   const lines = [header.map(csvCell).join(",")];
@@ -6283,7 +6298,7 @@ function visualExtractionDataRow(columns, cells) {
   return row;
 }
 
-function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataDrafts = []) {
+function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataDrafts = [], calibrationAnchors = []) {
   const rows = [];
   for (const table of tables || []) {
     for (const [rowIndex, row] of (table.rows || []).entries()) {
@@ -6352,6 +6367,26 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
         if (value === "") continue;
         rows.push({ ...base, column, value: mdText(value) });
       }
+    }
+  }
+  for (const [anchorIndex, anchor] of (calibrationAnchors || []).entries()) {
+    const anchorLabel = `calibration:${anchor.calibrationIndex || anchorIndex + 1}`;
+    const base = {
+      tableIndex: anchorLabel,
+      rowIndex: anchorIndex + 1,
+      evidenceLabels: anchor.evidenceLabels || []
+    };
+    for (const [column, value] of [
+      ["source", anchor.source || ""],
+      ["axis", anchor.axis || ""],
+      ["pixel", anchor.pixel === null || anchor.pixel === undefined ? "" : anchor.pixel],
+      ["value", anchor.value || ""],
+      ["unit", anchor.unit || ""],
+      ["confidence", anchor.confidence || ""],
+      ["basis", anchor.basis || ""]
+    ]) {
+      if (value === "") continue;
+      rows.push({ ...base, column, value: mdText(value) });
     }
   }
   return rows.filter((row) => row.value);
@@ -6562,6 +6597,61 @@ function visualExtractionPixelDraftImageName(images = []) {
   return (images || []).map((image) => image?.name).filter(Boolean).join("; ");
 }
 
+function visualExtractionCalibrationAnchors(_answer, tables = [], _pixelDataDrafts = [], images = []) {
+  const anchors = [];
+  for (const table of tables || []) {
+    for (const anchor of visualExtractionCalibrationAnchorsFromTable(table, images)) {
+      anchors.push({ ...anchor, calibrationIndex: anchors.length + 1 });
+    }
+  }
+  return anchors.slice(0, 80);
+}
+
+function visualExtractionCalibrationAnchorsFromTable(table, images = []) {
+  const rows = Array.isArray(table?.rows) ? table.rows : [];
+  if (!rows.length) return [];
+  const columns = Array.isArray(table?.columns) ? table.columns : [];
+  const axisColumn = visualExtractionFindColumn(columns, [
+    /^(axis|axis\s*name|coordinate\s*axis|坐标轴|座標軸|轴|軸)$/i
+  ]);
+  const pixelColumn = visualExtractionFindColumn(columns, [
+    /^(pixel|pixel\s*position|pixel\s*anchor|px|image\s*pixel|像素|像素位置|像素锚点|像素錨點)$/i
+  ]);
+  const valueColumn = visualExtractionFindColumn(columns, [
+    /^(value|axis\s*value|tick|tick\s*value|data\s*value|anchor\s*value|值|轴值|軸値|刻度|刻度值|锚点值|錨點值)$/i
+  ]);
+  if (!axisColumn || !pixelColumn || !valueColumn) return [];
+  const unitColumn = visualExtractionFindColumn(columns, [/^(unit|units|单位|單位)$/i]);
+  const confidenceColumn = visualExtractionFindColumn(columns, [/^(confidence|置信度|certainty|可靠性)$/i]);
+  const sourceColumn = visualExtractionFindColumn(columns, [/^(source|来源|來源|evidence|证据|證據|basis|依据|依據)$/i]);
+  const notesColumn = visualExtractionFindColumn(columns, [/^(note|notes|备注|備註|说明|說明)$/i]);
+  return rows.map((row) => {
+    const axis = visualExtractionAxisName(row[axisColumn]);
+    const pixel = visualExtractionNumber(row[pixelColumn] || "");
+    const value = mdText(row[valueColumn] || "");
+    const basis = mdText([row[sourceColumn], row[notesColumn]].filter(Boolean).join(" · "));
+    return {
+      source: "axis-calibration-table",
+      tableIndex: table.tableIndex,
+      imageName: visualExtractionPixelDraftImageName(images),
+      axis,
+      pixel,
+      value,
+      unit: mdText(row[unitColumn] || ""),
+      confidence: visualExtractionConfidence(row[confidenceColumn] || row[sourceColumn] || ""),
+      basis,
+      evidenceLabels: visualExtractionEvidenceLabels(Object.values(row).join(" "))
+    };
+  }).filter((anchor) => anchor.axis && anchor.pixel !== null && anchor.value);
+}
+
+function visualExtractionAxisName(value) {
+  const text = mdText(value);
+  if (/^(x|x[-_\s]?axis|axis\s*x)$/i.test(text) || /横轴|橫軸|横坐标|橫座標|水平/.test(text)) return "X";
+  if (/^(y|y[-_\s]?axis|axis\s*y)$/i.test(text) || /纵轴|縱軸|纵坐标|縱座標|垂直/.test(text)) return "Y";
+  return text;
+}
+
 function visualExtractionNumericTextPoints(text) {
   return String(text || "").split(/\r?\n/)
     .map((line) => mdText(line.replace(/^[-*]\s*/, "")))
@@ -6688,13 +6778,35 @@ function visualExtractionPixelDataDraftsMarkdown(drafts, labels) {
   return lines.join("\n");
 }
 
+function visualExtractionCalibrationAnchorsMarkdown(anchors, labels) {
+  const lines = [
+    `| ${labels.anchor} | ${labels.source} | ${labels.axis} | ${labels.pixelPosition} | ${labels.axisValue} | ${labels.unit} | ${labels.confidence} | ${labels.evidenceLabels} |`,
+    "| --- | --- | --- | ---: | --- | --- | --- | --- |"
+  ];
+  for (const anchor of anchors || []) {
+    lines.push([
+      anchor.calibrationIndex || "",
+      markdownTableCell(anchor.source || ""),
+      markdownTableCell(anchor.axis || ""),
+      anchor.pixel === null || anchor.pixel === undefined ? "" : anchor.pixel,
+      markdownTableCell(anchor.value || ""),
+      markdownTableCell(anchor.unit || ""),
+      markdownTableCell(anchor.confidence || ""),
+      markdownTableCell((anchor.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+  }
+  return lines.join("\n");
+}
+
 function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDrafts = [], options = {}) {
   const chartPoints = (chartDataDrafts || []).flatMap((draft) => draft?.points || []);
   const pixelPoints = (pixelDataDrafts || []).flatMap((draft) => draft?.points || []);
+  const calibrationAnchors = Array.isArray(options.calibrationAnchors) ? options.calibrationAnchors : [];
   const evidenceLabels = Array.from(new Set([
     ...(options.evidenceLabels || []),
     ...(chartDataDrafts || []).flatMap((draft) => draft?.evidenceLabels || []),
     ...(pixelDataDrafts || []).flatMap((draft) => draft?.evidenceLabels || []),
+    ...calibrationAnchors.flatMap((anchor) => anchor?.evidenceLabels || []),
     ...chartPoints.flatMap((point) => point?.evidenceLabels || []),
     ...pixelPoints.flatMap((point) => point?.evidenceLabels || [])
   ]));
@@ -6709,7 +6821,7 @@ function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDraft
       pixelPoints.length ? "pass" : "warning",
       pixelPoints.length ? `pixel points: ${pixelPoints.length}` : "no pixel-coordinate points parsed"
     ),
-    visualExtractionAxisCalibrationCheck(pixelPoints),
+    visualExtractionAxisCalibrationCheck(pixelPoints, calibrationAnchors),
     visualExtractionConfidenceCheck([...chartPoints, ...pixelPoints]),
     visualExtractionEvidenceCheck(evidenceLabels),
     visualExtractionPointCountCheck(chartPoints.length + pixelPoints.length)
@@ -6739,7 +6851,21 @@ function visualExtractionQualityCheck(id, status, detail) {
   return { id, status, detail: mdText(detail || "") };
 }
 
-function visualExtractionAxisCalibrationCheck(pixelPoints = []) {
+function visualExtractionAxisCalibrationCheck(pixelPoints = [], calibrationAnchors = []) {
+  const anchors = (calibrationAnchors || []).filter((anchor) =>
+    mdText(anchor?.axis || "")
+    && anchor?.pixel !== null
+    && anchor?.pixel !== undefined
+    && mdText(anchor?.value || "")
+  );
+  const xAnchors = anchors.filter((anchor) => /^x$/i.test(mdText(anchor.axis)));
+  const yAnchors = anchors.filter((anchor) => /^y$/i.test(mdText(anchor.axis)));
+  if (xAnchors.length >= 2 && yAnchors.length >= 2) {
+    return visualExtractionQualityCheck("axis-calibration", "pass", `calibration anchors present: X ${xAnchors.length}, Y ${yAnchors.length}`);
+  }
+  if (anchors.length) {
+    return visualExtractionQualityCheck("axis-calibration", "warning", `partial calibration anchors: X ${xAnchors.length}, Y ${yAnchors.length}`);
+  }
   if (!pixelPoints.length) return visualExtractionQualityCheck("axis-calibration", "warning", "no pixel points available for axis calibration");
   const calibrated = pixelPoints.filter((point) =>
     point?.pixelX !== null
@@ -6885,11 +7011,16 @@ function visualExtractionReportLabels(outputLanguage) {
       noTables: "未检测到 Markdown 表格；如原图含图表数据，请人工复核或重新使用图表解析模板提问。",
       chartDataDrafts: "图表数据草稿",
       pixelDataDrafts: "像素/坐标数据草稿",
+      calibrationAnchors: "坐标轴校准锚点",
       chart: "图表",
       pixelDraft: "像素草稿",
+      anchor: "锚点",
       source: "来源",
       xAxis: "X 轴/项目",
       yAxis: "Y 轴/数值",
+      axis: "坐标轴",
+      pixelPosition: "像素位置",
+      axisValue: "轴值",
       series: "系列",
       pointCount: "点数",
       reviewStatus: "复核状态",
@@ -6904,6 +7035,7 @@ function visualExtractionReportLabels(outputLanguage) {
       confidence: "置信度",
       noChartDataDrafts: "未能从重建表格、可校正 OCR 或回答文本中抽取图表数据草稿；需要人工放大原图或重新提问。",
       noPixelDataDrafts: "未能从回答中抽取像素/坐标数据草稿；需要使用多模态模型重新输出 Pixel X、Pixel Y、轴值和置信度。",
+      noCalibrationAnchors: "未检测到坐标轴校准锚点表；如需后续量化复用，请让模型补充 Axis、Pixel、Value、Unit、Source 和 Confidence。",
       chartQualityReview: "图表数据质量审阅",
       qualityStatus: "质量状态",
       qualityScore: "质量分",
@@ -6965,11 +7097,16 @@ function visualExtractionReportLabels(outputLanguage) {
     noTables: "No Markdown table was detected. If the image contains chart data, verify manually or ask again with the figure/table extractor.",
     chartDataDrafts: "Chart Data Drafts",
     pixelDataDrafts: "Pixel / Coordinate Data Drafts",
+    calibrationAnchors: "Axis Calibration Anchors",
     chart: "Chart",
     pixelDraft: "Pixel draft",
+    anchor: "Anchor",
     source: "Source",
     xAxis: "X axis / item",
     yAxis: "Y axis / value",
+    axis: "Axis",
+    pixelPosition: "Pixel position",
+    axisValue: "Axis value",
     series: "Series",
     pointCount: "Points",
     reviewStatus: "Review status",
@@ -6984,6 +7121,7 @@ function visualExtractionReportLabels(outputLanguage) {
     confidence: "Confidence",
     noChartDataDrafts: "No chart data draft could be extracted from reconstructed tables, editable OCR, or answer text; zoom the original image or ask again.",
     noPixelDataDrafts: "No pixel / coordinate data draft could be extracted; ask a multimodal model to return Pixel X, Pixel Y, axis values, and confidence.",
+    noCalibrationAnchors: "No axis calibration anchor table was detected. For reusable quantitative exports, ask for Axis, Pixel, Value, Unit, Source, and Confidence.",
     chartQualityReview: "Chart Data Quality Review",
     qualityStatus: "Quality status",
     qualityScore: "Quality score",
@@ -7204,12 +7342,12 @@ function builtInSkillTemplate(skillId, outputLanguage) {
 
 function figureTableTemplate(common, outputLanguage) {
   if (outputLanguage === "zh-CN") {
-    return `${common}\n\n请结构化解析论文中的截图、图表、表格、公式截图或实验结果。优先结合图片附件、PDF/摘要上下文和用户问题；若没有图片附件，则只从文本上下文中抽取。输出 Markdown，并固定使用以下章节：\n\n## 对象识别\n- 类型：图、表、流程图、公式截图、实验结果、消融结果或其他。\n- 所属位置：如果能判断，写 Figure/Table 编号、标题、页码或上下文证据。\n- 研究作用：这张图/表在论文中承担的问题、方法、实验或结论角色。\n\n## 视觉 OCR 文本\n- 逐项转录能看清的标题、坐标轴、图例、表头、指标、数据集、模型名、公式符号和关键数值。\n- 看不清的内容写 [illegible]；可能识别错的内容标注 低置信度。\n- 保留原始单位、大小写、缩写和符号，不要自动改写。\n\n## 表格/数据重建\n- 如果图片中有表格或可读数值，用 Markdown 表格重建：字段至少包括 项目、数值/文本、单位、来源、置信度、备注。\n- 如果是折线图、柱状图或散点图，只重建能可靠读出的点或区间，并写明坐标轴、图例和读数依据。\n- 如果无法可靠重建，明确写“无法可靠重建”，不要补不存在的数据。\n\n## 像素/坐标数据草稿\n- 若图中有折线、柱状或散点，请在可见范围内给出可复核的 Markdown 表格，字段包括 Series、Point、Pixel X、Pixel Y、Axis X、Axis Y、Confidence、Source、Notes。\n- Pixel X/Y 是图像中的估计像素位置；Axis X/Y 是按坐标轴读出的数据值。读不准时留空或标低置信度。\n- 只输出能从图像直接观察或明确估计的点，不要为了凑完整曲线而补点。\n\n## 结论与证据映射\n- 解释图/表想证明什么，以及它如何支持或限制论文主张。\n- 每条解释都标注证据来源：[image]、[metadata]、[abstract] 或 [chunk:<id>]。\n- 区分图片直接观察、文本上下文推断和低置信度判断。\n\n## 综述/复现可复用信息\n- 给出适合写进文献综述、实验对比、方法复现或后续问题的要点。\n- 明确可比较指标、实验条件、baseline、公平性风险和需要补查的原文位置。\n\n## 不确定性与复核清单\n- 列出模糊、遮挡、缺少上下文、模型无法可靠识别、需要人工放大或回到 PDF 原图核对的部分。\n\n不要编造看不清的数字；不要把文本上下文推断伪装成图片观察。`;
+    return `${common}\n\n请结构化解析论文中的截图、图表、表格、公式截图或实验结果。优先结合图片附件、PDF/摘要上下文和用户问题；若没有图片附件，则只从文本上下文中抽取。输出 Markdown，并固定使用以下章节：\n\n## 对象识别\n- 类型：图、表、流程图、公式截图、实验结果、消融结果或其他。\n- 所属位置：如果能判断，写 Figure/Table 编号、标题、页码或上下文证据。\n- 研究作用：这张图/表在论文中承担的问题、方法、实验或结论角色。\n\n## 视觉 OCR 文本\n- 逐项转录能看清的标题、坐标轴、图例、表头、指标、数据集、模型名、公式符号和关键数值。\n- 看不清的内容写 [illegible]；可能识别错的内容标注 低置信度。\n- 保留原始单位、大小写、缩写和符号，不要自动改写。\n\n## 表格/数据重建\n- 如果图片中有表格或可读数值，用 Markdown 表格重建：字段至少包括 项目、数值/文本、单位、来源、置信度、备注。\n- 如果是折线图、柱状图或散点图，只重建能可靠读出的点或区间，并写明坐标轴、图例和读数依据。\n- 如果无法可靠重建，明确写“无法可靠重建”，不要补不存在的数据。\n\n## 像素/坐标数据草稿\n- 若图中有折线、柱状或散点，请在可见范围内给出可复核的 Markdown 表格，字段包括 Series、Point、Pixel X、Pixel Y、Axis X、Axis Y、Confidence、Source、Notes。\n- Pixel X/Y 是图像中的估计像素位置；Axis X/Y 是按坐标轴读出的数据值。读不准时留空或标低置信度。\n- 只输出能从图像直接观察或明确估计的点，不要为了凑完整曲线而补点。\n\n## 坐标轴校准锚点\n- 如果图表有 X/Y 坐标轴，请给出用于校准的可见刻度锚点表，字段包括 Axis、Pixel、Value、Unit、Source、Confidence、Notes。\n- 每个坐标轴至少输出两个清晰锚点；如果看不清刻度，明确写无法可靠校准。\n\n## 结论与证据映射\n- 解释图/表想证明什么，以及它如何支持或限制论文主张。\n- 每条解释都标注证据来源：[image]、[metadata]、[abstract] 或 [chunk:<id>]。\n- 区分图片直接观察、文本上下文推断和低置信度判断。\n\n## 综述/复现可复用信息\n- 给出适合写进文献综述、实验对比、方法复现或后续问题的要点。\n- 明确可比较指标、实验条件、baseline、公平性风险和需要补查的原文位置。\n\n## 不确定性与复核清单\n- 列出模糊、遮挡、缺少上下文、模型无法可靠识别、需要人工放大或回到 PDF 原图核对的部分。\n\n不要编造看不清的数字；不要把文本上下文推断伪装成图片观察。`;
   }
   if (outputLanguage === "ja-JP") {
-    return `${common}\n\n論文中のスクリーンショット、図、表、数式画像、実験結果を構造化して解析してください。画像添付、PDF/要約コンテキスト、ユーザー質問を優先し、画像がない場合はテキスト根拠だけで抽出してください。Markdown で次の章を固定して使ってください: 対象識別、視覚 OCR テキスト、表/データ再構成、ピクセル/座標データ下書き、結論と根拠マッピング、レビュー/再現に使える情報、不確実性と確認リスト。読めない数値は [illegible] とし、推測しないでください。表や数値は、項目、値/テキスト、単位、出典、信頼度、備考を持つ Markdown 表として再構成してください。グラフでは可能な場合だけ Series、Point、Pixel X、Pixel Y、Axis X、Axis Y、Confidence、Source、Notes を持つ表を追加してください。各解釈には [image]、[metadata]、[abstract]、[chunk:<id>] の根拠を付け、画像観察、テキスト推論、低信頼判断を区別してください。`;
+    return `${common}\n\n論文中のスクリーンショット、図、表、数式画像、実験結果を構造化して解析してください。画像添付、PDF/要約コンテキスト、ユーザー質問を優先し、画像がない場合はテキスト根拠だけで抽出してください。Markdown で次の章を固定して使ってください: 対象識別、視覚 OCR テキスト、表/データ再構成、ピクセル/座標データ下書き、座標軸キャリブレーションアンカー、結論と根拠マッピング、レビュー/再現に使える情報、不確実性と確認リスト。読めない数値は [illegible] とし、推測しないでください。表や数値は、項目、値/テキスト、単位、出典、信頼度、備考を持つ Markdown 表として再構成してください。グラフでは可能な場合だけ Series、Point、Pixel X、Pixel Y、Axis X、Axis Y、Confidence、Source、Notes を持つ表を追加し、X/Y 軸ごとに少なくとも 2 つの Axis、Pixel、Value、Unit、Source、Confidence アンカーを追加してください。各解釈には [image]、[metadata]、[abstract]、[chunk:<id>] の根拠を付け、画像観察、テキスト推論、低信頼判断を区別してください。`;
   }
-  return `${common}\n\nExtract structured information from screenshots, figures, tables, formula captures, or experimental-result panels. Prefer attached images plus the provided paper/PDF context and the user question; if no image is attached, extract only from the text context. Use Markdown with these exact sections:\n\n## Object Identification\n- Type: figure, table, flow chart, formula capture, experiment result, ablation result, or other.\n- Location: Figure/Table number, title, page, or contextual evidence when available.\n- Research role: problem, method, experiment, or conclusion role in the paper.\n\n## Visual OCR Text\n- Transcribe readable titles, axes, legends, headers, metrics, datasets, model names, formula symbols, and key numbers.\n- Write [illegible] for unreadable content and mark uncertain recognition as low-confidence.\n- Preserve original units, capitalization, abbreviations, and symbols.\n\n## Reconstructed Data Table\n- For tables or readable numbers, reconstruct a Markdown table with at least: Item, Value/Text, Unit, Source, Confidence, Notes.\n- For line/bar/scatter charts, reconstruct only reliably readable points or ranges, and state the axis, legend, and reading basis.\n- If reconstruction is unreliable, say so explicitly instead of filling missing values.\n\n## Pixel / Coordinate Data Draft\n- For visible line, bar, or scatter charts, add a reviewable Markdown table when possible with: Series, Point, Pixel X, Pixel Y, Axis X, Axis Y, Confidence, Source, Notes.\n- Pixel X/Y are estimated image coordinates; Axis X/Y are values read from the chart scale. Leave fields blank or mark low-confidence when unsure.\n- Include only directly visible or explicitly estimated points; do not fabricate a complete series.\n\n## Interpretation And Evidence Map\n- Explain what the visual tries to prove and how it supports or limits the paper's claims.\n- Mark every interpretation with [image], [metadata], [abstract], or [chunk:<id>].\n- Separate direct visual observation, text-context inference, and low-confidence judgment.\n\n## Reusable Review Or Reproduction Notes\n- Extract points useful for a literature review, experiment comparison, method reproduction, or follow-up question.\n- Call out comparable metrics, experimental conditions, baselines, fairness risks, and original-PDF locations to verify.\n\n## Uncertainty And Review Checklist\n- List blur, occlusion, missing context, unreliable recognition, and items that need manual zooming or checking against the original PDF.\n\nDo not invent unreadable numbers, and do not present text-context inference as direct image observation.`;
+  return `${common}\n\nExtract structured information from screenshots, figures, tables, formula captures, or experimental-result panels. Prefer attached images plus the provided paper/PDF context and the user question; if no image is attached, extract only from the text context. Use Markdown with these exact sections:\n\n## Object Identification\n- Type: figure, table, flow chart, formula capture, experiment result, ablation result, or other.\n- Location: Figure/Table number, title, page, or contextual evidence when available.\n- Research role: problem, method, experiment, or conclusion role in the paper.\n\n## Visual OCR Text\n- Transcribe readable titles, axes, legends, headers, metrics, datasets, model names, formula symbols, and key numbers.\n- Write [illegible] for unreadable content and mark uncertain recognition as low-confidence.\n- Preserve original units, capitalization, abbreviations, and symbols.\n\n## Reconstructed Data Table\n- For tables or readable numbers, reconstruct a Markdown table with at least: Item, Value/Text, Unit, Source, Confidence, Notes.\n- For line/bar/scatter charts, reconstruct only reliably readable points or ranges, and state the axis, legend, and reading basis.\n- If reconstruction is unreliable, say so explicitly instead of filling missing values.\n\n## Pixel / Coordinate Data Draft\n- For visible line, bar, or scatter charts, add a reviewable Markdown table when possible with: Series, Point, Pixel X, Pixel Y, Axis X, Axis Y, Confidence, Source, Notes.\n- Pixel X/Y are estimated image coordinates; Axis X/Y are values read from the chart scale. Leave fields blank or mark low-confidence when unsure.\n- Include only directly visible or explicitly estimated points; do not fabricate a complete series.\n\n## Axis Calibration Anchors\n- For charts with X/Y axes, add a visible tick-anchor table with: Axis, Pixel, Value, Unit, Source, Confidence, Notes.\n- Provide at least two clear anchors per axis when readable; if the ticks are unreadable, state that calibration is unreliable.\n\n## Interpretation And Evidence Map\n- Explain what the visual tries to prove and how it supports or limits the paper's claims.\n- Mark every interpretation with [image], [metadata], [abstract], or [chunk:<id>].\n- Separate direct visual observation, text-context inference, and low-confidence judgment.\n\n## Reusable Review Or Reproduction Notes\n- Extract points useful for a literature review, experiment comparison, method reproduction, or follow-up question.\n- Call out comparable metrics, experimental conditions, baselines, fairness risks, and original-PDF locations to verify.\n\n## Uncertainty And Review Checklist\n- List blur, occlusion, missing context, unreliable recognition, and items that need manual zooming or checking against the original PDF.\n\nDo not invent unreadable numbers, and do not present text-context inference as direct image observation.`;
 }
 
 function literatureMatrixTemplate(common, outputLanguage) {

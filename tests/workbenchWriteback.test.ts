@@ -4700,6 +4700,14 @@ describe("workbench writeback helpers", () => {
             "| --- | --- | --- | --- | --- | --- | --- | --- |",
             "| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] |",
             "",
+            "## Axis Calibration Anchors",
+            "| Axis | Pixel | Value | Unit | Source | Confidence |",
+            "| --- | --- | --- | --- | --- | --- |",
+            "| X | 80 | 0 | s | [image] | medium |",
+            "| X | 420 | 10 | s | [image] | medium |",
+            "| Y | 360 | 0 | ms | [image] | medium |",
+            "| Y | 120 | 30 | ms | [image] | medium |",
+            "",
             "## Interpretation And Evidence Map",
             "- Supported by [chunk:summary-method source=summary locator=summary:1 hash=abc123]"
           ].join("\n")
@@ -4729,11 +4737,15 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("| 2 | reconstructed-table | Axis X | Axis Y | Series | 1 | needs-review | [image] |");
     expect(report).toContain("| 3 | local-ocr | OCR line | recognized numeric value | image | 1 | needs-review | [image], [metadata] |");
     expect(report).toContain("pixelDataDraftCount: 1");
+    expect(report).toContain("calibrationAnchorCount: 4");
     expect(report).toContain("## Pixel / Coordinate Data Drafts");
     expect(report).toContain("| 1 | pixel-coordinate-table | figure.png | 1 | needs-review | [image] |");
     expect(report).toContain("| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] | [image] |");
+    expect(report).toContain("## Axis Calibration Anchors");
+    expect(report).toContain("| 1 | axis-calibration-table | X | 80 | 0 | s | medium | [image] |");
     expect(report).toContain("## Chart Data Quality Review");
     expect(report).toContain("- Quality status: reviewable-with-cautions");
+    expect(report).toContain("| axis-calibration | pass | calibration anchors present: X 2, Y 2 |");
     expect(report).toContain("| confidence | warning | high 0, medium 0, low 3, needs-review 1 |");
     expect(report).toContain("Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.");
     expect(report).toContain("## Machine-Readable Data");
@@ -4775,7 +4787,7 @@ describe("workbench writeback helpers", () => {
         role: "assistant",
         skillId: "",
         profileName: "MiniMax",
-        content: "## 视觉 OCR 文本\n- 坐标轴: delay [image]\n\n## 重建表格\n| 指标 | 数值 |\n| --- | --- |\n| delay | 12 ms |\n\n## 像素/坐标数据草稿\n| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] |"
+        content: "## 视觉 OCR 文本\n- 坐标轴: delay [image]\n\n## 重建表格\n| 指标 | 数值 |\n| --- | --- |\n| delay | 12 ms |\n\n## 像素/坐标数据草稿\n| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] |\n\n## 坐标轴校准锚点\n| Axis | Pixel | Value | Unit | Source | Confidence |\n| --- | --- | --- | --- | --- | --- |\n| X | 80 | 0 | s | [image] | medium |\n| X | 420 | 10 | s | [image] | medium |\n| Y | 360 | 0 | ms | [image] | medium |\n| Y | 120 | 30 | ms | [image] | medium |"
       }
     ];
     workbench.t = (key: string) => key;
@@ -4792,8 +4804,12 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("| 1 | reconstructed-table | 指标 | 数值 |");
     expect(files.get(reportPath)).toContain("## 像素/坐标数据草稿");
     expect(files.get(reportPath)).toContain("| 1 | pixel-coordinate-table | chart.png | 1 | needs-review | [image] |");
+    expect(files.get(reportPath)).toContain("calibrationAnchorCount: 4");
+    expect(files.get(reportPath)).toContain("## 坐标轴校准锚点");
+    expect(files.get(reportPath)).toContain("| 1 | axis-calibration-table | X | 80 | 0 | s | medium | [image] |");
     expect(files.get(reportPath)).toContain("## 图表数据质量审阅");
     expect(files.get(reportPath)).toContain("- 质量状态: reviewable-with-cautions");
+    expect(files.get(reportPath)).toContain("| axis-calibration | pass | calibration anchors present: X 2, Y 2 |");
     expect(files.get(reportPath)).toContain("在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。");
     expect(files.get(reportPath)).toContain("## 机器可读数据");
     expect(files.get(reportPath)).toContain("| 1 | 1 | 指标 | delay | 未标注 |");
@@ -4832,6 +4848,12 @@ describe("workbench writeback helpers", () => {
         confidence: "low"
       }]
     });
+    expect(parsed.calibrationAnchors).toMatchObject([
+      { source: "axis-calibration-table", axis: "X", pixel: 80, value: "0", unit: "s", confidence: "medium" },
+      { source: "axis-calibration-table", axis: "X", pixel: 420, value: "10", unit: "s", confidence: "medium" },
+      { source: "axis-calibration-table", axis: "Y", pixel: 360, value: "0", unit: "ms", confidence: "medium" },
+      { source: "axis-calibration-table", axis: "Y", pixel: 120, value: "30", unit: "ms", confidence: "medium" }
+    ]);
     expect(parsed.chartQualityReview).toMatchObject({
       status: "reviewable-with-cautions",
       issueCount: 1,
@@ -4843,6 +4865,8 @@ describe("workbench writeback helpers", () => {
     expect(files.get(csvPath)).toContain("chart:1,1,yNumber,12,,assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("pixel:1,1,pixelX,120,[image],assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("pixel:1,1,axisY,12 ms,[image],assistant-visual,chart.png");
+    expect(files.get(csvPath)).toContain("calibration:1,1,axis,X,[image],assistant-visual,chart.png");
+    expect(files.get(csvPath)).toContain("calibration:1,1,value,0,[image],assistant-visual,chart.png");
     expect(dom.elements.get("zms-status").textContent).toContain(`visualReportDone: ${reportPath}`);
   });
 
