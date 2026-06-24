@@ -1800,6 +1800,65 @@ describe("provider smoke verifier", () => {
     expect(multimodalStdout).toContain("pdf: npm run verify:provider:pdf:live -- --include openai --provider-env-file .env.local");
   });
 
+  it("flags text-only model capability conflicts in provider doctor", async () => {
+    const imageReport = await runLive(["--doctor", "--include", "deepseek", "--json"], scrubProviderEnv({
+      DEEPSEEK_API_KEY: "deepseek-secret",
+      DEEPSEEK_MODEL: "deepseek-chat",
+      DEEPSEEK_CAPABILITIES_JSON: JSON.stringify({ imageBase64: true })
+    }));
+
+    expect(imageReport).toMatchObject({
+      ok: true,
+      configurationReady: false,
+      counts: {
+        ready: 0,
+        missing: 0,
+        unsupported: 0,
+        conflict: 1,
+        invalid: 0
+      }
+    });
+    expect(imageReport.cases[0]).toMatchObject({
+      id: "deepseek",
+      status: "conflict",
+      ready: false,
+      missing: [],
+      conflicts: [expect.stringContaining("image input is enabled")]
+    });
+
+    const pdfReport = await runLive(["--doctor", "--include", "anthropic-compatible", "--json"], scrubProviderEnv({
+      ANTHROPIC_COMPATIBLE_API_KEY: "anthropic-secret",
+      ANTHROPIC_COMPATIBLE_MODEL: "deepseek-chat",
+      ANTHROPIC_COMPATIBLE_BASE_URL: "http://127.0.0.1:3000",
+      ANTHROPIC_COMPATIBLE_CAPABILITIES_JSON: JSON.stringify({ pdfBase64: true })
+    }));
+    expect(pdfReport).toMatchObject({
+      configurationReady: false,
+      counts: { conflict: 1 }
+    });
+    expect(pdfReport.cases[0]).toMatchObject({
+      status: "conflict",
+      conflicts: [expect.stringContaining("raw PDF input is enabled")]
+    });
+
+    const { stdout } = await execFileAsync(process.execPath, [
+      "scripts/verify-provider-live.mjs",
+      "--doctor",
+      "--include",
+      "deepseek"
+    ], {
+      cwd: process.cwd(),
+      env: scrubProviderEnv({
+        DEEPSEEK_API_KEY: "deepseek-secret",
+        DEEPSEEK_MODEL: "deepseek-chat",
+        DEEPSEEK_CAPABILITIES_JSON: JSON.stringify({ imageBase64: true })
+      })
+    });
+    expect(stdout).toContain("conflict: 1");
+    expect(stdout).toContain("deepseek: conflict");
+    expect(stdout).toContain("conflicts: Model deepseek-chat appears text-only");
+  });
+
   it("treats 0.0.0.0 live provider doctor endpoints as local without API credentials", async () => {
     const report = await runLive(["--doctor", "--include", "openai-compatible", "--json"], scrubProviderEnv({
       OPENAI_COMPATIBLE_MODEL: "local-compatible",

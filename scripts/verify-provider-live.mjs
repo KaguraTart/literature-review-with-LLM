@@ -2,8 +2,23 @@
 import { readFileSync } from "node:fs";
 import { once } from "node:events";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createContext, runInContext } from "node:vm";
 import { runProviderModels, runProviderSmoke } from "./verify-provider-smoke.mjs";
 import { endpointFor, modelsEndpointFor } from "../src/providerAdapters.ts";
+
+let providerModelCatalogContext = null;
+const DOCTOR_TEXT_ONLY_MODEL_PATTERNS = [
+  /deepseek-(?:chat|v\d)/i,
+  /moonshot-v1/i,
+  /sonar(?:-pro)?$/i,
+  /llama(?:-|\.|3|4)/i,
+  /mistral-(?:large|small)|mistral-large|mistral-small/i,
+  /qwen(?:2|3|[-_](?:plus|max|turbo))/i,
+  /ernie/i,
+  /hunyuan/i,
+  /doubao-(?!.*vision|.*vl)/i
+];
+const DOCTOR_EXPLICIT_VISION_MODEL_PATTERN = /(?:vision|image|multimodal|\bvl\b|qwen-vl|glm-4v|pixtral|grok-2-vision|gpt-4o|gpt-4\.1|gpt-5|gemini|claude)/i;
 
 const DEFAULT_CASES = [
   {
@@ -869,12 +884,13 @@ export function providerLiveDoctor(include = "", options = {}, env = process.env
     if (entry.status === "ready") acc.ready += 1;
     if (entry.status === "missing") acc.missing += 1;
     if (entry.status === "unsupported") acc.unsupported += 1;
+    if (entry.status === "conflict") acc.conflict += 1;
     if (entry.status === "invalid") acc.invalid += 1;
     return acc;
-  }, { ready: 0, missing: 0, unsupported: 0, invalid: 0 });
+  }, { ready: 0, missing: 0, unsupported: 0, conflict: 0, invalid: 0 });
   return {
     ok: true,
-    configurationReady: counts.missing === 0 && counts.unsupported === 0 && counts.invalid === 0,
+    configurationReady: counts.missing === 0 && counts.unsupported === 0 && counts.conflict === 0 && counts.invalid === 0,
     liveProviderDoctor: true,
     count: reports.length,
     envFileLoaded: envFileState.loaded,
@@ -902,7 +918,8 @@ function providerLiveDoctorCase(entry, options, env) {
     const profile = doctorProfileForCase(entry, defaults, env, { customHeaders, capabilities, bodyExtra });
     const endpoint = doctorEndpointForProfile(profile);
     const modelsEndpoint = doctorModelsEndpointForProfile(profile);
-    const status = unsupported ? "unsupported" : activeMissing.length ? "missing" : "ready";
+    const conflicts = doctorCapabilityConflicts(entry, profile, capabilities);
+    const status = unsupported ? "unsupported" : activeMissing.length ? "missing" : conflicts.length ? "conflict" : "ready";
     return {
       id: entry.id,
       label: entry.label,
@@ -911,6 +928,7 @@ function providerLiveDoctorCase(entry, options, env) {
       status,
       ready: status === "ready",
       missing: activeMissing,
+      conflicts,
       generationMissing,
       modelListMissing,
       unsupportedReason: unsupported,
@@ -947,6 +965,7 @@ function providerLiveDoctorCase(entry, options, env) {
       status: "invalid",
       ready: false,
       missing: [],
+      conflicts: [],
       error: redactKnownSecrets(error?.message || String(error), env),
       commands: doctorCommandsForCase(entry)
     };
@@ -1133,6 +1152,41 @@ function caseSupportsPdfInput(entry, capabilities = null) {
   const profile = runProfileDefault(entry.profile);
   const effective = capabilities || profile?.capabilities || {};
   return effective?.pdfBase64 === true && entry.protocol !== "openai_chat";
+}
+
+function providerModelCatalogHelpers() {
+  if (providerModelCatalogContext) return providerModelCatalogContext;
+  const catalogPath = new URL("../addon/content/provider-models.js", import.meta.url);
+  const context = createContext({});
+  runInContext(readFileSync(fileURLToPath(catalogPath), "utf8"), context, { filename: "addon/content/provider-models.js" });
+  providerModelCatalogContext = context;
+  return context;
+}
+
+function doctorModelLikelyTextOnly(entry, profile) {
+  const model = String(profile?.model || "").trim();
+  if (!model) return false;
+  try {
+    const helper = providerModelCatalogHelpers().zmsModelLikelyTextOnlyForProviderModel;
+    if (typeof helper === "function" && helper(entry.profile || entry.id, model, model)) return true;
+  } catch (_err) {
+    // Fall back to the local doctor patterns below.
+  }
+  if (DOCTOR_EXPLICIT_VISION_MODEL_PATTERN.test(model)) return false;
+  return DOCTOR_TEXT_ONLY_MODEL_PATTERNS.some((pattern) => pattern.test(model));
+}
+
+function doctorCapabilityConflicts(entry, profile, capabilities) {
+  const model = String(profile?.model || "").trim();
+  if (!model || !doctorModelLikelyTextOnly(entry, profile)) return [];
+  const conflicts = [];
+  if (caseSupportsImageInput(entry, capabilities)) {
+    conflicts.push(`Model ${model} appears text-only, but image input is enabled`);
+  }
+  if (caseSupportsPdfInput(entry, capabilities)) {
+    conflicts.push(`Model ${model} appears text-only, but raw PDF input is enabled`);
+  }
+  return conflicts;
 }
 
 function caseGenerationRequiredEnv(entry) {
@@ -1640,6 +1694,7 @@ function formatDoctorReport(report) {
     `ready: ${report.counts.ready}`,
     `missing: ${report.counts.missing}`,
     `unsupported: ${report.counts.unsupported}`,
+    `conflict: ${report.counts.conflict || 0}`,
     `invalid: ${report.counts.invalid}`
   ];
   if (report.envFilePath) {
@@ -1654,6 +1709,7 @@ function formatDoctorReport(report) {
     if (entry.error) lines.push(`  error: ${entry.error}`);
     if (entry.unsupportedReason) lines.push(`  unsupported: ${entry.unsupportedReason}`);
     if (entry.missing?.length) lines.push(`  missing: ${entry.missing.join(", ")}`);
+    if (entry.conflicts?.length) lines.push(`  conflicts: ${entry.conflicts.join("; ")}`);
     if (entry.protocol) lines.push(`  protocol: ${entry.protocol}`);
     if (entry.endpoint) lines.push(`  endpoint: ${entry.endpoint}`);
     if (entry.modelsEndpoint) lines.push(`  modelsEndpoint: ${entry.modelsEndpoint}`);

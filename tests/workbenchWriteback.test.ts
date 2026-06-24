@@ -3185,6 +3185,51 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
   });
 
+  it("saves a workbench model dropdown selection immediately", () => {
+    const prefs: Record<string, any> = {};
+    const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument({
+      "zms-profile-name": "DeepSeek",
+      "zms-profile-base-url": "https://api.deepseek.com",
+      "zms-profile-api-key": "deepseek-secret",
+      "zms-profile-model": "deepseek-chat"
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelSelectPlaceholder: "Choose a recommended model",
+      modelSelectCustom: "Custom model...",
+      saved: "Saved"
+    }[key] || key);
+    const profile = {
+      id: "deepseek",
+      name: "DeepSeek",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepseek.com",
+      apiKey: "deepseek-secret",
+      model: "deepseek-chat",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    workbench.renderProfileEditor();
+    dom.getElementById("zms-profile-model-select").value = "deepseek-reasoner";
+    workbench.selectWorkbenchModelFromDropdown();
+
+    expect(workbench.state.profile.model).toBe("deepseek-reasoner");
+    expect(prefs.model).toBe("deepseek-reasoner");
+    expect(JSON.parse(prefs.profilesJson)[0]).toMatchObject({
+      id: "deepseek",
+      model: "deepseek-reasoner"
+    });
+    expect(dom.getElementById("zms-profile-trigger").textContent).toContain("deepseek-reasoner");
+  });
+
   it("saves the selected workbench model dropdown value even before the hidden input syncs", () => {
     const prefs: Record<string, any> = {};
     const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
