@@ -65,7 +65,7 @@ function loadPreferencesController(options: {
   const filePickerCalls: Array<{ title: string; mode: number; displayDirectory?: string }> = [];
   const messageMap: Record<string, string> = {
     apiKeyMissing: "API key missing",
-    chooseOutputDir: "Browse...",
+    chooseOutputDir: "Choose Folder...",
     chooseOutputDirTitle: "Choose output folder",
     chooseOutputDirTooltip: "Choose an output folder with the system file manager",
     jsonInvalid: "Invalid JSON",
@@ -95,7 +95,7 @@ function loadPreferencesController(options: {
     profileStreamOff: "Streaming disabled",
     profileLocalAgentReady: "Local agent configured",
     outputDirSaved: "Output directory saved",
-    saveOutputDir: "Save path",
+    saveOutputDir: "Save",
     saveOutputDirTooltip: "Save the current output directory",
     outputDirChooseFailed: "Output directory picker failed",
     outputDirCreateFailed: "Output directory failed"
@@ -2287,9 +2287,9 @@ describe("preferences local-agent config helpers", () => {
 
     controller.applyLanguage();
 
-    expect(elements.get("zms-choose-outputDir-button").label).toBe("Browse...");
+    expect(elements.get("zms-choose-outputDir-button").label).toBe("Choose Folder...");
     expect(elements.get("zms-choose-outputDir-button").tooltiptext).toBe("Choose an output folder with the system file manager");
-    expect(elements.get("zms-save-outputDir-button").label).toBe("Save path");
+    expect(elements.get("zms-save-outputDir-button").label).toBe("Save");
     expect(elements.get("zms-save-outputDir-button").tooltiptext).toBe("Save the current output directory");
   });
 

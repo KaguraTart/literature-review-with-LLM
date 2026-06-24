@@ -68,7 +68,7 @@ This plugin targets Zotero 9.x.
 4. Ask questions in the workbench, copy Markdown answers, or write an answer back into the summary file.
 5. For figure or screenshot questions, paste a screenshot, drop an image, or use the `+` button to select a local image. If you send only an image, the workbench automatically uses a default image-analysis question. Image understanding depends on the selected model provider; when the local bridge is running, the workbench can also record optional local OCR text before sending.
 
-The generated Markdown files are saved under the configured output directory. Use `Browse...` in the Zotero settings page, or the same output-directory field in the workbench settings drawer, to choose a folder with the system file manager. By default, the plugin creates per-item summary/session files and links summary files back to Zotero.
+The generated Markdown files are saved under the configured output directory. Use `Choose Folder...` in the Zotero settings page, or the same output-directory field in the workbench settings drawer, to choose a folder with the system file manager. By default, the plugin creates per-item summary/session files and links summary files back to Zotero.
 
 ## API Configuration
 
@@ -87,7 +87,7 @@ Important fields:
 - `Setup guide`: shows the resolved protocol, request endpoint, auth behavior, model-list endpoint, supported inputs, and a copyable terminal live-check command without showing the saved API key.
 - `输入模式`: choose extracted text or raw PDF input where supported.
 - `流式输出`: enable streaming responses when the provider profile supports it.
-- `输出目录`: where Markdown summaries, sessions, candidate files, and logs are written. Use `Browse...` to choose the folder instead of typing a platform-specific path by hand.
+- `输出目录`: where Markdown summaries, sessions, candidate files, and logs are written. Use `Choose Folder...` to choose the folder instead of typing a platform-specific path by hand.
 
 Provider notes:
 

@@ -112,11 +112,15 @@
 }
 
 .zms-output-dir-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  display: flex;
   gap: 8px;
   align-items: center;
   margin-bottom: 12px;
+}
+
+.zms-output-dir-row input {
+  flex: 1 1 12rem;
+  min-width: 0;
 }
 
 .zms-output-dir-row input,
@@ -125,6 +129,7 @@
 }
 
 .zms-output-dir-row button {
+  flex: 0 0 auto;
   white-space: nowrap;
 }
 
@@ -1305,7 +1310,8 @@ button:disabled {
 
 @media (max-width: 560px) {
   .zms-output-dir-row {
-    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    flex-direction: column;
   }
 
   #zms-workbench[data-embedded="true"] .zms-sidebar {

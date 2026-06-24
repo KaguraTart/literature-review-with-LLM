@@ -23,19 +23,20 @@
 .zms-outputDir-control {
   max-width: 58em;
   width: 100%;
-  display: grid;
-  grid-template-columns: minmax(18em, 1fr) auto auto;
+  display: flex;
   gap: 6px;
   align-items: center;
 }
 
 #zms-outputDir.zms-outputDir-field {
+  flex: 1 1 18em;
   width: 100%;
   min-width: 0;
   max-width: none;
 }
 
 .zms-outputDir-button {
+  flex: 0 0 auto;
   min-width: 6.5em;
   margin-left: 0;
   white-space: nowrap;
