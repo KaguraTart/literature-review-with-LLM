@@ -119,6 +119,9 @@ function loadPreferencesController(options: {
     profilePdfTextOnly: "Text input only",
     profileImageReady: "Image input supported",
     profileImageOff: "Image input disabled",
+    profileModelTextOnly: "Selected model appears text-only",
+    profileImageModelMismatch: "Image input is enabled, but the selected model appears not to support images",
+    profilePdfModelMismatch: "Raw PDF input is enabled, but the selected model appears not to support PDF input",
     profileStreamReady: "Streaming supported",
     profileStreamOff: "Streaming disabled",
     profileLocalAgentReady: "Local agent configured",
@@ -2439,6 +2442,30 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-profileStatus").textContent).not.toContain("doctor-secret");
   });
 
+  it("flags text-only model conflicts in the settings status and preflight doctor", () => {
+    const { controller, elements } = loadPreferencesController();
+    elements.get("zms-provider").value = "deepseek";
+    elements.get("zms-activeProfileId").value = "deepseek";
+    elements.get("zms-profileName").value = "DeepSeek";
+    elements.get("zms-profileProtocol").value = "openai_responses";
+    elements.get("zms-baseURL").value = "https://api.deepseek.com";
+    elements.get("zms-model").value = "deepseek-chat";
+    elements.get("zms-apiKey").value = "sk-test-secret";
+    elements.get("zms-cap-imageBase64").checked = true;
+    elements.get("zms-cap-pdfBase64").checked = true;
+
+    const status = controller.refreshProfileStatus();
+    expect(status).toContain("Selected model appears text-only");
+    expect(status).toContain("Image input is enabled, but the selected model appears not to support images");
+    expect(status).toContain("Raw PDF input is enabled, but the selected model appears not to support PDF input");
+
+    expect(controller.checkProviderConfig()).toBe(false);
+    expect(elements.get("zms-profileStatus").textContent).toContain("Conflicts:");
+    expect(elements.get("zms-profileStatus").textContent).toContain("Model deepseek-chat appears to be text-only");
+    expect(elements.get("zms-status").value).toContain("Configuration preflight failed");
+    expect(elements.get("zms-status").value).toContain("deepseek-chat");
+  });
+
   it("renders a provider setup guide with endpoint and live-check commands", () => {
     const helpers = loadPreferencesHelpers();
     const guide = helpers.providerSetupGuide({
@@ -3017,6 +3044,28 @@ describe("preferences local-agent config helpers", () => {
 
     expect(elements.get("zms-model").value).toBe("deepseek-reasoner");
     expect(elements.get("zms-model").hidden).toBe(true);
+  });
+
+  it("saves the selected settings model dropdown value even before the hidden input syncs", () => {
+    const { controller, elements, prefValues } = loadPreferencesController();
+    elements.get("zms-provider").value = "deepseek";
+    elements.get("zms-activeProfileId").value = "deepseek";
+    elements.get("zms-profileName").value = "DeepSeek";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "https://api.deepseek.com";
+    elements.get("zms-model").value = "deepseek-chat";
+
+    controller.refreshModelRecommendations();
+    elements.get("zms-model-select").value = "deepseek-reasoner";
+
+    expect(controller.save()).toBe(true);
+
+    expect(elements.get("zms-model").value).toBe("deepseek-reasoner");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.model")).toBe("deepseek-reasoner");
+    expect(JSON.parse(prefValues.get("extensions.zoteroMarkdownSummary.profilesJson"))[0]).toMatchObject({
+      id: "deepseek",
+      model: "deepseek-reasoner"
+    });
   });
 
   it("switches stale provider recommendations to the current provider default model", () => {

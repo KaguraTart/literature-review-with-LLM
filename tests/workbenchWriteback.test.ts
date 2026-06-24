@@ -787,6 +787,9 @@ describe("workbench writeback helpers", () => {
       profilePdfTextOnly: "Text input only",
       profileImageReady: "Image input supported",
       profileImageOff: "Image input disabled",
+      profileModelTextOnly: "Selected model appears text-only",
+      profileImageModelMismatch: "Image input is enabled, but the selected model appears not to support images",
+      profilePdfModelMismatch: "Raw PDF input is enabled, but the selected model appears not to support PDF input",
       profileStreamReady: "Streaming supported",
       profileStreamOff: "Streaming disabled"
     }[key] || key);
@@ -2330,6 +2333,11 @@ describe("workbench writeback helpers", () => {
       profileAuthMissing: "缺少鉴权",
       profilePdfReady: "支持 PDF 原文输入",
       profilePdfTextOnly: "仅使用文本输入",
+      profileImageReady: "支持图片输入",
+      profileImageOff: "未启用图片输入",
+      profileModelTextOnly: "当前模型疑似仅支持文本",
+      profileImageModelMismatch: "图片输入已开启，但当前模型疑似不支持图片",
+      profilePdfModelMismatch: "PDF 原文已开启，但当前模型疑似不支持 PDF",
       profileStreamReady: "支持流式输出",
       profileStreamOff: "未启用流式输出",
       profileLocalAgentReady: "本地代理已配置",
@@ -2382,7 +2390,7 @@ describe("workbench writeback helpers", () => {
     }, translate)).toContain("Endpoint: https://api.anthropic.com/v1/messages");
     expect(helpers.profileMessageMetadata({ id: "p", name: "P", protocol: "openai_chat", model: "m" }))
       .toEqual({ profileId: "p", profileName: "P", protocol: "openai_chat", model: "m" });
-    expect(helpers.profileStatusText({
+    const deepSeekStatus = helpers.profileStatusText({
       id: "deepseek",
       name: "DeepSeek",
       protocol: "openai_chat",
@@ -2390,10 +2398,13 @@ describe("workbench writeback helpers", () => {
       baseURL: "https://api.deepseek.com",
       apiKey: "sk-test-secret",
       model: "deepseek-chat",
-      capabilities: { pdfBase64: false, streaming: true },
+      capabilities: { imageBase64: true, pdfBase64: false, streaming: true },
       customHeaders: {},
       bodyExtra: {}
-    }, translate)).toContain("Endpoint: https://api.deepseek.com/v1/chat/completions");
+    }, translate);
+    expect(deepSeekStatus).toContain("Endpoint: https://api.deepseek.com/v1/chat/completions");
+    expect(deepSeekStatus).toContain("当前模型疑似仅支持文本");
+    expect(deepSeekStatus).toContain("图片输入已开启，但当前模型疑似不支持图片");
     expect(helpers.profileStatusText({
       id: "perplexity",
       name: "Perplexity Sonar",
@@ -3172,6 +3183,50 @@ describe("workbench writeback helpers", () => {
 
     expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-reasoner");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
+  });
+
+  it("saves the selected workbench model dropdown value even before the hidden input syncs", () => {
+    const prefs: Record<string, any> = {};
+    const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument({
+      "zms-profile-name": "DeepSeek",
+      "zms-profile-base-url": "https://api.deepseek.com",
+      "zms-profile-api-key": "deepseek-secret",
+      "zms-profile-model": "deepseek-chat"
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      saved: "Saved",
+      modelSelectPlaceholder: "Choose a recommended model",
+      modelSelectCustom: "Custom model..."
+    }[key] || key);
+    const profile = {
+      id: "deepseek",
+      name: "DeepSeek",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepseek.com",
+      apiKey: "deepseek-secret",
+      model: "deepseek-chat",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    workbench.renderWorkbenchModelRecommendations();
+    dom.getElementById("zms-profile-model-select").value = "deepseek-reasoner";
+    const saved = workbench.saveProfileSettings();
+
+    expect(saved.model).toBe("deepseek-reasoner");
+    expect(prefs.model).toBe("deepseek-reasoner");
+    expect(JSON.parse(prefs.profilesJson)[0]).toMatchObject({
+      id: "deepseek",
+      model: "deepseek-reasoner"
+    });
   });
 
   it("switches stale workbench provider recommendations to the current provider default model", () => {

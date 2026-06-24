@@ -411,7 +411,7 @@ var ZoteroMarkdownSummaryPrefs = {
       baseURL: document.getElementById("zms-baseURL").value,
       fullURL: document.getElementById("zms-profileFullURL").value,
       apiKey: document.getElementById("zms-apiKey").value,
-      model: document.getElementById("zms-model").value,
+      model: modelValueFromPicker("zms-model-select", "zms-model"),
       capabilities: this.capabilityValues(),
       customHeaders,
       bodyExtra,
@@ -1874,6 +1874,7 @@ function profileStatusText(profile, translate = (key) => key) {
     `${t("profileEndpointStatus")}: ${endpoint}`,
     canUsePdfBase64Input(profile) ? t("profilePdfReady") : t("profilePdfTextOnly"),
     canUseImageInput(profile) ? t("profileImageReady") : t("profileImageOff"),
+    ...modelCapabilityStatusLines(profile, t),
     profile?.capabilities?.streaming === true ? t("profileStreamReady") : t("profileStreamOff"),
     profileHasUsableAuth(profile) ? t("profileAuthReady") : t("profileAuthMissing")
   ];
@@ -1884,6 +1885,7 @@ function profileStatusText(profile, translate = (key) => key) {
 function providerConfigDoctor(profile, language = "en-US") {
   const zh = /^zh/i.test(String(language || ""));
   const missing = [];
+  const conflicts = [];
   const warnings = [];
   const endpoint = endpointForProfileSafe(profile);
   const modelList = providerModelListGuide(profile);
@@ -1901,6 +1903,12 @@ function providerConfigDoctor(profile, language = "en-US") {
   if (profile?.endpointMode === "full_url" && (!fullURL || isPlaceholderEndpoint(fullURL))) missing.push(zh ? "完整接口地址" : "Full URL");
   if (!authReady) missing.push(zh ? "API Key 或自定义认证 header" : "API key or custom auth header");
   if (!isLocalAgent && (!model || model === "...")) missing.push(zh ? "模型名称" : "model name");
+  if (modelLikelyTextOnlyForProfile(profile) && canUseImageInput(profile)) {
+    conflicts.push(zh ? `模型 ${model} 疑似仅支持文本，但已开启图片输入。` : `Model ${model} appears to be text-only, but image input is enabled.`);
+  }
+  if (modelLikelyTextOnlyForProfile(profile) && canUsePdfBase64Input(profile)) {
+    conflicts.push(zh ? `模型 ${model} 疑似仅支持文本，但已开启 PDF 原文输入。` : `Model ${model} appears to be text-only, but raw PDF input is enabled.`);
+  }
   if (profile?.protocol === "openai_chat" && profile?.capabilities?.pdfBase64 === true) {
     warnings.push(zh ? "OpenAI Chat 档案会使用 Zotero 文本抽取，不能直接发送原始 PDF。" : "OpenAI Chat profiles use Zotero text extraction instead of raw PDF input.");
   }
@@ -1917,7 +1925,7 @@ function providerConfigDoctor(profile, language = "en-US") {
   const authStatus = authReady
     ? (localEndpoint ? (zh ? "本地接口，可不填 API Key" : "local endpoint, API key optional") : (zh ? "已配置" : "configured"))
     : (zh ? "缺失" : "missing");
-  const ok = missing.length === 0;
+  const ok = missing.length === 0 && conflicts.length === 0;
   const title = zh ? `配置预检：${ok ? "通过" : "未通过"}` : `Configuration preflight: ${ok ? "passed" : "failed"}`;
   const lines = [
     title,
@@ -1933,14 +1941,18 @@ function providerConfigDoctor(profile, language = "en-US") {
   if (missing.length) {
     lines.push(`${zh ? "缺失项" : "Missing"}: ${missing.join(", ")}`);
   }
+  if (conflicts.length) {
+    lines.push(`${zh ? "冲突项" : "Conflicts"}: ${conflicts.join(" ")}`);
+  }
   if (warnings.length) {
     lines.push(`${zh ? "提醒" : "Notes"}: ${warnings.join(" ")}`);
   }
   return {
     ok,
     missing,
+    conflicts,
     warnings,
-    summary: missing.length ? missing.join(", ") : (zh ? "可以继续测试连接" : "ready for connection test"),
+    summary: [...missing, ...conflicts].length ? [...missing, ...conflicts].join(", ") : (zh ? "可以继续测试连接" : "ready for connection test"),
     text: lines.join("\n")
   };
 }
@@ -2473,6 +2485,21 @@ function canUseImageInput(profile) {
   return profile?.capabilities?.imageBase64 === true;
 }
 
+function modelLikelyTextOnlyForProfile(profile) {
+  if (typeof zmsModelLikelyTextOnlyForProviderModel !== "function") return false;
+  const provider = providerFromProfile(profile);
+  return zmsModelLikelyTextOnlyForProviderModel(provider, profile?.model || "", profile?.model || "");
+}
+
+function modelCapabilityStatusLines(profile, translate = (key) => key) {
+  const t = typeof translate === "function" ? translate : (key) => key;
+  if (!modelLikelyTextOnlyForProfile(profile)) return [];
+  const lines = [t("profileModelTextOnly")];
+  if (canUseImageInput(profile)) lines.push(t("profileImageModelMismatch"));
+  if (canUsePdfBase64Input(profile)) lines.push(t("profilePdfModelMismatch"));
+  return lines;
+}
+
 function profileDraftFromEditor() {
   const errors = [];
   const customHeaders = jsonObjectFromValue(document.getElementById("zms-profileCustomHeaders")?.value, errors) || {};
@@ -2491,7 +2518,7 @@ function profileDraftFromEditor() {
     baseURL: document.getElementById("zms-baseURL")?.value || "",
     fullURL: document.getElementById("zms-profileFullURL")?.value || "",
     apiKey: document.getElementById("zms-apiKey")?.value || "",
-    model: document.getElementById("zms-model")?.value || "",
+    model: modelValueFromPicker("zms-model-select", "zms-model"),
     capabilities: capabilityDraftFromEditor(),
     customHeaders,
     bodyExtra
@@ -3547,6 +3574,14 @@ function syncModelSelectFromInput(modelOptions) {
   }
   select.value = "__custom";
   setCustomModelInputVisible(model, true);
+}
+
+function modelValueFromPicker(selectId, inputId) {
+  const select = document.getElementById(selectId);
+  const input = document.getElementById(inputId);
+  const selected = String(select?.value || "").trim();
+  if (selected && selected !== "__custom") return selected;
+  return String(input?.value || "").trim();
 }
 
 function setCustomModelInputVisible(model, visible) {

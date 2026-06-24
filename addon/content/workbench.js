@@ -809,7 +809,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       name: document.getElementById("zms-profile-name")?.value?.trim() || this.state.profile.name || this.state.profile.id,
       baseURL: document.getElementById("zms-profile-base-url")?.value?.trim() || this.state.profile.baseURL,
       apiKey: document.getElementById("zms-profile-api-key")?.value?.trim() || "",
-      model: document.getElementById("zms-profile-model")?.value?.trim() || "",
+      model: workbenchModelValueFromPicker("zms-profile-model-select", "zms-profile-model"),
       capabilities: {
         ...(this.state.profile.capabilities || {}),
         imageBase64: document.getElementById("zms-profile-image-input")?.checked === true,
@@ -3056,6 +3056,7 @@ function profileStatusText(profile, translate = (key) => key) {
     `${t("profileEndpointStatus")}: ${endpoint}`,
     canUsePdfBase64Input(profile) ? t("profilePdfReady") : t("profilePdfTextOnly"),
     canUseImageInput(profile) ? t("profileImageReady") : t("profileImageOff"),
+    ...modelCapabilityStatusLines(profile, t),
     profile?.capabilities?.streaming === true ? t("profileStreamReady") : t("profileStreamOff"),
     profileHasUsableAuth(profile) ? t("profileAuthReady") : t("profileAuthMissing")
   ];
@@ -5611,6 +5612,14 @@ function setWorkbenchCustomModelInputVisible(modelInput, visible) {
   if (!modelInput) return;
   modelInput.hidden = !visible;
   modelInput.setAttribute?.("aria-hidden", visible ? "false" : "true");
+}
+
+function workbenchModelValueFromPicker(selectId, inputId) {
+  const select = document.getElementById(selectId);
+  const input = document.getElementById(inputId);
+  const selected = String(select?.value || "").trim();
+  if (selected && selected !== "__custom") return selected;
+  return String(input?.value || "").trim();
 }
 
 function focusElement(element) {
@@ -9755,6 +9764,15 @@ function modelLikelyTextOnlyForRequest(profile) {
   if (typeof zmsModelLikelyTextOnlyForProviderModel !== "function") return false;
   const provider = workbenchProviderFromProfile(profile, profile?.id || "");
   return zmsModelLikelyTextOnlyForProviderModel(provider, profile?.model || "", profile?.model || "");
+}
+
+function modelCapabilityStatusLines(profile, translate = (key) => key) {
+  const t = typeof translate === "function" ? translate : (key) => key;
+  if (!modelLikelyTextOnlyForRequest(profile)) return [];
+  const lines = [t("profileModelTextOnly")];
+  if (canUseImageInput(profile)) lines.push(t("profileImageModelMismatch"));
+  if (canUsePdfBase64Input(profile)) lines.push(t("profilePdfModelMismatch"));
+  return lines;
 }
 
 async function buildRequestInput(profile, inputMode, pdf, images = []) {
