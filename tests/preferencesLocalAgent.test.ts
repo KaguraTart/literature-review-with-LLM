@@ -2888,8 +2888,8 @@ describe("preferences local-agent config helpers", () => {
 
     controller.refreshModelRecommendations();
 
-    expect(elements.get("zms-model-select").value).toBe("private-deployment");
-    expect(elements.get("zms-model").hidden).toBe(true);
+    expect(elements.get("zms-model-select").value).toBe("__custom");
+    expect(elements.get("zms-model").hidden).toBe(false);
 
     elements.get("zms-model-select").value = "__custom";
     controller.selectModelFromDropdown();
@@ -3614,9 +3614,10 @@ describe("preferences local-agent config helpers", () => {
 
     const optionValues = elements.get("zms-model-options").children.map((option: any) => option.value);
     expect(optionValues.slice(0, 2)).toEqual(["model-a", "model-b"]);
-    expect(optionValues).toContain("manual-model");
+    expect(optionValues).not.toContain("manual-model");
     expect(elements.get("zms-model").value).toBe("manual-model");
-    expect(elements.get("zms-model-select").value).toBe("manual-model");
+    expect(elements.get("zms-model-select").value).toBe("__custom");
+    expect(elements.get("zms-model").hidden).toBe(false);
   });
 
   it("renders model display names from Anthropic-compatible model lists", async () => {

@@ -105,7 +105,7 @@
       <hbox align="center" class="zms-row zms-model-row">
         <label class="zms-label" id="zms-model-label" value="Model"/>
         <html:select class="zms-field zms-model-select" id="zms-model-select" onchange="ZoteroMarkdownSummaryPrefs.selectModelFromDropdown()"></html:select>
-        <html:input class="zms-field zms-model-custom" id="zms-model" list="zms-model-options" placeholder="自定义模型名称"/>
+        <html:input class="zms-field zms-model-custom" id="zms-model" hidden="hidden" placeholder="自定义模型名称"/>
         <html:datalist id="zms-model-options"/>
         <button id="zms-load-models-button" label="刷新模型" oncommand="ZoteroMarkdownSummaryPrefs.loadModels()"/>
       </hbox>

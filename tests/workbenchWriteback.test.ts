@@ -3087,8 +3087,8 @@ describe("workbench writeback helpers", () => {
 
     workbench.renderWorkbenchModelRecommendations();
 
-    expect(dom.getElementById("zms-profile-model-select").value).toBe("private-deployment");
-    expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("__custom");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(false);
 
     dom.getElementById("zms-profile-model-select").value = "__custom";
     workbench.selectWorkbenchModelFromDropdown();

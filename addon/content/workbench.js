@@ -5451,8 +5451,7 @@ function recommendedModelOptionsForWorkbenchProfile(profile) {
   const defaults = workbenchProviderDefaults(provider);
   return mergeModelOptions([
     ...recommendedModelOptionsForWorkbenchProvider(provider),
-    defaults?.model ? { id: defaults.model, label: defaults.model } : null,
-    profile?.model ? { id: profile.model, label: profile.model } : null
+    defaults?.model ? { id: defaults.model, label: defaults.model } : null
   ].filter(Boolean), []);
 }
 

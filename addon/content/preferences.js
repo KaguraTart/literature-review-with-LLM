@@ -898,8 +898,8 @@ function prefFallbackMessage(key, lang) {
     modelSelectPlaceholder: zh ? "选择厂商推荐模型" : "Choose provider model",
     modelSelectCustom: zh ? "自定义模型..." : "Custom model...",
     modelPickerHelp: zh
-      ? "先选择模型厂商，再从下拉框选择模型；“刷新模型”会显示推荐模型，有 API Key 时追加在线模型，私有部署再选自定义模型。"
-      : "Choose a provider first, then pick a model from the dropdown. Refresh models shows recommendations first and adds online models when an API key is available; use Custom model for private deployments.",
+      ? "先选择模型厂商，模型下拉会自动显示该厂商的推荐模型；点击“刷新模型”可追加在线模型。普通用户直接选下拉项，只有私有部署或自定义路由才选“自定义模型”。"
+      : "Choose a provider first; the model dropdown shows that provider's recommended models. Refresh models adds online models when available. Most users can pick from the dropdown; use Custom model only for private deployments or custom routers.",
     onlineModels: zh ? "在线模型" : "Online",
     recommendedModels: zh ? "推荐模型" : "Recommended",
     providerEnv: zh ? "粘贴环境变量配置" : "Paste env config",
@@ -1135,8 +1135,8 @@ function applyPreferenceTextLabels(lang) {
     "zms-cap-toolUse-label": zh ? "工具调用" : "Tool use",
     "zms-cap-modelList-label": zh ? "在线模型列表" : "Model list",
     "zms-model-help": zh
-      ? "先选择模型厂商，再从下拉框选择模型；“刷新模型”会显示推荐模型，有 API Key 时追加在线模型，私有部署再选自定义模型。"
-      : "Choose a provider first, then pick a model from the dropdown. Refresh models shows recommendations first and adds online models when an API key is available; use Custom model for private deployments.",
+      ? "先选择模型厂商，模型下拉会自动显示该厂商的推荐模型；点击“刷新模型”可追加在线模型。普通用户直接选下拉项，只有私有部署或自定义路由才选“自定义模型”。"
+      : "Choose a provider first; the model dropdown shows that provider's recommended models. Refresh models adds online models when available. Most users can pick from the dropdown; use Custom model only for private deployments or custom routers.",
     "zms-local-agent-note-1": zh
       ? "按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"
       : "Configure endpoint/tool/timeout/payloadMode by skill id. Empty objects are allowed. ask-all/check fall back to ask-gemini / ask-claude / ask-opencode when no separate mapping is set; ask-gemini-claude can call only Gemini and Claude.",
@@ -3486,8 +3486,7 @@ function recommendedModelOptionsForProfile(profile) {
   const defaults = providerDefaults(provider);
   const options = [
     ...recommendedModelOptionsForProvider(provider),
-    defaults?.model ? { id: defaults.model, label: defaults.model } : null,
-    profile?.model ? { id: profile.model, label: profile.model } : null
+    defaults?.model ? { id: defaults.model, label: defaults.model } : null
   ].filter(Boolean);
   return mergeModelOptions(options, []);
 }
