@@ -49,6 +49,13 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
   const sandbox: any = {
     window: {
       parent: undefined,
+      Services: {
+        dirsvc: {
+          get: (name: string) => ({
+            path: name === "Home" ? "/Users/example" : "/tmp/profile"
+          })
+        }
+      },
       IOUtils: {
         readUTF8: async (path: string) => files.get(path) || "",
         exists: async (path: string) => files.has(path),
@@ -3197,6 +3204,43 @@ describe("workbench writeback helpers", () => {
     const loaded = loadWorkbenchHelpers();
 
     await expect(loaded.latestSessionForItem({ key: "ITEM" }, "/tmp/zms")).resolves.toBeNull();
+  });
+
+  it("recovers unlinked sessions from the legacy packaged output directory", async () => {
+    const legacyOutputDir = "/Users/example/Library/CloudStorage/OneDrive-个人/Zotero_PDFs/Zotero_MD_Summaries";
+    const files = new Map([
+      ["/Users/example/Library/CloudStorage", ""],
+      ["/Users/example/Library/CloudStorage/OneDrive-个人", ""],
+      [legacyOutputDir, ""],
+      [`${legacyOutputDir}/sessions/ITEM`, ""],
+      [`${legacyOutputDir}/sessions/ITEM/chat-1700000000000.jsonl`, "{\"role\":\"user\",\"content\":\"old\"}\n"]
+    ]);
+    const loaded = loadWorkbenchHelpers(files, {
+      getChildren: async (dir: string) => {
+        if (dir === "/Users/example/Library/CloudStorage") {
+          return ["/Users/example/Library/CloudStorage/OneDrive-个人"];
+        }
+        if (dir === `${legacyOutputDir}/sessions/ITEM`) {
+          return [`${legacyOutputDir}/sessions/ITEM/chat-1700000000000.jsonl`];
+        }
+        return [];
+      }
+    });
+
+    await expect(loaded.latestSessionForItem(
+      { key: "ITEM" },
+      "/tmp/zotero-data/Literature Review with LLM"
+    )).resolves.toMatchObject({
+      path: `${legacyOutputDir}/sessions/ITEM/chat-1700000000000.jsonl`,
+      sessionId: "chat-1700000000000",
+      source: "jsonl"
+    });
+    await expect(loaded.sessionFilesForItem(
+      { key: "ITEM" },
+      "/tmp/zotero-data/Literature Review with LLM"
+    )).resolves.toEqual([
+      `${legacyOutputDir}/sessions/ITEM/chat-1700000000000.jsonl`
+    ]);
   });
 
   it("recovers chat history from linked Markdown session attachments when JSONL is unavailable", async () => {

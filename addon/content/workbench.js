@@ -3953,6 +3953,22 @@ function zoteroProfileDirectory() {
   }
 }
 
+function homeDirectory() {
+  try {
+    const nsIFile = typeof Ci !== "undefined" ? Ci.nsIFile : undefined;
+    const home = Services?.dirsvc?.get?.("Home", nsIFile)?.path || "";
+    if (home) return home;
+  } catch (_err) {
+    // Fall back to deriving it from Zotero directories below.
+  }
+  const candidates = [zoteroDataDirectory(), zoteroProfileDirectory()];
+  for (const path of candidates) {
+    const match = String(path || "").replace(/\\/g, "/").match(/^(\/Users\/[^/]+)/);
+    if (match) return match[1];
+  }
+  return "";
+}
+
 function connectionTestBodyForProfile(profile) {
   const system = "You are a provider connection test endpoint. Reply with pong only.";
   if (profile.protocol === "anthropic_messages") {
@@ -11251,7 +11267,9 @@ async function sessionFilesForItem(item, outputDir) {
   if (!item?.key || !outputDir) return [];
   const files = [];
   const seen = new Set();
-  for (const dir of sessionDirsForItem(outputDir, item)) {
+  const outputDirs = [outputDir, ...await legacyOutputDirsForSessionLookup(outputDir)];
+  for (const baseDir of outputDirs) {
+    for (const dir of sessionDirsForItem(baseDir, item)) {
     if (!dir || seen.has(`dir:${dir}`)) continue;
     seen.add(`dir:${dir}`);
     if (!await pathExists(dir)) continue;
@@ -11264,6 +11282,7 @@ async function sessionFilesForItem(item, outputDir) {
     } catch (_err) {
       // Keep listing other legacy/current session directories.
     }
+    }
   }
   for (const path of await linkedChatSessionPathsForItem(item)) {
     if (seen.has(path)) continue;
@@ -11271,6 +11290,41 @@ async function sessionFilesForItem(item, outputDir) {
     files.push(path);
   }
   return recentSessionFiles(files);
+}
+
+async function legacyOutputDirsForSessionLookup(outputDir) {
+  const current = normalizedFilesystemPath(outputDir);
+  const dirs = [];
+  const seen = new Set([current].filter(Boolean));
+  const add = (path) => {
+    const normalized = normalizedFilesystemPath(path);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    dirs.push(path);
+  };
+  const home = homeDirectory();
+  if (!home || !PathUtils?.join) return dirs;
+  const cloudStorage = PathUtils.join(home, "Library", "CloudStorage");
+  try {
+    if (await pathExists(cloudStorage)) {
+      for (const path of await IOUtils.getChildren(cloudStorage)) {
+        const name = leafName(path);
+        if (/^OneDrive(?:-|$)/i.test(name)) {
+          add(PathUtils.join(path, "Zotero_PDFs", "Zotero_MD_Summaries"));
+        }
+      }
+    }
+  } catch (_err) {
+    // Fall back to common OneDrive folder names below.
+  }
+  for (const name of ["OneDrive-个人", "OneDrive-Personal", "OneDrive"]) {
+    add(PathUtils.join(cloudStorage, name, "Zotero_PDFs", "Zotero_MD_Summaries"));
+  }
+  return dirs;
+}
+
+function normalizedFilesystemPath(path) {
+  return String(path || "").trim().replace(/\\/g, "/").replace(/\/+$/, "");
 }
 
 function renderEmptySessionList(element, message) {
