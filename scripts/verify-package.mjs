@@ -738,6 +738,8 @@ const requiredMarkers = [
   [localAgentMcpSource, "pdfPageEntriesFromText", "local PDF page text parser"],
   [localAgentMcpSource, "shouldRunPdfOcrFallback", "local PDF OCR fallback gate"],
   [localAgentMcpSource, "extractPdfOcrPages", "local scanned PDF OCR fallback"],
+  [localAgentMcpSource, "pdfPageExtractionQuality", "local PDF extraction quality diagnostics"],
+  [localAgentMcpSource, "ocr_fallback_used", "local PDF OCR fallback quality warning"],
   [localAgentBridgeServiceSource, "REQUIRED_MCP_TOOL_NAMES", "local bridge service required tool check"],
   [localAgentBridgeServiceSource, "LOCAL_AGENT_PDFTOTEXT_BIN", "local bridge service PDF text env passthrough"],
   [localAgentBridgeServiceSource, "LOCAL_AGENT_PDFTOPPM_BIN", "local bridge service PDF render env passthrough"]

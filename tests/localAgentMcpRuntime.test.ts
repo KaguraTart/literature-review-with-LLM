@@ -82,6 +82,9 @@ describe("local agent stdio MCP runtime", () => {
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.maxOcrPages).toMatchObject({
         type: "number"
       });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.minTextChars).toMatchObject({
+        type: "number"
+      });
     } finally {
       runtime.stop();
     }
@@ -159,6 +162,14 @@ describe("local agent stdio MCP runtime", () => {
           engine: "pdftotext",
           name: "candidate.pdf",
           pageCount: 2,
+          quality: {
+            status: "pass",
+            engine: "pdftotext",
+            pagesWithText: 2,
+            emptyPageCount: 0,
+            ocrFallbackUsed: false,
+            warnings: []
+          },
           pages: [
             {
               page: 1,
@@ -218,6 +229,17 @@ describe("local agent stdio MCP runtime", () => {
           pageCount: 2,
           ocrFallbackUsed: true,
           textPageCount: 0,
+          ocrRenderedPageCount: 2,
+          ocrEmptyPageCount: 0,
+          ocrLanguage: "eng",
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 2,
+            emptyPageCount: 0,
+            ocrFallbackUsed: true,
+            warnings: ["ocr_fallback_used"]
+          },
           pages: [
             {
               page: 1,

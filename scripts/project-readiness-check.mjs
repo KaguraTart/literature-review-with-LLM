@@ -293,7 +293,7 @@ const SOURCE_MARKERS = [
     id: "local-agents.bridge",
     description: "Gemini, Claude, opencode, all-agent, OCR, PDF page extraction, and health-check MCP tools are exposed by the local bridge",
     files: ["scripts/local-agent-mcp.mjs"],
-    markers: ["ask_gemini", "ask_claude", "ask_opencode", "ask_all_agents", "ocr_image", "extract_pdf_pages", "check_local_agents", "selectedAgentEntries", "allAgentCallArgs", "allAgentTimeoutSeconds", "LOCAL_AGENT_TESSERACT_BIN", "LOCAL_AGENT_TESSERACT_LANG", "LOCAL_AGENT_PDFTOTEXT_BIN", "LOCAL_AGENT_PDFTOPPM_BIN", "shouldRunPdfOcrFallback", "extractPdfOcrPages"]
+    markers: ["ask_gemini", "ask_claude", "ask_opencode", "ask_all_agents", "ocr_image", "extract_pdf_pages", "check_local_agents", "selectedAgentEntries", "allAgentCallArgs", "allAgentTimeoutSeconds", "LOCAL_AGENT_TESSERACT_BIN", "LOCAL_AGENT_TESSERACT_LANG", "LOCAL_AGENT_PDFTOTEXT_BIN", "LOCAL_AGENT_PDFTOPPM_BIN", "shouldRunPdfOcrFallback", "extractPdfOcrPages", "pdfPageExtractionQuality", "ocr_fallback_used"]
   },
   {
     id: "local-agents.ocr-workbench",

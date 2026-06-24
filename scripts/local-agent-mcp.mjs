@@ -92,7 +92,7 @@ const tools = [
   },
   {
     name: "extract_pdf_pages",
-    description: "Extract page-level text from a local PDF using pdftotext and return JSON page entries.",
+    description: "Extract page-level text from a local PDF using pdftotext and return JSON page entries with quality diagnostics.",
     inputSchema: pdfPagesSchema()
   }
 ];
@@ -415,20 +415,32 @@ async function extractPdfPages(args = {}) {
       textError = error;
       if (!pdfOcrFallbackEnabled(args)) throw error;
     }
-    if (shouldRunPdfOcrFallback(args, pages)) {
-      const ocrPages = await extractPdfOcrPages(sourcePath, args);
-      if (ocrPages.length) {
-        return JSON.stringify(pdfPagesResult(args, pdf, filePath, "tesseract", ocrPages, {
+    let ocrResult = null;
+    const shouldAttemptOcr = shouldRunPdfOcrFallback(args, pages);
+    if (shouldAttemptOcr) {
+      ocrResult = await extractPdfOcrPages(sourcePath, args);
+      if (ocrResult.pages.length) {
+        return JSON.stringify(pdfPagesResult(args, pdf, filePath, "tesseract", ocrResult.pages, {
           ocrFallbackUsed: true,
           textPageCount: pages.length,
+          ocrFallbackAttempted: true,
+          ocrRenderedPageCount: ocrResult.renderedPageCount,
+          ocrEmptyPageCount: ocrResult.emptyPageCount,
+          ocrLanguage: ocrResult.language,
+          ocrMaxPages: ocrResult.maxPages,
           textError: textError ? cleanPdfPageText(textError.message || String(textError)).slice(0, 500) : ""
         }));
       }
     }
     if (textError) throw textError;
     return JSON.stringify(pdfPagesResult(args, pdf, filePath, "pdftotext", pages, {
-      ocrFallbackUsed: shouldRunPdfOcrFallback(args, pages),
-      textPageCount: pages.length
+      ocrFallbackUsed: false,
+      ocrFallbackAttempted: shouldAttemptOcr,
+      textPageCount: pages.length,
+      ocrRenderedPageCount: ocrResult?.renderedPageCount || 0,
+      ocrEmptyPageCount: ocrResult?.emptyPageCount || 0,
+      ocrLanguage: ocrResult?.language || "",
+      ocrMaxPages: ocrResult?.maxPages || 0
     }));
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true });
@@ -465,7 +477,14 @@ async function extractPdfOcrPages(sourcePath, args = {}) {
         });
       }
     }
-    return pages;
+    const renderedPageCount = Math.min(rendered.length, maxPages);
+    return {
+      pages,
+      renderedPageCount,
+      emptyPageCount: Math.max(renderedPageCount - pages.length, 0),
+      maxPages,
+      language
+    };
   } finally {
     await rm(renderDir, { recursive: true, force: true });
   }
@@ -477,7 +496,40 @@ function pdfPagesResult(args, pdf, filePath, engine, pages, extra = {}) {
     name: String(args.name || pdf.name || (filePath ? basename(filePath) : "input.pdf")),
     pageCount: pages.length,
     pages,
+    quality: pdfPageExtractionQuality(args, engine, pages, extra),
     ...extra
+  };
+}
+
+function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
+  const normalizedPages = Array.isArray(pages) ? pages : [];
+  const totalTextChars = pdfPagesTotalTextLength(normalizedPages);
+  const pagesWithText = normalizedPages.filter((page) => String(page?.text || "").trim()).length;
+  const expectedPageCount = Math.max(
+    Number(extra.ocrRenderedPageCount) || 0,
+    normalizedPages.length
+  );
+  const emptyPageCount = Math.max(expectedPageCount - pagesWithText, Number(extra.ocrEmptyPageCount) || 0);
+  const minTextChars = pdfOcrFallbackMinChars(args.minTextChars);
+  const warnings = [];
+  if (extra.textError) warnings.push("text_extraction_error");
+  if (extra.ocrFallbackUsed) warnings.push("ocr_fallback_used");
+  if (extra.ocrFallbackAttempted && !extra.ocrFallbackUsed) warnings.push("ocr_fallback_no_text");
+  if (!pagesWithText) warnings.push("no_text_extracted");
+  if (totalTextChars > 0 && totalTextChars < minTextChars) warnings.push("sparse_text");
+  if (emptyPageCount > 0) warnings.push("empty_or_unread_pages");
+  return {
+    status: pagesWithText ? (warnings.length ? "warning" : "pass") : "fail",
+    engine,
+    pageCount: normalizedPages.length,
+    expectedPageCount,
+    pagesWithText,
+    emptyPageCount,
+    totalTextChars,
+    averageTextCharsPerPage: pagesWithText ? Math.round(totalTextChars / pagesWithText) : 0,
+    minTextChars,
+    ocrFallbackUsed: Boolean(extra.ocrFallbackUsed),
+    warnings
   };
 }
 
