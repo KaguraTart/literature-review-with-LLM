@@ -2801,7 +2801,7 @@ describe("workbench writeback helpers", () => {
     const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
     workbench.t = (key: string) => ({
       modelPickerHelp: "先选择模型厂商，再从下拉框选择推荐模型",
-      loadModels: "刷新在线模型",
+      loadModels: "加载模型列表",
       placeholder: "向当前论文提问",
       placeholderHint: "Enter 换行",
       candidateSearchPlaceholder: "输入检索式"
@@ -2810,8 +2810,8 @@ describe("workbench writeback helpers", () => {
     workbench.applyLanguage();
 
     expect(dom.getElementById("zms-workbench-model-help").textContent).toContain("先选择模型厂商");
-    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("刷新在线模型");
-    expect(dom.getElementById("zms-load-models-workbench").title).toBe("刷新在线模型");
+    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("加载模型列表");
+    expect(dom.getElementById("zms-load-models-workbench").title).toBe("加载模型列表");
   });
 
   it("applies a workbench provider preset without reusing the previous provider API key", () => {

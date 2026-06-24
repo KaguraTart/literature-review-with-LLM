@@ -2820,7 +2820,7 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-baseURL-label").value).toBe("接口地址");
     expect(elements.get("zms-model-label").value).toBe("模型");
     expect(elements.get("zms-model-help").value).toContain("模型下拉框会显示常用模型");
-    expect(elements.get("zms-load-models-button").label).toBe("刷新在线模型");
+    expect(elements.get("zms-load-models-button").label).toBe("加载模型列表");
     expect(elements.get("zms-test-button").label).toBe("保存并测试");
     expect(elements.get("zms-profileEndpointMode-label").value).toBe("接口模式");
     expect(elements.get("zms-outputDir-label").value).toBe("输出目录");

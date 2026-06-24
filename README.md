@@ -83,7 +83,7 @@ Important fields:
 - `Base URL`: provider endpoint root, for example `https://api.openai.com/v1` or `http://127.0.0.1:11434/v1`.
 - Base URLs may include query parameters required by a gateway or Azure-style route, for example `?api-version=preview`; the plugin appends `/chat/completions`, `/responses`, `/messages`, or `/models` before the query string.
 - `API Key`: provider API key. Local providers such as Ollama may not require one.
-- `Model`: model name used by the selected provider. Use the model dropdown for built-in recommendations, or click `Refresh online models` to fetch the provider's online model list when the profile supports it. Built-in profiles prefill a practical recommended model where the provider has a stable public model name; Azure OpenAI deployments and private gateways may still require your own deployment/model name.
+- `Model`: model name used by the selected provider. Use the model dropdown for built-in recommendations, or click `Load model list` to show the provider recommendations first and fetch the provider's online model list when the profile supports it. Built-in profiles prefill a practical recommended model where the provider has a stable public model name; Azure OpenAI deployments and private gateways may still require your own deployment/model name.
 - `Setup guide`: shows the resolved protocol, request endpoint, auth behavior, model-list endpoint, supported inputs, and a copyable terminal live-check command without showing the saved API key.
 - `Save and Test`: saves the current provider profile first, then sends a minimal connection test with the latest API key, Base URL, and model.
 - `输入模式`: choose extracted text or raw PDF input where supported.
