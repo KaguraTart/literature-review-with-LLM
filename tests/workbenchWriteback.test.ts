@@ -9287,7 +9287,7 @@ describe("workbench writeback helpers", () => {
               message: "Unsupported request parameter"
             },
             errors: [
-              { instancePath: "/response_format", message: "must NOT have additional properties" },
+              { instancePath: "#/body/response_format", message: "must NOT have additional properties" },
               {
                 instancePath: "",
                 keyword: "additionalProperties",

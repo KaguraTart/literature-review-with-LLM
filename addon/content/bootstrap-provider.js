@@ -1309,8 +1309,9 @@ function providerFieldHintPointerPath(value) {
     .split("/")
     .filter(Boolean)
     .map((segment) => segment.replace(/~1/g, "/").replace(/~0/g, "~"))
-    .filter(Boolean);
-  return segments.length ? `body.${segments.join(".")}` : "";
+    .filter(Boolean)
+    .filter((segment, index) => index !== 0 || !/^(?:body|request|payload|params?|parameters?|input)$/i.test(segment));
+  return segments.length ? segments.join(".") : "";
 }
 
 function providerDetailMentionsCanonicalField(detail, field) {

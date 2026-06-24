@@ -1618,6 +1618,20 @@ describe("bootstrap provider helpers", () => {
     )).toEqual(["stream_options"]);
     expect((helpers as any).providerCompatibilityFallbackFields(
       "openai_chat",
+      {
+        model: "router-model",
+        messages: [],
+        response_format: { type: "json_object" }
+      },
+      400,
+      JSON.stringify({
+        errors: [
+          { jsonPointer: "#/body/response_format", message: "must NOT have additional properties" }
+        ]
+      })
+    )).toEqual(["response_format"]);
+    expect((helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
       streamingBody,
       400,
       JSON.stringify({

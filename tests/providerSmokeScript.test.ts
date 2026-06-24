@@ -351,7 +351,7 @@ describe("provider smoke verifier", () => {
             error: {
               code: "unsupported_parameter",
               message: "Unsupported request parameter",
-              param: "response_format"
+              param: "#/body/response_format"
             }
           }));
           return;

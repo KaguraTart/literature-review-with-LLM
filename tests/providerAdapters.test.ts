@@ -448,6 +448,28 @@ describe("provider adapters", () => {
       400,
       JSON.stringify({
         errors: [
+          { jsonPointer: "#/body/response_format", message: "must NOT have additional properties" }
+        ]
+      })
+    )).toEqual(["response_format"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      400,
+      JSON.stringify({
+        error: {
+          code: "unsupported_parameter",
+          message: "Unsupported request parameter",
+          param: "/body/max_completion_tokens"
+        }
+      })
+    )).toEqual(["max_completion_tokens"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      400,
+      JSON.stringify({
+        errors: [
           {
             instancePath: "",
             keyword: "additionalProperties",
