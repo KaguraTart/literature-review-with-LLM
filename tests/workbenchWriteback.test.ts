@@ -4746,6 +4746,7 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("## Chart Data Quality Review");
     expect(report).toContain("- Quality status: reviewable-with-cautions");
     expect(report).toContain("| axis-calibration | pass | calibration anchors present: X 2, Y 2 |");
+    expect(report).toContain("| calibration-quality | pass | spans: X 340 px, Y 240 px; numeric anchors: 4/4; monotonic axes: X, Y |");
     expect(report).toContain("| confidence | warning | high 0, medium 0, low 3, needs-review 1 |");
     expect(report).toContain("Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.");
     expect(report).toContain("## Machine-Readable Data");
@@ -4810,6 +4811,7 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("## 图表数据质量审阅");
     expect(files.get(reportPath)).toContain("- 质量状态: reviewable-with-cautions");
     expect(files.get(reportPath)).toContain("| axis-calibration | pass | calibration anchors present: X 2, Y 2 |");
+    expect(files.get(reportPath)).toContain("| calibration-quality | pass | spans: X 340 px, Y 240 px; numeric anchors: 4/4; monotonic axes: X, Y |");
     expect(files.get(reportPath)).toContain("在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。");
     expect(files.get(reportPath)).toContain("## 机器可读数据");
     expect(files.get(reportPath)).toContain("| 1 | 1 | 指标 | delay | 未标注 |");
@@ -4868,6 +4870,58 @@ describe("workbench writeback helpers", () => {
     expect(files.get(csvPath)).toContain("calibration:1,1,axis,X,[image],assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("calibration:1,1,value,0,[image],assistant-visual,chart.png");
     expect(dom.elements.get("zms-status").textContent).toContain(`visualReportDone: ${reportPath}`);
+  });
+
+  it("flags low-quality axis calibration anchors in visual extraction reports", () => {
+    const loaded = loadWorkbenchHelpers();
+    const item = {
+      key: "IMG",
+      getCollections: () => []
+    };
+    const report = loaded.renderVisualExtractionReportMarkdown({
+      item,
+      messages: [
+        {
+          id: "user-visual",
+          role: "user",
+          content: "请解析图片",
+          images: [{ name: "chart.png", mimeType: "image/png", size: 77 }]
+        },
+        {
+          id: "assistant-visual",
+          role: "assistant",
+          profileName: "MiniMax",
+          content: [
+            "## Visual OCR Text",
+            "- Axis ticks [image]",
+            "",
+            "## Reconstructed Data Table",
+            "| Item | Value | Source |",
+            "| --- | --- | --- |",
+            "| Delay | 12 ms | [image] |",
+            "",
+            "## Axis Calibration Anchors",
+            "| Axis | Pixel | Value | Unit | Source | Confidence |",
+            "| --- | --- | --- | --- | --- | --- |",
+            "| X | 80 | 0 | s | [image] | medium |",
+            "| X | 92 | 10 | s | [image] | medium |",
+            "| Y | 100 | 0 | ms | [image] | medium |",
+            "| Y | 200 | 20 | ms | [image] | medium |",
+            "| Y | 300 | 10 | ms | [image] | medium |"
+          ].join("\n")
+        }
+      ]
+    }, {
+      item,
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+
+    expect(report).toContain("| axis-calibration | pass | calibration anchors present: X 2, Y 3 |");
+    expect(report).toContain("| calibration-quality | fail |");
+    expect(report).toContain("small pixel span on X: 12 px");
+    expect(report).toContain("non-monotonic anchors on Y");
+    expect(report).toContain("Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, and units");
   });
 
   it("renders a formal review draft with evidence-backed writing sections", () => {

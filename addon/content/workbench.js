@@ -6822,6 +6822,7 @@ function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDraft
       pixelPoints.length ? `pixel points: ${pixelPoints.length}` : "no pixel-coordinate points parsed"
     ),
     visualExtractionAxisCalibrationCheck(pixelPoints, calibrationAnchors),
+    ...(calibrationAnchors.length ? [visualExtractionCalibrationQualityCheck(calibrationAnchors)] : []),
     visualExtractionConfidenceCheck([...chartPoints, ...pixelPoints]),
     visualExtractionEvidenceCheck(evidenceLabels),
     visualExtractionPointCountCheck(chartPoints.length + pixelPoints.length)
@@ -6880,6 +6881,96 @@ function visualExtractionAxisCalibrationCheck(pixelPoints = [], calibrationAncho
   return visualExtractionQualityCheck("axis-calibration", "fail", "pixel points have no axis-value mapping");
 }
 
+function visualExtractionCalibrationQualityCheck(calibrationAnchors = []) {
+  const anchors = (calibrationAnchors || []).filter((anchor) =>
+    mdText(anchor?.axis || "")
+    && anchor?.pixel !== null
+    && anchor?.pixel !== undefined
+    && mdText(anchor?.value || "")
+  );
+  if (!anchors.length) return visualExtractionQualityCheck("calibration-quality", "warning", "no explicit calibration anchors to diagnose");
+  const axisGroups = visualExtractionCalibrationAxisGroups(anchors);
+  const spans = [];
+  const monotonicAxes = [];
+  const issues = [];
+  const severeIssues = [];
+  let numericCount = 0;
+  for (const [axis, axisAnchors] of axisGroups.entries()) {
+    const numericAnchors = axisAnchors
+      .map((anchor) => ({ ...anchor, numericValue: visualExtractionNumber(anchor.value) }))
+      .filter((anchor) => anchor.numericValue !== null);
+    numericCount += numericAnchors.length;
+    const duplicatePixels = visualExtractionDuplicateValues(axisAnchors.map((anchor) => anchor.pixel));
+    if (duplicatePixels.length) {
+      severeIssues.push(`duplicate pixel anchors on ${axis}: ${duplicatePixels.join(", ")}`);
+    }
+    const duplicateAxisValues = visualExtractionDuplicateValues(numericAnchors.map((anchor) => anchor.numericValue));
+    if (duplicateAxisValues.length) {
+      severeIssues.push(`duplicate axis values on ${axis}: ${duplicateAxisValues.join(", ")}`);
+    }
+    if (axisAnchors.length >= 2) {
+      const pixels = axisAnchors.map((anchor) => Number(anchor.pixel)).filter(Number.isFinite);
+      const span = Math.max(...pixels) - Math.min(...pixels);
+      spans.push(`${axis} ${span} px`);
+      if (span > 0 && span < 24) issues.push(`small pixel span on ${axis}: ${span} px`);
+    }
+    if (numericAnchors.length >= 3) {
+      if (visualExtractionMonotonicCalibration(numericAnchors)) {
+        monotonicAxes.push(axis);
+      } else {
+        severeIssues.push(`non-monotonic anchors on ${axis}`);
+      }
+    } else if (numericAnchors.length >= 2) {
+      monotonicAxes.push(axis);
+    }
+  }
+  if (numericCount < anchors.length) issues.push(`non-numeric values ${anchors.length - numericCount}/${anchors.length}`);
+  const detailParts = [
+    spans.length ? `spans: ${spans.join(", ")}` : "",
+    `numeric anchors: ${numericCount}/${anchors.length}`,
+    monotonicAxes.length ? `monotonic axes: ${monotonicAxes.join(", ")}` : "",
+    severeIssues.length || issues.length ? `issues: ${[...severeIssues, ...issues].join("; ")}` : ""
+  ].filter(Boolean);
+  if (severeIssues.length) return visualExtractionQualityCheck("calibration-quality", "fail", detailParts.join("; "));
+  if (issues.length) return visualExtractionQualityCheck("calibration-quality", "warning", detailParts.join("; "));
+  return visualExtractionQualityCheck("calibration-quality", "pass", detailParts.join("; "));
+}
+
+function visualExtractionCalibrationAxisGroups(anchors = []) {
+  const groups = new Map();
+  for (const anchor of anchors || []) {
+    const axis = mdText(anchor?.axis || "").toUpperCase() || "UNKNOWN";
+    if (!groups.has(axis)) groups.set(axis, []);
+    groups.get(axis).push(anchor);
+  }
+  return groups;
+}
+
+function visualExtractionDuplicateValues(values = []) {
+  const seen = new Map();
+  const duplicates = [];
+  for (const value of values || []) {
+    const normalized = mdText(value === null || value === undefined ? "" : value);
+    if (!normalized) continue;
+    seen.set(normalized, (seen.get(normalized) || 0) + 1);
+    if (seen.get(normalized) === 2) duplicates.push(normalized);
+  }
+  return duplicates;
+}
+
+function visualExtractionMonotonicCalibration(anchors = []) {
+  const sorted = [...(anchors || [])].sort((left, right) => Number(left.pixel) - Number(right.pixel));
+  const deltas = [];
+  for (let index = 1; index < sorted.length; index += 1) {
+    const delta = Number(sorted[index].numericValue) - Number(sorted[index - 1].numericValue);
+    if (delta > 0) deltas.push(1);
+    else if (delta < 0) deltas.push(-1);
+    else deltas.push(0);
+  }
+  const nonZero = deltas.filter((delta) => delta !== 0);
+  return nonZero.length > 0 && nonZero.every((delta) => delta === nonZero[0]);
+}
+
 function visualExtractionConfidenceCheck(points = []) {
   if (!points.length) return visualExtractionQualityCheck("confidence", "warning", "no point-level confidence values");
   const counts = { high: 0, medium: 0, low: 0, review: 0 };
@@ -6917,6 +7008,9 @@ function visualExtractionQualityRecommendations(checks = []) {
   if (byId.get("axis-calibration")?.status !== "pass") {
     recommendations.push({ id: "axis-calibration" });
   }
+  if (byId.get("calibration-quality") && byId.get("calibration-quality")?.status !== "pass") {
+    recommendations.push({ id: "calibration-quality" });
+  }
   if (byId.get("confidence")?.status !== "pass") {
     recommendations.push({ id: "confidence" });
   }
@@ -6952,6 +7046,7 @@ function visualExtractionChartQualityReviewMarkdown(review, labels) {
 function visualExtractionQualityRecommendationText(item, labels) {
   const id = typeof item === "string" ? item : item?.id || "";
   if (id === "axis-calibration") return labels.recommendationAxisCalibration;
+  if (id === "calibration-quality") return labels.recommendationCalibrationQuality;
   if (id === "confidence") return labels.recommendationConfidence;
   if (id === "image-evidence") return labels.recommendationImageEvidence;
   if (id === "point-count") return labels.recommendationPointCount;
@@ -7044,6 +7139,7 @@ function visualExtractionReportLabels(outputLanguage) {
       recommendations: "复核建议",
       noQualityIssues: "未发现结构化质量风险；正式使用前仍建议回到原图核对。",
       recommendationAxisCalibration: "补充至少两个清晰坐标轴刻度/数值锚点，并对照原图核对 Pixel X/Y 到 Axis X/Y 的映射。",
+      recommendationCalibrationQuality: "重新核对校准锚点的像素跨度、单调性、重复刻度和数值单位；跨度太小或非单调时不要用于量化比较。",
       recommendationConfidence: "在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。",
       recommendationImageEvidence: "重新提问时要求模型用 [image] 标注直接视觉观察，并把文本上下文推断分开。",
       recommendationPointCount: "放大原图或要求模型输出更密集的点表后，再用于跨论文实验对比。",
@@ -7130,6 +7226,7 @@ function visualExtractionReportLabels(outputLanguage) {
     recommendations: "Review Recommendations",
     noQualityIssues: "No structured quality risk was detected; still verify against the original figure before final use.",
     recommendationAxisCalibration: "Add at least two visible axis tick/value anchors and verify Pixel X/Y to Axis X/Y mapping against the original chart.",
+    recommendationCalibrationQuality: "Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, and units; do not use small-span or non-monotonic anchors for quantitative comparison.",
     recommendationConfidence: "Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.",
     recommendationImageEvidence: "Ask the model to mark direct visual observations with [image] and keep text-context inferences separate.",
     recommendationPointCount: "Zoom the original figure or request a denser point table before using the data for cross-paper comparison.",
