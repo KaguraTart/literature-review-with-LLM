@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 
 function loadWorkbenchHelpers() {
+  const providerModelsCode = readFileSync(resolve(process.cwd(), "addon/content/provider-models.js"), "utf8");
   const code = readFileSync(resolve(process.cwd(), "addon/content/workbench.js"), "utf8");
   const sandbox: any = {
     window: {
@@ -17,6 +18,7 @@ function loadWorkbenchHelpers() {
     console
   };
   const context = createContext(sandbox);
+  runInContext(providerModelsCode, context, { filename: "provider-models.js" });
   runInContext(code, context, { filename: "workbench.js" });
   return context as {
     localAgentConfig: (profile: any, skillId: string) => any;

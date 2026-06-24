@@ -4,6 +4,7 @@ import { createContext, runInContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
 function loadPreferencesHelpers() {
+  const providerModelsCode = readFileSync(resolve(process.cwd(), "addon/content/provider-models.js"), "utf8");
   const code = readFileSync(resolve(process.cwd(), "addon/content/preferences.js"), "utf8");
   const context = createContext({
     window: {},
@@ -13,6 +14,7 @@ function loadPreferencesHelpers() {
     URL,
     console
   });
+  runInContext(providerModelsCode, context, { filename: "provider-models.js" });
   runInContext(code, context, { filename: "preferences.js" });
   return context as {
     parseLocalAgentConfig: (raw: any) => any;
@@ -67,6 +69,7 @@ function loadPreferencesController(options: {
   noZmsMessage?: boolean;
   makeDirectoryThrows?: boolean;
 } = {}) {
+  const providerModelsCode = readFileSync(resolve(process.cwd(), "addon/content/provider-models.js"), "utf8");
   const code = readFileSync(resolve(process.cwd(), "addon/content/preferences.js"), "utf8");
   const elements = new Map<string, any>();
   const fetchCalls: Array<{ url: string; init: any }> = [];
@@ -381,6 +384,7 @@ function loadPreferencesController(options: {
     windowObject.browsingContext = { zmsKind: "browsingContext" };
   }
   const context = createContext(contextValues);
+  runInContext(providerModelsCode, context, { filename: "provider-models.js" });
   runInContext(code, context, { filename: "preferences.js" });
   return {
     controller: (context as any).window.ZoteroMarkdownSummaryPrefs,
@@ -3455,8 +3459,13 @@ describe("preferences local-agent config helpers", () => {
       method: "GET",
       headers: { authorization: "Bearer sk-test-secret", "x-route": "paper" }
     });
-    expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toEqual(["model-a", "model-b"]);
-    expect(elements.get("zms-model-select").children.map((option: any) => option.value)).toEqual(["", "model-a", "model-b", "__custom"]);
+    const optionValues = elements.get("zms-model-options").children.map((option: any) => option.value);
+    const selectValues = elements.get("zms-model-select").children.map((option: any) => option.value);
+    expect(optionValues.slice(0, 2)).toEqual(["model-a", "model-b"]);
+    expect(optionValues).toContain("gpt-4.1");
+    expect(selectValues.slice(0, 3)).toEqual(["", "model-a", "model-b"]);
+    expect(selectValues).toContain("gpt-4.1");
+    expect(selectValues.at(-1)).toBe("__custom");
     expect(elements.get("zms-model-select").value).toBe("model-a");
     expect(elements.get("zms-model").value).toBe("model-a");
     expect(elements.get("zms-status").value).toBe("Models loaded: 2");
@@ -3470,9 +3479,11 @@ describe("preferences local-agent config helpers", () => {
 
     await controller.loadModels();
 
-    expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toEqual(["model-a", "model-b"]);
+    const optionValues = elements.get("zms-model-options").children.map((option: any) => option.value);
+    expect(optionValues.slice(0, 2)).toEqual(["model-a", "model-b"]);
+    expect(optionValues).toContain("manual-model");
     expect(elements.get("zms-model").value).toBe("manual-model");
-    expect(elements.get("zms-model-select").value).toBe("__custom");
+    expect(elements.get("zms-model-select").value).toBe("manual-model");
   });
 
   it("renders model display names from Anthropic-compatible model lists", async () => {
@@ -3492,9 +3503,13 @@ describe("preferences local-agent config helpers", () => {
     await controller.loadModels();
 
     const options = elements.get("zms-model-options").children;
-    expect(options.map((option: any) => option.value)).toEqual(["claude-opus-4-8", "claude-sonnet-4-5"]);
-    expect(options.map((option: any) => option.label)).toEqual(["Claude Opus 4.8", "Claude Sonnet 4.5"]);
-    expect(elements.get("zms-model-select").children.map((option: any) => option.value)).toEqual(["", "claude-opus-4-8", "claude-sonnet-4-5", "__custom"]);
+    expect(options.map((option: any) => option.value).slice(0, 2)).toEqual(["claude-opus-4-8", "claude-sonnet-4-5"]);
+    expect(options.map((option: any) => option.label).slice(0, 2)).toEqual(["Claude Opus 4.8", "Claude Sonnet 4.5"]);
+    expect(options.map((option: any) => option.value)).toContain("claude-sonnet-4-20250514");
+    const selectValues = elements.get("zms-model-select").children.map((option: any) => option.value);
+    expect(selectValues.slice(0, 3)).toEqual(["", "claude-opus-4-8", "claude-sonnet-4-5"]);
+    expect(selectValues).toContain("claude-sonnet-4-20250514");
+    expect(selectValues.at(-1)).toBe("__custom");
     expect(elements.get("zms-model-select").value).toBe("claude-opus-4-8");
     expect(elements.get("zms-model").value).toBe("claude-opus-4-8");
   });
@@ -3519,7 +3534,9 @@ describe("preferences local-agent config helpers", () => {
     expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[0].init.headers["anthropic-version"]).toBe("2023-06-01");
     expect(fetchCalls[1].init.headers["anthropic-version"]).toBeUndefined();
-    expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toEqual(["claude-compatible"]);
+    const optionValues = elements.get("zms-model-options").children.map((option: any) => option.value);
+    expect(optionValues[0]).toBe("claude-compatible");
+    expect(optionValues).toContain("claude-sonnet-4-20250514");
     expect(elements.get("zms-status").value).toBe("Models loaded: 1");
   });
 
@@ -3543,7 +3560,9 @@ describe("preferences local-agent config helpers", () => {
     expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[0].url).toBe("https://api.openai.com/v1/models");
     expect(fetchCalls[1].url).toBe("https://api.openai.com/v1/models?after_id=model-b");
-    expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toEqual(["model-a", "model-b", "model-c"]);
+    const optionValues = elements.get("zms-model-options").children.map((option: any) => option.value);
+    expect(optionValues.slice(0, 3)).toEqual(["model-a", "model-b", "model-c"]);
+    expect(optionValues).toContain("gpt-4.1");
     expect(elements.get("zms-status").value).toBe("Models loaded: 3");
   });
 
@@ -3570,7 +3589,8 @@ describe("preferences local-agent config helpers", () => {
     expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[1].url).toBe("https://api.openai.com/v1/models?after_id=model-b");
     const options = elements.get("zms-model-options").children;
-    expect(options.map((option: any) => option.value)).toEqual(["model-a", "model-b"]);
+    expect(options.map((option: any) => option.value).slice(0, 2)).toEqual(["model-a", "model-b"]);
+    expect(options.map((option: any) => option.value)).toContain("gpt-4.1");
     expect(options.find((option: any) => option.value === "model-a")?.label).toBe("Model A");
     expect(elements.get("zms-status").value).toBe("Models loaded: 2");
   });
@@ -3600,7 +3620,8 @@ describe("preferences local-agent config helpers", () => {
     expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[1].url).toBe("https://api.openai.com/v1/models?after_id=model-b");
     const options = elements.get("zms-model-options").children;
-    expect(options.map((option: any) => option.value)).toEqual(["model-a", "model-b"]);
+    expect(options.map((option: any) => option.value).slice(0, 2)).toEqual(["model-a", "model-b"]);
+    expect(options.map((option: any) => option.value)).toContain("gpt-4.1");
     expect(options.find((option: any) => option.value === "model-a")?.label).toBe("Model A");
   });
 

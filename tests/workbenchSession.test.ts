@@ -4,6 +4,7 @@ import { createContext, runInContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
 function loadWorkbenchHelpers(options: { fetchResponses?: any[] } = {}) {
+  const providerModelsCode = readFileSync(resolve(process.cwd(), "addon/content/provider-models.js"), "utf8");
   const code = readFileSync(resolve(process.cwd(), "addon/content/workbench.js"), "utf8");
   const fetchCalls: Array<{ url: string; init: any }> = [];
   const context: any = createContext({
@@ -49,6 +50,7 @@ function loadWorkbenchHelpers(options: { fetchResponses?: any[] } = {}) {
     URL,
     Date
   });
+  runInContext(providerModelsCode, context, { filename: "provider-models.js" });
   runInContext(code, context, { filename: "workbench.js" });
   return Object.assign(context, { fetchCalls }) as {
     fetchCalls: Array<{ url: string; init: any }>;

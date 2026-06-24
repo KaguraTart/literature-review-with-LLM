@@ -3,6 +3,7 @@
       id="zotero-prefpane-markdown-summary"
       onload="ZoteroMarkdownSummaryPrefs.init()">
   <script src="chrome://zotero-markdown-summary/content/messages.js"/>
+  <script src="chrome://zotero-markdown-summary/content/provider-models.js"/>
   <groupbox>
     <label><html:h2 id="zms-title">Literature Review with LLM</html:h2></label>
     <vbox class="zms-form">
@@ -101,7 +102,7 @@
         <label class="zms-label" id="zms-apiKey-label" value="API Key"/>
         <html:input class="zms-field" id="zms-apiKey" type="password"/>
       </hbox>
-      <hbox align="center" class="zms-row">
+      <hbox align="center" class="zms-row zms-model-row">
         <label class="zms-label" id="zms-model-label" value="Model"/>
         <html:select class="zms-field zms-model-select" id="zms-model-select" onchange="ZoteroMarkdownSummaryPrefs.selectModelFromDropdown()"></html:select>
         <html:input class="zms-field zms-model-custom" id="zms-model" list="zms-model-options" placeholder="自定义模型名称"/>

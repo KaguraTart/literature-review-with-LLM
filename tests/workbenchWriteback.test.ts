@@ -4,6 +4,7 @@ import { createContext, runInContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
 function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Record<string, any> = {}, prefValues: Record<string, any> = {}) {
+  const providerModelsCode = readFileSync(resolve(process.cwd(), "addon/content/provider-models.js"), "utf8");
   const code = readFileSync(resolve(process.cwd(), "addon/content/workbench.js"), "utf8");
   const writes = new Map<string, string>();
   const linkedAttachments: any[] = [];
@@ -156,6 +157,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     console
   };
   const context = createContext(sandbox);
+  runInContext(providerModelsCode, context, { filename: "provider-models.js" });
   runInContext(code, context, { filename: "workbench.js" });
   (context as any).__writes = writes;
   (context as any).__linkedAttachments = linkedAttachments;
@@ -2655,7 +2657,10 @@ describe("workbench writeback helpers", () => {
       headers: { authorization: "Bearer new-secret" }
     });
     expect(dom.getElementById("zms-profile-model").value).toBe("model-x");
-    expect(dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value)).toEqual(["", "model-x", "model-y", "__custom"]);
+    const modelSelectValues = dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value);
+    expect(modelSelectValues.slice(0, 3)).toEqual(["", "model-x", "model-y"]);
+    expect(modelSelectValues).toContain("deepseek-chat");
+    expect(modelSelectValues.at(-1)).toBe("__custom");
     expect(dom.getElementById("zms-profile-model-select").value).toBe("model-x");
     expect(prefs.apiKey).toBe("new-secret");
     expect(prefs.baseURL).toBe("https://router.example/v1");

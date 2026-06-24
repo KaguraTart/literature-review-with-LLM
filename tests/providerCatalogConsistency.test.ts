@@ -105,6 +105,7 @@ function runLiveProviderJson(args: string[]) {
 }
 
 function loadPreferencesHelpers() {
+  const providerModelsCode = readFileSync(resolve(process.cwd(), "addon/content/provider-models.js"), "utf8");
   const code = readFileSync(resolve(process.cwd(), "addon/content/preferences.js"), "utf8");
   const context = createContext({
     window: {},
@@ -114,14 +115,17 @@ function loadPreferencesHelpers() {
     URL,
     console
   });
+  runInContext(providerModelsCode, context, { filename: "provider-models.js" });
   runInContext(code, context, { filename: "preferences.js" });
   return context as {
     defaultProviderProfiles: () => any[];
     providerDefaults: (provider: string) => any;
+    zmsRecommendedModelOptionsForProvider: (provider: string) => Array<{ id: string; label: string }>;
   };
 }
 
 function loadWorkbenchHelpers() {
+  const providerModelsCode = readFileSync(resolve(process.cwd(), "addon/content/provider-models.js"), "utf8");
   const code = readFileSync(resolve(process.cwd(), "addon/content/workbench.js"), "utf8");
   const context = createContext({
     window: { parent: undefined },
@@ -132,10 +136,12 @@ function loadWorkbenchHelpers() {
     },
     console
   });
+  runInContext(providerModelsCode, context, { filename: "provider-models.js" });
   runInContext(code, context, { filename: "workbench.js" });
   return context as {
     defaultProviderProfiles: () => any[];
     workbenchProviderDefaults: (provider: string) => any;
+    zmsRecommendedModelOptionsForProvider: (provider: string) => Array<{ id: string; label: string }>;
   };
 }
 
@@ -201,6 +207,16 @@ describe("provider catalog consistency", () => {
     expect(preferencesProfiles.map((profile) => profile.id)).toEqual(PROVIDER_ORDER);
     expect(workbenchProfiles).toEqual(preferencesProfiles);
     expect(prefsProfiles).toEqual(preferencesProfiles);
+  });
+
+  it("keeps provider model recommendations shared across settings and workbench", () => {
+    const preferences = loadPreferencesHelpers();
+    const workbench = loadWorkbenchHelpers();
+
+    for (const id of PROVIDER_ORDER) {
+      expect(workbench.zmsRecommendedModelOptionsForProvider(id)).toEqual(preferences.zmsRecommendedModelOptionsForProvider(id));
+      expect(workbench.workbenchProviderDefaults(id).model).toBe(preferences.providerDefaults(id).model);
+    }
   });
 
   it("keeps bootstrap fallback provider defaults aligned with the editable catalog", () => {

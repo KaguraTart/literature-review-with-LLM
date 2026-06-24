@@ -81,11 +81,18 @@ hbox.zms-row {
 }
 
 .zms-model-select {
-  flex: 1 1 16em;
+  flex: 2 1 18em;
+  min-width: min(100%, 14em);
 }
 
 .zms-model-custom {
   flex: 1 1 12em;
+  min-width: min(100%, 12em);
+}
+
+.zms-model-row > button {
+  flex: 0 1 auto;
+  min-width: 7em;
 }
 
 .zms-json {
