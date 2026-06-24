@@ -3112,6 +3112,8 @@ function providerErrorText(status, text) {
 function providerErrorDetail(text) {
   const parsed = safeParseJSON(text);
   if (parsed) {
+    const responseError = typeof streamErrorText === "function" ? streamErrorText(parsed) : "";
+    if (responseError) return responseError;
     const error = parsed.error;
     if (typeof error === "string") return error;
     const message = error?.message || parsed.message || parsed.detail || parsed.error_description;

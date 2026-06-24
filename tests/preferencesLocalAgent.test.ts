@@ -556,6 +556,31 @@ describe("preferences local-agent config helpers", () => {
       model: "router-model",
       messages: [{ role: "user", content: "ping" }]
     });
+    const streamingBody = {
+      model: "router-model",
+      messages: [],
+      stream: true,
+      stream_options: { include_usage: true }
+    };
+    const detailedFields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      streamingBody,
+      200,
+      JSON.stringify({
+        error: {
+          message: "Invalid request body",
+          details: [
+            { loc: ["body", "stream_options"], msg: "Extra inputs are not permitted" }
+          ]
+        }
+      })
+    );
+    expect(detailedFields).toEqual(["stream_options"]);
+    expect((helpers as any).omitProviderRequestBodyFields(streamingBody, detailedFields)).toEqual({
+      model: "router-model",
+      messages: [],
+      stream: true
+    });
   });
 
   it("omits rejected custom body-extra fields in preferences fallback helpers", () => {

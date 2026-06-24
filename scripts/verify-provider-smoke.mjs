@@ -1256,6 +1256,7 @@ function directProviderResponseErrorText(parsed) {
   const error = parsed.error || (parsed.type === "error" ? parsed : null);
   if (!error && !Array.isArray(parsed.errors)) {
     const message = stringField(parsed.message, parsed.detail, parsed.error_description, parsed.errorMessage, parsed.error_message);
+    const details = providerErrorDetailsText(parsed.details, parsed.detail, parsed.errors);
     const code = stringField(parsed.code, parsed.error_code, parsed.errorCode);
     const type = stringField(parsed.type, parsed.error_type, parsed.errorType);
     const status = stringField(parsed.status, parsed.status_code, parsed.statusCode);
@@ -1265,9 +1266,11 @@ function directProviderResponseErrorText(parsed) {
       || parsed.success === false
       || /^(error|failed|failure|invalid|unauthorized|forbidden)$/i.test(statusText)
       || /error|invalid|unauth|forbidden|denied|rate|limit|unsupported/.test(typeText)
-      || !!code;
-    return message && looksLikeError
-      ? [code, type, status, redactSecret(message)].filter(Boolean).join(" - ")
+      || !!code
+      || providerErrorDetailLooksLikeError(details);
+    const messageWithDetails = providerErrorMessageWithDetails(message, details);
+    return messageWithDetails && looksLikeError
+      ? [code, type, status, redactSecret(messageWithDetails)].filter(Boolean).join(" - ")
       : "";
   }
   if (Array.isArray(parsed.errors) && parsed.errors.length) {
@@ -1276,13 +1279,67 @@ function directProviderResponseErrorText(parsed) {
   if (typeof error === "string") return redactSecret(error);
   const code = error.code || parsed.code || "";
   const type = normalizedProviderErrorType(error.type);
-  const message = error.message || parsed.message || error.detail || parsed.detail || error.error_description || parsed.error_description || JSON.stringify(error);
-  return [code, type, redactSecret(message)].filter(Boolean).join(" - ");
+  const message = error.message || parsed.message || error.detail || parsed.detail || error.error_description || parsed.error_description;
+  const details = providerErrorDetailsText(error.details, error.detail, error.errors, parsed.details, parsed.detail, parsed.errors);
+  return [code, type, redactSecret(providerErrorMessageWithDetails(message, details) || JSON.stringify(error))].filter(Boolean).join(" - ");
 }
 
 function normalizedProviderErrorType(value) {
   const type = stringField(value);
   return type.toLowerCase() === "error" ? "" : type;
+}
+
+function providerErrorMessageWithDetails(message, details) {
+  if (!message) return details;
+  if (!details || details === message) return message;
+  return `${message} | ${details}`;
+}
+
+function providerErrorDetailsText(...values) {
+  const details = [];
+  for (const value of values) collectProviderErrorDetails(value, details, 0);
+  return Array.from(new Set(details.map((entry) => entry.trim()).filter(Boolean))).join("; ");
+}
+
+function collectProviderErrorDetails(value, details, depth) {
+  if (value === undefined || value === null || depth > 4) return;
+  if (typeof value === "string" || typeof value === "number") {
+    const text = String(value).trim();
+    if (text) details.push(text);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectProviderErrorDetails(item, details, depth + 1);
+    return;
+  }
+  if (typeof value !== "object") return;
+  const path = providerErrorPath(value.loc ?? value.location ?? value.path ?? value.json_path ?? value.jsonpath ?? value.param ?? value.parameter ?? value.field ?? value.property ?? value.argument);
+  const message = stringField(value.msg, value.message, value.detail, value.reason, value.description, value.type, value.code);
+  if (path || message) details.push([path, message].filter(Boolean).join(": "));
+  collectProviderErrorDetails(value.details, details, depth + 1);
+  collectProviderErrorDetails(value.errors, details, depth + 1);
+  collectProviderErrorDetails(value.causes, details, depth + 1);
+  collectProviderErrorDetails(value.issues, details, depth + 1);
+}
+
+function providerErrorPath(value) {
+  if (typeof value === "string" || typeof value === "number") return String(value).trim();
+  if (!Array.isArray(value)) return "";
+  let path = "";
+  for (const item of value) {
+    if (typeof item === "number" || (typeof item === "string" && /^\d+$/.test(item))) {
+      path += `[${item}]`;
+      continue;
+    }
+    if (typeof item !== "string" || !item.trim()) return "";
+    const text = item.trim();
+    path += path ? `.${text}` : text;
+  }
+  return path;
+}
+
+function providerErrorDetailLooksLikeError(value) {
+  return /error|invalid|unauth|forbidden|denied|rate|limit|unsupported|unknown|not supported|not permitted|not allowed|extra_forbidden/.test(String(value || "").toLowerCase());
 }
 
 function redactSecret(text) {

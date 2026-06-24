@@ -411,6 +411,30 @@ describe("provider adapters", () => {
       JSON.stringify({ error: { message: "stream_options, temperature, n, response_format, and max_completion_tokens are unsupported" } })
     );
     expect(fields).toEqual(["stream_options", "temperature", "n", "response_format", "max_completion_tokens"]);
+    const detailedFields = providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      200,
+      JSON.stringify({
+        error: {
+          code: "invalid_request",
+          message: "Invalid request body",
+          details: [
+            { loc: ["body", "stream_options"], msg: "Extra inputs are not permitted" }
+          ]
+        }
+      })
+    );
+    expect(detailedFields).toEqual(["stream_options"]);
+    expect(() => extractResponseText("openai_chat", {
+      error: {
+        code: "invalid_request",
+        message: "Invalid request body",
+        details: [
+          { loc: ["body", "stream_options"], msg: "Extra inputs are not permitted" }
+        ]
+      }
+    })).toThrow(/body\.stream_options: Extra inputs are not permitted/);
     expect(omitProviderRequestBodyFields(body, fields)).toEqual({
       model: "router-model",
       messages: [],

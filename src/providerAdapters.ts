@@ -508,13 +508,15 @@ function directProviderErrorText(data: any): string {
     const code = firstString(error.code, data?.code);
     const type = normalizedErrorType(error.type);
     const message = firstString(error.message, data?.message, error.detail, data?.detail, error.error_description, data?.error_description);
-    return [code, type, message || JSON.stringify(error)].filter(Boolean).join(" - ");
+    const details = providerErrorDetailsText(error.details, error.detail, error.errors, data?.details, data?.detail, data?.errors);
+    return [code, type, providerErrorMessageWithDetails(message, details) || JSON.stringify(error)].filter(Boolean).join(" - ");
   }
   if (Array.isArray(data?.errors) && data.errors.length) {
     const text = data.errors.map((entry: any) => directProviderErrorText({ error: entry })).filter(Boolean).join("; ");
     if (text) return text;
   }
   const message = firstString(data.message, data.detail, data.error_description, data.errorMessage, data.error_message);
+  const details = providerErrorDetailsText(data.details, data.detail, data.errors);
   const code = firstString(data.code, data.error_code, data.errorCode);
   const type = firstString(data.type, data.error_type, data.errorType);
   const status = firstString(data.status, data.status_code, data.statusCode);
@@ -524,13 +526,69 @@ function directProviderErrorText(data: any): string {
     || data.success === false
     || /^(error|failed|failure|invalid|unauthorized|forbidden)$/i.test(statusText)
     || /error|invalid|unauth|forbidden|denied|rate|limit|unsupported/.test(typeText)
-    || !!code;
-  return message && looksLikeError ? [code, type, status, message].filter(Boolean).join(" - ") : "";
+    || !!code
+    || providerErrorDetailLooksLikeError(details);
+  const messageWithDetails = providerErrorMessageWithDetails(message, details);
+  return messageWithDetails && looksLikeError ? [code, type, status, messageWithDetails].filter(Boolean).join(" - ") : "";
 }
 
 function normalizedErrorType(value: unknown): string {
   const type = firstString(value);
   return type.toLowerCase() === "error" ? "" : type;
+}
+
+function providerErrorMessageWithDetails(message: string, details: string): string {
+  if (!message) return details;
+  if (!details || details === message) return message;
+  return `${message} | ${details}`;
+}
+
+function providerErrorDetailsText(...values: unknown[]): string {
+  const details: string[] = [];
+  for (const value of values) collectProviderErrorDetails(value, details, 0);
+  return Array.from(new Set(details.map((entry) => entry.trim()).filter(Boolean))).join("; ");
+}
+
+function collectProviderErrorDetails(value: unknown, details: string[], depth: number): void {
+  if (value === undefined || value === null || depth > 4) return;
+  if (typeof value === "string" || typeof value === "number") {
+    const text = String(value).trim();
+    if (text) details.push(text);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectProviderErrorDetails(item, details, depth + 1);
+    return;
+  }
+  if (typeof value !== "object") return;
+  const record = value as Record<string, unknown>;
+  const path = providerErrorPath(record.loc ?? record.location ?? record.path ?? record.json_path ?? record.jsonpath ?? record.param ?? record.parameter ?? record.field ?? record.property ?? record.argument);
+  const message = firstString(record.msg, record.message, record.detail, record.reason, record.description, record.type, record.code);
+  if (path || message) details.push([path, message].filter(Boolean).join(": "));
+  collectProviderErrorDetails(record.details, details, depth + 1);
+  collectProviderErrorDetails(record.errors, details, depth + 1);
+  collectProviderErrorDetails(record.causes, details, depth + 1);
+  collectProviderErrorDetails(record.issues, details, depth + 1);
+}
+
+function providerErrorPath(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number") return String(value).trim();
+  if (!Array.isArray(value)) return "";
+  let path = "";
+  for (const item of value) {
+    if (typeof item === "number" || (typeof item === "string" && /^\d+$/.test(item))) {
+      path += `[${item}]`;
+      continue;
+    }
+    if (typeof item !== "string" || !item.trim()) return "";
+    const text = item.trim();
+    path += path ? `.${text}` : text;
+  }
+  return path;
+}
+
+function providerErrorDetailLooksLikeError(value: string): boolean {
+  return /error|invalid|unauth|forbidden|denied|rate|limit|unsupported|unknown|not supported|not permitted|not allowed|extra_forbidden/.test(String(value || "").toLowerCase());
 }
 
 function firstString(...values: unknown[]): string {

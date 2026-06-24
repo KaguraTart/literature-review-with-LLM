@@ -1865,7 +1865,7 @@ describe("workbench writeback helpers", () => {
           ok: true,
           status: 200,
           headers: { "content-type": "text/event-stream" },
-          body: streamFromText("data: {\"error\":{\"message\":\"Unrecognized request argument supplied: stream_options\"}}\n\n")
+          body: streamFromText("data: {\"error\":{\"message\":\"Invalid request body\",\"details\":[{\"loc\":[\"body\",\"stream_options\"],\"msg\":\"Extra inputs are not permitted\"}]}}\n\n")
         };
       }
       return {

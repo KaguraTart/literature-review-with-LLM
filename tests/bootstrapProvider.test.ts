@@ -1276,7 +1276,12 @@ describe("bootstrap provider helpers", () => {
       __responses: [
         {
           __status: 400,
-          error: { message: "Unrecognized request argument supplied: stream_options" }
+          error: {
+            message: "Invalid request body",
+            details: [
+              { loc: ["body", "stream_options"], msg: "Extra inputs are not permitted" }
+            ]
+          }
         },
         {
           __streamLines: [
