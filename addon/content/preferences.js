@@ -2785,7 +2785,32 @@ function modelListItemsFromResponse(data, depth = 0) {
 
 function directModelListItemsFromResponse(data) {
   if (Array.isArray(data)) return data;
-  const fields = ["data", "results", "objects", "entries", "models", "model", "items", "list", "model_list", "modelList", "available_models", "availableModels", "model_names", "modelNames"];
+  const fields = [
+    "data",
+    "results",
+    "objects",
+    "entries",
+    "records",
+    "resources",
+    "nodes",
+    "edges",
+    "models",
+    "model",
+    "items",
+    "list",
+    "model_list",
+    "modelList",
+    "available_models",
+    "availableModels",
+    "model_names",
+    "modelNames",
+    "deployments",
+    "deployment_list",
+    "deploymentList",
+    "engines",
+    "engine_list",
+    "engineList"
+  ];
   for (const field of fields) {
     if (Array.isArray(data?.[field])) return data[field];
   }
@@ -2828,13 +2853,57 @@ function hasModelListPaginationFields(data) {
     || data?.hasMore === true;
 }
 
-function modelOptionFromItem(item) {
+function modelOptionFromItem(item, depth = 0) {
   if (typeof item === "string") {
     const id = item.trim();
     return { id, label: id };
   }
-  const id = stringField(item?.id, item?.model, item?.model_id, item?.modelId, item?.model_name, item?.modelName, item?.name, item?.value, item?.slug);
-  const label = stringField(item?.display_name, item?.displayName, item?.label, item?.title, item?.model_name, item?.modelName, item?.name, id);
+  if (!item || typeof item !== "object") return { id: "", label: "" };
+  const id = stringField(
+    item?.id,
+    item?.model,
+    item?.model_id,
+    item?.modelId,
+    item?.model_name,
+    item?.modelName,
+    item?.deployment,
+    item?.deployment_id,
+    item?.deploymentId,
+    item?.engine,
+    item?.engine_id,
+    item?.engineId,
+    item?.uid,
+    item?.key,
+    item?.identifier,
+    item?.canonical_slug,
+    item?.canonicalSlug,
+    item?.model_slug,
+    item?.modelSlug,
+    item?.name,
+    item?.value,
+    item?.slug
+  );
+  const label = stringField(
+    item?.display_name,
+    item?.displayName,
+    item?.display_label,
+    item?.displayLabel,
+    item?.label,
+    item?.title,
+    item?.model_name,
+    item?.modelName,
+    item?.name,
+    id
+  );
+  if (!id && depth < 2) {
+    for (const key of ["node", "model", "deployment", "engine", "resource", "item", "value"]) {
+      const nested = item?.[key];
+      if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+        const option = modelOptionFromItem(nested, depth + 1);
+        if (option.id) return option;
+      }
+    }
+  }
   return { id, label };
 }
 

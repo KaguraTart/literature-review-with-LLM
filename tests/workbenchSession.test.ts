@@ -206,18 +206,28 @@ describe("workbench session helpers", () => {
     expect(helpers.workbenchModelOptionsFromItems([
       { model: "router-model", displayName: "Router Model" },
       { model_name: "model-name-field", title: "Model Name Field" },
+      { deployment_id: "deployment-field", display_name: "Deployment Field" },
+      { engine: { id: "engine-field", label: "Engine Field" } },
+      { node: { id: "node-field", displayLabel: "Node Field" } },
+      { uid: "uid-field", display_label: "UID Field" },
+      { key: "key-field", displayLabel: "Key Field" },
       { value: "value-field", label: "Value Field" },
       { slug: "slug-field" },
       { id: "id-only-model" },
       { name: "name-only-model" },
       "string-model"
     ])).toEqual([
+      { id: "deployment-field", label: "Deployment Field" },
+      { id: "engine-field", label: "Engine Field" },
       { id: "id-only-model", label: "id-only-model" },
+      { id: "key-field", label: "Key Field" },
       { id: "model-name-field", label: "Model Name Field" },
       { id: "name-only-model", label: "name-only-model" },
+      { id: "node-field", label: "Node Field" },
       { id: "router-model", label: "Router Model" },
       { id: "slug-field", label: "slug-field" },
       { id: "string-model", label: "string-model" },
+      { id: "uid-field", label: "UID Field" },
       { id: "value-field", label: "Value Field" }
     ]);
   });
