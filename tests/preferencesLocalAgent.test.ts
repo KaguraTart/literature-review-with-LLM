@@ -65,8 +65,9 @@ function loadPreferencesController(options: {
   const filePickerCalls: Array<{ title: string; mode: number; displayDirectory?: string }> = [];
   const messageMap: Record<string, string> = {
     apiKeyMissing: "API key missing",
-    chooseOutputDir: "Choose folder",
+    chooseOutputDir: "Browse...",
     chooseOutputDirTitle: "Choose output folder",
+    chooseOutputDirTooltip: "Choose an output folder with the system file manager",
     jsonInvalid: "Invalid JSON",
     modelListEmpty: "No models",
     modelListLoaded: "Models loaded",
@@ -94,6 +95,8 @@ function loadPreferencesController(options: {
     profileStreamOff: "Streaming disabled",
     profileLocalAgentReady: "Local agent configured",
     outputDirSaved: "Output directory saved",
+    saveOutputDir: "Save path",
+    saveOutputDirTooltip: "Save the current output directory",
     outputDirChooseFailed: "Output directory picker failed",
     outputDirCreateFailed: "Output directory failed"
   };
@@ -169,6 +172,8 @@ function loadPreferencesController(options: {
   setValue("zms-profileLocalAgentHeaders", "{}");
   setValue("zms-profileLocalAgentSkills", "{}");
   createElement("zms-status", { localName: "label" });
+  createElement("zms-choose-outputDir-button", { localName: "button" });
+  createElement("zms-save-outputDir-button", { localName: "button" });
   createElement("zms-model-options", { localName: "datalist" });
   createElement("zms-profile-options", { localName: "datalist" });
   createElement("zms-profileStatus", { localName: "pre" });
@@ -2250,6 +2255,17 @@ describe("preferences local-agent config helpers", () => {
     expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("/tmp/new out");
     expect(madeDirectories).toContain("/tmp/new out");
     expect(elements.get("zms-status").value).toContain("Output directory saved");
+  });
+
+  it("localizes output directory button labels and tooltips", () => {
+    const { controller, elements } = loadPreferencesController();
+
+    controller.applyLanguage();
+
+    expect(elements.get("zms-choose-outputDir-button").label).toBe("Browse...");
+    expect(elements.get("zms-choose-outputDir-button").tooltiptext).toBe("Choose an output folder with the system file manager");
+    expect(elements.get("zms-save-outputDir-button").label).toBe("Save path");
+    expect(elements.get("zms-save-outputDir-button").tooltiptext).toBe("Save the current output directory");
   });
 
   it("chooses an output directory with the native folder picker and saves it", async () => {

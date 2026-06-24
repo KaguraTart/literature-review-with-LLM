@@ -710,6 +710,10 @@ var ZoteroMarkdownSummaryPrefs = {
       else if (element.localName === "h2") element.textContent = this.t(key, lang);
       else element.setAttribute("value", this.t(key, lang));
     };
+    const setTooltip = (id, key) => {
+      const element = document.getElementById(id);
+      if (element) element.setAttribute("tooltiptext", this.t(key, lang));
+    };
     setLabel("zms-title", "title");
     for (const key of [
       "uiLanguage",
@@ -756,6 +760,8 @@ var ZoteroMarkdownSummaryPrefs = {
     setLabel("zms-doctor-button", "doctor");
     setLabel("zms-choose-outputDir-button", "chooseOutputDir");
     setLabel("zms-save-outputDir-button", "saveOutputDir");
+    setTooltip("zms-choose-outputDir-button", "chooseOutputDirTooltip");
+    setTooltip("zms-save-outputDir-button", "saveOutputDirTooltip");
     setLabel("zms-test-button", "test");
     setLabel("zms-load-models-button", "loadModels");
     setLabel("zms-load-profile-button", "loadProfile");
