@@ -8819,6 +8819,8 @@ function streamTextFromData(protocol, data, depth = 0) {
   if (candidateContent) return candidateContent;
   const eventText = modelTextFromStreamContainer(data);
   if (eventText) return eventText;
+  const directText = modelTextFromValue(data?.text);
+  if (directText) return directText;
   return modelTextFromValue(data?.output) || (typeof data?.delta === "string" ? data.delta : "") || wrappedStreamTextFromData(protocol, data, depth);
 }
 
@@ -9391,6 +9393,7 @@ function openAITextFromResponse(data, depth = 0) {
     || modelTextFromValue(data?.content)
     || modelTextFromValue(data?.candidates)
     || modelTextFromStreamContainer(data)
+    || modelTextFromValue(data?.text)
     || wrappedProviderTextFromResponse("openai", data, depth);
 }
 
@@ -9399,7 +9402,8 @@ function anthropicTextFromResponse(data, depth = 0) {
     || modelTextFromValue(data?.message)
     || modelTextFromValue(data?.body)
     || modelTextFromValue(data?.candidates)
-    || (typeof data?.text === "string" ? data.text : wrappedProviderTextFromResponse("anthropic", data, depth));
+    || modelTextFromValue(data?.text)
+    || wrappedProviderTextFromResponse("anthropic", data, depth);
 }
 
 function wrappedProviderTextFromResponse(protocol, data, depth) {

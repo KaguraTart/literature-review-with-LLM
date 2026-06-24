@@ -305,6 +305,7 @@ function extractOpenAITextValue(data, depth = 0) {
     || extractOpenAIMessageContent(data?.content)
     || extractOpenAIMessageContent(data?.candidates)
     || extractOpenAIEventContainer(data)
+    || extractOpenAIMessageContent(data?.text)
     || extractWrappedResponseContent("openai", data, depth);
 }
 
@@ -331,6 +332,8 @@ function extractOpenAIStreamText(chunk, depth = 0) {
   if (outputText) return outputText;
   const eventText = extractOpenAIEventContainer(chunk);
   if (eventText) return eventText;
+  const directText = extractOpenAIMessageContent(chunk.text);
+  if (directText) return directText;
   return extractWrappedStreamText("openai", chunk, depth);
 }
 
@@ -588,7 +591,8 @@ function extractAnthropicContent(data, depth = 0) {
     || extractOpenAIMessageContent(data?.message)
     || extractOpenAIMessageContent(data?.body)
     || extractOpenAIMessageContent(data?.candidates)
-    || (typeof data?.text === "string" ? data.text : extractWrappedResponseContent("anthropic", data, depth));
+    || extractOpenAIMessageContent(data?.text)
+    || extractWrappedResponseContent("anthropic", data, depth);
 }
 
 function extractWrappedResponseContent(protocol, data, depth) {

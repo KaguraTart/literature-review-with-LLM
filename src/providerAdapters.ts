@@ -227,6 +227,8 @@ function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, dept
   if (candidateContent) return candidateContent;
   const eventContent = extractOpenAIEventContainer(data);
   if (eventContent) return eventContent;
+  const directText = extractMessageContent(data?.text);
+  if (directText) return directText;
   return extractOutputContent(data?.output)
     || (typeof data?.delta === "string" ? data.delta : "")
     || extractWrappedStreamContent(protocol, data, depth)
@@ -398,6 +400,7 @@ function extractOpenAIResponseContent(data: any, depth = 0): string {
     || extractMessageContent(data?.content)
     || extractMessageContent(data?.candidates)
     || extractOpenAIEventContainer(data)
+    || extractMessageContent(data?.text)
     || extractWrappedResponseContent("openai", data, depth);
 }
 
@@ -406,7 +409,7 @@ function extractAnthropicContent(data: any): string {
     || extractMessageContent(data?.message)
     || extractMessageContent(data?.body)
     || extractMessageContent(data?.candidates)
-    || (typeof data?.text === "string" ? data.text : "");
+    || extractMessageContent(data?.text);
 }
 
 function extractAnthropicResponseContent(data: any, depth = 0): string {

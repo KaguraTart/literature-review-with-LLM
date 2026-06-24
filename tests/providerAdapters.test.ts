@@ -1535,6 +1535,8 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_item.done\",\"item\":{\"content\":[{\"type\":\"output_text\",\"text\":\"snapshot item\"}]}}")).toBe("snapshot item");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_item.done\",\"item\":{\"content\":[{\"type\":\"refusal\",\"refusal\":\"snapshot refusal\"}]}}")).toBe("snapshot refusal");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.completed\",\"response\":{\"output\":[{\"content\":[{\"type\":\"output_text\",\"text\":\"snapshot response\"}]}]}}")).toBe("snapshot response");
+    expect(parseStreamChunk("openai_responses", "data: {\"response\":{\"text\":\"snapshot response text\"}}")).toBe("snapshot response text");
+    expect(parseStreamChunk("openai_chat", "data: {\"text\":{\"value\":\"router stream text\"}}")).toBe("router stream text");
     expect(parseStreamChunk("openai_chat", "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"candidate stream\"}]}}]}")).toBe("candidate stream");
     expect(parseStreamChunk("openai_chat", "data: {\"candidates\":[{\"content\":{\"parts\":[{\"type\":\"thinking\",\"text\":\"hidden\"},{\"text\":\" visible candidate\"}]}}]}")).toBe(" visible candidate");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"claude\"}}")).toBe("claude");
@@ -1775,9 +1777,18 @@ describe("provider adapters", () => {
     expect(extractResponseText("openai_responses", {
       output: [{ content: [{ type: "output_text", text: { value: "responses value text" } }] }]
     } as any)).toBe("responses value text");
+    expect(extractResponseText("openai_responses", {
+      text: "responses direct text"
+    } as any)).toBe("responses direct text");
+    expect(extractResponseText("openai_chat", {
+      response: { text: { value: "wrapped direct text" } }
+    } as any)).toBe("wrapped direct text");
     expect(extractResponseText("anthropic_messages", {
       content: [{ type: "text", text: { value: "anthropic value text" } }]
     } as any)).toBe("anthropic value text");
+    expect(extractResponseText("anthropic_messages", {
+      payload: { text: { value: "anthropic wrapped direct text" } }
+    } as any)).toBe("anthropic wrapped direct text");
     expect(extractResponseText("openai_chat", {
       choices: [{ message: { content: null } }, { message: { content: "second choice text" } }]
     } as any)).toBe("second choice text");

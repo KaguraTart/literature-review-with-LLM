@@ -2760,6 +2760,20 @@ describe("workbench writeback helpers", () => {
     expect(deltas).toEqual(["snapshot"]);
   });
 
+  it("uses shallow text containers as a workbench stream fallback", async () => {
+    const response = {
+      body: streamFromText([
+        "data: {\"response\":{\"text\":\"snapshot response text\"}}",
+        "data: {\"text\":{\"value\":\" router stream text\"}}"
+      ].join("\n"))
+    };
+    const deltas: string[] = [];
+    const text = await helpers.readStream(response, "openai_chat", (delta) => deltas.push(delta));
+
+    expect(text).toBe("snapshot response text router stream text");
+    expect(deltas).toEqual(["snapshot response text", " router stream text"]);
+  });
+
   it("ignores OpenAI Responses reasoning stream events in the workbench", async () => {
     const response = {
       body: streamFromText([
@@ -2871,6 +2885,12 @@ describe("workbench writeback helpers", () => {
       output: [{ content: [{ type: "output_text", text: { value: "responses value text" } }] }]
     })).toBe("responses value text");
     expect(helpers.extractResponseText("openai_responses", {
+      text: "responses direct text"
+    })).toBe("responses direct text");
+    expect(helpers.extractResponseText("openai_chat", {
+      response: { text: { value: "wrapped direct text" } }
+    })).toBe("wrapped direct text");
+    expect(helpers.extractResponseText("openai_responses", {
       response: { output_text: "wrapped response text" }
     })).toBe("wrapped response text");
     expect(helpers.extractResponseText("openai_chat", {
@@ -2888,6 +2908,9 @@ describe("workbench writeback helpers", () => {
     expect(helpers.extractResponseText("anthropic_messages", {
       payload: { message: { content: [{ type: "redacted_thinking", text: "hidden" }, { type: "text", text: { value: "anthropic value text" } }] } }
     })).toBe("anthropic value text");
+    expect(helpers.extractResponseText("anthropic_messages", {
+      payload: { text: { value: "anthropic wrapped direct text" } }
+    })).toBe("anthropic wrapped direct text");
   });
 
   it("normalizes session file paths for item-key scoped JSONL history", () => {

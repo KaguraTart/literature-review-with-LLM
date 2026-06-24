@@ -3152,6 +3152,52 @@ describe("bootstrap provider helpers", () => {
     }, "hash")).resolves.toMatchObject({ markdown: "wrapped anthropic summary" });
   });
 
+  it("extracts shallow provider text containers in the bootstrap provider path", async () => {
+    const openai = loadBootstrapProviderHelpers({
+      response: { text: { value: "wrapped direct OpenAI text" } }
+    });
+    await expect(openai.helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false)).resolves.toMatchObject({ markdown: "wrapped direct OpenAI text" });
+
+    const anthropic = loadBootstrapProviderHelpers({
+      payload: { text: { value: "wrapped direct Anthropic text" } }
+    });
+    await expect(anthropic.helpers.callAnthropic({
+      provider: "anthropic",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash")).resolves.toMatchObject({ markdown: "wrapped direct Anthropic text" });
+  });
+
   it("allows disabling official Anthropic direct browser access in the bootstrap provider path", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       content: [{ type: "text", text: "anthropic summary" }]
@@ -3447,6 +3493,8 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.extractOpenAIStreamText({ type: "response.content_part.done", part: { type: "output_text", text: { value: "snapshot value part" } } })).toBe("snapshot value part");
     expect(helpers.extractOpenAIStreamText({ type: "response.output_item.done", item: { content: [{ type: "refusal", refusal: "snapshot refusal" }] } })).toBe("snapshot refusal");
     expect(helpers.extractOpenAIStreamText({ type: "response.completed", response: { output_text: "snapshot response" } })).toBe("snapshot response");
+    expect(helpers.extractOpenAIStreamText({ response: { text: "snapshot response text" } })).toBe("snapshot response text");
+    expect(helpers.extractOpenAIStreamText({ text: { value: "router stream text" } })).toBe("router stream text");
     expect(helpers.extractOpenAIStreamText({ delta: { content: [{ text: "nested" }] } })).toBe("nested");
     expect(helpers.extractOpenAIStreamText({ choices: [{ delta: { reasoning_content: "hidden" } }] })).toBe("");
     expect(helpers.extractOpenAIStreamText({ choices: [{ delta: { refusal: "stream refusal" } }] })).toBe("stream refusal");
