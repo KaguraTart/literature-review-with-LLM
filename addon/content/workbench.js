@@ -1502,14 +1502,18 @@ var ZoteroMarkdownSummaryWorkbench = {
     const block = document.createElement("article");
     block.className = `zms-message zms-message-${message.role}`;
     block.dataset.messageId = message.id;
+    block.dataset.zmsSelectableText = "1";
     const body = document.createElement("div");
     body.className = "zms-message-body";
+    body.dataset.zmsSelectableText = "1";
     renderMessageContent(body, message);
     if (message.role === "assistant") {
       const toolbar = document.createElement("div");
       toolbar.className = "zms-message-toolbar";
+      toolbar.dataset.zmsCopyExclude = "1";
       const copy = document.createElement("button");
       copy.className = "zms-message-copy";
+      copy.dataset.zmsCopyExclude = "1";
       copy.type = "button";
       copy.textContent = this.t("copyAnswer");
       copy.title = this.t("copyAnswerTitle");
@@ -1532,9 +1536,12 @@ var ZoteroMarkdownSummaryWorkbench = {
       const actions = document.createElement("div");
       actions.className = "zms-message-actions";
       const retry = document.createElement("button");
+      actions.dataset.zmsCopyExclude = "1";
+      retry.dataset.zmsCopyExclude = "1";
       retry.textContent = this.t("retry");
       retry.onclick = () => this.retryMessage(message);
       const write = document.createElement("button");
+      write.dataset.zmsCopyExclude = "1";
       write.textContent = this.t("write");
       write.onclick = () => this.openWriteback(message);
       actions.append(retry, write);
@@ -14126,7 +14133,50 @@ function selectedWorkbenchText() {
   if (!text.trim()) return "";
   const messages = document.getElementById("zms-messages");
   if (messages && !selectionTouchesNode(selection, messages)) return "";
-  return text;
+  return selectedWorkbenchContentText(selection) || text;
+}
+
+function selectedWorkbenchContentText(selection) {
+  let fragment = null;
+  try {
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    fragment = range?.cloneContents?.() || null;
+  } catch (_err) {
+    return "";
+  }
+  if (!fragment) return "";
+  for (const node of selectableCleanupNodes(fragment)) {
+    removeNode(node);
+  }
+  const text = normalizedSelectedText(fragment.textContent || "");
+  return text.trim() ? text : "";
+}
+
+function selectableCleanupNodes(root) {
+  if (!root?.querySelectorAll) return [];
+  try {
+    return Array.from(root.querySelectorAll("[data-zms-copy-exclude='1'], .zms-message-toolbar, .zms-message-actions, button"));
+  } catch (_err) {
+    return [];
+  }
+}
+
+function removeNode(node) {
+  if (!node) return;
+  if (typeof node.remove === "function") {
+    node.remove();
+    return;
+  }
+  node.parentNode?.removeChild?.(node);
+}
+
+function normalizedSelectedText(text) {
+  return String(text || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function selectionTouchesNode(selection, root) {

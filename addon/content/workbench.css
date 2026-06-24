@@ -433,6 +433,12 @@
   -moz-user-select: none;
 }
 
+#zms-workbench [data-zms-copy-exclude="1"] {
+  user-select: none !important;
+  -moz-user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
 .zms-message-copy {
   min-height: 26px;
   padding: 3px 9px;

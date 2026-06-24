@@ -6675,6 +6675,65 @@ describe("workbench writeback helpers", () => {
     expect(assistant.children[2].children.map((child: any) => child.textContent)).toEqual(["Retry", "Write"]);
   });
 
+  it("copies only selected message body text when the drag selection crosses workbench controls", () => {
+    const loaded = loadWorkbenchHelpers();
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    const messagesRoot = dom.getElementById("zms-messages");
+    const removed = new Set<string>();
+    const excluded = ["copy", "retry", "write"].map((id) => ({
+      id,
+      remove() {
+        removed.add(id);
+      }
+    }));
+    const fragment = {
+      querySelectorAll() {
+        return excluded;
+      }
+    };
+    Object.defineProperty(fragment, "textContent", {
+      get() {
+        return [
+          removed.has("copy") ? "" : "Copy Markdown",
+          "Visible answer paragraph.",
+          removed.has("retry") ? "" : "Retry",
+          removed.has("write") ? "" : "Write"
+        ].filter(Boolean).join("\n");
+      }
+    });
+    const selectedNode = { parentNode: messagesRoot };
+    (loaded as any).window.getSelection = () => ({
+      anchorNode: selectedNode,
+      focusNode: selectedNode,
+      rangeCount: 1,
+      toString: () => "Copy Markdown\nVisible answer paragraph.\nRetry\nWrite",
+      getRangeAt: () => ({
+        commonAncestorContainer: messagesRoot,
+        cloneContents: () => fragment,
+        intersectsNode: (node: any) => node === messagesRoot
+      })
+    });
+
+    let clipboardText = "";
+    let prevented = false;
+    const copied = loaded.copySelectedWorkbenchText({
+      clipboardData: {
+        setData(type: string, text: string) {
+          if (type === "text/plain") clipboardText = text;
+        }
+      },
+      preventDefault() {
+        prevented = true;
+      }
+    });
+
+    expect(copied).toBe(true);
+    expect(prevented).toBe(true);
+    expect(clipboardText).toBe("Visible answer paragraph.");
+    expect([...removed].sort()).toEqual(["copy", "retry", "write"]);
+  });
+
   it("keeps malformed think blocks out of copied and written answer text", () => {
     const loaded = loadWorkbenchHelpers();
     const assistant = {
