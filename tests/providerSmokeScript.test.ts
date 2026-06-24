@@ -1386,8 +1386,8 @@ describe("provider smoke verifier", () => {
     expect(report.results.find((result: any) => result.id === "deepseek").missing).toContain("DEEPSEEK_API_KEY");
     expect(report.results.find((result: any) => result.id === "openrouter").missing).toContain("OPENROUTER_API_KEY");
     expect(report.results.find((result: any) => result.id === "sambanova-anthropic").missing).toContain("SAMBANOVA_ANTHROPIC_API_KEY");
-    expect(report.results.find((result: any) => result.id === "ollama").missing).toEqual(["OLLAMA_MODEL", "OLLAMA_BASE_URL"]);
-    expect(report.results.find((result: any) => result.id === "lm-studio").missing).toEqual(["LM_STUDIO_MODEL", "LM_STUDIO_BASE_URL"]);
+    expect(report.results.find((result: any) => result.id === "ollama").missing).toEqual(["OLLAMA_BASE_URL"]);
+    expect(report.results.find((result: any) => result.id === "lm-studio").missing).toEqual(["LM_STUDIO_BASE_URL"]);
   });
 
   it("skips live provider model-list checks without requiring model names", async () => {
@@ -1537,7 +1537,7 @@ describe("provider smoke verifier", () => {
       requiredEnv: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_MODEL", "OPENAI_COMPATIBLE_BASE_URL"],
       requiredEnvValues: {
         OPENAI_COMPATIBLE_API_KEY: "...",
-        OPENAI_COMPATIBLE_MODEL: "...",
+        OPENAI_COMPATIBLE_MODEL: "gpt-4.1-mini",
         OPENAI_COMPATIBLE_BASE_URL: "https://api.openai.com/v1"
       },
       modelListRequiredEnv: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"],
@@ -1560,7 +1560,7 @@ describe("provider smoke verifier", () => {
     expect(anthropicCompatible.requiredEnv).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_MODEL", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
     expect(anthropicCompatible.requiredEnvValues).toEqual({
       ANTHROPIC_COMPATIBLE_API_KEY: "...",
-      ANTHROPIC_COMPATIBLE_MODEL: "...",
+      ANTHROPIC_COMPATIBLE_MODEL: "claude-sonnet-4-20250514",
       ANTHROPIC_COMPATIBLE_BASE_URL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT"
     });
     expect(anthropicCompatible.modelListRequiredEnv).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
@@ -1569,7 +1569,7 @@ describe("provider smoke verifier", () => {
     const ollama = report.cases.find((entry: any) => entry.id === "ollama");
     expect(ollama.requiredEnv).toEqual(["OLLAMA_MODEL", "OLLAMA_BASE_URL"]);
     expect(ollama.requiredEnvValues).toEqual({
-      OLLAMA_MODEL: "...",
+      OLLAMA_MODEL: "llama3.2",
       OLLAMA_BASE_URL: "http://localhost:11434/v1"
     });
     expect(ollama.modelListRequiredEnv).toEqual(["OLLAMA_BASE_URL"]);
@@ -1654,7 +1654,7 @@ describe("provider smoke verifier", () => {
     const openaiCompatible = report.cases.find((entry: any) => entry.id === "openai-compatible");
     expect(openaiCompatible).toMatchObject({
       status: "missing",
-      missing: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_MODEL", "OPENAI_COMPATIBLE_BASE_URL"],
+      missing: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"],
       endpoint: "https://api.openai.com/v1/chat/completions",
       modelsEndpoint: "https://api.openai.com/v1/models",
       auth: "missing",
@@ -1666,7 +1666,7 @@ describe("provider smoke verifier", () => {
     const anthropicCompatible = report.cases.find((entry: any) => entry.id === "anthropic-compatible");
     expect(anthropicCompatible).toMatchObject({
       status: "missing",
-      missing: ["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_MODEL", "ANTHROPIC_COMPATIBLE_BASE_URL"],
+      missing: ["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_BASE_URL"],
       protocol: "anthropic_messages"
     });
     const ollama = report.cases.find((entry: any) => entry.id === "ollama");
@@ -1690,7 +1690,7 @@ describe("provider smoke verifier", () => {
     });
     expect(stdout).toContain("Provider live configuration doctor");
     expect(stdout).toContain("openai-compatible: missing");
-    expect(stdout).toContain("missing: OPENAI_COMPATIBLE_API_KEY, OPENAI_COMPATIBLE_MODEL, OPENAI_COMPATIBLE_BASE_URL");
+    expect(stdout).toContain("missing: OPENAI_COMPATIBLE_API_KEY, OPENAI_COMPATIBLE_BASE_URL");
     expect(stdout).toContain("envDraft: npm run verify:provider:live -- --env-template --dotenv-template --include openai-compatible > .env.local");
 
     const openai = await runLive(["--doctor", "--include", "openai", "--json"], scrubProviderEnv());
@@ -1766,7 +1766,7 @@ describe("provider smoke verifier", () => {
     expect(report.cases[0]).toMatchObject({
       id: "openai-compatible",
       status: "missing",
-      missing: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_MODEL", "OPENAI_COMPATIBLE_BASE_URL"],
+      missing: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"],
       commands: {
         dotenvTemplate: "npm run verify:provider:live -- --env-template --dotenv-template --include openai-compatible > .env.local"
       }
@@ -1785,7 +1785,7 @@ describe("provider smoke verifier", () => {
     });
     expect(stdout).toContain(`envFile: ${missingEnvPath} (missing)`);
     expect(stdout).toContain("warning: Env file not found");
-    expect(stdout).toContain("missing: OPENAI_COMPATIBLE_API_KEY, OPENAI_COMPATIBLE_MODEL, OPENAI_COMPATIBLE_BASE_URL");
+    expect(stdout).toContain("missing: OPENAI_COMPATIBLE_API_KEY, OPENAI_COMPATIBLE_BASE_URL");
     expect(stdout).toContain("envDraft: npm run verify:provider:live -- --env-template --dotenv-template --include openai-compatible > .env.local");
   });
 

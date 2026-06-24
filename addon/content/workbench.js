@@ -844,7 +844,8 @@ var ZoteroMarkdownSummaryWorkbench = {
       return;
     }
     const modelInput = document.getElementById("zms-profile-model");
-    const recommended = this.renderWorkbenchModelRecommendations();
+    const wasModelBlank = !String(modelInput?.value || "").trim();
+    const recommended = this.renderWorkbenchModelRecommendations({ selectDefault: true });
     if (!profileHasUsableAuth(profile) && !isLocalEndpoint(endpointForProfile(profile))) {
       this.setStatus(recommended.length ? `${this.t("modelRecommendationsLoaded")}: ${recommended.length}` : this.t("apiKeyMissing"));
       return;
@@ -870,7 +871,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       const displayOptions = options.length ? options : recommended;
       this.renderWorkbenchModelOptions(displayOptions);
       if (displayOptions.length) {
-        if (!modelInput?.value?.trim()) {
+        if (wasModelBlank || !modelInput?.value?.trim()) {
           if (modelInput) modelInput.value = displayOptions[0].id;
         }
         this.syncWorkbenchModelSelect(displayOptions);
@@ -2474,12 +2475,67 @@ function normalizeProviderProfile(profile, defaultsOverride) {
     baseURL: String(source.baseURL || defaults.baseURL || "").trim(),
     fullURL: String(source.fullURL || defaults.fullURL || "").trim(),
     apiKey: String(source.apiKey || "").trim(),
-    model: String(source.model || defaults.model || "").trim(),
+    model: String(source.model || (shouldUseWorkbenchDefaultProviderModelForProfile(source, defaults) ? defaults.model : "") || "").trim(),
     capabilities: normalizeProviderCapabilities(source.capabilities, defaults.capabilities || {}),
     customHeaders: normalizeObjectStringMap(source.customHeaders) || normalizeObjectStringMap(defaults.customHeaders) || {},
     bodyExtra: normalizeObjectStringMap(source.bodyExtra) || normalizeObjectStringMap(defaults.bodyExtra) || {},
     isDefault: source.isDefault === true
   };
+}
+
+function shouldUseWorkbenchDefaultProviderModelForProfile(source, defaults) {
+  const sourceId = String(source?.id || "").trim();
+  if (!sourceId) return true;
+  const sourceKey = providerProfileCatalogKey(source);
+  const defaultKey = providerProfileCatalogKey(defaults);
+  return !!sourceKey && sourceKey === defaultKey && defaultProviderProfileIds().includes(sourceKey);
+}
+
+function defaultProviderProfileIds() {
+  return [
+    "minimax",
+    "openai",
+    "openai-compatible",
+    "openai-responses-compatible",
+    "anthropic",
+    "anthropic-compatible",
+    "gemini",
+    "azure-openai",
+    "vercel-ai-chat",
+    "vercel-ai-responses",
+    "vercel-ai-anthropic",
+    "cloudflare-ai-chat",
+    "cloudflare-ai-responses",
+    "cloudflare-ai-anthropic",
+    "github-models",
+    "huggingface",
+    "deepinfra",
+    "fireworks",
+    "cerebras",
+    "nvidia-nim",
+    "sambanova",
+    "sambanova-responses",
+    "sambanova-anthropic",
+    "xai",
+    "groq",
+    "mistral",
+    "together",
+    "kimi",
+    "perplexity",
+    "deepseek",
+    "deepseek-anthropic",
+    "zai-anthropic",
+    "openrouter",
+    "dashscope",
+    "siliconflow",
+    "zhipu",
+    "volcengine",
+    "qianfan",
+    "hunyuan",
+    "ollama",
+    "lm-studio",
+    "local-agents"
+  ];
 }
 
 function normalizeProviderProtocol(value, fallback) {
@@ -2518,6 +2574,10 @@ function normalizeProfileId(value) {
 }
 
 function workbenchProviderDefaults(provider) {
+  return withWorkbenchDefaultProviderModel(provider, workbenchProviderDefaultsRaw(provider));
+}
+
+function workbenchProviderDefaultsRaw(provider) {
   const id = String(provider || "openai_compatible").trim();
   const commonCapabilities = { text: true, pdfBase64: false, imageBase64: false, fileReference: false, streaming: true, embeddings: false, jsonMode: false, toolUse: false, modelList: true };
   const imageCapabilities = { ...commonCapabilities, imageBase64: true };
@@ -2645,6 +2705,19 @@ function workbenchProviderDefaults(provider) {
     return { id: "local-agents", name: "Local Agents", protocol: "openai_chat", endpointMode: "base_url", baseURL: "http://127.0.0.1:3333/v1", model: "", capabilities: { ...commonCapabilities, imageBase64: false, streaming: false, modelList: false }, bodyExtra: { localAgent: { endpoint: "http://127.0.0.1:3333/mcp", payloadMode: "jsonrpc", timeoutSeconds: 180, "ask-gemini": { tool: "ask_gemini" }, "ask-claude": { tool: "ask_claude" }, "ask-opencode": { tool: "ask_opencode" }, "ask-all-agents": { tool: "ask_all_agents" }, "ask-gemini-claude": { tool: "ask_all_agents", args: { agents: ["gemini", "claude"] } }, "check-local-agents": { tool: "check_local_agents", args: { timeoutSeconds: 30 } }, "extract-pdf-pages": { tool: "extract_pdf_pages" } } } };
   }
   return { id: "openai-compatible", name: "OpenAI Compatible Chat", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.openai.com/v1", model: "", capabilities: commonCapabilities, bodyExtra: {} };
+}
+
+function withWorkbenchDefaultProviderModel(provider, defaults) {
+  const current = String(defaults?.model || "").trim();
+  if (current) return defaults;
+  const model = recommendedDefaultModelForWorkbenchProvider(provider, defaults);
+  return model ? { ...defaults, model } : defaults;
+}
+
+function recommendedDefaultModelForWorkbenchProvider(provider, defaults = {}) {
+  const key = String(defaults?.id || provider || "").replace(/-/g, "_");
+  if (key === "azure_openai" || key === "local_agents") return "";
+  return recommendedModelOptionsForWorkbenchProvider(key)[0]?.id || "";
 }
 
 function workbenchProviderFromProfile(profile, fallbackProvider) {
@@ -4244,7 +4317,6 @@ async function chooseOutputDirectory(currentPath, title) {
 async function chooseOutputDirectoryWithZoteroFilePicker(FilePicker, title, displayPath) {
   let lastError = null;
   for (const parentWindow of directoryPickerWindowCandidates()) {
-    if (!parentWindow?.browsingContext) continue;
     try {
       const picker = new FilePicker();
       if (displayPath) setZoteroPickerDisplayDirectory(picker, displayPath);
@@ -4335,7 +4407,7 @@ function directoryPickerParentCandidates(useWindowParent = true) {
 function directoryPickerWindowCandidates() {
   const candidates = [];
   const add = (value) => {
-    if (!value || candidates.includes(value)) return;
+    if (typeof value === "undefined" || candidates.includes(value)) return;
     candidates.push(value);
   };
   if (typeof window !== "undefined") {
@@ -4345,6 +4417,7 @@ function directoryPickerWindowCandidates() {
   }
   try { add(Services?.wm?.getMostRecentWindow?.("navigator:browser")); } catch (_err) {}
   try { add(Services?.wm?.getMostRecentWindow?.(null)); } catch (_err) {}
+  add(null);
   return candidates;
 }
 

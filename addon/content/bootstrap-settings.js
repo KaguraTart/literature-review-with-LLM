@@ -31,6 +31,10 @@ function getSettings() {
 }
 
 function settingsProviderDefaults(provider) {
+  return withSettingsDefaultProviderModel(provider, settingsProviderDefaultsRaw(provider));
+}
+
+function settingsProviderDefaultsRaw(provider) {
   const id = String(provider || "openai_compatible").trim();
   const commonCapabilities = { text: true, pdfBase64: false, imageBase64: false, fileReference: false, streaming: true, embeddings: false, jsonMode: false, toolUse: false, modelList: true };
   const imageCapabilities = { ...commonCapabilities, imageBase64: true };
@@ -180,6 +184,90 @@ function settingsProviderDefaults(provider) {
   return { ...common, protocol: "openai_chat", baseURL: "https://api.openai.com/v1", capabilities: commonCapabilities };
 }
 
+function withSettingsDefaultProviderModel(provider, defaults) {
+  const current = String(defaults?.model || "").trim();
+  if (current) return defaults;
+  const model = settingsRecommendedDefaultModel(provider, defaults);
+  return model ? { ...defaults, model } : defaults;
+}
+
+function settingsRecommendedDefaultModel(provider, defaults = {}) {
+  const key = String(settingsProviderCanonicalId(defaults?.id || provider || "")).replace(/-/g, "_");
+  if (key === "azure_openai" || key === "local_agents") return "";
+  const models = {
+    openai: "gpt-4.1",
+    openai_compatible: "gpt-4.1-mini",
+    openai_responses_compatible: "gpt-4.1",
+    anthropic: "claude-sonnet-4-20250514",
+    anthropic_compatible: "claude-sonnet-4-20250514",
+    gemini: "gemini-2.5-pro",
+    vercel_ai_chat: "openai/gpt-4.1-mini",
+    vercel_ai_responses: "openai/gpt-4.1-mini",
+    vercel_ai_anthropic: "anthropic/claude-sonnet-4",
+    cloudflare_ai_chat: "@cf/meta/llama-3.1-8b-instruct",
+    cloudflare_ai_responses: "@cf/meta/llama-3.1-8b-instruct",
+    cloudflare_ai_anthropic: "@cf/meta/llama-3.1-8b-instruct",
+    github_models: "openai/gpt-4.1",
+    huggingface: "meta-llama/Llama-3.1-8B-Instruct",
+    deepinfra: "meta-llama/Meta-Llama-3.1-70B-Instruct",
+    fireworks: "accounts/fireworks/models/llama-v3p1-70b-instruct",
+    cerebras: "llama-4-scout-17b-16e-instruct",
+    nvidia_nim: "meta/llama-3.1-70b-instruct",
+    sambanova: "Meta-Llama-3.1-70B-Instruct",
+    sambanova_responses: "Meta-Llama-3.1-70B-Instruct",
+    sambanova_anthropic: "Meta-Llama-3.1-70B-Instruct",
+    xai: "grok-3",
+    groq: "llama-3.3-70b-versatile",
+    mistral: "mistral-large-latest",
+    together: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    kimi: "moonshot-v1-8k",
+    perplexity: "sonar",
+    deepseek: "deepseek-chat",
+    deepseek_anthropic: "deepseek-chat",
+    zai_anthropic: "glm-4.5",
+    openrouter: "openai/gpt-4.1-mini",
+    dashscope: "qwen-plus",
+    siliconflow: "deepseek-ai/DeepSeek-V3",
+    zhipu: "glm-4-plus",
+    volcengine: "doubao-seed-1-6",
+    qianfan: "ernie-4.0-turbo-8k",
+    hunyuan: "hunyuan-turbos-latest",
+    ollama: "llama3.2",
+    lm_studio: "local-model"
+  };
+  return models[key] || "";
+}
+
+function settingsProviderCanonicalId(value) {
+  const id = String(value || "").trim();
+  if (id === "openai-compatible" || id === "openai_compatible") return "openai_compatible";
+  if (id === "openai-responses-compatible" || id === "openai_responses_compatible") return "openai_responses_compatible";
+  if (id === "anthropic-compatible" || id === "anthropic_compatible") return "anthropic_compatible";
+  if (id === "azure-openai" || id === "azure_openai") return "azure_openai";
+  if (id === "vercel-ai-chat" || id === "vercel_ai_chat" || id === "vercel-ai-gateway" || id === "vercel_ai_gateway") return "vercel_ai_chat";
+  if (id === "vercel-ai-responses" || id === "vercel_ai_responses") return "vercel_ai_responses";
+  if (id === "vercel-ai-anthropic" || id === "vercel_ai_anthropic") return "vercel_ai_anthropic";
+  if (id === "cloudflare-ai-chat" || id === "cloudflare_ai_chat" || id === "cloudflare-workers-ai" || id === "cloudflare_workers_ai") return "cloudflare_ai_chat";
+  if (id === "cloudflare-ai-responses" || id === "cloudflare_ai_responses") return "cloudflare_ai_responses";
+  if (id === "cloudflare-ai-anthropic" || id === "cloudflare_ai_anthropic") return "cloudflare_ai_anthropic";
+  if (id === "github-models" || id === "github_models") return "github_models";
+  if (id === "hugging_face" || id === "hf") return "huggingface";
+  if (id === "deep_infra") return "deepinfra";
+  if (id === "nvidia-nim" || id === "nvidia_nim") return "nvidia_nim";
+  if (id === "sambanova-responses" || id === "sambanova_responses") return "sambanova_responses";
+  if (id === "sambanova-anthropic" || id === "sambanova_anthropic") return "sambanova_anthropic";
+  if (id === "moonshot") return "kimi";
+  if (id === "deepseek-anthropic" || id === "deepseek_anthropic") return "deepseek_anthropic";
+  if (id === "zai-anthropic" || id === "zai_anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") return "zai_anthropic";
+  if (id === "glm" || id === "bigmodel") return "zhipu";
+  if (id === "ark" || id === "doubao") return "volcengine";
+  if (id === "baidu") return "qianfan";
+  if (id === "tencent") return "hunyuan";
+  if (id === "lm-studio" || id === "lm_studio") return "lm_studio";
+  if (id === "local-agents" || id === "local_agents") return "local_agents";
+  return id.replace(/-/g, "_");
+}
+
 function settingsProviderFromProfile(profile) {
   if (profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent) return "local-agents";
   const id = String(profile?.id || "").trim();
@@ -296,20 +384,76 @@ function normalizeSettingsProfile(profile) {
   const source = profile && typeof profile === "object" && !Array.isArray(profile) ? profile : {};
   const provider = settingsProviderFromProfile(source);
   const defaults = settingsProviderDefaults(provider);
+  const id = normalizeSettingsProfileId(source.id || provider || "custom");
   return {
     ...source,
-    id: normalizeSettingsProfileId(source.id || provider || "custom"),
+    id,
     protocol: normalizeProviderProtocol(source.protocol, defaults.protocol || "openai_chat"),
     endpointMode: normalizeEndpointMode(source.endpointMode, defaults.endpointMode || "base_url"),
     baseURL: String(source.baseURL || pref("baseURL") || defaults.baseURL || "").trim(),
     fullURL: String(source.fullURL || defaults.fullURL || "").trim(),
     apiKey: String(source.apiKey || "").trim(),
-    model: String(source.model || defaults.model || "").trim(),
+    model: String(source.model || (shouldUseSettingsDefaultProviderModelForProfile(source, provider) ? defaults.model : "") || "").trim(),
     customHeaders: normalizeObjectStringMap(source.customHeaders) || {},
     bodyExtra: normalizeObjectStringMap(source.bodyExtra) || normalizeObjectStringMap(defaults.bodyExtra) || {},
     capabilities: normalizeProviderCapabilities(source.capabilities, defaults.capabilities || {}),
     isDefault: source.isDefault === true
   };
+}
+
+function shouldUseSettingsDefaultProviderModelForProfile(source, provider) {
+  const sourceId = String(source?.id || "").trim();
+  if (!sourceId) return true;
+  const sourceKey = settingsProviderCanonicalId(sourceId);
+  const providerKey = settingsProviderCanonicalId(provider);
+  return !!sourceKey && sourceKey === providerKey && defaultSettingsProviderIds().includes(sourceKey);
+}
+
+function defaultSettingsProviderIds() {
+  return [
+    "minimax",
+    "openai",
+    "openai_compatible",
+    "openai_responses_compatible",
+    "anthropic",
+    "anthropic_compatible",
+    "gemini",
+    "azure_openai",
+    "vercel_ai_chat",
+    "vercel_ai_responses",
+    "vercel_ai_anthropic",
+    "cloudflare_ai_chat",
+    "cloudflare_ai_responses",
+    "cloudflare_ai_anthropic",
+    "github_models",
+    "huggingface",
+    "deepinfra",
+    "fireworks",
+    "cerebras",
+    "nvidia_nim",
+    "sambanova",
+    "sambanova_responses",
+    "sambanova_anthropic",
+    "xai",
+    "groq",
+    "mistral",
+    "together",
+    "kimi",
+    "perplexity",
+    "deepseek",
+    "deepseek_anthropic",
+    "zai_anthropic",
+    "openrouter",
+    "dashscope",
+    "siliconflow",
+    "zhipu",
+    "volcengine",
+    "qianfan",
+    "hunyuan",
+    "ollama",
+    "lm_studio",
+    "local_agents"
+  ];
 }
 
 function normalizeProviderProtocol(value, fallback) {

@@ -626,6 +626,18 @@ describe("workbench writeback helpers", () => {
           capabilities: { streaming: true },
           bodyExtra: {},
           isDefault: false
+        },
+        {
+          id: "deepseek",
+          name: "DeepSeek",
+          protocol: "openai_chat",
+          endpointMode: "base_url",
+          baseURL: "https://api.deepseek.com",
+          apiKey: "deepseek-secret",
+          model: "",
+          capabilities: { streaming: true, modelList: true },
+          bodyExtra: {},
+          isDefault: false
         }
       ])
     };
@@ -641,6 +653,10 @@ describe("workbench writeback helpers", () => {
     expect(profiles.find((profile) => profile.id === "custom-router")).toMatchObject({
       apiKey: "custom-secret",
       model: "custom-model"
+    });
+    expect(profiles.find((profile) => profile.id === "deepseek")).toMatchObject({
+      apiKey: "deepseek-secret",
+      model: "deepseek-chat"
     });
     expect(profiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([
       "openai-compatible",
@@ -2691,6 +2707,8 @@ describe("workbench writeback helpers", () => {
 
     expect(dom.getElementById("zms-workbench-model-options").children.map((option: any) => option.value)).toContain("deepseek-chat");
     expect(dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value)).toContain("deepseek-chat");
+    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-chat");
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 2");
   });
 

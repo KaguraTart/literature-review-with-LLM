@@ -1973,6 +1973,15 @@ describe("preferences local-agent config helpers", () => {
         baseURL: "https://router.example/v1",
         apiKey: "custom-secret",
         isDefault: false
+      },
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        protocol: "openai_chat",
+        baseURL: "https://api.deepseek.com",
+        apiKey: "deepseek-secret",
+        model: "",
+        isDefault: false
       }
     ]);
 
@@ -1984,6 +1993,10 @@ describe("preferences local-agent config helpers", () => {
     });
     expect(profiles.find((profile) => profile.id === "custom-router")).toMatchObject({
       apiKey: "custom-secret"
+    });
+    expect(profiles.find((profile) => profile.id === "deepseek")).toMatchObject({
+      apiKey: "deepseek-secret",
+      model: "deepseek-chat"
     });
     expect(profiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([
       "gemini",
@@ -2286,7 +2299,9 @@ describe("preferences local-agent config helpers", () => {
     expect(fetchCalls).toHaveLength(0);
     expect(elements.get("zms-status").value).toContain("Configuration preflight failed");
     expect(elements.get("zms-profileStatus").textContent).toContain("Configuration preflight: failed");
-    expect(elements.get("zms-profileStatus").textContent).toContain("Missing: API key or custom auth header, model name");
+    expect(elements.get("zms-profileStatus").textContent).toContain("Model: gpt-4.1");
+    expect(elements.get("zms-profileStatus").textContent).toContain("Missing: API key or custom auth header");
+    expect(elements.get("zms-profileStatus").textContent).not.toContain("model name");
     expect(elements.get("zms-profileStatus").textContent).toContain("Next: npm run verify:provider:live -- --doctor --include openai --provider-env-file .env.local");
     expect(elements.get("zms-profileStatus").textContent).not.toContain("sk-test-secret");
 
@@ -2798,6 +2813,8 @@ describe("preferences local-agent config helpers", () => {
 
     expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toContain("deepseek-chat");
     expect(elements.get("zms-model-select").children.map((option: any) => option.value)).toContain("deepseek-chat");
+    expect(elements.get("zms-model").value).toBe("deepseek-chat");
+    expect(elements.get("zms-model-select").value).toBe("deepseek-chat");
     expect(elements.get("zms-status").value).toBe("Recommended models loaded: 2");
   });
 
@@ -3414,6 +3431,11 @@ describe("preferences local-agent config helpers", () => {
       isDefault: true,
       protocol: "openai_chat"
     });
+    expect(profiles.find((profile: any) => profile.id === "openai")).toMatchObject({ model: "gpt-4.1" });
+    expect(profiles.find((profile: any) => profile.id === "anthropic")).toMatchObject({ model: "claude-sonnet-4-20250514" });
+    expect(profiles.find((profile: any) => profile.id === "deepseek")).toMatchObject({ model: "deepseek-chat" });
+    expect(profiles.find((profile: any) => profile.id === "azure-openai")).toMatchObject({ model: "" });
+    expect(profiles.find((profile: any) => profile.id === "local-agents")).toMatchObject({ model: "" });
   });
 
   it("loads model options into the settings datalist and fills an empty model field", async () => {

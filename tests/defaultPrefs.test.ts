@@ -70,6 +70,7 @@ describe("default provider profiles", () => {
       protocol: "openai_responses",
       endpointMode: "base_url",
       baseURL: "https://api.openai.com/v1",
+      model: "gpt-4.1",
       capabilities: { pdfBase64: true, streaming: true }
     });
     expect(profiles.find((profile: any) => profile.id === "openai-compatible")).toMatchObject({
@@ -88,6 +89,7 @@ describe("default provider profiles", () => {
       protocol: "anthropic_messages",
       endpointMode: "base_url",
       baseURL: "https://api.anthropic.com",
+      model: "claude-sonnet-4-20250514",
       capabilities: { pdfBase64: true, streaming: true }
     });
     expect(profiles.find((profile: any) => profile.id === "anthropic-compatible")).toMatchObject({
@@ -101,12 +103,14 @@ describe("default provider profiles", () => {
       protocol: "openai_chat",
       endpointMode: "base_url",
       baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+      model: "gemini-2.5-pro",
       capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "azure-openai")).toMatchObject({
       protocol: "openai_responses",
       endpointMode: "base_url",
       baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1",
+      model: "",
       customHeaders: {},
       capabilities: { pdfBase64: true, streaming: true, modelList: true }
     });
@@ -220,6 +224,7 @@ describe("default provider profiles", () => {
     expect(profiles.find((profile: any) => profile.id === "deepseek")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://api.deepseek.com",
+      model: "deepseek-chat",
       capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "deepseek-anthropic")).toMatchObject({
@@ -278,6 +283,7 @@ describe("default provider profiles", () => {
       protocol: "openai_chat",
       endpointMode: "base_url",
       baseURL: "http://127.0.0.1:3333/v1",
+      model: "",
       capabilities: { modelList: false, streaming: false },
       bodyExtra: {
         localAgent: {

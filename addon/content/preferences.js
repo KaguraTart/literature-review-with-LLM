@@ -526,7 +526,9 @@ var ZoteroMarkdownSummaryPrefs = {
   async loadModels() {
     const profile = this.profileFromEditor();
     if (!profile) return;
-    const recommended = this.refreshModelRecommendations();
+    const modelInput = document.getElementById("zms-model");
+    const wasModelBlank = !String(modelInput?.value || "").trim();
+    const recommended = this.refreshModelRecommendations({ selectDefault: true });
     if (!profileHasUsableAuth(profile)) {
       this.setStatus(recommended.length ? `${this.t("modelRecommendationsLoaded")}: ${recommended.length}` : this.t("apiKeyMissing"));
       return;
@@ -549,8 +551,8 @@ var ZoteroMarkdownSummaryPrefs = {
       }
       const displayOptions = modelOptions.length ? modelOptions : recommended;
       renderModelOptions(displayOptions);
-      if (displayOptions.length && !document.getElementById("zms-model").value.trim()) {
-        document.getElementById("zms-model").value = displayOptions[0].id;
+      if (displayOptions.length && (wasModelBlank || !String(modelInput?.value || "").trim())) {
+        if (modelInput) modelInput.value = displayOptions[0].id;
       }
       syncModelSelectFromInput(displayOptions);
       this.setStatus(modelOptions.length ? `${this.t("modelListLoaded")}: ${modelOptions.length}` : `${this.t("modelRecommendationsLoaded")}: ${displayOptions.length}`);
@@ -1001,6 +1003,7 @@ function applyPreferenceMenuLabels(lang) {
       "social-science": zh ? "社科与政策" : "Social science",
       "review-writing": zh ? "综述写作" : "Review writing"
     },
+    "zms-provider": providerMenuLabels(zh),
     "zms-inputMode": {
       text: zh ? "提取文本" : "Extracted text",
       pdf_base64: zh ? "PDF 原文" : "Raw PDF"
@@ -1022,6 +1025,53 @@ function applyPreferenceMenuLabels(lang) {
   for (const [id, valueMap] of Object.entries(maps)) {
     localizeMenuItems(id, valueMap);
   }
+}
+
+function providerMenuLabels(zh) {
+  return {
+    minimax: zh ? "MiniMax OpenAI 兼容" : "MiniMax OpenAI Compatible",
+    openai: zh ? "OpenAI 原生" : "OpenAI Native",
+    openai_compatible: zh ? "OpenAI 兼容接口" : "OpenAI Compatible Chat",
+    openai_responses_compatible: zh ? "OpenAI Responses 兼容接口" : "OpenAI Responses Compatible",
+    anthropic: zh ? "Anthropic 原生" : "Anthropic Native",
+    anthropic_compatible: zh ? "Anthropic 兼容接口" : "Anthropic Compatible",
+    gemini: zh ? "Gemini OpenAI 兼容" : "Gemini OpenAI Compatible",
+    azure_openai: zh ? "Azure OpenAI" : "Azure OpenAI",
+    vercel_ai_chat: zh ? "Vercel AI Gateway 聊天接口" : "Vercel AI Gateway Chat",
+    vercel_ai_responses: zh ? "Vercel AI Gateway Responses 接口" : "Vercel AI Gateway Responses",
+    vercel_ai_anthropic: zh ? "Vercel AI Gateway Anthropic 接口" : "Vercel AI Gateway Anthropic",
+    cloudflare_ai_chat: zh ? "Cloudflare AI 聊天接口" : "Cloudflare AI Chat",
+    cloudflare_ai_responses: zh ? "Cloudflare AI Responses 接口" : "Cloudflare AI Responses",
+    cloudflare_ai_anthropic: zh ? "Cloudflare AI Anthropic 接口" : "Cloudflare AI Anthropic",
+    github_models: zh ? "GitHub Models" : "GitHub Models",
+    huggingface: zh ? "Hugging Face" : "Hugging Face",
+    deepinfra: zh ? "DeepInfra" : "DeepInfra",
+    fireworks: zh ? "Fireworks AI" : "Fireworks AI",
+    cerebras: zh ? "Cerebras" : "Cerebras",
+    nvidia_nim: zh ? "NVIDIA NIM" : "NVIDIA NIM",
+    sambanova: zh ? "SambaNova 聊天接口" : "SambaNova Chat",
+    sambanova_responses: zh ? "SambaNova Responses 接口" : "SambaNova Responses",
+    sambanova_anthropic: zh ? "SambaNova Anthropic 接口" : "SambaNova Anthropic",
+    xai: zh ? "xAI" : "xAI",
+    groq: zh ? "Groq" : "Groq",
+    mistral: zh ? "Mistral" : "Mistral",
+    together: zh ? "Together AI" : "Together AI",
+    kimi: zh ? "Kimi / Moonshot" : "Kimi / Moonshot",
+    perplexity: zh ? "Perplexity Sonar" : "Perplexity Sonar",
+    deepseek: zh ? "DeepSeek 聊天接口" : "DeepSeek Chat",
+    deepseek_anthropic: zh ? "DeepSeek Anthropic 接口" : "DeepSeek Anthropic",
+    zai_anthropic: zh ? "Z.AI Anthropic 接口" : "Z.AI Anthropic",
+    openrouter: zh ? "OpenRouter" : "OpenRouter",
+    dashscope: zh ? "Qwen / DashScope" : "Qwen / DashScope",
+    siliconflow: zh ? "SiliconFlow" : "SiliconFlow",
+    zhipu: zh ? "智谱 / GLM" : "Zhipu / GLM",
+    volcengine: zh ? "火山方舟 / Doubao" : "Volcengine Ark / Doubao",
+    qianfan: zh ? "百度千帆" : "Baidu Qianfan",
+    hunyuan: zh ? "腾讯混元" : "Tencent Hunyuan",
+    ollama: zh ? "Ollama 本地接口" : "Ollama Local",
+    lm_studio: zh ? "LM Studio 本地接口" : "LM Studio Local",
+    local_agents: zh ? "本地代理工具" : "Local Agents"
+  };
 }
 
 function localizeMenuItems(id, valueMap) {
@@ -1179,7 +1229,6 @@ async function chooseOutputDirectory(currentPath, title) {
 async function chooseOutputDirectoryWithZoteroFilePicker(FilePicker, title, displayPath) {
   let lastError = null;
   for (const parentWindow of directoryPickerWindowCandidates()) {
-    if (!parentWindow?.browsingContext) continue;
     try {
       const picker = new FilePicker();
       if (displayPath) setZoteroPickerDisplayDirectory(picker, displayPath);
@@ -1270,7 +1319,7 @@ function directoryPickerParentCandidates(useWindowParent = true) {
 function directoryPickerWindowCandidates() {
   const candidates = [];
   const add = (value) => {
-    if (!value || candidates.includes(value)) return;
+    if (typeof value === "undefined" || candidates.includes(value)) return;
     candidates.push(value);
   };
   if (typeof window !== "undefined") {
@@ -1280,6 +1329,7 @@ function directoryPickerWindowCandidates() {
   }
   try { add(Services?.wm?.getMostRecentWindow?.("navigator:browser")); } catch (_err) {}
   try { add(Services?.wm?.getMostRecentWindow?.(null)); } catch (_err) {}
+  add(null);
   return candidates;
 }
 
@@ -4628,6 +4678,10 @@ function defaultCapabilitiesForProvider(provider) {
 }
 
 function providerDefaults(provider) {
+  return withDefaultProviderModel(provider, providerDefaultsRaw(provider));
+}
+
+function providerDefaultsRaw(provider) {
   const id = String(provider || "minimax");
   const commonCapabilities = {
     text: true,
@@ -5201,6 +5255,19 @@ function providerDefaults(provider) {
   };
 }
 
+function withDefaultProviderModel(provider, defaults) {
+  const current = String(defaults?.model || "").trim();
+  if (current) return defaults;
+  const model = recommendedDefaultModelForProvider(provider, defaults);
+  return model ? { ...defaults, model } : defaults;
+}
+
+function recommendedDefaultModelForProvider(provider, defaults = {}) {
+  const key = String(defaults?.id || provider || "").replace(/-/g, "_");
+  if (key === "azure_openai" || key === "local_agents") return "";
+  return recommendedModelOptionsForProvider(key)[0]?.id || "";
+}
+
 function defaultProviderProfiles() {
   return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "vercel_ai_chat", "vercel_ai_responses", "vercel_ai_anthropic", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = providerDefaults(provider);
@@ -5707,12 +5774,67 @@ function normalizeProviderProfile(profile, defaultsOverride) {
     baseURL: String(source.baseURL || defaults.baseURL || "").trim(),
     fullURL: String(source.fullURL || defaults.fullURL || "").trim(),
     apiKey: String(source.apiKey || "").trim(),
-    model: String(source.model || defaults.model || "").trim(),
+    model: String(source.model || (shouldUseDefaultProviderModelForProfile(source, defaults) ? defaults.model : "") || "").trim(),
     capabilities: normalizeProviderCapabilities(source.capabilities, defaults.capabilities || {}),
     customHeaders: normalizeObjectStringMap(source.customHeaders) || normalizeObjectStringMap(defaults.customHeaders) || {},
     bodyExtra: normalizeObjectStringMap(source.bodyExtra) || normalizeObjectStringMap(defaults.bodyExtra) || {},
     isDefault: source.isDefault === true
   };
+}
+
+function shouldUseDefaultProviderModelForProfile(source, defaults) {
+  const sourceId = String(source?.id || "").trim();
+  if (!sourceId) return true;
+  const sourceKey = providerProfileCatalogKey(source);
+  const defaultKey = providerProfileCatalogKey(defaults);
+  return !!sourceKey && sourceKey === defaultKey && defaultProviderProfileIds().includes(sourceKey);
+}
+
+function defaultProviderProfileIds() {
+  return [
+    "minimax",
+    "openai",
+    "openai-compatible",
+    "openai-responses-compatible",
+    "anthropic",
+    "anthropic-compatible",
+    "gemini",
+    "azure-openai",
+    "vercel-ai-chat",
+    "vercel-ai-responses",
+    "vercel-ai-anthropic",
+    "cloudflare-ai-chat",
+    "cloudflare-ai-responses",
+    "cloudflare-ai-anthropic",
+    "github-models",
+    "huggingface",
+    "deepinfra",
+    "fireworks",
+    "cerebras",
+    "nvidia-nim",
+    "sambanova",
+    "sambanova-responses",
+    "sambanova-anthropic",
+    "xai",
+    "groq",
+    "mistral",
+    "together",
+    "kimi",
+    "perplexity",
+    "deepseek",
+    "deepseek-anthropic",
+    "zai-anthropic",
+    "openrouter",
+    "dashscope",
+    "siliconflow",
+    "zhipu",
+    "volcengine",
+    "qianfan",
+    "hunyuan",
+    "ollama",
+    "lm-studio",
+    "local-agents"
+  ];
 }
 
 function normalizeProviderProtocol(value, fallback) {
