@@ -2050,10 +2050,7 @@ const PREFERENCES_MODEL_TEXT_CONTAINER_KEYS = [
 
 function openAITextFromResponse(data, depth = 0) {
   return data?.output_text
-    || modelTextFromValue(data?.choices?.[0]?.message?.content)
-    || modelTextFromValue(data?.choices?.[0]?.delta?.content)
-    || data?.choices?.[0]?.text
-    || data?.choices?.[0]?.delta?.text
+    || modelTextFromChoices(data?.choices)
     || openAIEventDeltaText(data)
     || modelTextFromValue(data?.output)
     || modelTextFromValue(data?.content)
@@ -2062,6 +2059,8 @@ function openAITextFromResponse(data, depth = 0) {
     || modelTextFromValue(data?.item)
     || modelTextFromValue(data?.message)
     || modelTextFromValue(data?.response)
+    || modelTextFromValue(data?.text)
+    || modelTextFromValue(data?.refusal)
     || wrappedProviderTextFromResponse("openai", data, depth)
     || "";
 }
@@ -2083,9 +2082,31 @@ function anthropicTextFromResponse(data, depth = 0) {
 function openAIEventDeltaText(data) {
   const type = String(data?.type || "");
   if ((type === "response.output_text.delta" || type === "response.text.delta") && typeof data?.delta === "string") return data.delta;
+  if (type === "response.refusal.delta" && typeof data?.delta === "string") return data.delta;
+  if (type === "response.output_text.done" && typeof data?.text === "string") return data.text;
+  if (type === "response.refusal.done" && typeof data?.refusal === "string") return data.refusal;
+  if (type === "response.content_part.done") return modelTextFromValue(data?.part);
+  if (type === "response.output_item.done") return modelTextFromValue(data?.item);
+  if (type === "response.completed") return modelTextFromValue(data?.response);
   if (typeof data?.delta?.text === "string") return data.delta.text;
   if (typeof data?.delta?.content === "string") return data.delta.content;
   return "";
+}
+
+function modelTextFromChoices(choices) {
+  if (!Array.isArray(choices)) return "";
+  return choices
+    .map((choice) => {
+      if (typeof choice?.delta === "string") return choice.delta;
+      return modelTextFromValue(choice?.delta?.content)
+        || modelTextFromValue(choice?.delta)
+        || modelTextFromValue(choice?.message?.content)
+        || modelTextFromValue(choice?.message)
+        || (typeof choice?.text === "string" ? choice.text : "")
+        || (typeof choice?.delta?.text === "string" ? choice.delta.text : "");
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 function wrappedProviderTextFromResponse(protocol, data, depth) {
@@ -2116,6 +2137,7 @@ function modelTextFromValue(value, depth = 0) {
     if (typeof value.output_text === "string") return value.output_text;
     if (typeof value.content === "string") return value.content;
     if (typeof value.completion === "string") return value.completion;
+    if (typeof value.refusal === "string") return value.refusal;
     for (const key of PREFERENCES_MODEL_TEXT_CONTAINER_KEYS) {
       const nested = value?.[key];
       if (!nested || nested === value) continue;

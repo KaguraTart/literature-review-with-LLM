@@ -9493,6 +9493,7 @@ function openAITextFromResponse(data, depth = 0) {
     || modelTextFromValue(data?.candidates)
     || modelTextFromStreamContainer(data)
     || modelTextFromValue(data?.text)
+    || modelTextFromValue(data?.refusal)
     || wrappedProviderTextFromResponse("openai", data, depth);
 }
 

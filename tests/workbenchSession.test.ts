@@ -275,9 +275,16 @@ describe("workbench session helpers", () => {
     expect(helpers.extractResponseText("openai_chat", {
       choices: [{ delta: { reasoning_content: "hidden" } }, { delta: { refusal: "second refusal" } }]
     })).toBe("second refusal");
+    expect(helpers.extractResponseText("openai_chat", {
+      refusal: "top-level refusal"
+    })).toBe("top-level refusal");
     expect(helpers.extractResponseText("openai_responses", {
       output: [{ content: [{ type: "refusal", refusal: "responses refusal" }] }]
     })).toBe("responses refusal");
+    expect(helpers.extractResponseText("openai_responses", {
+      type: "response.refusal.done",
+      refusal: "responses top-level refusal"
+    })).toBe("responses top-level refusal");
     expect(helpers.extractResponseText("openai_chat", {
       candidates: [{ content: { parts: [{ text: "candidate part text" }] } }]
     })).toBe("candidate part text");

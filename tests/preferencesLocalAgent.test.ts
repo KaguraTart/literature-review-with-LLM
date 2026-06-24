@@ -2917,12 +2917,25 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
       choices: [{ message: { content: [{ type: "text", text: { value: "chat value ok", annotations: [] } }] } }]
     }))).toBe("chat value ok");
+    expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
+      choices: [{ message: { content: null } }, { message: { content: "second choice ok" } }]
+    }))).toBe("second choice ok");
+    expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
+      choices: [{ delta: { reasoning_content: "hidden" } }, { delta: { refusal: "second refusal ok" } }]
+    }))).toBe("second refusal ok");
     expect(helpers.extractProviderConnectionText("openai_responses", JSON.stringify({
       response: { output: [{ content: [{ type: "output_text", text: "responses ok" }] }] }
     }))).toBe("responses ok");
     expect(helpers.extractProviderConnectionText("openai_responses", JSON.stringify({
       response: { output: [{ content: [{ type: "output_text", text: { value: "responses value ok" } }] }] }
     }))).toBe("responses value ok");
+    expect(helpers.extractProviderConnectionText("openai_responses", JSON.stringify({
+      type: "response.refusal.done",
+      refusal: "responses refusal ok"
+    }))).toBe("responses refusal ok");
+    expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
+      refusal: "top-level refusal ok"
+    }))).toBe("top-level refusal ok");
     expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
       data: { choices: [{ message: { content: "wrapped chat ok" } }] }
     }))).toBe("wrapped chat ok");
@@ -2950,6 +2963,10 @@ describe("preferences local-agent config helpers", () => {
       "data: {\"type\":\"response.output_text.delta\",\"delta\":\"responses\"}",
       "data: [DONE]"
     ].join("\n"))).toBe("stream responses");
+    expect(helpers.extractProviderConnectionText("openai_responses", [
+      "data: {\"type\":\"response.output_text.done\",\"text\":\"done responses\"}",
+      "data: [DONE]"
+    ].join("\n"))).toBe("done responses");
     expect(helpers.extractProviderConnectionText("anthropic_messages", [
       "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"stream \"}}",
       "",

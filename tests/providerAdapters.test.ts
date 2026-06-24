@@ -1914,6 +1914,9 @@ describe("provider adapters", () => {
       choices: [{ delta: { reasoning_content: "hidden" } }, { delta: { refusal: "second refusal" } }]
     } as any)).toBe("second refusal");
     expect(extractResponseText("openai_chat", {
+      refusal: "top-level refusal"
+    } as any)).toBe("top-level refusal");
+    expect(extractResponseText("openai_chat", {
       content: [{ type: "text", text: "top-level content" }]
     } as any)).toBe("top-level content");
     expect(extractResponseText("openai_chat", {
@@ -1937,6 +1940,10 @@ describe("provider adapters", () => {
     expect(extractResponseText("openai_responses", {
       output: [{ content: [{ type: "refusal", refusal: "responses refusal" }] }]
     } as any)).toBe("responses refusal");
+    expect(extractResponseText("openai_responses", {
+      type: "response.refusal.done",
+      refusal: "responses top-level refusal"
+    } as any)).toBe("responses top-level refusal");
     expect(extractResponseText("openai_chat", {
       candidates: [{ content: { parts: [{ text: "candidate part text" }] } }]
     } as any)).toBe("candidate part text");
