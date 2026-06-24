@@ -1153,6 +1153,53 @@ describe("bootstrap provider helpers", () => {
     });
   });
 
+  it("normalizes provider usage aliases from compatible routers in direct summaries", async () => {
+    const { helpers } = loadBootstrapProviderHelpers({
+      output_text: "router summary",
+      usage: {
+        token_usage: {
+          prompt_tokens: 12,
+          completion_tokens: 8,
+          total_tokens: 20
+        },
+        prompt_cache_hit_tokens: 4,
+        billing_details: {
+          input_tokens_details: { cached_tokens: 2 },
+          output_tokens_details: { reasoning_tokens: 3 }
+        },
+        thinking: { tokens: 5 }
+      }
+    });
+
+    const result = await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "router-secret",
+      model: "router-model",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(result.markdown).toBe("router summary");
+    expect(result.usage).toEqual({
+      inputTokens: 12,
+      outputTokens: 8,
+      totalTokens: 20,
+      cachedInputTokens: 6,
+      reasoningTokens: 5
+    });
+  });
+
   it("uses Responses done snapshots only as a bootstrap stream fallback", async () => {
     const { helpers } = loadBootstrapProviderHelpers({
       __streamLines: [

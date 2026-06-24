@@ -397,6 +397,27 @@ describe("workbench session helpers", () => {
       outputTokens: 2,
       totalTokens: 6
     });
+    expect(helpers.providerUsageFromResponse({
+      usage: {
+        token_usage: {
+          prompt_tokens: 12,
+          completion_tokens: 8,
+          total_tokens: 20
+        },
+        prompt_cache_hit_tokens: 4,
+        billingDetails: {
+          inputTokensDetails: { cachedTokens: 2 },
+          outputTokensDetails: { reasoningTokens: 3 }
+        },
+        thinking: { tokens: 5 }
+      }
+    })).toEqual({
+      inputTokens: 12,
+      outputTokens: 8,
+      totalTokens: 20,
+      cachedInputTokens: 6,
+      reasoningTokens: 5
+    });
     expect(helpers.mergeProviderUsage(
       { inputTokens: 3, outputTokens: 0, totalTokens: 3 },
       { outputTokens: 7, totalTokens: 7 }

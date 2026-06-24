@@ -1920,6 +1920,28 @@ describe("provider adapters", () => {
       outputTokens: 2,
       totalTokens: 6
     });
+
+    expect(extractProviderUsage({
+      usage: {
+        token_usage: {
+          prompt_tokens: 12,
+          completion_tokens: 8,
+          total_tokens: 20
+        },
+        prompt_cache_hit_tokens: 4,
+        billing_details: {
+          input_tokens_details: { cached_tokens: 2 },
+          output_tokens_details: { reasoning_tokens: 3 }
+        },
+        thinking: { tokens: 5 }
+      }
+    })).toEqual({
+      inputTokens: 12,
+      outputTokens: 8,
+      totalTokens: 20,
+      cachedInputTokens: 6,
+      reasoningTokens: 5
+    });
   });
 
   it("extracts provider token usage from stream chunks", () => {
