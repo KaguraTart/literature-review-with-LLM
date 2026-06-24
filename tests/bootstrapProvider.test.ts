@@ -3953,6 +3953,14 @@ describe("bootstrap provider helpers", () => {
       delta: { type: "thinking_delta", text: "hidden thinking" }
     })).toBe("");
     expect(helpers.extractAnthropicStreamText({
+      type: "content_block_start",
+      content_block: { type: "text", text: "start text" }
+    })).toBe("start text");
+    expect(helpers.extractAnthropicStreamText({
+      type: "content_block_start",
+      content_block: { type: "thinking", text: "hidden start" }
+    })).toBe("");
+    expect(helpers.extractAnthropicStreamText({
       message: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped message" } }
     })).toBe("wrapped message");
     expect(helpers.isProviderStreamSnapshot("openai_responses", {

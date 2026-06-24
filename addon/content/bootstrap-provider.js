@@ -444,6 +444,9 @@ function extractAnthropicStreamText(chunk, depth = 0) {
     if (typeof chunk?.delta?.text === "string") return chunk.delta.text;
     if (typeof chunk?.delta?.partial_json === "string") return chunk.delta.partial_json;
   }
+  if (chunk?.type === "content_block_start") {
+    return extractOpenAIMessageContent(chunk?.content_block);
+  }
   if (typeof chunk?.delta?.text === "string") return chunk.delta.text;
   if (typeof chunk?.delta?.partial_json === "string") return chunk.delta.partial_json;
   if (typeof chunk?.content_block?.text === "string") return chunk.content_block.text;

@@ -3138,6 +3138,9 @@ function anthropicTextFromResponse(data, depth = 0) {
     if (typeof data?.delta?.text === "string") return data.delta.text;
     if (typeof data?.delta?.partial_json === "string") return data.delta.partial_json;
   }
+  if (data?.type === "content_block_start") {
+    return modelTextFromValue(data?.content_block);
+  }
   if (typeof data?.delta?.text === "string") return data.delta.text;
   if (typeof data?.content_block?.text === "string") return data.content_block.text;
   return modelTextFromValue(data?.content)

@@ -444,6 +444,14 @@ describe("workbench session helpers", () => {
       payload: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped anthropic" } }
     })).toBe("wrapped anthropic");
     expect(helpers.streamTextFromData("anthropic_messages", {
+      type: "content_block_start",
+      content_block: { type: "text", text: "start text" }
+    })).toBe("start text");
+    expect(helpers.streamTextFromData("anthropic_messages", {
+      type: "content_block_start",
+      content_block: { type: "thinking", text: "hidden start" }
+    })).toBe("");
+    expect(helpers.streamTextFromData("anthropic_messages", {
       message: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped message" } }
     })).toBe("wrapped message");
     expect(helpers.isStreamSnapshot("openai_responses", {

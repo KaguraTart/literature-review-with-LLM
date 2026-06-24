@@ -1676,6 +1676,8 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"claude\"}}")).toBe("claude");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"text\":\"hidden thinking\"}}")).toBe("");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"ok\\\"\"}}")).toBe("{\"ok\"");
+    expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\",\"text\":\"start text\"}}")).toBe("start text");
+    expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"thinking\",\"text\":\"hidden start\"}}")).toBe("");
     expect(parseStreamChunk("openai_chat", "data: {\"data\":{\"choices\":[{\"delta\":{\"content\":\"wrapped chat\"}}]}}")).toBe("wrapped chat");
     expect(parseStreamChunk("openai_responses", "data: {\"result\":{\"type\":\"response.output_text.delta\",\"delta\":\"wrapped responses\"}}")).toBe("wrapped responses");
     expect(parseStreamChunk("openai_responses", "data: {\"body\":{\"type\":\"response.output_text.delta\",\"delta\":\"wrapped body\"}}")).toBe("wrapped body");

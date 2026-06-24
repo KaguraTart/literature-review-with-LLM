@@ -11100,6 +11100,9 @@ function streamTextFromData(protocol, data, depth = 0) {
     if (data?.type === "content_block_delta") {
       return data?.delta?.text || data?.delta?.partial_json || "";
     }
+    if (data?.type === "content_block_start") {
+      return modelTextFromValue(data?.content_block);
+    }
     return data?.delta?.text
       || data?.delta?.partial_json
       || data?.content_block?.text

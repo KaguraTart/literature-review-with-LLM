@@ -4044,6 +4044,10 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({
       data: { content: [{ type: "text", text: "wrapped anthropic ok" }] }
     }))).toBe("wrapped anthropic ok");
+    expect(helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({
+      type: "content_block_start",
+      content_block: { type: "text", text: "anthropic start ok" }
+    }))).toBe("anthropic start ok");
     expect(helpers.extractProviderConnectionText("openai_chat", [
       "data: {\"choices\":[{\"delta\":{\"content\":\"stream \"}}]}",
       "",
@@ -4063,10 +4067,14 @@ describe("preferences local-agent config helpers", () => {
       "data: [DONE]"
     ].join("\n"))).toBe("done responses router delta");
     expect(helpers.extractProviderConnectionText("anthropic_messages", [
+      "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"thinking\",\"text\":\"hidden start\"}}",
+      "",
+      "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\",\"text\":\"start \"}}",
+      "",
       "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"stream \"}}",
       "",
       "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"anthropic\"}}"
-    ].join("\n"))).toBe("stream anthropic");
+    ].join("\n"))).toBe("start stream anthropic");
     expect(() => helpers.extractProviderConnectionText("openai_chat", [
       "data: {\"type\":\"error\",\"error\":{\"code\":\"rate_limit\",\"message\":\"Too many requests for sk-test-secret\"}}"
     ].join("\n"))).toThrow("Too many requests for [redacted]");
