@@ -107,12 +107,14 @@
         <label id="zms-profileStatus-label" value="档案状态"/>
         <html:pre class="zms-profile-status" id="zms-profileStatus"></html:pre>
       </vbox>
-      <hbox align="center" class="zms-row zms-outputDir-row">
+      <vbox class="zms-row zms-outputDir-row">
         <label class="zms-label" id="zms-outputDir-label" value="输出目录"/>
-        <html:input class="zms-field zms-outputDir-field" id="zms-outputDir" flex="1"/>
-        <button class="zms-outputDir-button" id="zms-choose-outputDir-button" label="浏览..." tooltiptext="从系统文件管理器选择输出文件夹" oncommand="ZoteroMarkdownSummaryPrefs.chooseOutputDir()"/>
-        <button class="zms-outputDir-button" id="zms-save-outputDir-button" label="保存路径" tooltiptext="保存当前输入的输出目录" oncommand="ZoteroMarkdownSummaryPrefs.saveOutputDir()"/>
-      </hbox>
+        <hbox align="center" class="zms-outputDir-control">
+          <html:input class="zms-field zms-outputDir-field" id="zms-outputDir" flex="1"/>
+          <button class="zms-outputDir-button" id="zms-choose-outputDir-button" label="浏览..." tooltiptext="从系统文件管理器选择输出文件夹" oncommand="ZoteroMarkdownSummaryPrefs.chooseOutputDir()"/>
+          <button class="zms-outputDir-button" id="zms-save-outputDir-button" label="保存路径" tooltiptext="保存当前输入的输出目录" oncommand="ZoteroMarkdownSummaryPrefs.saveOutputDir()"/>
+        </hbox>
+      </vbox>
       <hbox align="center" class="zms-row">
         <label class="zms-label" id="zms-inputMode-label" value="输入模式"/>
         <menulist id="zms-inputMode">

@@ -2939,6 +2939,9 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
       data: { choices: [{ message: { content: "wrapped chat ok" } }] }
     }))).toBe("wrapped chat ok");
+    expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
+      choices: [{ message: { content: "<think>hidden setup\n\nAnswer: settings test ok" } }]
+    }))).toBe("settings test ok");
     expect(helpers.extractProviderConnectionText("openai_responses", JSON.stringify({
       result: { output_text: "wrapped responses ok" }
     }))).toBe("wrapped responses ok");

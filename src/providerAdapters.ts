@@ -455,7 +455,28 @@ function isReasoningStreamEvent(record: unknown): boolean {
 }
 
 function stripThink(value: unknown): string {
-  return String(value || "").replace(/<think\b[^>]*>[\s\S]*?(?:<\/think>|$)/gi, "").trim();
+  const text = String(value || "");
+  let answer = "";
+  let cursor = 0;
+  const pattern = /<think\b[^>]*>([\s\S]*?)(<\/think>|$)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text))) {
+    answer += text.slice(cursor, match.index);
+    if (!match[2]) {
+      answer += unclosedThinkAnswer(match[1] || "");
+      cursor = text.length;
+      break;
+    }
+    cursor = pattern.lastIndex;
+  }
+  answer += text.slice(cursor);
+  return answer.trim();
+}
+
+function unclosedThinkAnswer(value: string): string {
+  const markers = [...String(value || "").matchAll(/(?:^|\n{2,})\s*(?:final\s+answer|answer|最终回答|最终答案|回复|回答|结论|总结)\s*[:：]\s*/gi)];
+  const marker = markers[markers.length - 1];
+  return marker ? value.slice((marker.index || 0) + marker[0].length).trim() : "";
 }
 
 function safeParseJSON(raw: string): unknown | null {

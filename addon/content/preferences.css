@@ -16,10 +16,19 @@
   width: 58em;
 }
 
+.zms-outputDir-row .zms-label {
+  margin-bottom: 4px;
+}
+
+.zms-outputDir-control {
+  max-width: 58em;
+  width: 58em;
+}
+
 #zms-outputDir.zms-outputDir-field {
-  width: 28em;
-  min-width: 16em;
-  max-width: 28em;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
 }
 
 .zms-outputDir-button {

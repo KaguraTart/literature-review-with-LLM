@@ -1861,8 +1861,9 @@ function extractProviderConnectionText(protocol, text) {
   const value = data
     ? providerTextFromResponse(protocol, data)
     : providerTextFromStreamText(protocol, text) || String(text || "").trim();
-  if (!String(value || "").trim()) throw new Error("No text returned from model");
-  return String(value).trim();
+  const visibleText = stripThink(value);
+  if (!visibleText) throw new Error("No text returned from model");
+  return visibleText;
 }
 
 function providerTextFromStreamText(protocol, text) {
@@ -2185,6 +2186,31 @@ function redact(value) {
     .replace(/\b(?:sk|ak|xai|gsk|pplx|ms|rk)[-_][A-Za-z0-9._-]+/gi, "[redacted]")
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, "[redacted]")
     .slice(0, 800);
+}
+
+function stripThink(value) {
+  const text = String(value || "");
+  let answer = "";
+  let cursor = 0;
+  const pattern = /<think\b[^>]*>([\s\S]*?)(<\/think>|$)/gi;
+  let match;
+  while ((match = pattern.exec(text))) {
+    answer += text.slice(cursor, match.index);
+    if (!match[2]) {
+      answer += unclosedThinkAnswer(match[1] || "");
+      cursor = text.length;
+      break;
+    }
+    cursor = pattern.lastIndex;
+  }
+  answer += text.slice(cursor);
+  return answer.trim();
+}
+
+function unclosedThinkAnswer(value) {
+  const markers = [...String(value || "").matchAll(/(?:^|\n{2,})\s*(?:final\s+answer|answer|最终回答|最终答案|回复|回答|结论|总结)\s*[:：]\s*/gi)];
+  const marker = markers[markers.length - 1];
+  return marker ? value.slice((marker.index || 0) + marker[0].length).trim() : "";
 }
 
 function renderModelOptions(modelOptions) {

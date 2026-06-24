@@ -2949,6 +2949,9 @@ describe("workbench writeback helpers", () => {
     expect(helpers.extractResponseText("openai_chat", {
       candidates: [{ content: { parts: [{ text: "candidate part text" }] } }]
     })).toBe("candidate part text");
+    expect(helpers.extractResponseText("openai_chat", {
+      choices: [{ message: { content: "<think>private chain\n\nAnswer: workbench answer" } }]
+    })).toBe("workbench answer");
     expect(helpers.extractResponseText("anthropic_messages", {
       content: "compatible anthropic text"
     })).toBe("compatible anthropic text");
@@ -6102,6 +6105,17 @@ describe("workbench writeback helpers", () => {
     const assistant = {
       role: "assistant",
       content: "## Result\n\nVisible answer.\n\n<think data-source=\"router\">private reasoning without a closing tag"
+    };
+
+    expect(loaded.answerTextForMessage(assistant)).toBe("## Result\n\nVisible answer.");
+    expect(loaded.visibleMessageText(assistant)).toBe("## Result\n\nVisible answer.");
+  });
+
+  it("preserves marked answers after an unclosed think block", () => {
+    const loaded = loadWorkbenchHelpers();
+    const assistant = {
+      role: "assistant",
+      content: "<think>private reasoning without a closing tag\n\n最终回答：## Result\n\nVisible answer."
     };
 
     expect(loaded.answerTextForMessage(assistant)).toBe("## Result\n\nVisible answer.");

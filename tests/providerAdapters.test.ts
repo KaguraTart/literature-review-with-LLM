@@ -1950,6 +1950,9 @@ describe("provider adapters", () => {
     expect(extractResponseText("openai_chat", {
       choices: [{ message: { content: "<think data-source=\"router\">hidden chain</think>\n\nvisible text\n\n<think>late hidden" } }]
     } as any)).toBe("visible text");
+    expect(extractResponseText("openai_chat", {
+      choices: [{ message: { content: "<think>private chain\n\n最终回答：visible answer after marker" } }]
+    } as any)).toBe("visible answer after marker");
     expect(extractResponseText("anthropic_messages", {
       content: "compatible anthropic text"
     } as any)).toBe("compatible anthropic text");

@@ -4044,21 +4044,36 @@ function splitThinkBlocks(value) {
   const reasoning = [];
   let answer = "";
   let cursor = 0;
-  const pattern = /<think\b[^>]*>([\s\S]*?)(?:<\/think>|$)/gi;
+  const pattern = /<think\b[^>]*>([\s\S]*?)(<\/think>|$)/gi;
   let match;
   while ((match = pattern.exec(text))) {
     answer += text.slice(cursor, match.index);
-    reasoning.push(match[1] || "");
-    cursor = pattern.lastIndex;
-    if (!/<\/think>/i.test(match[0])) {
+    if (!match[2]) {
+      const tail = splitUnclosedThinkTail(match[1] || "");
+      if (tail.reasoning) reasoning.push(tail.reasoning);
+      if (tail.answer) answer += answer.trim() ? `\n\n${tail.answer}` : tail.answer;
       cursor = text.length;
       break;
     }
+    reasoning.push(match[1] || "");
+    cursor = pattern.lastIndex;
   }
   answer += text.slice(cursor);
   return {
     reasoning: reasoning.join("\n\n").trim(),
     answer: answer.trim()
+  };
+}
+
+function splitUnclosedThinkTail(value) {
+  const text = String(value || "");
+  const markers = [...text.matchAll(/(?:^|\n{2,})\s*(?:final\s+answer|answer|最终回答|最终答案|回复|回答|结论|总结)\s*[:：]\s*/gi)];
+  const marker = markers[markers.length - 1];
+  if (!marker) return { reasoning: text.trim(), answer: "" };
+  const index = marker.index || 0;
+  return {
+    reasoning: text.slice(0, index).trim(),
+    answer: text.slice(index + marker[0].length).trim()
   };
 }
 
@@ -9187,7 +9202,9 @@ function extractResponseText(protocol, data) {
     ? anthropicTextFromResponse(data)
     : openAITextFromResponse(data);
   if (!text) throw new Error("No text returned from model");
-  return String(text).trim();
+  const visibleText = stripThink(text);
+  if (!visibleText) throw new Error("No text returned from model");
+  return visibleText;
 }
 
 function extractProviderConnectionText(protocol, text) {
@@ -12992,7 +13009,28 @@ function redact(value) {
 }
 
 function stripThink(value) {
-  return String(value || "").replace(/<think\b[^>]*>[\s\S]*?(?:<\/think>|$)/gi, "").trim();
+  const text = String(value || "");
+  let answer = "";
+  let cursor = 0;
+  const pattern = /<think\b[^>]*>([\s\S]*?)(<\/think>|$)/gi;
+  let match;
+  while ((match = pattern.exec(text))) {
+    answer += text.slice(cursor, match.index);
+    if (!match[2]) {
+      answer += unclosedThinkAnswer(match[1] || "");
+      cursor = text.length;
+      break;
+    }
+    cursor = pattern.lastIndex;
+  }
+  answer += text.slice(cursor);
+  return answer.trim();
+}
+
+function unclosedThinkAnswer(value) {
+  const markers = [...String(value || "").matchAll(/(?:^|\n{2,})\s*(?:final\s+answer|answer|最终回答|最终答案|回复|回答|结论|总结)\s*[:：]\s*/gi)];
+  const marker = markers[markers.length - 1];
+  return marker ? value.slice((marker.index || 0) + marker[0].length).trim() : "";
 }
 
 function sanitizeFilename(value) {
