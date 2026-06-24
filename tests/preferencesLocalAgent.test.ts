@@ -2037,7 +2037,7 @@ describe("preferences local-agent config helpers", () => {
     });
     expect(profiles.find((profile) => profile.id === "deepseek")).toMatchObject({
       apiKey: "deepseek-secret",
-      model: "deepseek-chat"
+      model: "deepseek-v4-flash"
     });
     expect(profiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([
       "gemini",
@@ -2340,7 +2340,7 @@ describe("preferences local-agent config helpers", () => {
     expect(fetchCalls).toHaveLength(0);
     expect(elements.get("zms-status").value).toContain("Configuration preflight failed");
     expect(elements.get("zms-profileStatus").textContent).toContain("Configuration preflight: failed");
-    expect(elements.get("zms-profileStatus").textContent).toContain("Model: gpt-4.1");
+    expect(elements.get("zms-profileStatus").textContent).toContain("Model: gpt-5.4-mini");
     expect(elements.get("zms-profileStatus").textContent).toContain("Missing: API key or custom auth header");
     expect(elements.get("zms-profileStatus").textContent).not.toContain("model name");
     expect(elements.get("zms-profileStatus").textContent).toContain("Next: npm run verify:provider:live -- --doctor --include openai --provider-env-file .env.local");
@@ -2856,14 +2856,15 @@ describe("preferences local-agent config helpers", () => {
 
     await controller.loadModels();
 
-    expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toContain("deepseek-chat");
-    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("deepseek-chat");
-    expect(elements.get("zms-model").value).toBe("deepseek-chat");
-    expect(elements.get("zms-model-select").value).toBe("deepseek-chat");
+    expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toContain("deepseek-v4-flash");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("deepseek-v4-flash");
+    expect(elements.get("zms-model").value).toBe("deepseek-v4-flash");
+    expect(elements.get("zms-model-select").value).toBe("deepseek-v4-flash");
     expect(elements.get("zms-model").hidden).toBe(true);
     expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual(["DeepSeek · Recommended"]);
-    expect(selectOptionByValue(elements.get("zms-model-select"), "deepseek-chat").textContent).toContain("DeepSeek Chat");
-    expect(elements.get("zms-status").value).toBe("Recommended models loaded: 2");
+    expect(selectOptionByValue(elements.get("zms-model-select"), "deepseek-v4-flash").textContent).toContain("DeepSeek V4 Flash");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("deepseek-chat");
+    expect(elements.get("zms-status").value).toBe("Recommended models loaded: 4");
   });
 
   it("updates the model field from the recommended model dropdown", () => {
@@ -2914,8 +2915,8 @@ describe("preferences local-agent config helpers", () => {
 
     expect(elements.get("zms-activeProfileId").value).toBe("anthropic");
     expect(elements.get("zms-baseURL").value).toBe("https://api.anthropic.com");
-    expect(elements.get("zms-model").value).toBe("claude-sonnet-4-20250514");
-    expect(elements.get("zms-model-select").value).toBe("claude-sonnet-4-20250514");
+    expect(elements.get("zms-model").value).toBe("claude-sonnet-4-6");
+    expect(elements.get("zms-model-select").value).toBe("claude-sonnet-4-6");
   });
 
   it("applies provider presets over custom profile fields and clears stale API keys", () => {
@@ -2931,8 +2932,8 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-activeProfileId").value).toBe("anthropic");
     expect(elements.get("zms-baseURL").value).toBe("https://api.anthropic.com");
     expect(elements.get("zms-apiKey").value).toBe("");
-    expect(elements.get("zms-model").value).toBe("claude-sonnet-4-20250514");
-    expect(elements.get("zms-model-select").value).toBe("claude-sonnet-4-20250514");
+    expect(elements.get("zms-model").value).toBe("claude-sonnet-4-6");
+    expect(elements.get("zms-model-select").value).toBe("claude-sonnet-4-6");
   });
 
   it("shows local-agent timeout fields in seconds without treating timeoutSeconds as milliseconds", () => {
@@ -3503,9 +3504,9 @@ describe("preferences local-agent config helpers", () => {
       isDefault: true,
       protocol: "openai_chat"
     });
-    expect(profiles.find((profile: any) => profile.id === "openai")).toMatchObject({ model: "gpt-4.1" });
-    expect(profiles.find((profile: any) => profile.id === "anthropic")).toMatchObject({ model: "claude-sonnet-4-20250514" });
-    expect(profiles.find((profile: any) => profile.id === "deepseek")).toMatchObject({ model: "deepseek-chat" });
+    expect(profiles.find((profile: any) => profile.id === "openai")).toMatchObject({ model: "gpt-5.4-mini" });
+    expect(profiles.find((profile: any) => profile.id === "anthropic")).toMatchObject({ model: "claude-sonnet-4-6" });
+    expect(profiles.find((profile: any) => profile.id === "deepseek")).toMatchObject({ model: "deepseek-v4-flash" });
     expect(profiles.find((profile: any) => profile.id === "azure-openai")).toMatchObject({ model: "" });
     expect(profiles.find((profile: any) => profile.id === "local-agents")).toMatchObject({ model: "" });
   });
@@ -3551,10 +3552,10 @@ describe("preferences local-agent config helpers", () => {
 
     expect(fetchCalls).toHaveLength(1);
     const optionValues = elements.get("zms-model-options").children.map((option: any) => option.value);
-    expect(optionValues).toContain("gpt-4.1");
-    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("gpt-4.1");
-    expect(elements.get("zms-model").value).toBe("gpt-4.1");
-    expect(elements.get("zms-model-select").value).toBe("gpt-4.1");
+    expect(optionValues).toContain("gpt-5.4-mini");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("gpt-5.4-mini");
+    expect(elements.get("zms-model").value).toBe("gpt-5.4-mini");
+    expect(elements.get("zms-model-select").value).toBe("gpt-5.4-mini");
     expect(elements.get("zms-status").value).toContain("Online model list failed; kept recommendations");
     expect(elements.get("zms-status").value).toContain("temporary outage");
   });

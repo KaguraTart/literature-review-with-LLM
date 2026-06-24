@@ -25,6 +25,7 @@ async function startup({ id, rootURI: startupRootURI }) {
   await Zotero.unlockPromise;
   await Zotero.uiReadyPromise;
   loadSharedMessages();
+  loadProviderModelCatalog();
   loadBootstrapProviderModule();
   loadBootstrapSettingsModule();
   loadBootstrapSummaryStoreModule();
@@ -3275,6 +3276,16 @@ function loadSharedMessages() {
   }
   if (typeof ZMS_I18N !== "undefined") {
     UI_MESSAGES = ZMS_I18N || {};
+  }
+}
+
+function loadProviderModelCatalog() {
+  if (typeof zmsRecommendedDefaultModelForProvider === "function") return;
+  if (!rootURI || typeof Services?.scriptloader?.loadSubScript !== "function") return;
+  try {
+    Services.scriptloader.loadSubScript(`${rootURI}content/provider-models.js`);
+  } catch (_err) {
+    // Bootstrap settings keep a small fallback if the shared catalog cannot load.
   }
 }
 

@@ -1292,6 +1292,59 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("loads nested paginated model-list responses from provider-specific envelopes", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--models",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        models: true,
+        modelCount: 5,
+        modelIds: ["deployment-model", "edge-model", "engine-model", "key-model", "slug-model"]
+      });
+      expect(report.modelOptions.find((option: any) => option.id === "deployment-model").label).toBe("Deployment Model");
+      expect(report.modelOptions.find((option: any) => option.id === "engine-model").label).toBe("Engine Model");
+      expect(report.modelOptions.find((option: any) => option.id === "edge-model").label).toBe("Edge Model");
+      expect(report.modelOptions.find((option: any) => option.id === "slug-model").label).toBe("Slug Model");
+      expect(requests.map((request) => request.pathWithQuery)).toEqual([
+        "/v1/models",
+        "/v1/models?cursor=page-2"
+      ]);
+    }, {
+      handler: (requestData, response) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        if (requestData.pathWithQuery.includes("cursor=page-2")) {
+          response.end(JSON.stringify({
+            result: {
+              objects: {
+                data: [
+                  { modelSlug: "slug-model", title: "Slug Model" },
+                  { key: "key-model" }
+                ]
+              }
+            }
+          }));
+          return;
+        }
+        response.end(JSON.stringify({
+          metadata: {
+            deployments: [
+              { deployment_id: "deployment-model", display_label: "Deployment Model" },
+              { engine: { engine_id: "engine-model", display_name: "Engine Model" } },
+              { node: { canonical_slug: "edge-model", displayName: "Edge Model" } }
+            ],
+            next_url: "/v1/models?cursor=page-2"
+          }
+        }));
+      }
+    });
+  });
+
   it("retries Anthropic-compatible model-list checks without a rejected version header", async () => {
     await withMockProvider(async (baseURL, requests) => {
       const report = await runSmoke([
@@ -1555,7 +1608,7 @@ describe("provider smoke verifier", () => {
       requiredEnv: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_MODEL", "OPENAI_COMPATIBLE_BASE_URL"],
       requiredEnvValues: {
         OPENAI_COMPATIBLE_API_KEY: "...",
-        OPENAI_COMPATIBLE_MODEL: "gpt-4.1-mini",
+        OPENAI_COMPATIBLE_MODEL: "gpt-5.4-mini",
         OPENAI_COMPATIBLE_BASE_URL: "https://api.openai.com/v1"
       },
       requiredEnvHints: {
@@ -1584,7 +1637,7 @@ describe("provider smoke verifier", () => {
     expect(anthropicCompatible.requiredEnv).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_MODEL", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
     expect(anthropicCompatible.requiredEnvValues).toEqual({
       ANTHROPIC_COMPATIBLE_API_KEY: "...",
-      ANTHROPIC_COMPATIBLE_MODEL: "claude-sonnet-4-20250514",
+      ANTHROPIC_COMPATIBLE_MODEL: "claude-sonnet-4-6",
       ANTHROPIC_COMPATIBLE_BASE_URL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT"
     });
     expect(anthropicCompatible.requiredEnvHints.ANTHROPIC_COMPATIBLE_BASE_URL).toBe("replace the placeholder parts in this endpoint before running");
@@ -2626,9 +2679,11 @@ async function withMockProvider(
   const requests: any[] = [];
   const server = createServer(async (request, response) => {
     const bodyText = await readRequestBody(request);
+    const parsedUrl = new URL(request.url || "/", "http://127.0.0.1");
     const requestData = {
       method: request.method,
-      path: new URL(request.url || "/", "http://127.0.0.1").pathname,
+      path: parsedUrl.pathname,
+      pathWithQuery: `${parsedUrl.pathname}${parsedUrl.search}`,
       authorization: request.headers.authorization,
       xApiKey: request.headers["x-api-key"],
       anthropicVersion: request.headers["anthropic-version"],

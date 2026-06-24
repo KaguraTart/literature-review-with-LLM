@@ -674,7 +674,7 @@ describe("workbench writeback helpers", () => {
     });
     expect(profiles.find((profile) => profile.id === "deepseek")).toMatchObject({
       apiKey: "deepseek-secret",
-      model: "deepseek-chat"
+      model: "deepseek-v4-flash"
     });
     expect(profiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([
       "openai-compatible",
@@ -2761,14 +2761,15 @@ describe("workbench writeback helpers", () => {
 
     await workbench.loadModelsForWorkbench();
 
-    expect(dom.getElementById("zms-workbench-model-options").children.map((option: any) => option.value)).toContain("deepseek-chat");
-    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-chat");
-    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
-    expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-chat");
+    expect(dom.getElementById("zms-workbench-model-options").children.map((option: any) => option.value)).toContain("deepseek-v4-flash");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-v4-flash");
+    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-v4-flash");
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-v4-flash");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
     expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual(["DeepSeek · Recommended"]);
-    expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-chat").textContent).toContain("DeepSeek Chat");
-    expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 2");
+    expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-v4-flash").textContent).toContain("DeepSeek V4 Flash");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-chat");
+    expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 4");
   });
 
   it("keeps recommended workbench models when the online model list fails", async () => {
@@ -2817,9 +2818,9 @@ describe("workbench writeback helpers", () => {
     await workbench.loadModelsForWorkbench();
 
     expect(fetchCalls).toEqual(["https://router.example/v1/models"]);
-    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("gpt-4.1-mini");
-    expect(dom.getElementById("zms-profile-model").value).toBe("gpt-4.1-mini");
-    expect(dom.getElementById("zms-profile-model-select").value).toBe("gpt-4.1-mini");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("gpt-5.4-mini");
+    expect(dom.getElementById("zms-profile-model").value).toBe("gpt-5.4-mini");
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("gpt-5.4-mini");
     expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual([
       "OpenAI · Recommended",
       "DeepSeek · Recommended",
@@ -2864,7 +2865,7 @@ describe("workbench writeback helpers", () => {
     expect(providerSelect.value).toBe("deepseek");
     expect(providerSelect.children.map((option: any) => option.value)).toContain("anthropic");
     expect(providerSelect.children.map((option: any) => option.textContent)).toContain("DeepSeek 聊天接口");
-    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
+    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-v4-flash");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
     expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-reasoner");
   });
@@ -2935,12 +2936,12 @@ describe("workbench writeback helpers", () => {
       protocol: "anthropic_messages",
       baseURL: "https://api.anthropic.com",
       apiKey: "",
-      model: "claude-sonnet-4-20250514"
+      model: "claude-sonnet-4-6"
     });
     expect(dom.getElementById("zms-profile-name").value).toBe("Anthropic");
     expect(dom.getElementById("zms-profile-base-url").value).toBe("https://api.anthropic.com");
     expect(dom.getElementById("zms-profile-api-key").value).toBe("");
-    expect(dom.getElementById("zms-profile-model").value).toBe("claude-sonnet-4-20250514");
+    expect(dom.getElementById("zms-profile-model").value).toBe("claude-sonnet-4-6");
     expect(dom.getElementById("zms-workbench-provider").value).toBe("anthropic");
     expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("claude-3-5-haiku-latest");
 
@@ -2950,12 +2951,12 @@ describe("workbench writeback helpers", () => {
     expect(prefs.provider).toBe("anthropic");
     expect(prefs.apiKey).toBe("");
     expect(prefs.baseURL).toBe("https://api.anthropic.com");
-    expect(prefs.model).toBe("claude-sonnet-4-20250514");
+    expect(prefs.model).toBe("claude-sonnet-4-6");
     const profiles = JSON.parse(prefs.profilesJson);
     expect(profiles[0]).toMatchObject({
       id: "anthropic",
       apiKey: "",
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       isDefault: true
     });
     expect(profiles.some((item: any) => item.id === "deepseek")).toBe(true);

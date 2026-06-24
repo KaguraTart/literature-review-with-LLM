@@ -157,7 +157,7 @@ function settingsProviderDefaultsRaw(provider) {
     return { ...common, protocol: "anthropic_messages", baseURL: "https://api.sambanova.ai/v1", capabilities: commonCapabilities, bodyExtra: { authHeader: "authorization" } };
   }
   if (id === "minimax") {
-    return { ...common, protocol: "openai_chat", baseURL: "https://api.minimaxi.com/v1", model: "MiniMax-M2.7", capabilities: commonCapabilities, bodyExtra: { extra_body: { reasoning_split: true } } };
+    return { ...common, protocol: "openai_chat", baseURL: "https://api.minimaxi.com/v1", capabilities: commonCapabilities, bodyExtra: { extra_body: { reasoning_split: true } } };
   }
   if (id === "local_agents" || id === "local-agents") {
     return {
@@ -194,20 +194,25 @@ function withSettingsDefaultProviderModel(provider, defaults) {
 function settingsRecommendedDefaultModel(provider, defaults = {}) {
   const key = String(settingsProviderCanonicalId(defaults?.id || provider || "")).replace(/-/g, "_");
   if (key === "azure_openai" || key === "local_agents") return "";
+  if (typeof zmsRecommendedDefaultModelForProvider === "function") {
+    const model = zmsRecommendedDefaultModelForProvider(key, { id: key });
+    if (model) return model;
+  }
   const models = {
-    openai: "gpt-4.1",
-    openai_compatible: "gpt-4.1-mini",
-    openai_responses_compatible: "gpt-4.1",
-    anthropic: "claude-sonnet-4-20250514",
-    anthropic_compatible: "claude-sonnet-4-20250514",
-    gemini: "gemini-2.5-pro",
-    vercel_ai_chat: "openai/gpt-4.1-mini",
-    vercel_ai_responses: "openai/gpt-4.1-mini",
-    vercel_ai_anthropic: "anthropic/claude-sonnet-4",
+    minimax: "MiniMax-M3",
+    openai: "gpt-5.4-mini",
+    openai_compatible: "gpt-5.4-mini",
+    openai_responses_compatible: "gpt-5.4-mini",
+    anthropic: "claude-sonnet-4-6",
+    anthropic_compatible: "claude-sonnet-4-6",
+    gemini: "gemini-3.1-pro",
+    vercel_ai_chat: "openai/gpt-5.4-mini",
+    vercel_ai_responses: "openai/gpt-5.4-mini",
+    vercel_ai_anthropic: "anthropic/claude-sonnet-4.6",
     cloudflare_ai_chat: "@cf/meta/llama-3.1-8b-instruct",
     cloudflare_ai_responses: "@cf/meta/llama-3.1-8b-instruct",
     cloudflare_ai_anthropic: "@cf/meta/llama-3.1-8b-instruct",
-    github_models: "openai/gpt-4.1",
+    github_models: "openai/gpt-5.4-mini",
     huggingface: "meta-llama/Llama-3.1-8B-Instruct",
     deepinfra: "meta-llama/Meta-Llama-3.1-70B-Instruct",
     fireworks: "accounts/fireworks/models/llama-v3p1-70b-instruct",
@@ -222,11 +227,11 @@ function settingsRecommendedDefaultModel(provider, defaults = {}) {
     together: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
     kimi: "moonshot-v1-8k",
     perplexity: "sonar",
-    deepseek: "deepseek-chat",
-    deepseek_anthropic: "deepseek-chat",
+    deepseek: "deepseek-v4-flash",
+    deepseek_anthropic: "deepseek-v4-flash",
     zai_anthropic: "glm-4.5",
-    openrouter: "openai/gpt-4.1-mini",
-    dashscope: "qwen-plus",
+    openrouter: "openai/gpt-5.4-mini",
+    dashscope: "qwen3-max",
     siliconflow: "deepseek-ai/DeepSeek-V3",
     zhipu: "glm-4-plus",
     volcengine: "doubao-seed-1-6",

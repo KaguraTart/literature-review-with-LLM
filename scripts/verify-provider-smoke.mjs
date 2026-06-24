@@ -19,6 +19,7 @@ import {
 } from "../src/providerAdapters.ts";
 
 const PROVIDER_RESPONSE_WRAPPER_KEYS = ["data", "result", "payload", "response", "message", "body", "completion"];
+const MODEL_LIST_RESPONSE_WRAPPER_KEYS = [...PROVIDER_RESPONSE_WRAPPER_KEYS, "meta", "metadata", "pagination", "paging", "page", "links"];
 const DEFAULT_PROMPT = "Reply with OK only.";
 const DEFAULT_CONTEXT = "Provider smoke-test context.";
 const DEFAULT_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
@@ -1077,10 +1078,54 @@ function modelOptionsFromItems(source) {
   return [...options.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
-function modelOptionFromItem(item) {
+function modelOptionFromItem(item, depth = 0) {
   if (typeof item === "string") return { id: item, label: item };
-  const id = stringField(item?.id, item?.model, item?.model_id, item?.modelId, item?.model_name, item?.modelName, item?.name, item?.value, item?.slug);
-  const label = stringField(item?.display_name, item?.displayName, item?.label, item?.title, item?.model_name, item?.modelName, item?.name, id);
+  if (!item || typeof item !== "object") return { id: "", label: "" };
+  const id = stringField(
+    item?.id,
+    item?.model,
+    item?.model_id,
+    item?.modelId,
+    item?.model_name,
+    item?.modelName,
+    item?.deployment,
+    item?.deployment_id,
+    item?.deploymentId,
+    item?.engine,
+    item?.engine_id,
+    item?.engineId,
+    item?.uid,
+    item?.key,
+    item?.identifier,
+    item?.canonical_slug,
+    item?.canonicalSlug,
+    item?.model_slug,
+    item?.modelSlug,
+    item?.name,
+    item?.value,
+    item?.slug
+  );
+  const label = stringField(
+    item?.display_name,
+    item?.displayName,
+    item?.display_label,
+    item?.displayLabel,
+    item?.label,
+    item?.title,
+    item?.model_name,
+    item?.modelName,
+    item?.name,
+    id
+  );
+  if (!id && depth < 2) {
+    for (const key of ["node", "model", "deployment", "engine", "resource", "item", "value"]) {
+      const nested = item?.[key];
+      if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+        const option = modelOptionFromItem(nested, depth + 1);
+        if (option.id) return option;
+      }
+    }
+  }
   return { id, label };
 }
 
@@ -1088,7 +1133,7 @@ function modelListItemsFromResponse(data, depth = 0) {
   const direct = directModelListItemsFromResponse(data);
   if (direct.length) return direct;
   if (depth >= 2 || !data || typeof data !== "object" || Array.isArray(data)) return [];
-  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
+  for (const key of MODEL_LIST_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const items = modelListItemsFromResponse(value, depth + 1);
@@ -1100,13 +1145,17 @@ function modelListItemsFromResponse(data, depth = 0) {
 function nextModelListURL(currentUrl, data) {
   const envelope = modelListPaginationEnvelope(data);
   if (!envelope) return "";
-  const direct = stringField(envelope.next_page, envelope.nextPage, envelope.next);
+  const direct = stringField(envelope.next_page, envelope.nextPage, envelope.next, envelope.next_url, envelope.nextUrl, envelope.nextPageUrl);
   if (direct) return modelListURLFromNextValue(currentUrl, direct);
-  if (envelope.has_more !== true && envelope.hasMore !== true) return "";
+  const hasMore = envelope.has_more === true || envelope.hasMore === true;
+  const nextCursor = stringField(envelope.next_cursor, envelope.nextCursor);
+  const nextPageToken = stringField(envelope.next_page_token, envelope.nextPageToken, envelope.next_token, envelope.nextToken);
+  if (!hasMore && !nextCursor && !nextPageToken) return "";
   const tokenPairs = [
     ["after_id", stringField(envelope.last_id, envelope.lastId, envelope.after_id, envelope.afterId)],
-    ["page_token", stringField(envelope.next_page_token, envelope.nextPageToken, envelope.next_token, envelope.nextToken)],
-    ["after", stringField(envelope.next_cursor, envelope.nextCursor, envelope.cursor, envelope.after)]
+    ["page_token", nextPageToken],
+    ["cursor", nextCursor],
+    ["after", hasMore ? stringField(envelope.cursor, envelope.after) : ""]
   ];
   for (const [param, token] of tokenPairs) {
     if (token) return urlWithQueryParam(currentUrl, param, token);
@@ -1116,19 +1165,39 @@ function nextModelListURL(currentUrl, data) {
 
 function directModelListItemsFromResponse(data) {
   if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.data)) return data.data;
-  if (Array.isArray(data?.models)) return data.models;
-  if (Array.isArray(data?.model)) return data.model;
-  if (Array.isArray(data?.items)) return data.items;
-  if (Array.isArray(data?.list)) return data.list;
-  if (Array.isArray(data?.model_list)) return data.model_list;
-  if (Array.isArray(data?.modelList)) return data.modelList;
-  if (Array.isArray(data?.available_models)) return data.available_models;
-  if (Array.isArray(data?.availableModels)) return data.availableModels;
-  if (Array.isArray(data?.model_names)) return data.model_names;
-  if (Array.isArray(data?.modelNames)) return data.modelNames;
+  const fields = [
+    "data",
+    "results",
+    "objects",
+    "entries",
+    "records",
+    "resources",
+    "nodes",
+    "edges",
+    "models",
+    "model",
+    "items",
+    "list",
+    "model_list",
+    "modelList",
+    "available_models",
+    "availableModels",
+    "model_names",
+    "modelNames",
+    "deployments",
+    "deployment_list",
+    "deploymentList",
+    "engines",
+    "engine_list",
+    "engineList"
+  ];
+  for (const field of fields) {
+    if (Array.isArray(data?.[field])) return data[field];
+  }
   if (Array.isArray(data?.models?.data)) return data.models.data;
   if (Array.isArray(data?.models?.items)) return data.models.items;
+  if (Array.isArray(data?.results?.data)) return data.results.data;
+  if (Array.isArray(data?.objects?.data)) return data.objects.data;
   return [];
 }
 
@@ -1136,7 +1205,7 @@ function modelListPaginationEnvelope(data, depth = 0) {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   if (hasModelListPaginationFields(data)) return data;
   if (depth >= 2) return null;
-  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
+  for (const key of MODEL_LIST_RESPONSE_WRAPPER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const envelope = modelListPaginationEnvelope(value, depth + 1);
@@ -1146,7 +1215,20 @@ function modelListPaginationEnvelope(data, depth = 0) {
 }
 
 function hasModelListPaginationFields(data) {
-  return !!stringField(data?.next_page, data?.nextPage, data?.next)
+  return !!stringField(
+    data?.next_page,
+    data?.nextPage,
+    data?.next,
+    data?.next_url,
+    data?.nextUrl,
+    data?.nextPageUrl,
+    data?.next_cursor,
+    data?.nextCursor,
+    data?.next_page_token,
+    data?.nextPageToken,
+    data?.next_token,
+    data?.nextToken
+  )
     || data?.has_more === true
     || data?.hasMore === true;
 }

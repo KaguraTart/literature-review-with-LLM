@@ -146,6 +146,7 @@ function loadWorkbenchHelpers() {
 }
 
 function loadBootstrapSettingsHelpers() {
+  const providerModelsCode = readFileSync(resolve(process.cwd(), "addon/content/provider-models.js"), "utf8");
   const code = readFileSync(resolve(process.cwd(), "addon/content/bootstrap-settings.js"), "utf8");
   const context = createContext({
     Zotero: {
@@ -155,6 +156,7 @@ function loadBootstrapSettingsHelpers() {
     },
     console
   });
+  runInContext(providerModelsCode, context, { filename: "provider-models.js" });
   runInContext(code, context, { filename: "bootstrap-settings.js" });
   return context as {
     settingsProviderDefaults: (provider: string) => any;
@@ -226,7 +228,7 @@ describe("provider catalog consistency", () => {
       .zmsRecommendedModelOptionsForProvider("openrouter")
       .map((option) => option.vendor);
 
-    expect(openrouterVendors).toEqual(["OpenAI", "Anthropic", "Google Gemini", "DeepSeek"]);
+    expect([...new Set(openrouterVendors)]).toEqual(["OpenAI", "Anthropic", "Google Gemini", "DeepSeek"]);
     expect(preferences.zmsRecommendedModelOptionsForProvider("openai_compatible")[0].vendor).toBe("OpenAI");
     expect(preferences.zmsRecommendedModelOptionsForProvider("deepseek")[0].vendor).toBe("DeepSeek");
   });

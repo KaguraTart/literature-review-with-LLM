@@ -2764,7 +2764,7 @@ function workbenchProviderDefaultsRaw(provider) {
     return { id: "anthropic-compatible", name: "Anthropic Compatible Messages", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT", model: "", capabilities: commonCapabilities, bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false } };
   }
   if (id === "minimax") {
-    return { id: "minimax", name: "MiniMax", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.minimaxi.com/v1", model: "MiniMax-M2.7", capabilities: commonCapabilities, bodyExtra: { extra_body: { reasoning_split: true } } };
+    return { id: "minimax", name: "MiniMax", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.minimaxi.com/v1", model: "", capabilities: commonCapabilities, bodyExtra: { extra_body: { reasoning_split: true } } };
   }
   if (id === "gemini") {
     return { id: "gemini", name: "Gemini OpenAI Compatible", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", model: "", capabilities: imageCapabilities, bodyExtra: {} };

@@ -64,13 +64,13 @@ describe("default provider profiles", () => {
     ]);
     expect(profiles.find((profile: any) => profile.id === "minimax")).toMatchObject({
       isDefault: true,
-      model: "MiniMax-M2.7"
+      model: "MiniMax-M3"
     });
     expect(profiles.find((profile: any) => profile.id === "openai")).toMatchObject({
       protocol: "openai_responses",
       endpointMode: "base_url",
       baseURL: "https://api.openai.com/v1",
-      model: "gpt-4.1",
+      model: "gpt-5.4-mini",
       capabilities: { pdfBase64: true, streaming: true }
     });
     expect(profiles.find((profile: any) => profile.id === "openai-compatible")).toMatchObject({
@@ -89,7 +89,7 @@ describe("default provider profiles", () => {
       protocol: "anthropic_messages",
       endpointMode: "base_url",
       baseURL: "https://api.anthropic.com",
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       capabilities: { pdfBase64: true, streaming: true }
     });
     expect(profiles.find((profile: any) => profile.id === "anthropic-compatible")).toMatchObject({
@@ -103,7 +103,7 @@ describe("default provider profiles", () => {
       protocol: "openai_chat",
       endpointMode: "base_url",
       baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
-      model: "gemini-2.5-pro",
+      model: "gemini-3.1-pro",
       capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "azure-openai")).toMatchObject({
@@ -224,7 +224,7 @@ describe("default provider profiles", () => {
     expect(profiles.find((profile: any) => profile.id === "deepseek")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://api.deepseek.com",
-      model: "deepseek-chat",
+      model: "deepseek-v4-flash",
       capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "deepseek-anthropic")).toMatchObject({
