@@ -646,6 +646,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-load-models-workbench", this.t("loadModels"));
     const loadButton = document.getElementById("zms-load-models-workbench");
     if (loadButton) loadButton.setAttribute("title", this.t("loadModels"));
+    setText("zms-workbench-model-help", this.t("modelPickerHelp"));
     document
       .getElementById("zms-input")
       .setAttribute("placeholder", `${this.t("placeholder")} · ${this.t("placeholderHint")}`);
@@ -920,7 +921,10 @@ var ZoteroMarkdownSummaryWorkbench = {
           throw err;
         }
       }
-      const displayOptions = mergeModelOptions(options, recommended);
+      const displayOptions = mergeModelOptions(
+        tagModelOptions(options, "online"),
+        tagModelOptions(recommended, "recommended")
+      );
       this.renderWorkbenchModelOptions(displayOptions);
       if (displayOptions.length) {
         if (wasModelBlank || !modelInput?.value?.trim()) {
@@ -980,7 +984,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       if (select) {
         const selectOption = document.createElement("option");
         selectOption.value = entry.id;
-        selectOption.textContent = entry.label && entry.label !== entry.id ? `${entry.label} (${entry.id})` : entry.id;
+        selectOption.textContent = modelOptionDisplayText(entry, (key) => this.t(key));
         select.appendChild(selectOption);
       }
     }
@@ -996,7 +1000,7 @@ var ZoteroMarkdownSummaryWorkbench = {
   renderWorkbenchModelRecommendations(options = {}) {
     const profile = this.profileFromSettingsPanel() || this.state.profile || {};
     const recommendations = recommendedModelOptionsForWorkbenchProfile(profile);
-    this.renderWorkbenchModelOptions(recommendations);
+    this.renderWorkbenchModelOptions(tagModelOptions(recommendations, "recommended"));
     const modelInput = document.getElementById("zms-profile-model");
     if (modelInput && options.selectDefault && !String(modelInput.value || "").trim() && recommendations[0]?.id) {
       modelInput.value = recommendations[0].id;
@@ -5331,9 +5335,25 @@ function normalizeModelOptions(modelOptions) {
     .map((entry) => typeof entry === "string" ? { id: entry, label: "" } : entry)
     .map((entry) => ({
       id: String(entry?.id || "").trim(),
-      label: String(entry?.label || "").trim()
+      label: String(entry?.label || "").trim(),
+      source: String(entry?.source || "").trim()
     }))
     .filter((entry) => entry.id);
+}
+
+function tagModelOptions(modelOptions, source) {
+  const nextSource = String(source || "").trim();
+  return normalizeModelOptions(modelOptions).map((entry) => ({
+    ...entry,
+    source: entry.source || nextSource
+  }));
+}
+
+function modelOptionDisplayText(entry, translate = (key) => key) {
+  const base = entry.label && entry.label !== entry.id ? `${entry.label} (${entry.id})` : entry.id;
+  if (entry.source === "online") return `${translate("onlineModels")} · ${base}`;
+  if (entry.source === "recommended") return `${translate("recommendedModels")} · ${base}`;
+  return base;
 }
 
 function clearOptionsElement(element) {
@@ -5355,9 +5375,9 @@ function recommendedModelOptionsForWorkbenchProfile(profile) {
   const provider = workbenchProviderFromProfile(profile, profile?.id || "");
   const defaults = workbenchProviderDefaults(provider);
   return mergeModelOptions([
-    profile?.model ? { id: profile.model, label: profile.model } : null,
+    ...recommendedModelOptionsForWorkbenchProvider(provider),
     defaults?.model ? { id: defaults.model, label: defaults.model } : null,
-    ...recommendedModelOptionsForWorkbenchProvider(provider)
+    profile?.model ? { id: profile.model, label: profile.model } : null
   ].filter(Boolean), []);
 }
 

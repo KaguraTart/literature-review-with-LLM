@@ -545,7 +545,10 @@ var ZoteroMarkdownSummaryPrefs = {
           throw err;
         }
       }
-      const displayOptions = mergeModelOptions(modelOptions, recommended);
+      const displayOptions = mergeModelOptions(
+        tagModelOptions(modelOptions, "online"),
+        tagModelOptions(recommended, "recommended")
+      );
       renderModelOptions(displayOptions);
       if (displayOptions.length && (wasModelBlank || !String(modelInput?.value || "").trim())) {
         if (modelInput) modelInput.value = displayOptions[0].id;
@@ -560,7 +563,7 @@ var ZoteroMarkdownSummaryPrefs = {
   refreshModelRecommendations(options = {}) {
     const profile = profileDraftFromEditor().profile;
     const recommendations = recommendedModelOptionsForProfile(profile);
-    renderModelOptions(recommendations);
+    renderModelOptions(tagModelOptions(recommendations, "recommended"));
     const model = document.getElementById("zms-model");
     if (model && options.selectDefault && !String(model.value || "").trim() && recommendations[0]?.id) {
       model.value = recommendations[0].id;
@@ -889,6 +892,8 @@ function prefFallbackMessage(key, lang) {
     modelPickerHelp: zh
       ? "先选择模型厂商，模型下拉框会显示常用模型；填写 API Key 后可刷新在线模型列表，未列出的部署名可选自定义模型。"
       : "Choose a model provider first. The dropdown shows common models; after entering an API key, refresh the online model list. Use Custom model for deployments not listed.",
+    onlineModels: zh ? "在线模型" : "Online",
+    recommendedModels: zh ? "推荐模型" : "Recommended",
     providerEnv: zh ? "粘贴环境变量配置" : "Paste env config",
     providerGuide: zh ? "配置指南" : "Setup guide",
     profileStatus: zh ? "档案状态" : "Profile status",
@@ -947,6 +952,8 @@ function prefFallbackMessage(key, lang) {
     modelRecommendationsLoaded: zh ? "已加载推荐模型" : "Recommended models loaded",
     testOk: zh ? "连接成功" : "Connection succeeded",
     testFailed: zh ? "连接失败" : "Connection failed",
+    onlineModels: zh ? "在线模型" : "Online",
+    recommendedModels: zh ? "推荐模型" : "Recommended",
     doctorOk: zh ? "配置预检通过" : "Configuration preflight passed",
     doctorFailed: zh ? "配置预检未通过" : "Configuration preflight failed",
     profileSaved: zh ? "接口档案已保存" : "Provider profile saved",
@@ -3408,7 +3415,10 @@ function renderModelOptions(modelOptions) {
     if (select) {
       const selectOption = document.createElement("option");
       selectOption.value = entry.id;
-      selectOption.textContent = entry.label && entry.label !== entry.id ? `${entry.label} (${entry.id})` : entry.id;
+      selectOption.textContent = modelOptionDisplayText(
+        entry,
+        (key) => prefFallbackMessage(key, resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale()))
+      );
       select.appendChild(selectOption);
     }
   }
@@ -3467,9 +3477,9 @@ function recommendedModelOptionsForProfile(profile) {
   const provider = providerFromProfile(profile) || document.getElementById("zms-provider")?.value || "openai_compatible";
   const defaults = providerDefaults(provider);
   const options = [
-    profile?.model ? { id: profile.model, label: profile.model } : null,
+    ...recommendedModelOptionsForProvider(provider),
     defaults?.model ? { id: defaults.model, label: defaults.model } : null,
-    ...recommendedModelOptionsForProvider(provider)
+    profile?.model ? { id: profile.model, label: profile.model } : null
   ].filter(Boolean);
   return mergeModelOptions(options, []);
 }
@@ -3519,9 +3529,25 @@ function normalizeModelOptions(modelOptions) {
     .map((entry) => typeof entry === "string" ? { id: entry, label: "" } : entry)
     .map((entry) => ({
       id: String(entry?.id || "").trim(),
-      label: String(entry?.label || "").trim()
+      label: String(entry?.label || "").trim(),
+      source: String(entry?.source || "").trim()
     }))
     .filter((entry) => entry.id);
+}
+
+function tagModelOptions(modelOptions, source) {
+  const nextSource = String(source || "").trim();
+  return normalizeModelOptions(modelOptions).map((entry) => ({
+    ...entry,
+    source: entry.source || nextSource
+  }));
+}
+
+function modelOptionDisplayText(entry, translate = (key) => key) {
+  const base = entry.label && entry.label !== entry.id ? `${entry.label} (${entry.id})` : entry.id;
+  if (entry.source === "online") return `${translate("onlineModels")} · ${base}`;
+  if (entry.source === "recommended") return `${translate("recommendedModels")} · ${base}`;
+  return base;
 }
 
 function connectionTestBodyForProfile(profile) {

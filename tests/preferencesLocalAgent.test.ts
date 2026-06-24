@@ -2841,6 +2841,7 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model").value).toBe("deepseek-chat");
     expect(elements.get("zms-model-select").value).toBe("deepseek-chat");
     expect(elements.get("zms-model").hidden).toBe(true);
+    expect(elements.get("zms-model-select").children[1].textContent).toContain("Recommended · DeepSeek Chat");
     expect(elements.get("zms-status").value).toBe("Recommended models loaded: 2");
   });
 
@@ -3510,6 +3511,8 @@ describe("preferences local-agent config helpers", () => {
     expect(selectValues.slice(0, 3)).toEqual(["", "model-a", "model-b"]);
     expect(selectValues).toContain("gpt-4.1");
     expect(selectValues.at(-1)).toBe("__custom");
+    expect(elements.get("zms-model-select").children[1].textContent).toBe("Online · model-a");
+    expect(elements.get("zms-model-select").children.find((option: any) => option.value === "gpt-4.1").textContent).toContain("Recommended · GPT-4.1");
     expect(elements.get("zms-model-select").value).toBe("model-a");
     expect(elements.get("zms-model").value).toBe("model-a");
     expect(elements.get("zms-status").value).toBe("Models loaded: 2");

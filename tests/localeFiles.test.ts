@@ -67,6 +67,7 @@ describe("locale files", () => {
       "ask-all-agents",
       "ask-gemini-claude",
       "loadModels",
+      "modelPickerHelp",
       "writeFrontmatter"
     ]));
     expect(Object.keys(ZMS_I18N["zh-CN"].preferences)).toEqual(expect.arrayContaining([
