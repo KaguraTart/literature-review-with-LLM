@@ -838,19 +838,33 @@ async function chooseOutputDirectory(currentPath, title) {
   if (!pickerFactory || !nsIFilePicker) {
     throw new Error("Folder picker is not available in this Zotero runtime");
   }
-  const picker = pickerFactory.createInstance(nsIFilePicker);
-  initDirectoryPicker(picker, title || "Choose output folder", nsIFilePicker);
+  const pickerTitle = title || "Choose output folder";
   const displayDirectory = fileForDirectoryPicker(currentPath);
+  try {
+    const picker = pickerFactory.createInstance(nsIFilePicker);
+    return await chooseOutputDirectoryWithPicker(picker, pickerTitle, nsIFilePicker, displayDirectory, true);
+  } catch (_err) {
+    const picker = pickerFactory.createInstance(nsIFilePicker);
+    return chooseOutputDirectoryWithPicker(picker, pickerTitle, nsIFilePicker, displayDirectory, false);
+  }
+}
+
+async function chooseOutputDirectoryWithPicker(picker, title, nsIFilePicker, displayDirectory, useWindowParent) {
+  initDirectoryPicker(picker, title, nsIFilePicker, useWindowParent);
   if (displayDirectory) picker.displayDirectory = displayDirectory;
   const result = await openDirectoryPicker(picker);
   if (!isAcceptedDirectoryPickerResult(result, nsIFilePicker)) return "";
-  return selectedDirectoryPathFromPicker(picker);
+  const selected = selectedDirectoryPathFromPicker(picker);
+  if (!selected) throw new Error("Folder picker did not return a usable folder path");
+  return selected;
 }
 
-function initDirectoryPicker(picker, title, nsIFilePicker) {
+function initDirectoryPicker(picker, title, nsIFilePicker, useWindowParent = true) {
+  const parent = useWindowParent && typeof window !== "undefined" ? window : null;
   try {
-    picker.init(window, title, nsIFilePicker.modeGetFolder);
-  } catch (_err) {
+    picker.init(parent, title, nsIFilePicker.modeGetFolder);
+  } catch (err) {
+    if (!parent) throw err;
     picker.init(null, title, nsIFilePicker.modeGetFolder);
   }
 }
@@ -968,7 +982,7 @@ function filePathFromQueryInterface(value) {
 function pathFromPickerString(value) {
   const text = String(value || "").trim();
   if (!text) return "";
-  if (!/^file:/i.test(text)) return text;
+  if (!/^file:/i.test(text)) return normalizePickerPathString(text);
   try {
     const url = new URL(text);
     if (url.protocol !== "file:") return text;
@@ -977,16 +991,19 @@ function pathFromPickerString(value) {
     if (host && host.toLowerCase() !== "localhost") {
       return `\\\\${host}${pathname.replace(/\//g, "\\")}`;
     }
-    if (/^\/[A-Za-z]:\//.test(pathname)) {
-      return pathname.slice(1).replace(/\//g, "\\");
-    }
-    if (/^\/[A-Za-z]\|\//.test(pathname)) {
-      return `${pathname[1]}:${pathname.slice(3)}`.replace(/\//g, "\\");
-    }
-    return pathname || text;
+    return normalizePickerPathString(pathname || text);
   } catch (_err) {
-    return text;
+    return normalizePickerPathString(text);
   }
+}
+
+function normalizePickerPathString(value) {
+  const text = String(value || "").trim();
+  if (/^[A-Za-z]:[\\/]/.test(text)) return text.replace(/\//g, "\\");
+  if (/^[\\/][A-Za-z]:[\\/]/.test(text)) return text.slice(1).replace(/\//g, "\\");
+  if (/^[A-Za-z]\|[\\/]/.test(text)) return `${text[0]}:${text.slice(2)}`.replace(/\//g, "\\");
+  if (/^[\\/][A-Za-z]\|[\\/]/.test(text)) return `${text[1]}:${text.slice(3)}`.replace(/\//g, "\\");
+  return text;
 }
 
 function resolveUiLanguage(setting, locale) {

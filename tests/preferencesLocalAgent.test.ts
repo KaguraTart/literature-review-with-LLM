@@ -54,6 +54,7 @@ function loadPreferencesController(options: {
   filePickerFileURL?: any;
   filePickerUseShow?: boolean;
   filePickerInitThrowsWithWindow?: boolean;
+  filePickerOpenThrowsWithWindow?: boolean;
   filePickerReturn?: number;
   filePickerExistingPaths?: string[];
 } = {}) {
@@ -259,18 +260,28 @@ function loadPreferencesController(options: {
     Cc: {
       "@mozilla.org/filepicker;1": {
         createInstance: () => {
+          let initializedParent: string | null = null;
           const picker: any = {
             file: options.filePickerFile ?? { path: options.filePickerPath || "/tmp/chosen output" },
             fileURL: options.filePickerFileURL,
             init: (parent: any, title: string, mode: number) => {
               if (options.filePickerInitThrowsWithWindow && parent) throw new Error("window parent unsupported");
-              filePickerCalls.push({ title, mode, parent: parent ? "window" : null });
+              initializedParent = parent ? "window" : null;
+              filePickerCalls.push({ title, mode, parent: initializedParent });
             }
           };
           if (options.filePickerUseShow) {
-            picker.show = () => options.filePickerReturn ?? filePickerConstants.returnOK;
+            picker.show = () => {
+              if (options.filePickerOpenThrowsWithWindow && initializedParent === "window") {
+                throw new Error("window parent open unsupported");
+              }
+              return options.filePickerReturn ?? filePickerConstants.returnOK;
+            };
           } else {
             picker.open = (callback: (result: number) => void) => {
+              if (options.filePickerOpenThrowsWithWindow && initializedParent === "window") {
+                throw new Error("window parent open unsupported");
+              }
               callback(options.filePickerReturn ?? filePickerConstants.returnOK);
             };
           }
@@ -2361,6 +2372,19 @@ describe("preferences local-agent config helpers", () => {
     expect(madeDirectories).toContain("C:\\Users\\tart\\Documents\\Literature Review with LLM");
   });
 
+  it("normalizes Windows slash-drive paths from the native folder picker", async () => {
+    const { controller, elements, prefValues, madeDirectories } = loadPreferencesController({
+      filePickerFile: { path: "" },
+      filePickerFileURL: { path: "/C:/Users/tart/Documents/Literature Review with LLM" }
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(elements.get("zms-outputDir").value).toBe("C:\\Users\\tart\\Documents\\Literature Review with LLM");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("C:\\Users\\tart\\Documents\\Literature Review with LLM");
+    expect(madeDirectories).toContain("C:\\Users\\tart\\Documents\\Literature Review with LLM");
+  });
+
   it("uses a macOS file URL and retries folder picker initialization without a window parent", async () => {
     const { controller, elements, filePickerCalls } = loadPreferencesController({
       filePickerFile: { path: "" },
@@ -2372,6 +2396,31 @@ describe("preferences local-agent config helpers", () => {
     await expect(controller.chooseOutputDir()).resolves.toBe(true);
 
     expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      parent: null,
+      displayDirectory: "/tmp/out"
+    });
+    expect(elements.get("zms-outputDir").value).toBe("/Users/tart/Zotero/Literature Review with LLM");
+  });
+
+  it("retries the folder picker without a window parent when opening fails", async () => {
+    const { controller, elements, filePickerCalls } = loadPreferencesController({
+      filePickerFile: { path: "" },
+      filePickerFileURL: { spec: "file:///Users/tart/Zotero/Literature%20Review%20with%20LLM" },
+      filePickerOpenThrowsWithWindow: true
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls).toHaveLength(2);
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      parent: "window",
+      displayDirectory: "/tmp/out"
+    });
+    expect(filePickerCalls[1]).toMatchObject({
       title: "Choose output folder",
       mode: 2,
       parent: null,
