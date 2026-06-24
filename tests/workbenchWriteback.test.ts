@@ -7976,12 +7976,17 @@ describe("workbench writeback helpers", () => {
           text: async () => JSON.stringify({
             error: {
               code: "unsupported_parameter",
-              message: "Unsupported request parameter",
-	              param: "responseFormat"
+              message: "Unsupported request parameter"
             },
-            details: {
-	              parameters: ["body.maxCompletionTokens"]
-            }
+            errors: [
+              { instancePath: "/response_format", message: "must NOT have additional properties" },
+              {
+                instancePath: "",
+                keyword: "additionalProperties",
+                params: { additionalProperty: "max_completion_tokens" },
+                message: "must NOT have additional properties"
+              }
+            ]
           })
         };
       }

@@ -576,6 +576,31 @@ describe("preferences local-agent config helpers", () => {
       })
     );
     expect(detailedFields).toEqual(["stream_options"]);
+    expect((helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      streamingBody,
+      400,
+      JSON.stringify({
+        errors: [
+          { dataPath: ".stream_options", message: "must NOT have additional properties" }
+        ]
+      })
+    )).toEqual(["stream_options"]);
+    expect((helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      streamingBody,
+      400,
+      JSON.stringify({
+        errors: [
+          {
+            instancePath: "",
+            keyword: "additionalProperties",
+            params: { additionalProperty: "stream_options" },
+            message: "must NOT have additional properties"
+          }
+        ]
+      })
+    )).toEqual(["stream_options"]);
     expect((helpers as any).omitProviderRequestBodyFields(streamingBody, detailedFields)).toEqual({
       model: "router-model",
       messages: [],

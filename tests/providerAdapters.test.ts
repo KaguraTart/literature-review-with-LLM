@@ -432,6 +432,31 @@ describe("provider adapters", () => {
       })
     );
     expect(detailedFields).toEqual(["stream_options"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      400,
+      JSON.stringify({
+        errors: [
+          { instancePath: "/stream_options", message: "must NOT have additional properties" }
+        ]
+      })
+    )).toEqual(["stream_options"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      400,
+      JSON.stringify({
+        errors: [
+          {
+            instancePath: "",
+            keyword: "additionalProperties",
+            params: { additionalProperty: "response_format" },
+            message: "must NOT have additional properties"
+          }
+        ]
+      })
+    )).toEqual(["response_format"]);
     expect(() => extractResponseText("openai_chat", {
       error: {
         code: "invalid_request",

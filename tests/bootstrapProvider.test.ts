@@ -1524,6 +1524,37 @@ describe("bootstrap provider helpers", () => {
       model: "router-model",
       messages: [{ role: "user", content: "ping" }]
     });
+    const streamingBody = {
+      model: "router-model",
+      messages: [],
+      stream: true,
+      stream_options: { include_usage: true }
+    };
+    expect((helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      streamingBody,
+      400,
+      JSON.stringify({
+        errors: [
+          { jsonPointer: "/stream_options", message: "must NOT have additional properties" }
+        ]
+      })
+    )).toEqual(["stream_options"]);
+    expect((helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      streamingBody,
+      400,
+      JSON.stringify({
+        errors: [
+          {
+            instancePath: "",
+            keyword: "additionalProperties",
+            params: { additionalProperty: "stream_options" },
+            message: "must NOT have additional properties"
+          }
+        ]
+      })
+    )).toEqual(["stream_options"]);
   });
 
   it("omits rejected custom body-extra fields in bootstrap fallback helpers", () => {

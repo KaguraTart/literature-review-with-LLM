@@ -1239,14 +1239,17 @@ function providerFieldHintArrayPath(value) {
 }
 
 function isProviderFieldHintKey(key) {
-  return /^(?:param|params|parameter|parameters|field|fields|property|properties|argument|arguments|loc|location|path|json_path|jsonpath|unsupported_param|unsupported_params|unsupported_parameter|unsupported_parameters|unsupported_field|unsupported_fields|unknown_param|unknown_params|unknown_parameter|unknown_parameters|unknown_field|unknown_fields|invalid_param|invalid_params|invalid_parameter|invalid_parameters|invalid_field|invalid_fields|extra_field|extra_fields|forbidden_field|forbidden_fields|unrecognized_param|unrecognized_params|unrecognized_parameter|unrecognized_parameters|unrecognized_field|unrecognized_fields)$/i.test(key);
+  return /^(?:param|params|parameter|parameters|field|fields|property|properties|property_name|propertyname|additional_property|additionalproperty|argument|arguments|loc|location|path|json_path|jsonpath|json_pointer|jsonpointer|pointer|data_path|datapath|instance_path|instancepath|unsupported_param|unsupported_params|unsupported_parameter|unsupported_parameters|unsupported_field|unsupported_fields|unknown_param|unknown_params|unknown_parameter|unknown_parameters|unknown_field|unknown_fields|invalid_param|invalid_params|invalid_parameter|invalid_parameters|invalid_field|invalid_fields|extra_field|extra_fields|forbidden_field|forbidden_fields|unrecognized_param|unrecognized_params|unrecognized_parameter|unrecognized_parameters|unrecognized_field|unrecognized_fields)$/i.test(key);
 }
 
 function normalizeProviderFieldHint(value) {
-  const normalized = String(value || "")
+  const raw = String(value || "").trim();
+  const pointerPath = providerFieldHintPointerPath(raw);
+  const normalized = (pointerPath || raw)
     .trim()
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/^\$\.?/, "")
+    .replace(/^\./, "")
     .replace(/^(?:body|request|payload|params?|parameters?|input)\./i, "")
     .replace(/\[[^\]]+\]/g, "");
   const normalizedLower = normalized.toLowerCase();
@@ -1263,6 +1266,18 @@ function normalizeProviderFieldHint(value) {
   return normalized
     .split(".")[0]
     .trim();
+}
+
+function providerFieldHintPointerPath(value) {
+  const text = String(value || "").trim();
+  if (!/^#?\//.test(text)) return "";
+  const segments = text
+    .replace(/^#/, "")
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => segment.replace(/~1/g, "/").replace(/~0/g, "~"))
+    .filter(Boolean);
+  return segments.length ? `body.${segments.join(".")}` : "";
 }
 
 function providerDetailMentionsCanonicalField(detail, field) {
