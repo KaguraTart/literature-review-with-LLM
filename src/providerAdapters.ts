@@ -308,7 +308,7 @@ function sseFieldValue(line: string, field: string): string | undefined {
 export function redact(value: unknown): string {
   return String(value)
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-    .replace(/\b(?:sk|ak|xai|gsk|pplx|ms|rk)[-_][A-Za-z0-9._-]+/gi, "[redacted]")
+    .replace(/\b(?:sk|ak|xai|gsk|pplx|ms|rk|hf)[-_][A-Za-z0-9._-]+/gi, "[redacted]")
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, "[redacted]")
     .slice(0, 800);
 }

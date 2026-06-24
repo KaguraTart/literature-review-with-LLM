@@ -647,6 +647,7 @@ describe("workbench writeback helpers", () => {
       "gemini",
       "azure-openai",
       "github-models",
+      "huggingface",
       "fireworks",
       "cerebras",
       "nvidia-nim",

@@ -1451,6 +1451,9 @@ function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)
   if (provider === "github_models") {
     return { include: "github-models", apiKeyEnv: "GITHUB_MODELS_API_KEY", modelEnv: "GITHUB_MODELS_MODEL", baseURLEnv: "GITHUB_MODELS_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
   }
+  if (provider === "huggingface") {
+    return { include: "huggingface", apiKeyEnv: "HUGGINGFACE_API_KEY", modelEnv: "HUGGINGFACE_MODEL", baseURLEnv: "HUGGINGFACE_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
   if (provider === "fireworks") {
     return { include: "fireworks", apiKeyEnv: "FIREWORKS_API_KEY", modelEnv: "FIREWORKS_MODEL", baseURLEnv: "FIREWORKS_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
   }
@@ -2422,7 +2425,7 @@ function truncateErrorText(text, limit = 1200) {
 function redact(value) {
   return String(value)
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-    .replace(/\b(?:sk|ak|xai|gsk|pplx|ms|rk)[-_][A-Za-z0-9._-]+/gi, "[redacted]")
+    .replace(/\b(?:sk|ak|xai|gsk|pplx|ms|rk|hf)[-_][A-Za-z0-9._-]+/gi, "[redacted]")
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, "[redacted]")
     .slice(0, 800);
 }
@@ -3660,6 +3663,19 @@ function providerDefaults(provider) {
       bodyExtra: {}
     };
   }
+  if (id === "huggingface" || id === "hugging_face" || id === "hf") {
+    return {
+      id: "huggingface",
+      name: "Hugging Face",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.huggingface.co/v1",
+      fullURL: "",
+      model: "",
+      capabilities: { ...imageCapabilities, pdfBase64: false },
+      bodyExtra: {}
+    };
+  }
   if (id === "fireworks") {
     return {
       id: "fireworks",
@@ -4025,7 +4041,7 @@ function providerDefaults(provider) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "github_models", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "github_models", "huggingface", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = providerDefaults(provider);
     return {
       id: defaults.id,
@@ -4075,6 +4091,7 @@ function providerProfileCatalogKey(profile) {
   if (id === "anthropic_compatible") return "anthropic-compatible";
   if (id === "azure_openai") return "azure-openai";
   if (id === "github_models") return "github-models";
+  if (id === "hugging_face" || id === "hf") return "huggingface";
   if (id === "nvidia_nim") return "nvidia-nim";
   if (id === "sambanova_responses") return "sambanova-responses";
   if (id === "sambanova_anthropic") return "sambanova-anthropic";
@@ -4105,6 +4122,9 @@ function isKnownProviderId(value) {
     "azure_openai",
     "github-models",
     "github_models",
+    "huggingface",
+    "hugging_face",
+    "hf",
     "fireworks",
     "cerebras",
     "nvidia-nim",
@@ -4161,6 +4181,7 @@ function isKnownProviderBaseURL(value) {
     "https://generativelanguage.googleapis.com/v1beta/openai",
     "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1",
     "https://models.github.ai/inference",
+    "https://router.huggingface.co/v1",
     "https://api.fireworks.ai/inference/v1",
     "https://api.cerebras.ai/v1",
     "https://integrate.api.nvidia.com/v1",
@@ -4321,6 +4342,7 @@ function providerFromProfile(profile) {
   if (id === "gemini") return "gemini";
   if (id === "azure-openai" || id === "azure_openai") return "azure_openai";
   if (id === "github-models" || id === "github_models") return "github_models";
+  if (id === "huggingface" || id === "hugging_face" || id === "hf") return "huggingface";
   if (id === "fireworks") return "fireworks";
   if (id === "cerebras") return "cerebras";
   if (id === "nvidia-nim" || id === "nvidia_nim") return "nvidia_nim";
@@ -4345,6 +4367,7 @@ function providerFromProfile(profile) {
   if (baseURL === "https://generativelanguage.googleapis.com/v1beta/openai") return "gemini";
   if (/^https:\/\/[^/]+\.openai\.azure\.com\/openai\/v1$/i.test(baseURL) || /^https:\/\/[^/]+\.services\.ai\.azure\.com\/openai\/v1$/i.test(baseURL)) return "azure_openai";
   if (baseURL === "https://models.github.ai/inference" || baseURL === "https://models.github.ai/inference/chat/completions") return "github_models";
+  if (baseURL === "https://router.huggingface.co/v1" || baseURL === "https://router.huggingface.co/v1/chat/completions") return "huggingface";
   if (baseURL === "https://api.fireworks.ai/inference/v1") return "fireworks";
   if (baseURL === "https://api.cerebras.ai/v1") return "cerebras";
   if (baseURL === "https://integrate.api.nvidia.com/v1") return "nvidia_nim";

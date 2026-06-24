@@ -1406,6 +1406,12 @@ describe("preferences local-agent config helpers", () => {
       customHeaders: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
       capabilities: { streaming: true, pdfBase64: false, modelList: false }
     });
+    expect(helpers.providerDefaults("huggingface")).toMatchObject({
+      id: "huggingface",
+      protocol: "openai_chat",
+      baseURL: "https://router.huggingface.co/v1",
+      capabilities: { streaming: true, pdfBase64: false, imageBase64: true, modelList: true }
+    });
     expect(helpers.providerDefaults("fireworks")).toMatchObject({
       id: "fireworks",
       protocol: "openai_chat",
@@ -1573,6 +1579,7 @@ describe("preferences local-agent config helpers", () => {
       "gemini",
       "azure-openai",
       "github-models",
+      "huggingface",
       "fireworks",
       "cerebras",
       "nvidia-nim",
@@ -1646,6 +1653,12 @@ describe("preferences local-agent config helpers", () => {
       baseURL: "https://models.github.ai/inference",
       customHeaders: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
       capabilities: { modelList: false }
+    });
+    expect(profiles.find((profile) => profile.id === "huggingface")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.huggingface.co/v1",
+      capabilities: { imageBase64: true, modelList: true }
     });
     expect(profiles.find((profile) => profile.id === "fireworks")).toMatchObject({
       protocol: "openai_chat",
@@ -1816,6 +1829,7 @@ describe("preferences local-agent config helpers", () => {
       "gemini",
       "azure-openai",
       "github-models",
+      "huggingface",
       "fireworks",
       "cerebras",
       "nvidia-nim",
@@ -1923,6 +1937,12 @@ describe("preferences local-agent config helpers", () => {
       baseURL: "https://api.z.ai/api/anthropic/v1/messages",
       bodyExtra: {}
     })).toBe("zai_anthropic");
+    expect(helpers.providerFromProfile({
+      id: "hf",
+      protocol: "openai_chat",
+      baseURL: "https://router.huggingface.co/v1",
+      bodyExtra: {}
+    })).toBe("huggingface");
   });
 
   it("keeps local-agent skill reset templates specific to their tools", () => {
@@ -2171,6 +2191,21 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).toContain("--include github-models");
     expect(guide).not.toContain("GITHUB_MODELS_BASE_URL=");
     expect(guide).not.toContain("github-model-secret");
+  });
+
+  it("uses named live-check variables for Hugging Face setup guides", () => {
+    const helpers = loadPreferencesHelpers();
+    const guide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("huggingface"),
+      apiKey: "hf_test-secret",
+      model: "Qwen/Qwen2.5-VL-7B-Instruct"
+    }, "en-US");
+
+    expect(guide).toContain("Active profile: Hugging Face");
+    expect(guide).toContain("HUGGINGFACE_API_KEY=...");
+    expect(guide).toContain("HUGGINGFACE_MODEL=Qwen/Qwen2.5-VL-7B-Instruct");
+    expect(guide).toContain("--include huggingface");
+    expect(guide).not.toContain("hf_test-secret");
   });
 
   it("includes edited Base URL for named provider live-check commands", () => {
@@ -2565,6 +2600,7 @@ describe("preferences local-agent config helpers", () => {
       "gemini",
       "azure-openai",
       "github-models",
+      "huggingface",
       "fireworks",
       "cerebras",
       "nvidia-nim",
@@ -2605,6 +2641,7 @@ describe("preferences local-agent config helpers", () => {
       "gemini",
       "azure-openai",
       "github-models",
+      "huggingface",
       "fireworks",
       "cerebras",
       "nvidia-nim",

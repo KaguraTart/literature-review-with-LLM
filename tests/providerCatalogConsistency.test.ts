@@ -14,6 +14,7 @@ const PROVIDER_ORDER = [
   "gemini",
   "azure-openai",
   "github-models",
+  "huggingface",
   "fireworks",
   "cerebras",
   "nvidia-nim",
@@ -51,6 +52,7 @@ const SETTINGS_ALIASES = [
   "gemini",
   "azure_openai",
   "github_models",
+  "huggingface",
   "fireworks",
   "cerebras",
   "nvidia_nim",
@@ -207,7 +209,7 @@ describe("provider catalog consistency", () => {
     const profiles = loadPreferencesHelpers().defaultProviderProfiles();
     const byId = new Map(profiles.map((profile) => [profile.id, profile]));
 
-    for (const id of ["openai", "openai-responses-compatible", "anthropic", "gemini", "azure-openai"]) {
+    for (const id of ["openai", "openai-responses-compatible", "anthropic", "gemini", "azure-openai", "huggingface"]) {
       expect(byId.get(id)?.capabilities?.imageBase64).toBe(true);
     }
     for (const id of ["minimax", "openai-compatible", "deepseek", "kimi", "groq", "openrouter", "ollama", "local-agents"]) {

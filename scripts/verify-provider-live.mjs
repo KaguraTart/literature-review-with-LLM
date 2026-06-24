@@ -122,6 +122,19 @@ const DEFAULT_CASES = [
     modelList: false
   },
   {
+    id: "huggingface",
+    label: "Hugging Face",
+    profile: "huggingface",
+    protocol: "openai_chat",
+    apiKeyEnv: "HUGGINGFACE_API_KEY",
+    modelEnv: "HUGGINGFACE_MODEL",
+    baseURLEnv: "HUGGINGFACE_BASE_URL",
+    headersEnv: "HUGGINGFACE_HEADERS_JSON",
+    bodyExtraEnv: "HUGGINGFACE_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
     id: "fireworks",
     label: "Fireworks AI",
     profile: "fireworks",
@@ -1501,6 +1514,7 @@ function usage() {
     "  GEMINI_API_KEY=... GEMINI_MODEL=... npm run verify:provider:live -- --include gemini",
     "  AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=... AZURE_OPENAI_BASE_URL=... npm run verify:provider:live -- --include azure-openai",
     "  GITHUB_MODELS_API_KEY=... GITHUB_MODELS_MODEL=... npm run verify:provider:live -- --include github-models",
+    "  HUGGINGFACE_API_KEY=... HUGGINGFACE_MODEL=... npm run verify:provider:live -- --include huggingface",
     "  FIREWORKS_API_KEY=... FIREWORKS_MODEL=... npm run verify:provider:live -- --include fireworks",
     "  CEREBRAS_API_KEY=... CEREBRAS_MODEL=... npm run verify:provider:live -- --include cerebras",
     "  NVIDIA_NIM_API_KEY=... NVIDIA_NIM_MODEL=... npm run verify:provider:live -- --include nvidia-nim",

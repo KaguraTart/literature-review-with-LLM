@@ -259,6 +259,11 @@ describe("bootstrap provider helpers", () => {
       protocol: "openai_chat",
       capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
+    expect(helpers.settingsProviderDefaults("huggingface")).toMatchObject({
+      protocol: "openai_chat",
+      baseURL: "https://router.huggingface.co/v1",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
+    });
     expect(helpers.settingsProviderDefaults("zai_anthropic")).toMatchObject({
       protocol: "anthropic_messages",
       baseURL: "https://api.z.ai/api/anthropic",
@@ -308,6 +313,10 @@ describe("bootstrap provider helpers", () => {
       protocol: "openai_chat",
       baseURL: "https://api.perplexity.ai"
     })).toBe("perplexity");
+    expect(helpers.settingsProviderFromProfile({
+      protocol: "openai_chat",
+      baseURL: "https://router.huggingface.co/v1"
+    })).toBe("huggingface");
     expect(helpers.settingsProviderFromProfile({
       id: "zai-anthropic",
       protocol: "anthropic_messages",

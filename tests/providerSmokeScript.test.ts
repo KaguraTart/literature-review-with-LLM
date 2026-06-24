@@ -13,6 +13,7 @@ const NAMED_LIVE_SPECS = [
   { id: "gemini", envPrefix: "GEMINI", protocol: "openai_chat", basePath: "/gemini/v1beta/openai", model: "gemini-2.5-flash", secret: "live-gemini-secret" },
   { id: "azure-openai", envPrefix: "AZURE_OPENAI", protocol: "openai_responses", basePath: "/azure/openai/v1", model: "azure-gpt-4.1", secret: "live-azure-secret" },
   { id: "github-models", envPrefix: "GITHUB_MODELS", protocol: "openai_chat", basePath: "/inference", model: "github/model", secret: "live-github-secret" },
+  { id: "huggingface", envPrefix: "HUGGINGFACE", protocol: "openai_chat", basePath: "/huggingface/v1", model: "Qwen/Qwen2.5-VL-7B-Instruct", secret: "live-huggingface-secret" },
   { id: "fireworks", envPrefix: "FIREWORKS", protocol: "openai_chat", basePath: "/fireworks/v1", model: "accounts/fireworks/models/llama-v3p1-8b-instruct", secret: "live-fireworks-secret" },
   { id: "cerebras", envPrefix: "CEREBRAS", protocol: "openai_chat", basePath: "/cerebras/v1", model: "llama3.1-8b", secret: "live-cerebras-secret" },
   { id: "nvidia-nim", envPrefix: "NVIDIA_NIM", protocol: "openai_chat", basePath: "/nvidia/v1", model: "meta/llama-3.1-8b-instruct", secret: "live-nvidia-secret" },
@@ -1059,13 +1060,20 @@ describe("provider smoke verifier", () => {
     expect(report).toMatchObject({
       ok: true,
       catalog: true,
-      profileCount: 34,
-      checked: 33,
       skipped: 1
     });
+    expect(report.profileCount).toBe(report.results.length);
+    expect(report.checked).toBe(report.results.filter((result: any) => !result.skipped).length);
+    expect(report.profileCount).toBeGreaterThanOrEqual(35);
     expect(report.results.find((result: any) => result.id === "local-agents")).toMatchObject({
       ok: true,
       skipped: true
+    });
+    expect(report.results.find((result: any) => result.id === "huggingface")).toMatchObject({
+      ok: true,
+      protocol: "openai_chat",
+      endpoint: "https://router.huggingface.co/v1/chat/completions",
+      modelsEndpoint: "https://router.huggingface.co/v1/models"
     });
     expect(report.results.find((result: any) => result.id === "openai")).toMatchObject({
       ok: true,

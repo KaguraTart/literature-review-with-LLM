@@ -1,6 +1,6 @@
 {
   "name": "literature-review-with-LLM",
-  "version": "0.1.50",
+  "version": "0.1.51",
   "description": "Zotero literature review and Markdown summary plugin",
   "type": "module",
   "private": false,

@@ -110,6 +110,9 @@ function settingsProviderDefaults(provider) {
   if (id === "github_models" || id === "github-models") {
     return { ...common, protocol: "openai_chat", baseURL: "https://models.github.ai/inference", capabilities: { ...commonCapabilities, modelList: false }, customHeaders: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } };
   }
+  if (id === "huggingface" || id === "hugging_face" || id === "hf") {
+    return { ...common, protocol: "openai_chat", baseURL: "https://router.huggingface.co/v1", capabilities: imageCapabilities };
+  }
   if (id === "fireworks") {
     return { ...common, protocol: "openai_chat", baseURL: "https://api.fireworks.ai/inference/v1", capabilities: commonCapabilities };
   }
@@ -159,9 +162,10 @@ function settingsProviderDefaults(provider) {
 function settingsProviderFromProfile(profile) {
   if (profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent) return "local-agents";
   const id = String(profile?.id || "").trim();
-  if (["minimax", "openai", "openai-responses-compatible", "openai_responses_compatible", "anthropic", "anthropic-compatible", "anthropic_compatible", "openai-compatible", "openai_compatible", "gemini", "azure-openai", "azure_openai", "github-models", "github_models", "fireworks", "cerebras", "nvidia-nim", "nvidia_nim", "sambanova", "sambanova-responses", "sambanova_responses", "sambanova-anthropic", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "moonshot", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "zai-anthropic", "zai_anthropic", "z_ai_anthropic", "z-ai-anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "glm", "bigmodel", "volcengine", "ark", "doubao", "qianfan", "baidu", "hunyuan", "tencent", "ollama", "lm-studio", "lm_studio"].includes(id)) {
+  if (["minimax", "openai", "openai-responses-compatible", "openai_responses_compatible", "anthropic", "anthropic-compatible", "anthropic_compatible", "openai-compatible", "openai_compatible", "gemini", "azure-openai", "azure_openai", "github-models", "github_models", "huggingface", "hugging_face", "hf", "fireworks", "cerebras", "nvidia-nim", "nvidia_nim", "sambanova", "sambanova-responses", "sambanova_responses", "sambanova-anthropic", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "moonshot", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "zai-anthropic", "zai_anthropic", "z_ai_anthropic", "z-ai-anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "glm", "bigmodel", "volcengine", "ark", "doubao", "qianfan", "baidu", "hunyuan", "tencent", "ollama", "lm-studio", "lm_studio"].includes(id)) {
     if (id === "azure-openai") return "azure_openai";
     if (id === "github-models") return "github_models";
+    if (id === "hugging_face" || id === "hf") return "huggingface";
     if (id === "nvidia-nim") return "nvidia_nim";
     if (id === "sambanova-responses") return "sambanova_responses";
     if (id === "sambanova-anthropic") return "sambanova_anthropic";
@@ -180,6 +184,7 @@ function settingsProviderFromProfile(profile) {
   if (baseURL === "https://api.minimaxi.com/v1") return "minimax";
   if (baseURL === "https://generativelanguage.googleapis.com/v1beta/openai") return "gemini";
   if (/^https:\/\/[^/]+\.openai\.azure\.com\/openai\/v1$/i.test(baseURL) || /^https:\/\/[^/]+\.services\.ai\.azure\.com\/openai\/v1$/i.test(baseURL)) return "azure_openai";
+  if (baseURL === "https://router.huggingface.co/v1" || baseURL === "https://router.huggingface.co/v1/chat/completions") return "huggingface";
   if (baseURL === "https://api.x.ai/v1") return "xai";
   if (baseURL === "https://api.groq.com/openai/v1") return "groq";
   if (baseURL === "https://api.mistral.ai/v1") return "mistral";

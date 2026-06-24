@@ -28,6 +28,7 @@ describe("default provider profiles", () => {
       "gemini",
       "azure-openai",
       "github-models",
+      "huggingface",
       "fireworks",
       "cerebras",
       "nvidia-nim",
@@ -108,6 +109,12 @@ describe("default provider profiles", () => {
       baseURL: "https://models.github.ai/inference",
       customHeaders: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
       capabilities: { pdfBase64: false, streaming: true, modelList: false }
+    });
+    expect(profiles.find((profile: any) => profile.id === "huggingface")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.huggingface.co/v1",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "fireworks")).toMatchObject({
       protocol: "openai_chat",
