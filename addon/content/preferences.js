@@ -840,7 +840,7 @@ var ZoteroMarkdownSummaryPrefs = {
     setLabel("zms-save-outputDir-button", "saveOutputDir");
     setTooltip("zms-choose-outputDir-button", "chooseOutputDirTooltip");
     setTooltip("zms-save-outputDir-button", "saveOutputDirTooltip");
-    setLabel("zms-test-button", "test");
+    setLabel("zms-test-button", "saveAndTest");
     setLabel("zms-load-models-button", "loadModels");
     setLabel("zms-apply-provider-env-button", "applyProviderEnv");
     setLabel("zms-load-profile-button", "loadProfile");
@@ -933,6 +933,7 @@ function prefFallbackMessage(key, lang) {
     saveOutputDirTooltip: zh ? "保存当前输入的输出目录" : "Save the current output directory",
     applyProviderEnv: zh ? "应用到当前档案" : "Apply to current profile",
     test: zh ? "测试连接" : "Test connection",
+    saveAndTest: zh ? "保存并测试" : "Save and Test",
     testing: zh ? "正在测试连接" : "Testing connection",
     loadModels: zh ? "刷新在线模型" : "Refresh online models",
     loadProfile: zh ? "加载档案" : "Load profile",

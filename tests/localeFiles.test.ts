@@ -76,6 +76,7 @@ describe("locale files", () => {
       "profileCustomHeaders",
       "modelPickerHelp",
       "modelListLoaded",
+      "saveAndTest",
       "testFailed"
     ]));
     expect(Object.keys(ZMS_I18N["zh-CN"].reader)).toEqual(expect.arrayContaining([

@@ -205,6 +205,7 @@ function loadPreferencesController(options: {
   createElement("zms-providerEnvText", { localName: "textarea" });
   createElement("zms-apply-provider-env-button", { localName: "button" });
   createElement("zms-doctor-button", { localName: "button" });
+  createElement("zms-test-button", { localName: "button" });
   createElement("zms-load-models-button", { localName: "button" });
   setChecked("zms-stream", false);
   setChecked("zms-profileLocalAgentFallback", false);
@@ -2806,6 +2807,7 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-choose-outputDir-button").tooltiptext).toBe("Choose an output folder with the system file manager");
     expect(elements.get("zms-save-outputDir-button").label).toBe("Save");
     expect(elements.get("zms-save-outputDir-button").tooltiptext).toBe("Save the current output directory");
+    expect(elements.get("zms-test-button").label).toBe("Save and Test");
   });
 
   it("falls back to fully localized Chinese labels when the message bundle is unavailable", () => {
@@ -2819,6 +2821,7 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model-label").value).toBe("模型");
     expect(elements.get("zms-model-help").value).toContain("模型下拉框会显示常用模型");
     expect(elements.get("zms-load-models-button").label).toBe("刷新在线模型");
+    expect(elements.get("zms-test-button").label).toBe("保存并测试");
     expect(elements.get("zms-profileEndpointMode-label").value).toBe("接口模式");
     expect(elements.get("zms-outputDir-label").value).toBe("输出目录");
     expect(elements.get("zms-choose-outputDir-button").label).toBe("选择文件夹...");
@@ -3755,6 +3758,31 @@ describe("preferences local-agent config helpers", () => {
 
     expect(fetchCalls).toHaveLength(1);
     expect(fetchCalls[0].url).toBe("https://api.openai.com/v1/responses");
+    expect(elements.get("zms-status").value).toBe("Connection OK");
+  });
+
+  it("saves the latest settings before running a settings connection test", async () => {
+    const { controller, elements, fetchCalls, prefValues } = loadPreferencesController({
+      initialModel: "old-model",
+      fetchResponse: {
+        output: [{ content: [{ type: "output_text", text: "pong" }] }]
+      }
+    });
+    elements.get("zms-apiKey").value = "sk-latest-secret";
+    elements.get("zms-model").value = "gpt-4.1-mini";
+    elements.get("zms-baseURL").value = "https://api.openai.com/v1";
+
+    await controller.testConnection();
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].init.headers).toMatchObject({ authorization: "Bearer sk-latest-secret" });
+    expect(JSON.parse(fetchCalls[0].init.body).model).toBe("gpt-4.1-mini");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.apiKey")).toBe("sk-latest-secret");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.model")).toBe("gpt-4.1-mini");
+    expect(JSON.parse(elements.get("zms-profilesJson").value)[0]).toMatchObject({
+      apiKey: "sk-latest-secret",
+      model: "gpt-4.1-mini"
+    });
     expect(elements.get("zms-status").value).toBe("Connection OK");
   });
 
