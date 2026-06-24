@@ -2883,6 +2883,22 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model").hidden).toBe(true);
   });
 
+  it("switches stale provider recommendations to the current provider default model", () => {
+    const { controller, elements } = loadPreferencesController({ initialModel: "qwen-plus" });
+    elements.get("zms-provider").value = "deepseek";
+    elements.get("zms-activeProfileId").value = "deepseek";
+    elements.get("zms-profileName").value = "DeepSeek";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "https://api.deepseek.com";
+
+    controller.refreshModelRecommendations({ selectDefault: true });
+
+    expect(elements.get("zms-model").value).toBe("deepseek-v4-flash");
+    expect(elements.get("zms-model-select").children[0].textContent).toBe("Choose DeepSeek model");
+    expect(elements.get("zms-model-select").value).toBe("deepseek-v4-flash");
+    expect(elements.get("zms-model").hidden).toBe(true);
+  });
+
   it("shows the settings custom model field only when custom mode is selected", () => {
     const { controller, elements } = loadPreferencesController({ initialModel: "private-deployment" });
 

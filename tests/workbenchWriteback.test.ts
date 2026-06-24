@@ -3057,6 +3057,44 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
   });
 
+  it("switches stale workbench provider recommendations to the current provider default model", () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-profile-name": "DeepSeek",
+      "zms-profile-base-url": "https://api.deepseek.com",
+      "zms-profile-api-key": "",
+      "zms-profile-model": "qwen-plus"
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelSelectPlaceholder: "Choose a recommended model",
+      modelSelectCustom: "Custom model...",
+      recommendedModels: "Recommended"
+    }[key] || key);
+    workbench.state.uiLanguage = "en-US";
+    workbench.state.profile = {
+      id: "deepseek",
+      name: "DeepSeek",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepseek.com",
+      apiKey: "",
+      model: "qwen-plus",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+
+    workbench.renderWorkbenchModelRecommendations({ selectDefault: true });
+
+    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-v4-flash");
+    expect(dom.getElementById("zms-profile-model-select").children[0].textContent).toBe("Choose DeepSeek model");
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-v4-flash");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
+  });
+
   it("shows the workbench custom model field only for custom model values", () => {
     const loaded: any = loadWorkbenchHelpers();
     const dom = fakeDocument({

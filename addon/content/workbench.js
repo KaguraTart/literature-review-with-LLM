@@ -979,7 +979,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       clearOptionsElement(select);
       const placeholder = document.createElement("option");
       placeholder.value = "";
-      placeholder.textContent = this.t("modelSelectPlaceholder");
+      placeholder.textContent = workbenchModelSelectPlaceholder(this.state.profile, entries, this.state.uiLanguage, (key) => this.t(key));
       select.appendChild(placeholder);
     }
     for (const entry of entries) {
@@ -1007,7 +1007,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     const recommendations = recommendedModelOptionsForWorkbenchProfile(profile);
     this.renderWorkbenchModelOptions(tagModelOptions(recommendations, "recommended"));
     const modelInput = document.getElementById("zms-profile-model");
-    if (modelInput && options.selectDefault && !String(modelInput.value || "").trim() && recommendations[0]?.id) {
+    if (modelInput && options.selectDefault && shouldSelectProviderDefaultModel(modelInput.value, recommendations) && recommendations[0]?.id) {
       modelInput.value = recommendations[0].id;
     }
     this.syncWorkbenchModelSelect(recommendations);
@@ -5448,6 +5448,25 @@ function mergeModelOptions(primary, secondary) {
   return [...merged.values()];
 }
 
+function shouldSelectProviderDefaultModel(currentValue, recommendations) {
+  const value = String(currentValue || "").trim();
+  if (!value) return true;
+  const entries = normalizeModelOptions(recommendations);
+  if (entries.some((entry) => entry.id === value)) return false;
+  return isKnownProviderDefaultModel(value);
+}
+
+function isKnownProviderDefaultModel(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return false;
+  return allRecommendedProviderModelIds().has(normalized);
+}
+
+function allRecommendedProviderModelIds() {
+  const catalog = typeof zmsProviderModelCatalog === "object" && zmsProviderModelCatalog ? zmsProviderModelCatalog : {};
+  return new Set(Object.keys(catalog).flatMap((provider) => recommendedModelOptionsForWorkbenchProvider(provider).map((entry) => entry.id)));
+}
+
 function recommendedModelOptionsForWorkbenchProfile(profile) {
   const provider = workbenchProviderFromProfile(profile, profile?.id || "");
   const defaults = workbenchProviderDefaults(provider);
@@ -5459,6 +5478,27 @@ function recommendedModelOptionsForWorkbenchProfile(profile) {
 
 function recommendedModelOptionsForWorkbenchProvider(provider) {
   return zmsRecommendedModelOptionsForProvider(provider);
+}
+
+function workbenchModelSelectPlaceholder(profile, entries, language, translate = (key) => key) {
+  const provider = workbenchProviderFromProfile(profile, profile?.id || "");
+  const providerLabel = workbenchModelSelectProviderLabel(provider, entries);
+  return providerModelSelectPlaceholder(providerLabel, language, translate);
+}
+
+function providerModelSelectPlaceholder(providerLabel, language, translate = (key) => key) {
+  const zh = String(language || "").toLowerCase().startsWith("zh");
+  const label = String(providerLabel || "").trim();
+  if (!label) return translate("modelSelectPlaceholder");
+  return zh ? `选择 ${label} 推荐模型` : `Choose ${label} model`;
+}
+
+function workbenchModelSelectProviderLabel(provider, entries = []) {
+  const key = String(provider || "").trim();
+  if (key && typeof zmsProviderModelCatalogLabel === "function") {
+    return zmsProviderModelCatalogLabel(key);
+  }
+  return normalizeModelOptions(entries)[0]?.vendor || key;
 }
 
 function setWorkbenchCustomModelInputVisible(modelInput, visible) {

@@ -573,7 +573,7 @@ var ZoteroMarkdownSummaryPrefs = {
     const recommendations = recommendedModelOptionsForProfile(profile);
     renderModelOptions(tagModelOptions(recommendations, "recommended"));
     const model = document.getElementById("zms-model");
-    if (model && options.selectDefault && !String(model.value || "").trim() && recommendations[0]?.id) {
+    if (model && options.selectDefault && shouldSelectProviderDefaultModel(model.value, recommendations) && recommendations[0]?.id) {
       model.value = recommendations[0].id;
     }
     syncModelSelectFromInput(recommendations);
@@ -3413,7 +3413,7 @@ function renderModelOptions(modelOptions) {
     clearOptionsElement(select);
     const placeholder = document.createElement("option");
     placeholder.value = "";
-    placeholder.textContent = prefFallbackMessage("modelSelectPlaceholder", resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale()));
+    placeholder.textContent = providerModelSelectPlaceholderForPreferences(entries);
     select.appendChild(placeholder);
   }
   for (const entry of entries) {
@@ -3483,6 +3483,14 @@ function mergeModelOptions(primary, secondary) {
   return [...merged.values()];
 }
 
+function shouldSelectProviderDefaultModel(currentValue, recommendations) {
+  const value = String(currentValue || "").trim();
+  if (!value) return true;
+  const entries = normalizeModelOptions(recommendations);
+  if (entries.some((entry) => entry.id === value)) return false;
+  return isKnownProviderDefaultModel(value);
+}
+
 function recommendedModelOptionsForProfile(profile) {
   const provider = providerFromProfile(profile) || document.getElementById("zms-provider")?.value || "openai_compatible";
   const defaults = providerDefaults(provider);
@@ -3495,6 +3503,29 @@ function recommendedModelOptionsForProfile(profile) {
 
 function recommendedModelOptionsForProvider(provider) {
   return zmsRecommendedModelOptionsForProvider(provider);
+}
+
+function providerModelSelectPlaceholderForPreferences(entries) {
+  const lang = resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale());
+  const provider = providerFromProfile(profileDraftFromEditor().profile) || document.getElementById("zms-provider")?.value || "";
+  const providerLabel = providerModelSelectProviderLabel(provider, entries);
+  return providerModelSelectPlaceholder(providerLabel, lang, (key) => prefFallbackMessage(key, lang));
+}
+
+function providerModelSelectPlaceholder(providerLabel, lang, translate = (key) => key) {
+  const zh = String(lang || "").toLowerCase().startsWith("zh");
+  const label = String(providerLabel || "").trim();
+  if (!label) return translate("modelSelectPlaceholder");
+  return zh ? `选择 ${label} 推荐模型` : `Choose ${label} model`;
+}
+
+function providerModelSelectProviderLabel(provider, entries = []) {
+  const key = String(provider || "").trim();
+  if (key && typeof zmsProviderModelCatalogLabel === "function") {
+    return zmsProviderModelCatalogLabel(key);
+  }
+  const vendor = normalizeModelOptions(entries)[0]?.vendor || "";
+  return vendor || key;
 }
 
 function renderProfileOptions(list, profileOptions) {
