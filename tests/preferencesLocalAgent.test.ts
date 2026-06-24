@@ -2816,6 +2816,49 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model").value).toBe("deepseek-reasoner");
   });
 
+  it("replaces a previous provider recommendation when switching provider presets", () => {
+    const { controller, elements } = loadPreferencesController();
+    elements.get("zms-provider").value = "anthropic";
+    elements.get("zms-activeProfileId").value = "deepseek";
+    elements.get("zms-baseURL").value = "https://api.deepseek.com";
+    elements.get("zms-model").value = "deepseek-chat";
+
+    controller.applyProviderPreset();
+
+    expect(elements.get("zms-activeProfileId").value).toBe("anthropic");
+    expect(elements.get("zms-baseURL").value).toBe("https://api.anthropic.com");
+    expect(elements.get("zms-model").value).toBe("claude-sonnet-4-20250514");
+    expect(elements.get("zms-model-select").value).toBe("claude-sonnet-4-20250514");
+  });
+
+  it("keeps a custom model name when switching provider presets", () => {
+    const { controller, elements } = loadPreferencesController();
+    elements.get("zms-provider").value = "anthropic";
+    elements.get("zms-activeProfileId").value = "custom-router";
+    elements.get("zms-baseURL").value = "https://router.example/v1";
+    elements.get("zms-model").value = "private-deployment";
+
+    controller.applyProviderPreset();
+
+    expect(elements.get("zms-activeProfileId").value).toBe("custom-router");
+    expect(elements.get("zms-baseURL").value).toBe("https://router.example/v1");
+    expect(elements.get("zms-model").value).toBe("private-deployment");
+    expect(elements.get("zms-model-select").value).toBe("private-deployment");
+  });
+
+  it("shows local-agent timeout fields in seconds without treating timeoutSeconds as milliseconds", () => {
+    const { controller, elements } = loadPreferencesController();
+
+    controller.loadLocalAgentEditor({ localAgent: { endpoint: "http://127.0.0.1:3333/mcp", timeoutSeconds: 180 } });
+    expect(elements.get("zms-profileLocalAgentTimeout").value).toBe("180");
+
+    controller.loadLocalAgentEditor({ localAgent: { endpoint: "http://127.0.0.1:3333/mcp", timeoutMs: 180000 } });
+    expect(elements.get("zms-profileLocalAgentTimeout").value).toBe("180");
+
+    controller.loadLocalAgentEditor({ localAgent: { endpoint: "http://127.0.0.1:3333/mcp", timeout: 45000 } });
+    expect(elements.get("zms-profileLocalAgentTimeout").value).toBe("45");
+  });
+
   it("chooses an output directory with the native folder picker and saves it", async () => {
     const { controller, elements, prefValues, madeDirectories, filePickerCalls } = loadPreferencesController({
       filePickerPath: "/tmp/picked output"

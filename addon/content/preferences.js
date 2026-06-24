@@ -296,8 +296,8 @@ var ZoteroMarkdownSummaryPrefs = {
     document.getElementById("zms-profileLocalAgentTool").value = localAgent.tool || localAgent.toolName || localAgent.tool_id || "";
     const payloadMode = normalizeLocalAgentPayloadMode(localAgent.payloadMode || localAgent.protocol || "jsonrpc");
     document.getElementById("zms-profileLocalAgentPayloadMode").value = payloadMode;
-    const timeoutMs = toFinitePositiveInt(localAgent.timeoutMs, localAgent.timeout, localAgent.timeoutSeconds, localAgent.timeoutSec, localAgent.timeout_ms);
-    document.getElementById("zms-profileLocalAgentTimeout").value = timeoutMs ? String(Math.ceil(timeoutMs / 1000)) : "";
+    const timeoutSeconds = localAgentTimeoutSecondsForEditor(localAgent);
+    document.getElementById("zms-profileLocalAgentTimeout").value = timeoutSeconds ? String(timeoutSeconds) : "";
     document.getElementById("zms-profileLocalAgentFallback").checked = !!localAgent.fallbackToRemote;
     const headers = normalizeObjectStringMap(localAgent.headers) || {};
     document.getElementById("zms-profileLocalAgentHeaders").value = JSON.stringify(headers, null, 2);
@@ -5404,7 +5404,58 @@ function isKnownProviderBaseURL(value) {
 }
 
 function isKnownProviderDefaultModel(value) {
-  return ["MiniMax-M2.7"].includes(String(value || "").trim());
+  const normalized = String(value || "").trim();
+  if (!normalized) return false;
+  if (["MiniMax-M2.7"].includes(normalized)) return true;
+  return allRecommendedProviderModelIds().has(normalized);
+}
+
+function allRecommendedProviderModelIds() {
+  const providerKeys = [
+    "minimax",
+    "openai",
+    "openai_compatible",
+    "openai_responses_compatible",
+    "anthropic",
+    "anthropic_compatible",
+    "gemini",
+    "azure_openai",
+    "vercel_ai_chat",
+    "vercel_ai_responses",
+    "vercel_ai_anthropic",
+    "cloudflare_ai_chat",
+    "cloudflare_ai_responses",
+    "cloudflare_ai_anthropic",
+    "github_models",
+    "huggingface",
+    "deepinfra",
+    "fireworks",
+    "cerebras",
+    "nvidia_nim",
+    "sambanova",
+    "sambanova_responses",
+    "sambanova_anthropic",
+    "xai",
+    "groq",
+    "mistral",
+    "together",
+    "kimi",
+    "perplexity",
+    "deepseek",
+    "deepseek_anthropic",
+    "zai_anthropic",
+    "openrouter",
+    "dashscope",
+    "siliconflow",
+    "zhipu",
+    "volcengine",
+    "qianfan",
+    "hunyuan",
+    "ollama",
+    "lm_studio",
+    "local_agents"
+  ];
+  return new Set(providerKeys.flatMap((provider) => recommendedModelOptionsForProvider(provider).map((entry) => entry.id)));
 }
 
 function parseLocalAgentConfig(raw) {
@@ -5483,6 +5534,16 @@ function toFinitePositiveInt(...values) {
     if (Number.isFinite(normalized) && normalized > 0) return Math.round(normalized);
   }
   return null;
+}
+
+function localAgentTimeoutSecondsForEditor(localAgent) {
+  const timeoutMs = toFinitePositiveInt(localAgent?.timeoutMs, localAgent?.timeout_ms);
+  if (timeoutMs) return Math.max(1, Math.ceil(timeoutMs / 1000));
+  const timeoutSeconds = toFinitePositiveInt(localAgent?.timeoutSeconds, localAgent?.timeoutSec, localAgent?.timeout_seconds);
+  if (timeoutSeconds) return timeoutSeconds;
+  const timeout = toFinitePositiveInt(localAgent?.timeout);
+  if (!timeout) return null;
+  return timeout <= 1200 ? timeout : Math.max(1, Math.ceil(timeout / 1000));
 }
 
 function normalizeObjectStringMap(value) {
