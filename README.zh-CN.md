@@ -286,7 +286,7 @@ LM_STUDIO_MODEL=local-model LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1 npm run 
 
 运行 `npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local` 可以只检查本地配置完整性，不会调用远程接口。输出会列出每个 case 的缺失环境变量、解析后的 endpoint、模型来源、鉴权状态、输入能力和下一步可复制命令；API key 只显示是否已配置，不会打印明文。doctor 模式下即使指定的 env 文件还没创建，也会把它作为 warning 继续诊断，方便先看到必须填写的变量；真正的 live 检查仍要求指定的 env 文件存在。
 
-运行 `npm run verify:provider:live -- --env-template --include openai-compatible` 可以打印选中 live-check case 的可复制环境变量模板，并带上默认 endpoint 提示；加 `--dotenv-template` 可以生成普通 `.env.local` 草稿，例如 `npm run verify:provider:live -- --env-template --dotenv-template --include core > .env.local`。如果要写进 CI secrets 或本地 shell 脚本，可以再加 `--json` 输出结构化模板。Zotero 设置页指南和导出的厂商诊断报告也会显示同一条模板命令。
+运行 `npm run verify:provider:live -- --env-template --include openai-compatible` 可以打印选中 live-check case 的可复制环境变量模板，并带上默认模型和 endpoint 提示；加 `--dotenv-template` 可以生成普通 `.env.local` 草稿，例如 `npm run verify:provider:live -- --env-template --dotenv-template --include core > .env.local`。草稿会让 API key 保持空白、标出内置默认值，并提示哪些占位 endpoint 必须先替换再运行。如果要写进 CI secrets 或本地 shell 脚本，可以再加 `--json` 输出结构化模板。Zotero 设置页指南和导出的厂商诊断报告也会显示同一条模板命令。
 
 live 检查也可以读取不提交到仓库的本地 env 文件：
 

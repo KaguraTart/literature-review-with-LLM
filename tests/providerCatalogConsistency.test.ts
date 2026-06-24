@@ -316,9 +316,21 @@ describe("provider catalog consistency", () => {
       const required = new Set(entry.requiredEnv || []);
       const modelRequired = new Set(entry.modelListRequiredEnv || []);
       const optional = new Set(entry.optionalEnv || []);
+      const requiredHints = entry.requiredEnvHints || {};
+      const modelRequiredHints = entry.modelListRequiredEnvHints || {};
+      const optionalHints = entry.optionalEnvHints || {};
 
       expect(catalogEntry).toBeTruthy();
       expect(entry.generationCommand).toBe(`npm run verify:provider:live -- --include ${entry.id}`);
+      for (const name of entry.requiredEnv || []) {
+        expect(requiredHints[name]).toBeTruthy();
+      }
+      for (const name of entry.modelListRequiredEnv || []) {
+        expect(modelRequiredHints[name]).toBeTruthy();
+      }
+      for (const name of entry.optionalEnv || []) {
+        expect(optionalHints[name]).toBeTruthy();
+      }
       expect(required.has(catalogEntry.modelEnv)).toBe(true);
       if (catalogEntry.apiKeyOptional) {
         expect(required.has(catalogEntry.apiKeyEnv)).toBe(false);

@@ -1558,6 +1558,11 @@ describe("provider smoke verifier", () => {
         OPENAI_COMPATIBLE_MODEL: "gpt-4.1-mini",
         OPENAI_COMPATIBLE_BASE_URL: "https://api.openai.com/v1"
       },
+      requiredEnvHints: {
+        OPENAI_COMPATIBLE_API_KEY: "paste your provider API key; dotenv drafts keep this blank",
+        OPENAI_COMPATIBLE_MODEL: "built-in default model from the openai-compatible profile",
+        OPENAI_COMPATIBLE_BASE_URL: "required endpoint; built-in value is a runnable default for this case"
+      },
       modelListRequiredEnv: ["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"],
       modelListRequiredEnvValues: {
         OPENAI_COMPATIBLE_API_KEY: "...",
@@ -1574,6 +1579,7 @@ describe("provider smoke verifier", () => {
       OPENAI_COMPATIBLE_BODY_EXTRA_JSON: "{}",
       OPENAI_COMPATIBLE_CAPABILITIES_JSON: "{}"
     });
+    expect(openaiCompatible.optionalEnvHints.OPENAI_COMPATIBLE_CAPABILITIES_JSON).toContain("optional JSON capability overrides");
     const anthropicCompatible = report.cases.find((entry: any) => entry.id === "anthropic-compatible");
     expect(anthropicCompatible.requiredEnv).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_MODEL", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
     expect(anthropicCompatible.requiredEnvValues).toEqual({
@@ -1581,6 +1587,7 @@ describe("provider smoke verifier", () => {
       ANTHROPIC_COMPATIBLE_MODEL: "claude-sonnet-4-20250514",
       ANTHROPIC_COMPATIBLE_BASE_URL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT"
     });
+    expect(anthropicCompatible.requiredEnvHints.ANTHROPIC_COMPATIBLE_BASE_URL).toBe("replace the placeholder parts in this endpoint before running");
     expect(anthropicCompatible.modelListRequiredEnv).toEqual(["ANTHROPIC_COMPATIBLE_API_KEY", "ANTHROPIC_COMPATIBLE_BASE_URL"]);
     expect(anthropicCompatible.imageCommand).toBe("");
     expect(anthropicCompatible.pdfCommand).toBe("");
@@ -1592,6 +1599,7 @@ describe("provider smoke verifier", () => {
     });
     expect(ollama.modelListRequiredEnv).toEqual(["OLLAMA_BASE_URL"]);
     expect(ollama.optionalEnv).toEqual(["OLLAMA_API_KEY", "OLLAMA_HEADERS_JSON", "OLLAMA_BODY_EXTRA_JSON", "OLLAMA_CAPABILITIES_JSON"]);
+    expect(ollama.optionalEnvHints.OLLAMA_API_KEY).toBe("optional API key; leave blank for local/no-auth endpoints");
     expect(ollama.generationCommand).toBe("npm run verify:provider:live -- --include ollama");
     expect(ollama.imageCommand).toBe("");
     expect(ollama.pdfCommand).toBe("");
@@ -1612,6 +1620,8 @@ describe("provider smoke verifier", () => {
     expect(stdout).toContain("Provider live verification env templates:");
     expect(stdout).toContain("# Include groups: all, mainstream, core, openai-chat, openai-responses, anthropic-messages, remote, local");
     expect(stdout).toContain("ANTHROPIC_COMPATIBLE_API_KEY=...");
+    expect(stdout).toContain("# paste your provider API key; dotenv drafts keep this blank");
+    expect(stdout).toContain("# replace the placeholder parts in this endpoint before running");
     expect(stdout).toContain("ANTHROPIC_COMPATIBLE_BASE_URL=https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT");
     expect(stdout).toContain("# ANTHROPIC_COMPATIBLE_HEADERS_JSON={}");
     expect(stdout).toContain("# ANTHROPIC_COMPATIBLE_CAPABILITIES_JSON={}");
@@ -1631,6 +1641,8 @@ describe("provider smoke verifier", () => {
     });
     expect(dotenvStdout).toContain("# Literature Review with LLM provider live-check env draft");
     expect(dotenvStdout).toContain("OPENAI_COMPATIBLE_API_KEY=");
+    expect(dotenvStdout).toContain("# paste your provider API key; dotenv drafts keep this blank");
+    expect(dotenvStdout).toContain("# built-in default model from the openai-compatible profile");
     expect(dotenvStdout).toContain("OPENAI_COMPATIBLE_MODEL=");
     expect(dotenvStdout).toContain("OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1");
     expect(dotenvStdout).toContain("# OPENAI_COMPATIBLE_HEADERS_JSON={}");

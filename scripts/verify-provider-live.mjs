@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
+import { once } from "node:events";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { runProviderModels, runProviderSmoke } from "./verify-provider-smoke.mjs";
 import { endpointFor, modelsEndpointFor } from "../src/providerAdapters.ts";
@@ -550,35 +551,41 @@ const DEFAULT_PROMPT = "Reply with OK only.";
 const DEFAULT_CONTEXT = "Live provider verification context.";
 
 if (isMainModule()) {
-  try {
-    const options = parseArgs(process.argv.slice(2));
-    if (options.help) {
-      process.stdout.write(usage());
-      process.exit(0);
-    }
-    if (options.list) {
-      const catalog = providerLiveCaseCatalog(options.include || "");
-      process.stdout.write(options.json ? `${JSON.stringify(catalog, null, 2)}\n` : formatCaseCatalog(catalog));
-      process.exit(0);
-    }
-    if (options.envTemplate) {
-      const template = providerLiveEnvTemplate(options.include || "");
-      const textTemplate = options.dotenvTemplate ? formatDotenvTemplate(template) : formatEnvTemplate(template);
-      process.stdout.write(options.json ? `${JSON.stringify(template, null, 2)}\n` : textTemplate);
-      process.exit(0);
-    }
-    if (options.doctor) {
-      const report = providerLiveDoctor(options.include || "", options, process.env);
-      process.stdout.write(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatDoctorReport(report));
-      process.exit(0);
-    }
-    const report = await runProviderLive(options, process.env);
-    process.stdout.write(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report));
-    if (!report.ok) process.exit(1);
-  } catch (error) {
+  runCli(process.argv.slice(2)).catch((error) => {
     process.stderr.write(`${error?.message || String(error)}\n`);
-    process.exit(1);
+    process.exitCode = 1;
+  });
+}
+
+async function runCli(argv) {
+  const options = parseArgs(argv);
+  if (options.help) {
+    await writeStdout(usage());
+    return;
   }
+  if (options.list) {
+    const catalog = providerLiveCaseCatalog(options.include || "");
+    await writeStdout(options.json ? `${JSON.stringify(catalog, null, 2)}\n` : formatCaseCatalog(catalog));
+    return;
+  }
+  if (options.envTemplate) {
+    const template = providerLiveEnvTemplate(options.include || "");
+    const textTemplate = options.dotenvTemplate ? formatDotenvTemplate(template) : formatEnvTemplate(template);
+    await writeStdout(options.json ? `${JSON.stringify(template, null, 2)}\n` : textTemplate);
+    return;
+  }
+  if (options.doctor) {
+    const report = providerLiveDoctor(options.include || "", options, process.env);
+    await writeStdout(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatDoctorReport(report));
+    return;
+  }
+  const report = await runProviderLive(options, process.env);
+  await writeStdout(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report));
+  if (!report.ok) process.exitCode = 1;
+}
+
+async function writeStdout(text) {
+  if (!process.stdout.write(text)) await once(process.stdout, "drain");
 }
 
 export async function runProviderLive(options = {}, env = process.env) {
@@ -989,10 +996,13 @@ function providerEnvTemplateForCase(entry) {
     protocol: entry.protocol,
     requiredEnv,
     requiredEnvValues: envTemplateValuesForCase(entry, requiredEnv),
+    requiredEnvHints: envTemplateHintsForCase(entry, requiredEnv),
     modelListRequiredEnv,
     modelListRequiredEnvValues: envTemplateValuesForCase(entry, modelListRequiredEnv),
+    modelListRequiredEnvHints: envTemplateHintsForCase(entry, modelListRequiredEnv),
     optionalEnv,
     optionalEnvValues: envTemplateValuesForCase(entry, optionalEnv),
+    optionalEnvHints: envTemplateHintsForCase(entry, optionalEnv),
     generationCommand: `npm run verify:provider:live -- --include ${entry.id}`,
     imageCommand: caseSupportsImageInput(entry)
       ? `npm run verify:provider:image:live -- --include ${entry.id}`
@@ -1014,6 +1024,14 @@ function envTemplateValuesForCase(entry, names) {
   return values;
 }
 
+function envTemplateHintsForCase(entry, names) {
+  const hints = {};
+  for (const name of names || []) {
+    hints[name] = envTemplateHintForCase(entry, name);
+  }
+  return hints;
+}
+
 function envTemplateValueForCase(entry, name) {
   if (!name) return "...";
   if (name === entry.modelEnv) return defaultModelForCase(entry) || "...";
@@ -1021,6 +1039,37 @@ function envTemplateValueForCase(entry, name) {
   if (name === capabilitiesEnvForCase(entry)) return "{}";
   if (name === entry.headersEnv || name === entry.bodyExtraEnv) return "{}";
   return "...";
+}
+
+function envTemplateHintForCase(entry, name) {
+  if (!name) return "";
+  if (name === entry.apiKeyEnv) {
+    return entry.apiKeyOptional
+      ? "optional API key; leave blank for local/no-auth endpoints"
+      : "paste your provider API key; dotenv drafts keep this blank";
+  }
+  if (name === entry.modelEnv) {
+    const value = defaultModelForCase(entry);
+    if (value) return `built-in default model from the ${entry.profile} profile`;
+    return "model or deployment name required";
+  }
+  if (name === entry.baseURLEnv) {
+    const value = defaultBaseURLForCase(entry);
+    if (!value) return "provider endpoint root required";
+    if (providerTemplateEndpointNeedsReplacement(value)) {
+      return "replace the placeholder parts in this endpoint before running";
+    }
+    if (entry.requireBaseURL) return "required endpoint; built-in value is a runnable default for this case";
+    return "optional override; built-in provider endpoint is used when omitted";
+  }
+  if (name === capabilitiesEnvForCase(entry)) return "optional JSON capability overrides, for example {\"imageBase64\":true}";
+  if (name === entry.headersEnv) return "optional JSON headers merged into the request";
+  if (name === entry.bodyExtraEnv) return "optional JSON body fields merged into provider requests";
+  return "";
+}
+
+function providerTemplateEndpointNeedsReplacement(value) {
+  return /\bYOUR[-_A-Z0-9]*\b|YOUR_[A-Z0-9_]+/i.test(String(value || ""));
 }
 
 function caseSupportsImageInput(entry, capabilities = null) {
@@ -1467,11 +1516,13 @@ function formatEnvTemplate(template) {
   for (const entry of template.cases || []) {
     lines.push("", `# ${entry.id} (${entry.protocol})`, "# Required for generation checks");
     for (const name of entry.requiredEnv || []) {
+      pushEnvHint(lines, entry.requiredEnvHints?.[name]);
       lines.push(`${name}=${entry.requiredEnvValues?.[name] || "..."}`);
     }
     if (entry.optionalEnv?.length) {
       lines.push("# Optional");
       for (const name of entry.optionalEnv) {
+        pushEnvHint(lines, entry.optionalEnvHints?.[name]);
         lines.push(`# ${name}=${entry.optionalEnvValues?.[name] || "..."}`);
       }
     }
@@ -1487,6 +1538,7 @@ function formatEnvTemplate(template) {
     if (entry.modelListCommand && entry.modelListRequiredEnv?.length) {
       lines.push("# Required for model-list checks");
       for (const name of entry.modelListRequiredEnv) {
+        pushEnvHint(lines, entry.modelListRequiredEnvHints?.[name]);
         lines.push(`${name}=${entry.modelListRequiredEnvValues?.[name] || "..."}`);
       }
       lines.push(entry.modelListCommand);
@@ -1509,16 +1561,23 @@ function formatDotenvTemplate(template) {
     lines.push("", `# ${entry.id} (${entry.protocol})`, "# Required");
     for (const name of requiredEnv) {
       const value = entry.requiredEnvValues?.[name] ?? entry.modelListRequiredEnvValues?.[name] ?? "";
+      pushEnvHint(lines, entry.requiredEnvHints?.[name] ?? entry.modelListRequiredEnvHints?.[name]);
       lines.push(`${name}=${dotenvValue(value)}`);
     }
     if (entry.optionalEnv?.length) {
       lines.push("# Optional");
       for (const name of uniqueEnvNames(entry.optionalEnv)) {
+        pushEnvHint(lines, entry.optionalEnvHints?.[name]);
         lines.push(`# ${name}=${dotenvValue(entry.optionalEnvValues?.[name])}`);
       }
     }
   }
   return `${lines.join("\n")}\n`;
+}
+
+function pushEnvHint(lines, hint) {
+  const text = String(hint || "").trim();
+  if (text) lines.push(`# ${text}`);
 }
 
 function formatDoctorReport(report) {
