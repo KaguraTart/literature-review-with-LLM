@@ -16,6 +16,7 @@ const PROVIDER_ORDER = [
   "vercel-ai-chat",
   "vercel-ai-responses",
   "vercel-ai-anthropic",
+  "cline-api",
   "cloudflare-ai-chat",
   "cloudflare-ai-responses",
   "cloudflare-ai-anthropic",
@@ -61,6 +62,7 @@ const SETTINGS_ALIASES = [
   "vercel_ai_chat",
   "vercel_ai_responses",
   "vercel_ai_anthropic",
+  "cline_api",
   "cloudflare_ai_chat",
   "cloudflare_ai_responses",
   "cloudflare_ai_anthropic",
@@ -270,7 +272,7 @@ describe("provider catalog consistency", () => {
     const profiles = loadPreferencesHelpers().defaultProviderProfiles();
     const byId = new Map(profiles.map((profile) => [profile.id, profile]));
 
-    for (const id of ["openai", "openai-responses-compatible", "anthropic", "gemini", "azure-openai", "vercel-ai-chat", "vercel-ai-responses", "vercel-ai-anthropic", "huggingface", "deepinfra"]) {
+    for (const id of ["openai", "openai-responses-compatible", "anthropic", "gemini", "azure-openai", "vercel-ai-chat", "vercel-ai-responses", "vercel-ai-anthropic", "cline-api", "huggingface", "deepinfra"]) {
       expect(byId.get(id)?.capabilities?.imageBase64).toBe(true);
     }
     for (const id of ["minimax", "openai-compatible", "deepseek", "kimi", "groq", "openrouter", "ollama", "local-agents"]) {

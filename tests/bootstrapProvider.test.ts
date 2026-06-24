@@ -267,6 +267,12 @@ describe("bootstrap provider helpers", () => {
       capabilities: { pdfBase64: true, imageBase64: true, streaming: true, modelList: true },
       bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     });
+    expect(helpers.settingsProviderDefaults("cline_api")).toMatchObject({
+      protocol: "openai_chat",
+      baseURL: "https://api.cline.bot/api/v1",
+      model: "anthropic/claude-sonnet-4-6",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
+    });
     expect(helpers.settingsProviderDefaults("cloudflare_ai_chat")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
@@ -350,6 +356,11 @@ describe("bootstrap provider helpers", () => {
       protocol: "anthropic_messages",
       baseURL: "https://ai-gateway.vercel.sh/v1/messages"
     })).toBe("vercel_ai_anthropic");
+    expect(helpers.settingsProviderFromProfile({
+      id: "cline-api",
+      protocol: "openai_chat",
+      baseURL: "https://api.cline.bot/api/v1"
+    })).toBe("cline_api");
     expect(helpers.settingsProviderFromProfile({
       id: "cloudflare-workers-ai",
       protocol: "openai_chat",

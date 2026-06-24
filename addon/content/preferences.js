@@ -1058,6 +1058,7 @@ function providerMenuLabels(zh) {
     vercel_ai_chat: zh ? "Vercel AI Gateway 聊天接口" : "Vercel AI Gateway Chat",
     vercel_ai_responses: zh ? "Vercel AI Gateway Responses 接口" : "Vercel AI Gateway Responses",
     vercel_ai_anthropic: zh ? "Vercel AI Gateway Anthropic 接口" : "Vercel AI Gateway Anthropic",
+    cline_api: zh ? "Cline API 聊天接口" : "Cline API Chat",
     cloudflare_ai_chat: zh ? "Cloudflare AI 聊天接口" : "Cloudflare AI Chat",
     cloudflare_ai_responses: zh ? "Cloudflare AI Responses 接口" : "Cloudflare AI Responses",
     cloudflare_ai_anthropic: zh ? "Cloudflare AI Anthropic 接口" : "Cloudflare AI Anthropic",
@@ -2147,6 +2148,9 @@ function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)
   if (provider === "vercel_ai_anthropic") {
     return { include: "vercel-ai-anthropic", apiKeyEnv: "VERCEL_AI_ANTHROPIC_API_KEY", modelEnv: "VERCEL_AI_ANTHROPIC_MODEL", baseURLEnv: "VERCEL_AI_ANTHROPIC_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
   }
+  if (provider === "cline_api") {
+    return { include: "cline-api", apiKeyEnv: "CLINE_API_KEY", modelEnv: "CLINE_MODEL", baseURLEnv: "CLINE_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
   if (provider === "cloudflare_ai_chat") {
     return { include: "cloudflare-ai-chat", apiKeyEnv: "CLOUDFLARE_API_KEY", modelEnv: "CLOUDFLARE_MODEL", baseURLEnv: "CLOUDFLARE_BASE_URL", includeBaseURL: true, apiKeyOptional };
   }
@@ -2382,6 +2386,11 @@ function providerEnvAliases(provider, prefix) {
     aliases.apiKey.push("AI_GATEWAY_API_KEY", "VERCEL_API_KEY");
     aliases.model.push("AI_GATEWAY_MODEL");
     aliases.baseURL.push("AI_GATEWAY_BASE_URL");
+  }
+  if (key === "cline_api") {
+    aliases.apiKey.push("CLINE_BOT_API_KEY");
+    aliases.model.push("CLINE_API_MODEL");
+    aliases.baseURL.push("CLINE_API_BASE_URL", "CLINE_ENDPOINT");
   }
   if (key === "gemini") {
     aliases.apiKey.push("GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY");
@@ -4934,6 +4943,19 @@ function providerDefaultsRaw(provider) {
       bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     };
   }
+  if (id === "cline_api" || id === "cline-api") {
+    return {
+      id: "cline-api",
+      name: "Cline API",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.cline.bot/api/v1",
+      fullURL: "",
+      model: "",
+      capabilities: { ...imageCapabilities, pdfBase64: false },
+      bodyExtra: {}
+    };
+  }
   if (id === "cloudflare_ai_chat" || id === "cloudflare-ai-chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") {
     return {
       id: "cloudflare-ai-chat",
@@ -5391,7 +5413,7 @@ function recommendedDefaultModelForProvider(provider, defaults = {}) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "vercel_ai_chat", "vercel_ai_responses", "vercel_ai_anthropic", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "vercel_ai_chat", "vercel_ai_responses", "vercel_ai_anthropic", "cline_api", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = providerDefaults(provider);
     return {
       id: defaults.id,
@@ -5443,6 +5465,7 @@ function providerProfileCatalogKey(profile) {
   if (id === "vercel_ai_chat" || id === "vercel_ai_gateway" || id === "vercel-ai-gateway") return "vercel-ai-chat";
   if (id === "vercel_ai_responses") return "vercel-ai-responses";
   if (id === "vercel_ai_anthropic") return "vercel-ai-anthropic";
+  if (id === "cline_api") return "cline-api";
   if (id === "cloudflare_ai_chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") return "cloudflare-ai-chat";
   if (id === "cloudflare_ai_responses") return "cloudflare-ai-responses";
   if (id === "cloudflare_ai_anthropic") return "cloudflare-ai-anthropic";
@@ -5485,6 +5508,8 @@ function isKnownProviderId(value) {
     "vercel_ai_responses",
     "vercel-ai-anthropic",
     "vercel_ai_anthropic",
+    "cline-api",
+    "cline_api",
     "cloudflare-ai-chat",
     "cloudflare_ai_chat",
     "cloudflare-workers-ai",
@@ -5557,6 +5582,7 @@ function isKnownProviderBaseURL(value) {
     "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1",
     "https://ai-gateway.vercel.sh",
     "https://ai-gateway.vercel.sh/v1",
+    "https://api.cline.bot/api/v1",
     "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
     "https://models.github.ai/inference",
     "https://router.huggingface.co/v1",
@@ -5612,6 +5638,7 @@ function allRecommendedProviderModelIds() {
     "vercel_ai_chat",
     "vercel_ai_responses",
     "vercel_ai_anthropic",
+    "cline_api",
     "cloudflare_ai_chat",
     "cloudflare_ai_responses",
     "cloudflare_ai_anthropic",
@@ -5804,6 +5831,7 @@ function providerFromProfile(profile) {
   if (id === "vercel-ai-chat" || id === "vercel_ai_chat" || id === "vercel-ai-gateway" || id === "vercel_ai_gateway") return "vercel_ai_chat";
   if (id === "vercel-ai-responses" || id === "vercel_ai_responses") return "vercel_ai_responses";
   if (id === "vercel-ai-anthropic" || id === "vercel_ai_anthropic") return "vercel_ai_anthropic";
+  if (id === "cline-api" || id === "cline_api") return "cline_api";
   if (id === "cloudflare-ai-chat" || id === "cloudflare_ai_chat" || id === "cloudflare-workers-ai" || id === "cloudflare_workers_ai") return "cloudflare_ai_chat";
   if (id === "cloudflare-ai-responses" || id === "cloudflare_ai_responses") return "cloudflare_ai_responses";
   if (id === "cloudflare-ai-anthropic" || id === "cloudflare_ai_anthropic") return "cloudflare_ai_anthropic";
@@ -5841,6 +5869,7 @@ function providerFromProfile(profile) {
   if (baseURL === "https://ai-gateway.vercel.sh" || baseURL === "https://ai-gateway.vercel.sh/v1/messages") {
     if (profile?.protocol === "anthropic_messages") return "vercel_ai_anthropic";
   }
+  if (baseURL === "https://api.cline.bot/api/v1" || baseURL === "https://api.cline.bot/api/v1/chat/completions") return "cline_api";
   if (/^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[^/]+\/ai\/v1(?:\/(?:chat\/completions|responses|messages))?$/i.test(baseURL)) {
     if (profile?.protocol === "openai_responses") return "cloudflare_ai_responses";
     if (profile?.protocol === "anthropic_messages") return "cloudflare_ai_anthropic";
@@ -5945,6 +5974,7 @@ function defaultProviderProfileIds() {
     "vercel-ai-chat",
     "vercel-ai-responses",
     "vercel-ai-anthropic",
+    "cline-api",
     "cloudflare-ai-chat",
     "cloudflare-ai-responses",
     "cloudflare-ai-anthropic",

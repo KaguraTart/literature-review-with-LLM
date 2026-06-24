@@ -148,6 +148,19 @@ const DEFAULT_CASES = [
     allowLocalNoAuth: true
   },
   {
+    id: "cline-api",
+    label: "Cline API",
+    profile: "cline-api",
+    protocol: "openai_chat",
+    apiKeyEnv: "CLINE_API_KEY",
+    modelEnv: "CLINE_MODEL",
+    baseURLEnv: "CLINE_BASE_URL",
+    headersEnv: "CLINE_HEADERS_JSON",
+    bodyExtraEnv: "CLINE_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
     id: "cloudflare-ai-chat",
     label: "Cloudflare AI OpenAI Chat",
     profile: "cloudflare-ai-chat",
@@ -1669,6 +1682,7 @@ function usage() {
     "  VERCEL_AI_API_KEY=... VERCEL_AI_MODEL=... npm run verify:provider:live -- --include vercel-ai-chat",
     "  VERCEL_AI_RESPONSES_API_KEY=... VERCEL_AI_RESPONSES_MODEL=... npm run verify:provider:live -- --include vercel-ai-responses",
     "  VERCEL_AI_ANTHROPIC_API_KEY=... VERCEL_AI_ANTHROPIC_MODEL=... npm run verify:provider:live -- --include vercel-ai-anthropic",
+    "  CLINE_API_KEY=... CLINE_MODEL=... npm run verify:provider:live -- --include cline-api",
     "  CLOUDFLARE_API_KEY=... CLOUDFLARE_MODEL=... CLOUDFLARE_BASE_URL=... npm run verify:provider:live -- --include cloudflare-ai-chat",
     "  CLOUDFLARE_RESPONSES_API_KEY=... CLOUDFLARE_RESPONSES_MODEL=... CLOUDFLARE_RESPONSES_BASE_URL=... npm run verify:provider:live -- --include cloudflare-ai-responses",
     "  CLOUDFLARE_ANTHROPIC_API_KEY=... CLOUDFLARE_ANTHROPIC_MODEL=... CLOUDFLARE_ANTHROPIC_BASE_URL=... npm run verify:provider:live -- --include cloudflare-ai-anthropic",

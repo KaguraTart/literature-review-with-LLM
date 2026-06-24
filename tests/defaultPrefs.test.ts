@@ -30,6 +30,7 @@ describe("default provider profiles", () => {
       "vercel-ai-chat",
       "vercel-ai-responses",
       "vercel-ai-anthropic",
+      "cline-api",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -132,6 +133,13 @@ describe("default provider profiles", () => {
       baseURL: "https://ai-gateway.vercel.sh",
       capabilities: { pdfBase64: true, imageBase64: true, streaming: true, modelList: true },
       bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    });
+    expect(profiles.find((profile: any) => profile.id === "cline-api")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.cline.bot/api/v1",
+      model: "anthropic/claude-sonnet-4-6",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "cloudflare-ai-chat")).toMatchObject({
       protocol: "openai_chat",

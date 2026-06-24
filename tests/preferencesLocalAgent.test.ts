@@ -1535,6 +1535,13 @@ describe("preferences local-agent config helpers", () => {
       capabilities: { streaming: true, pdfBase64: true, imageBase64: true, modelList: true },
       bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     });
+    expect(helpers.providerDefaults("cline_api")).toMatchObject({
+      id: "cline-api",
+      protocol: "openai_chat",
+      baseURL: "https://api.cline.bot/api/v1",
+      model: "anthropic/claude-sonnet-4-6",
+      capabilities: { streaming: true, pdfBase64: false, imageBase64: true, modelList: true }
+    });
     expect(helpers.providerDefaults("cloudflare_ai_chat")).toMatchObject({
       id: "cloudflare-ai-chat",
       protocol: "openai_chat",
@@ -1742,6 +1749,7 @@ describe("preferences local-agent config helpers", () => {
       "vercel-ai-chat",
       "vercel-ai-responses",
       "vercel-ai-anthropic",
+      "cline-api",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -1833,6 +1841,13 @@ describe("preferences local-agent config helpers", () => {
       baseURL: "https://ai-gateway.vercel.sh",
       capabilities: { imageBase64: true, pdfBase64: true, modelList: true },
       bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    });
+    expect(profiles.find((profile) => profile.id === "cline-api")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.cline.bot/api/v1",
+      model: "anthropic/claude-sonnet-4-6",
+      capabilities: { imageBase64: true, pdfBase64: false, modelList: true }
     });
     expect(profiles.find((profile) => profile.id === "cloudflare-ai-chat")).toMatchObject({
       protocol: "openai_chat",
@@ -2056,6 +2071,7 @@ describe("preferences local-agent config helpers", () => {
       "vercel-ai-chat",
       "vercel-ai-responses",
       "vercel-ai-anthropic",
+      "cline-api",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -2199,6 +2215,12 @@ describe("preferences local-agent config helpers", () => {
       baseURL: "https://ai-gateway.vercel.sh/v1/messages",
       bodyExtra: {}
     })).toBe("vercel_ai_anthropic");
+    expect(helpers.providerFromProfile({
+      id: "custom-cline",
+      protocol: "openai_chat",
+      baseURL: "https://api.cline.bot/api/v1/chat/completions",
+      bodyExtra: {}
+    })).toBe("cline_api");
     expect(helpers.providerFromProfile({
       id: "cloudflare_workers_ai",
       protocol: "openai_chat",
@@ -2633,6 +2655,11 @@ describe("preferences local-agent config helpers", () => {
       apiKey: "vercel-anthropic-secret",
       model: "anthropic/claude-sonnet-4.5"
     }, "en-US");
+    const clineGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("cline_api"),
+      apiKey: "cline-secret",
+      model: "anthropic/claude-sonnet-4-6"
+    }, "en-US");
 
     expect(minimaxGuide).toContain("MINIMAX_API_KEY=...");
     expect(minimaxGuide).toContain("MINIMAX_MODEL=MiniMax-M2.7-highspeed");
@@ -2667,6 +2694,11 @@ describe("preferences local-agent config helpers", () => {
     expect(vercelAnthropicGuide).toContain("--include vercel-ai-anthropic");
     expect(vercelAnthropicGuide).toContain("Auth: API key is sent as Authorization: Bearer; anthropic-version is included.");
     expect(vercelAnthropicGuide).not.toContain("vercel-anthropic-secret");
+    expect(clineGuide).toContain("CLINE_API_KEY=...");
+    expect(clineGuide).toContain("CLINE_MODEL=anthropic/claude-sonnet-4-6");
+    expect(clineGuide).toContain("--include cline-api");
+    expect(clineGuide).toContain("Image live check: CLINE_API_KEY=... CLINE_MODEL=anthropic/claude-sonnet-4-6 npm run verify:provider:image:live -- --include cline-api");
+    expect(clineGuide).not.toContain("cline-secret");
   });
 
   it("imports pasted provider env text into a settings profile", () => {
@@ -3489,6 +3521,7 @@ describe("preferences local-agent config helpers", () => {
       "vercel-ai-chat",
       "vercel-ai-responses",
       "vercel-ai-anthropic",
+      "cline-api",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -3537,6 +3570,7 @@ describe("preferences local-agent config helpers", () => {
       "vercel-ai-chat",
       "vercel-ai-responses",
       "vercel-ai-anthropic",
+      "cline-api",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -3577,6 +3611,7 @@ describe("preferences local-agent config helpers", () => {
     });
     expect(profiles.find((profile: any) => profile.id === "openai")).toMatchObject({ model: "gpt-5.4-mini" });
     expect(profiles.find((profile: any) => profile.id === "anthropic")).toMatchObject({ model: "claude-sonnet-4-6" });
+    expect(profiles.find((profile: any) => profile.id === "cline-api")).toMatchObject({ model: "anthropic/claude-sonnet-4-6" });
     expect(profiles.find((profile: any) => profile.id === "deepseek")).toMatchObject({ model: "deepseek-v4-flash" });
     expect(profiles.find((profile: any) => profile.id === "azure-openai")).toMatchObject({ model: "" });
     expect(profiles.find((profile: any) => profile.id === "local-agents")).toMatchObject({ model: "" });

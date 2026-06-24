@@ -15,6 +15,7 @@ const NAMED_LIVE_SPECS = [
   { id: "vercel-ai-chat", envPrefix: "VERCEL_AI", protocol: "openai_chat", basePath: "/vercel/v1", model: "openai/gpt-4.1-mini", secret: "live-vercel-secret" },
   { id: "vercel-ai-responses", envPrefix: "VERCEL_AI_RESPONSES", protocol: "openai_responses", basePath: "/vercel-responses/v1", model: "openai/gpt-4.1-mini", secret: "live-vercel-responses-secret" },
   { id: "vercel-ai-anthropic", envPrefix: "VERCEL_AI_ANTHROPIC", protocol: "anthropic_messages", basePath: "/vercel-anthropic", model: "anthropic/claude-sonnet-4.5", secret: "live-vercel-anthropic-secret" },
+  { id: "cline-api", envPrefix: "CLINE", protocol: "openai_chat", basePath: "/cline/api/v1", model: "anthropic/claude-sonnet-4-6", secret: "live-cline-secret" },
   { id: "cloudflare-ai-chat", envPrefix: "CLOUDFLARE", protocol: "openai_chat", basePath: "/cloudflare/accounts/test/ai/v1", model: "@cf/meta/llama-3.1-8b-instruct", secret: "live-cloudflare-secret" },
   { id: "cloudflare-ai-responses", envPrefix: "CLOUDFLARE_RESPONSES", protocol: "openai_responses", basePath: "/cloudflare-responses/accounts/test/ai/v1", model: "@cf/meta/llama-3.1-8b-instruct", secret: "live-cloudflare-responses-secret" },
   { id: "cloudflare-ai-anthropic", envPrefix: "CLOUDFLARE_ANTHROPIC", protocol: "anthropic_messages", basePath: "/cloudflare-anthropic/accounts/test/ai/v1", model: "claude-3-5-sonnet-20241022", secret: "live-cloudflare-anthropic-secret" },
