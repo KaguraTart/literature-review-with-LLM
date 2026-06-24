@@ -15928,7 +15928,62 @@ function workbenchDirectModelListItemsFromResponse(data) {
   if (Array.isArray(data?.models?.items)) return data.models.items;
   if (Array.isArray(data?.results?.data)) return data.results.data;
   if (Array.isArray(data?.objects?.data)) return data.objects.data;
+  for (const field of fields) {
+    const items = workbenchModelListItemsFromObjectMap(data?.[field]);
+    if (items.length) return items;
+  }
   return [];
+}
+
+function workbenchModelListItemsFromObjectMap(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  if (workbenchModelOptionFromItem(value).id) return [];
+  if (workbenchDirectModelListItemsFromResponse(value).length) return [];
+  const items = [];
+  for (const [key, item] of Object.entries(value)) {
+    const id = String(key || "").trim();
+    if (!id || workbenchModelListMapMetadataKeys().has(id)) continue;
+    if (typeof item === "string") {
+      const label = item.trim();
+      if (label) items.push({ id, label });
+      continue;
+    }
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const option = workbenchModelOptionFromItem(item);
+    items.push(option.id ? item : { ...item, id });
+  }
+  return items;
+}
+
+function workbenchModelListMapMetadataKeys() {
+  return new Set([
+    "data",
+    "items",
+    "models",
+    "results",
+    "objects",
+    "metadata",
+    "meta",
+    "pagination",
+    "paging",
+    "page",
+    "links",
+    "object",
+    "type",
+    "total",
+    "count",
+    "has_more",
+    "hasMore",
+    "next",
+    "next_url",
+    "nextUrl",
+    "next_page",
+    "nextPage",
+    "next_cursor",
+    "nextCursor",
+    "next_page_token",
+    "nextPageToken"
+  ]);
 }
 
 function workbenchModelListPaginationEnvelope(data, depth = 0) {

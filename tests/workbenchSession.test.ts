@@ -294,6 +294,32 @@ describe("workbench session helpers", () => {
     ]);
   });
 
+  it("loads object-mapped model-list responses in the workbench", async () => {
+    const mapped = loadWorkbenchHelpers({
+      fetchResponses: [
+        {
+          data: {
+            "router/model-a": { display_name: "Router Model A" },
+            "router/model-b": "Router Model B",
+            total: 2,
+            has_more: false
+          }
+        }
+      ]
+    });
+
+    const options = await mapped.workbenchFetchModelOptions({
+      url: "https://router.example/v1/models",
+      headers: { authorization: "Bearer sk-test-secret" }
+    });
+
+    expect(mapped.fetchCalls).toHaveLength(1);
+    expect(options).toEqual([
+      { id: "router/model-a", label: "Router Model A" },
+      { id: "router/model-b", label: "Router Model B" }
+    ]);
+  });
+
   it("extracts model text from wrapped provider responses in the workbench", () => {
     expect(helpers.extractResponseText("openai_chat", {
       data: { choices: [{ message: { content: "wrapped chat text" } }] }

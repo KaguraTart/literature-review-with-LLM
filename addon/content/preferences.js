@@ -2841,7 +2841,62 @@ function directModelListItemsFromResponse(data) {
   if (Array.isArray(data?.models?.items)) return data.models.items;
   if (Array.isArray(data?.results?.data)) return data.results.data;
   if (Array.isArray(data?.objects?.data)) return data.objects.data;
+  for (const field of fields) {
+    const items = modelListItemsFromObjectMap(data?.[field]);
+    if (items.length) return items;
+  }
   return [];
+}
+
+function modelListItemsFromObjectMap(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  if (modelOptionFromItem(value).id) return [];
+  if (directModelListItemsFromResponse(value).length) return [];
+  const items = [];
+  for (const [key, item] of Object.entries(value)) {
+    const id = String(key || "").trim();
+    if (!id || modelListMapMetadataKeys().has(id)) continue;
+    if (typeof item === "string") {
+      const label = item.trim();
+      if (label) items.push({ id, label });
+      continue;
+    }
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const option = modelOptionFromItem(item);
+    items.push(option.id ? item : { ...item, id });
+  }
+  return items;
+}
+
+function modelListMapMetadataKeys() {
+  return new Set([
+    "data",
+    "items",
+    "models",
+    "results",
+    "objects",
+    "metadata",
+    "meta",
+    "pagination",
+    "paging",
+    "page",
+    "links",
+    "object",
+    "type",
+    "total",
+    "count",
+    "has_more",
+    "hasMore",
+    "next",
+    "next_url",
+    "nextUrl",
+    "next_page",
+    "nextPage",
+    "next_cursor",
+    "nextCursor",
+    "next_page_token",
+    "nextPageToken"
+  ]);
 }
 
 function modelListPaginationEnvelope(data, depth = 0) {

@@ -1402,6 +1402,17 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.modelIdsFromResponse({
       payload: { modelNames: ["string-model-name", { value: "value-model" }, { slug: "slug-model" }] }
     })).toEqual(["slug-model", "string-model-name", "value-model"]);
+    expect(helpers.modelOptionsFromResponse({
+      data: {
+        "router/model-a": { display_name: "Router Model A" },
+        "router/model-b": "Router Model B",
+        total: 2,
+        has_more: false
+      }
+    })).toEqual([
+      { id: "router/model-a", label: "Router Model A" },
+      { id: "router/model-b", label: "Router Model B" }
+    ]);
     expect(helpers.modelIdsFromResponse({ data: [{ id: "same" }, { id: "same" }] })).toEqual(["same"]);
     expect(helpers.modelOptionsFromResponse({
       data: [
