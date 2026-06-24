@@ -944,6 +944,8 @@ var ZoteroMarkdownSummaryWorkbench = {
       }
     } catch (err) {
       if (recommended.length) {
+        this.renderWorkbenchModelOptions(tagModelOptions(recommended, "recommended"));
+        this.syncWorkbenchModelSelect(recommended);
         this.setStatus(`${this.t("modelListFailedUsingRecommendations")}: ${safeError(err)}`);
         return;
       }

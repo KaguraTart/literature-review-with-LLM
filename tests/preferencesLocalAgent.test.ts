@@ -3046,6 +3046,32 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model").hidden).toBe(true);
   });
 
+  it("binds settings provider and model dropdown events through script", () => {
+    const { controller, elements } = loadPreferencesController();
+
+    controller.refreshModelRecommendations();
+    controller.bindModelPickerEvents();
+
+    const modelSelect = elements.get("zms-model-select");
+    expect(modelSelect.eventListeners.get("change")).toHaveLength(1);
+    modelSelect.value = "gpt-4.1";
+    modelSelect.eventListeners.get("change")[0]();
+
+    expect(elements.get("zms-model").value).toBe("gpt-4.1");
+    expect(elements.get("zms-model").hidden).toBe(true);
+
+    const provider = elements.get("zms-provider");
+    expect(provider.eventListeners.get("command")).toHaveLength(1);
+    expect(provider.eventListeners.get("change")).toHaveLength(1);
+    provider.value = "anthropic";
+    provider.eventListeners.get("command")[0]();
+
+    expect(elements.get("zms-activeProfileId").value).toBe("anthropic");
+    expect(elements.get("zms-model").value).toBe("claude-sonnet-4-6");
+    expect(elements.get("zms-model-select").value).toBe("claude-sonnet-4-6");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("claude-opus-4-8");
+  });
+
   it("saves the selected settings model dropdown value even before the hidden input syncs", () => {
     const { controller, elements, prefValues } = loadPreferencesController();
     elements.get("zms-provider").value = "deepseek";

@@ -561,6 +561,8 @@ var ZoteroMarkdownSummaryPrefs = {
       this.setStatus(modelOptions.length ? `${this.t("modelListLoaded")}: ${modelOptions.length}` : `${this.t("modelRecommendationsLoaded")}: ${displayOptions.length}`);
     } catch (err) {
       if (recommended.length) {
+        renderModelOptions(tagModelOptions(recommended, "recommended"));
+        syncModelSelectFromInput(recommended);
         this.setStatus(`${this.t("modelListFailedUsingRecommendations")}: ${safeError(err)}`);
         return;
       }
@@ -754,6 +756,18 @@ var ZoteroMarkdownSummaryPrefs = {
   },
 
   bindModelPickerEvents() {
+    const provider = document.getElementById("zms-provider");
+    if (provider && provider.dataset?.zmsProviderPickerBound !== "1") {
+      const apply = () => this.applyProviderPreset();
+      provider.addEventListener("command", apply);
+      provider.addEventListener("change", apply);
+      if (provider.dataset) provider.dataset.zmsProviderPickerBound = "1";
+    }
+    const select = document.getElementById("zms-model-select");
+    if (select && select.dataset?.zmsModelSelectBound !== "1") {
+      select.addEventListener("change", () => this.selectModelFromDropdown());
+      if (select.dataset) select.dataset.zmsModelSelectBound = "1";
+    }
     const model = document.getElementById("zms-model");
     if (!model || model.dataset?.zmsModelPickerBound === "1") return;
     const sync = () => syncModelSelectFromInput();

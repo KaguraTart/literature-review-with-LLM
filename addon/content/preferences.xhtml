@@ -47,7 +47,7 @@
       </hbox>
       <hbox align="center" class="zms-row">
         <label class="zms-label" id="zms-provider-label" value="Provider"/>
-        <menulist id="zms-provider" oncommand="ZoteroMarkdownSummaryPrefs.applyProviderPreset()">
+        <menulist id="zms-provider">
           <menupopup>
             <menuitem label="MiniMax OpenAI 兼容" value="minimax"/>
             <menuitem label="OpenAI 原生" value="openai"/>
@@ -108,7 +108,7 @@
       </hbox>
       <hbox align="center" class="zms-row zms-model-row">
         <label class="zms-label" id="zms-model-label" value="Model"/>
-        <html:select class="zms-field zms-model-select" id="zms-model-select" onchange="ZoteroMarkdownSummaryPrefs.selectModelFromDropdown()"></html:select>
+        <html:select class="zms-field zms-model-select" id="zms-model-select"></html:select>
         <html:input class="zms-field zms-model-custom" id="zms-model" hidden="hidden" placeholder="自定义模型名称"/>
         <html:datalist id="zms-model-options"/>
         <button id="zms-load-models-button" label="加载模型列表" oncommand="ZoteroMarkdownSummaryPrefs.loadModels()"/>
