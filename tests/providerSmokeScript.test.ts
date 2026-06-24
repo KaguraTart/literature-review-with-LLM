@@ -16,6 +16,9 @@ const NAMED_LIVE_SPECS = [
   { id: "vercel-ai-responses", envPrefix: "VERCEL_AI_RESPONSES", protocol: "openai_responses", basePath: "/vercel-responses/v1", model: "openai/gpt-4.1-mini", secret: "live-vercel-responses-secret" },
   { id: "vercel-ai-anthropic", envPrefix: "VERCEL_AI_ANTHROPIC", protocol: "anthropic_messages", basePath: "/vercel-anthropic", model: "anthropic/claude-sonnet-4.5", secret: "live-vercel-anthropic-secret" },
   { id: "cline-api", envPrefix: "CLINE", protocol: "openai_chat", basePath: "/cline/api/v1", model: "anthropic/claude-sonnet-4-6", secret: "live-cline-secret" },
+  { id: "litellm-proxy-chat", envPrefix: "LITELLM_PROXY", protocol: "openai_chat", basePath: "/litellm/v1", model: "openai/gpt-4o-mini", secret: "live-litellm-secret", apiKeyOptional: true },
+  { id: "litellm-proxy-responses", envPrefix: "LITELLM_PROXY_RESPONSES", protocol: "openai_responses", basePath: "/litellm-responses/v1", model: "openai/gpt-4o-mini", secret: "live-litellm-responses-secret", apiKeyOptional: true },
+  { id: "litellm-proxy-anthropic", envPrefix: "LITELLM_PROXY_ANTHROPIC", protocol: "anthropic_messages", basePath: "/litellm-anthropic", model: "anthropic/claude-sonnet-4-6", secret: "live-litellm-anthropic-secret", apiKeyOptional: true },
   { id: "cloudflare-ai-chat", envPrefix: "CLOUDFLARE", protocol: "openai_chat", basePath: "/cloudflare/accounts/test/ai/v1", model: "@cf/meta/llama-3.1-8b-instruct", secret: "live-cloudflare-secret" },
   { id: "cloudflare-ai-responses", envPrefix: "CLOUDFLARE_RESPONSES", protocol: "openai_responses", basePath: "/cloudflare-responses/accounts/test/ai/v1", model: "@cf/meta/llama-3.1-8b-instruct", secret: "live-cloudflare-responses-secret" },
   { id: "cloudflare-ai-anthropic", envPrefix: "CLOUDFLARE_ANTHROPIC", protocol: "anthropic_messages", basePath: "/cloudflare-anthropic/accounts/test/ai/v1", model: "claude-3-5-sonnet-20241022", secret: "live-cloudflare-anthropic-secret" },
@@ -52,9 +55,9 @@ const BASIC_LIVE_CASES = BASIC_LIVE_CASE_IDS.join(",");
 const NAMED_LIVE_CASES = NAMED_LIVE_CASE_IDS.join(",");
 const ALL_LIVE_CASE_IDS = [...BASIC_LIVE_CASE_IDS, ...NAMED_LIVE_CASE_IDS];
 const CORE_LIVE_CASE_IDS = ["openai", "openai-compatible", "openai-responses-compatible", "anthropic", "anthropic-compatible"];
-const OPENAI_CHAT_LIVE_CASE_IDS = ["openai-compatible", ...NAMED_LIVE_CASE_IDS.filter((id) => !["azure-openai", "vercel-ai-responses", "vercel-ai-anthropic", "cloudflare-ai-responses", "cloudflare-ai-anthropic", "sambanova-responses", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"].includes(id))];
-const OPENAI_RESPONSES_LIVE_CASE_IDS = ["openai", "openai-responses-compatible", "azure-openai", "vercel-ai-responses", "cloudflare-ai-responses", "sambanova-responses"];
-const ANTHROPIC_MESSAGES_LIVE_CASE_IDS = ["anthropic", "anthropic-compatible", "vercel-ai-anthropic", "cloudflare-ai-anthropic", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"];
+const OPENAI_CHAT_LIVE_CASE_IDS = ["openai-compatible", ...NAMED_LIVE_CASE_IDS.filter((id) => !["azure-openai", "vercel-ai-responses", "vercel-ai-anthropic", "litellm-proxy-responses", "litellm-proxy-anthropic", "cloudflare-ai-responses", "cloudflare-ai-anthropic", "sambanova-responses", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"].includes(id))];
+const OPENAI_RESPONSES_LIVE_CASE_IDS = ["openai", "openai-responses-compatible", "azure-openai", "vercel-ai-responses", "litellm-proxy-responses", "cloudflare-ai-responses", "sambanova-responses"];
+const ANTHROPIC_MESSAGES_LIVE_CASE_IDS = ["anthropic", "anthropic-compatible", "vercel-ai-anthropic", "litellm-proxy-anthropic", "cloudflare-ai-anthropic", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"];
 const MAINSTREAM_LIVE_CASE_IDS = ALL_LIVE_CASE_IDS;
 
 describe("provider smoke verifier", () => {

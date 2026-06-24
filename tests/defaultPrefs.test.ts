@@ -31,6 +31,9 @@ describe("default provider profiles", () => {
       "vercel-ai-responses",
       "vercel-ai-anthropic",
       "cline-api",
+      "litellm-proxy-chat",
+      "litellm-proxy-responses",
+      "litellm-proxy-anthropic",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -140,6 +143,28 @@ describe("default provider profiles", () => {
       baseURL: "https://api.cline.bot/api/v1",
       model: "anthropic/claude-sonnet-4-6",
       capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
+    });
+    expect(profiles.find((profile: any) => profile.id === "litellm-proxy-chat")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "http://localhost:4000",
+      model: "openai/gpt-4o-mini",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
+    });
+    expect(profiles.find((profile: any) => profile.id === "litellm-proxy-responses")).toMatchObject({
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "http://localhost:4000",
+      model: "openai/gpt-4o-mini",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true, modelList: true }
+    });
+    expect(profiles.find((profile: any) => profile.id === "litellm-proxy-anthropic")).toMatchObject({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "http://localhost:4000",
+      model: "anthropic/claude-sonnet-4-6",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true, modelList: true },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     });
     expect(profiles.find((profile: any) => profile.id === "cloudflare-ai-chat")).toMatchObject({
       protocol: "openai_chat",

@@ -289,7 +289,7 @@ const SOURCE_MARKERS = [
     id: "provider.live-script",
     description: "Provider live verification can skip missing env config and run configured OpenAI, OpenAI-compatible, OpenAI Responses-compatible, Anthropic, image, and PDF checks",
     files: ["scripts/verify-provider-live.mjs", "package.json", "tests/providerSmokeScript.test.ts"],
-    markers: ["runProviderLive", "providerLiveCaseCatalog", "providerLiveEnvTemplate", "providerLiveDoctor", "providerLiveCaseGroups", "formatDotenvTemplate", "formatDoctorReport", "--list", "--env-template", "--dotenv-template", "--doctor", "--provider-env-file", "--env-file", "configurationReady", "generationWithEnvFile", "modelListWithEnvFile", "imageWithEnvFile", "pdfWithEnvFile", "envFileLoaded", "envFileMissing", "imageInput", "pdfInput", "imageCommand", "pdfCommand", "capabilitiesForCase", "capabilitiesEnvForCase", "--capabilities-json", "CAPABILITIES_JSON", "per-case capability overrides", "openai-chat", "openai-responses", "anthropic-messages", "mainstream", "OPENAI_API_KEY", "OPENAI_RESPONSES_COMPATIBLE_BASE_URL", "ANTHROPIC_API_KEY", "OPENAI_COMPATIBLE_BASE_URL", "MINIMAX_API_KEY", "GEMINI_API_KEY", "AZURE_OPENAI_API_KEY", "CLINE_API_KEY", "CLOUDFLARE_API_KEY", "CLOUDFLARE_RESPONSES_API_KEY", "CLOUDFLARE_ANTHROPIC_API_KEY", "GITHUB_MODELS_API_KEY", "HUGGINGFACE_API_KEY", "DEEPINFRA_API_KEY", "FIREWORKS_API_KEY", "CEREBRAS_API_KEY", "NVIDIA_NIM_API_KEY", "SAMBANOVA_API_KEY", "SAMBANOVA_ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY", "ZAI_ANTHROPIC_API_KEY", "OLLAMA_BASE_URL", "LM_STUDIO_BASE_URL", "allowLocalNoAuth", "isLocalEndpoint", "failOnSkip", "verify:provider:live", "verify:provider:image:live", "verify:provider:pdf:live", "verify:provider:models:live", "runProviderModels", "unsupportedInputReason"]
+    markers: ["runProviderLive", "providerLiveCaseCatalog", "providerLiveEnvTemplate", "providerLiveDoctor", "providerLiveCaseGroups", "formatDotenvTemplate", "formatDoctorReport", "--list", "--env-template", "--dotenv-template", "--doctor", "--provider-env-file", "--env-file", "configurationReady", "generationWithEnvFile", "modelListWithEnvFile", "imageWithEnvFile", "pdfWithEnvFile", "envFileLoaded", "envFileMissing", "imageInput", "pdfInput", "imageCommand", "pdfCommand", "capabilitiesForCase", "capabilitiesEnvForCase", "--capabilities-json", "CAPABILITIES_JSON", "per-case capability overrides", "openai-chat", "openai-responses", "anthropic-messages", "mainstream", "OPENAI_API_KEY", "OPENAI_RESPONSES_COMPATIBLE_BASE_URL", "ANTHROPIC_API_KEY", "OPENAI_COMPATIBLE_BASE_URL", "MINIMAX_API_KEY", "GEMINI_API_KEY", "AZURE_OPENAI_API_KEY", "CLINE_API_KEY", "LITELLM_PROXY_API_KEY", "LITELLM_PROXY_RESPONSES_API_KEY", "LITELLM_PROXY_ANTHROPIC_API_KEY", "CLOUDFLARE_API_KEY", "CLOUDFLARE_RESPONSES_API_KEY", "CLOUDFLARE_ANTHROPIC_API_KEY", "GITHUB_MODELS_API_KEY", "HUGGINGFACE_API_KEY", "DEEPINFRA_API_KEY", "FIREWORKS_API_KEY", "CEREBRAS_API_KEY", "NVIDIA_NIM_API_KEY", "SAMBANOVA_API_KEY", "SAMBANOVA_ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY", "ZAI_ANTHROPIC_API_KEY", "OLLAMA_BASE_URL", "LM_STUDIO_BASE_URL", "allowLocalNoAuth", "isLocalEndpoint", "failOnSkip", "verify:provider:live", "verify:provider:image:live", "verify:provider:pdf:live", "verify:provider:models:live", "runProviderModels", "unsupportedInputReason"]
   },
   {
     id: "provider.model-list-pagination",
@@ -938,22 +938,22 @@ function addReadmeUiTextChecks(checks) {
     {
       file: "README.md",
       required: [
-        { id: "refresh-models", marker: "`Refresh models`" },
+        { id: "load-model-list", marker: "`Load model list`" },
         { id: "restores-provider-credentials", marker: "switching back to a previously saved provider restores that provider's own key and model" }
       ],
       forbidden: [
-        { id: "load-model-list", marker: "`Load model list`" },
+        { id: "refresh-models", marker: "`Refresh models`" },
         { id: "clears-old-api-key", marker: "clears the old API key" }
       ]
     },
     {
       file: "README.zh-CN.md",
       required: [
-        { id: "refresh-models", marker: "`刷新模型`" },
+        { id: "load-model-list", marker: "`加载模型列表`" },
         { id: "restores-provider-credentials", marker: "切回已保存过的厂商时会恢复该厂商自己的 key 和模型" }
       ],
       forbidden: [
-        { id: "load-model-list", marker: "`加载模型列表`" },
+        { id: "refresh-models", marker: "`刷新模型`" },
         { id: "clears-old-api-key", marker: "清空旧 API key" }
       ]
     }

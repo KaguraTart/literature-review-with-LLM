@@ -273,6 +273,25 @@ describe("bootstrap provider helpers", () => {
       model: "anthropic/claude-sonnet-4-6",
       capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
     });
+    expect(helpers.settingsProviderDefaults("litellm_proxy_chat")).toMatchObject({
+      protocol: "openai_chat",
+      baseURL: "http://localhost:4000",
+      model: "openai/gpt-4o-mini",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
+    });
+    expect(helpers.settingsProviderDefaults("litellm_proxy_responses")).toMatchObject({
+      protocol: "openai_responses",
+      baseURL: "http://localhost:4000",
+      model: "openai/gpt-4o-mini",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true, modelList: true }
+    });
+    expect(helpers.settingsProviderDefaults("litellm_proxy_anthropic")).toMatchObject({
+      protocol: "anthropic_messages",
+      baseURL: "http://localhost:4000",
+      model: "anthropic/claude-sonnet-4-6",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true, modelList: true },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    });
     expect(helpers.settingsProviderDefaults("cloudflare_ai_chat")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
@@ -361,6 +380,19 @@ describe("bootstrap provider helpers", () => {
       protocol: "openai_chat",
       baseURL: "https://api.cline.bot/api/v1"
     })).toBe("cline_api");
+    expect(helpers.settingsProviderFromProfile({
+      id: "litellm-proxy-chat",
+      protocol: "openai_chat",
+      baseURL: "http://localhost:4000"
+    })).toBe("litellm_proxy_chat");
+    expect(helpers.settingsProviderFromProfile({
+      protocol: "openai_responses",
+      baseURL: "http://localhost:4000/v1/responses"
+    })).toBe("litellm_proxy_responses");
+    expect(helpers.settingsProviderFromProfile({
+      protocol: "anthropic_messages",
+      baseURL: "http://127.0.0.1:4000/v1/messages"
+    })).toBe("litellm_proxy_anthropic");
     expect(helpers.settingsProviderFromProfile({
       id: "cloudflare-workers-ai",
       protocol: "openai_chat",

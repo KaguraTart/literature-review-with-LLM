@@ -68,13 +68,13 @@ describe("project readiness check", () => {
     const report = collectReadinessChecks({ includeXpi: false });
     const checkById = new Map(report.checks.map((check: { id: string; status: string }) => [check.id, check.status]));
 
-    expect(checkById.get("readme.ui-text.required.README.md.refresh-models")).toBe("pass");
+    expect(checkById.get("readme.ui-text.required.README.md.load-model-list")).toBe("pass");
     expect(checkById.get("readme.ui-text.required.README.md.restores-provider-credentials")).toBe("pass");
-    expect(checkById.get("readme.ui-text.forbidden.README.md.load-model-list")).toBe("pass");
+    expect(checkById.get("readme.ui-text.forbidden.README.md.refresh-models")).toBe("pass");
     expect(checkById.get("readme.ui-text.forbidden.README.md.clears-old-api-key")).toBe("pass");
-    expect(checkById.get("readme.ui-text.required.README.zh-CN.md.refresh-models")).toBe("pass");
+    expect(checkById.get("readme.ui-text.required.README.zh-CN.md.load-model-list")).toBe("pass");
     expect(checkById.get("readme.ui-text.required.README.zh-CN.md.restores-provider-credentials")).toBe("pass");
-    expect(checkById.get("readme.ui-text.forbidden.README.zh-CN.md.load-model-list")).toBe("pass");
+    expect(checkById.get("readme.ui-text.forbidden.README.zh-CN.md.refresh-models")).toBe("pass");
     expect(checkById.get("readme.ui-text.forbidden.README.zh-CN.md.clears-old-api-key")).toBe("pass");
   });
 

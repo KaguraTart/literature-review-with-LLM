@@ -2490,6 +2490,9 @@ function workbenchProviderPresetIds() {
     "vercel_ai_responses",
     "vercel_ai_anthropic",
     "cline_api",
+    "litellm_proxy_chat",
+    "litellm_proxy_responses",
+    "litellm_proxy_anthropic",
     "cloudflare_ai_chat",
     "cloudflare_ai_responses",
     "cloudflare_ai_anthropic",
@@ -2548,6 +2551,9 @@ function workbenchProviderMenuLabels(language) {
     vercel_ai_responses: zh ? "Vercel AI Gateway Responses 接口" : "Vercel AI Gateway Responses",
     vercel_ai_anthropic: zh ? "Vercel AI Gateway Anthropic 接口" : "Vercel AI Gateway Anthropic",
     cline_api: zh ? "Cline API 聊天接口" : "Cline API Chat",
+    litellm_proxy_chat: zh ? "LiteLLM Proxy 聊天接口" : "LiteLLM Proxy Chat",
+    litellm_proxy_responses: zh ? "LiteLLM Proxy Responses 接口" : "LiteLLM Proxy Responses",
+    litellm_proxy_anthropic: zh ? "LiteLLM Proxy Anthropic 接口" : "LiteLLM Proxy Anthropic",
     cloudflare_ai_chat: zh ? "Cloudflare AI 聊天接口" : "Cloudflare AI Chat",
     cloudflare_ai_responses: zh ? "Cloudflare AI Responses 接口" : "Cloudflare AI Responses",
     cloudflare_ai_anthropic: zh ? "Cloudflare AI Anthropic 接口" : "Cloudflare AI Anthropic",
@@ -2616,6 +2622,9 @@ function providerProfileCatalogKey(profile) {
   if (id === "vercel_ai_responses") return "vercel-ai-responses";
   if (id === "vercel_ai_anthropic") return "vercel-ai-anthropic";
   if (id === "cline_api") return "cline-api";
+  if (id === "litellm_proxy_chat") return "litellm-proxy-chat";
+  if (id === "litellm_proxy_responses") return "litellm-proxy-responses";
+  if (id === "litellm_proxy_anthropic") return "litellm-proxy-anthropic";
   if (id === "cloudflare_ai_chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") return "cloudflare-ai-chat";
   if (id === "cloudflare_ai_responses") return "cloudflare-ai-responses";
   if (id === "cloudflare_ai_anthropic") return "cloudflare-ai-anthropic";
@@ -2682,6 +2691,9 @@ function defaultProviderProfileIds() {
     "vercel-ai-responses",
     "vercel-ai-anthropic",
     "cline-api",
+    "litellm-proxy-chat",
+    "litellm-proxy-responses",
+    "litellm-proxy-anthropic",
     "cloudflare-ai-chat",
     "cloudflare-ai-responses",
     "cloudflare-ai-anthropic",
@@ -2791,6 +2803,15 @@ function workbenchProviderDefaultsRaw(provider) {
   }
   if (id === "cline_api" || id === "cline-api") {
     return { id: "cline-api", name: "Cline API", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.cline.bot/api/v1", model: "", capabilities: { ...imageCapabilities, pdfBase64: false }, bodyExtra: {} };
+  }
+  if (id === "litellm_proxy_chat" || id === "litellm-proxy-chat") {
+    return { id: "litellm-proxy-chat", name: "LiteLLM Proxy Chat", protocol: "openai_chat", endpointMode: "base_url", baseURL: "http://localhost:4000", model: "", capabilities: { ...imageCapabilities, pdfBase64: false }, bodyExtra: {} };
+  }
+  if (id === "litellm_proxy_responses" || id === "litellm-proxy-responses") {
+    return { id: "litellm-proxy-responses", name: "LiteLLM Proxy Responses", protocol: "openai_responses", endpointMode: "base_url", baseURL: "http://localhost:4000", model: "", capabilities: { ...imageCapabilities, pdfBase64: true }, bodyExtra: {} };
+  }
+  if (id === "litellm_proxy_anthropic" || id === "litellm-proxy-anthropic") {
+    return { id: "litellm-proxy-anthropic", name: "LiteLLM Proxy Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "http://localhost:4000", model: "", capabilities: { ...imageCapabilities, pdfBase64: true }, bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false } };
   }
   if (id === "cloudflare_ai_chat" || id === "cloudflare-ai-chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") {
     return { id: "cloudflare-ai-chat", name: "Cloudflare AI OpenAI Chat", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
@@ -2920,6 +2941,9 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   if (id === "vercel-ai-responses" || id === "vercel_ai_responses") return "vercel_ai_responses";
   if (id === "vercel-ai-anthropic" || id === "vercel_ai_anthropic") return "vercel_ai_anthropic";
   if (id === "cline-api" || id === "cline_api") return "cline_api";
+  if (id === "litellm-proxy-chat" || id === "litellm_proxy_chat") return "litellm_proxy_chat";
+  if (id === "litellm-proxy-responses" || id === "litellm_proxy_responses") return "litellm_proxy_responses";
+  if (id === "litellm-proxy-anthropic" || id === "litellm_proxy_anthropic") return "litellm_proxy_anthropic";
   if (id === "cloudflare-ai-chat" || id === "cloudflare_ai_chat" || id === "cloudflare-workers-ai" || id === "cloudflare_workers_ai") return "cloudflare_ai_chat";
   if (id === "cloudflare-ai-responses" || id === "cloudflare_ai_responses") return "cloudflare_ai_responses";
   if (id === "cloudflare-ai-anthropic" || id === "cloudflare_ai_anthropic") return "cloudflare_ai_anthropic";
@@ -2931,7 +2955,7 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   if (id === "zai-anthropic" || id === "zai_anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") return "zai_anthropic";
   if (id === "anthropic-compatible" || id === "anthropic_compatible") return "anthropic_compatible";
   if (id === "openai-responses-compatible" || id === "openai_responses_compatible") return "openai_responses_compatible";
-  if (["vercel_ai_chat", "vercel_ai_responses", "vercel_ai_anthropic", "cline_api", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "deepinfra", "fireworks", "cerebras", "sambanova", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "gemini"].includes(id)) return id;
+  if (["vercel_ai_chat", "vercel_ai_responses", "vercel_ai_anthropic", "cline_api", "litellm_proxy_chat", "litellm_proxy_responses", "litellm_proxy_anthropic", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "deepinfra", "fireworks", "cerebras", "sambanova", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "gemini"].includes(id)) return id;
   if (id === "glm" || id === "bigmodel") return "zhipu";
   if (id === "ark" || id === "doubao") return "volcengine";
   if (id === "baidu") return "qianfan";
@@ -2952,6 +2976,11 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
     if (profile?.protocol === "anthropic_messages") return "vercel_ai_anthropic";
   }
   if (baseURL === "https://api.cline.bot/api/v1" || baseURL === "https://api.cline.bot/api/v1/chat/completions") return "cline_api";
+  if (baseURL === "http://localhost:4000" || baseURL === "http://localhost:4000/v1" || baseURL === "http://localhost:4000/v1/chat/completions" || baseURL === "http://localhost:4000/v1/responses" || baseURL === "http://localhost:4000/v1/messages" || baseURL === "http://127.0.0.1:4000" || baseURL === "http://127.0.0.1:4000/v1" || baseURL === "http://127.0.0.1:4000/v1/chat/completions" || baseURL === "http://127.0.0.1:4000/v1/responses" || baseURL === "http://127.0.0.1:4000/v1/messages") {
+    if (profile?.protocol === "openai_responses") return "litellm_proxy_responses";
+    if (profile?.protocol === "anthropic_messages") return "litellm_proxy_anthropic";
+    return "litellm_proxy_chat";
+  }
   if (/^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[^/]+\/ai\/v1(?:\/(?:chat\/completions|responses|messages))?$/i.test(baseURL)) {
     if (profile?.protocol === "openai_responses") return "cloudflare_ai_responses";
     if (profile?.protocol === "anthropic_messages") return "cloudflare_ai_anthropic";
@@ -3240,7 +3269,7 @@ function providerDiagnosticsLabels(outputLanguage) {
       modelListLiveCheck: "模型列表 live 检查",
       statusSnapshot: "当前状态快照",
       troubleshooting: "排查清单",
-      checkModel: "确认模型名称真实存在，必要时先点击“刷新模型”。",
+      checkModel: "确认模型名称真实存在，必要时先点击“加载模型列表”。",
       checkEndpoint: "确认 Base URL 不重复包含 /chat/completions、/responses、/messages 或 /models。",
       checkAuth: "确认 API key 或自定义认证 header 属于当前厂商。",
       checkCapabilities: "图片/PDF/流式开关要和模型能力一致。",
@@ -3312,7 +3341,7 @@ function providerDiagnosticsLabels(outputLanguage) {
     modelListLiveCheck: "Model-list Live Check",
     statusSnapshot: "Current Status Snapshot",
     troubleshooting: "Troubleshooting Checklist",
-    checkModel: "Confirm the model name exists. Use Refresh models first when available.",
+    checkModel: "Confirm the model name exists. Use Load model list first when available.",
     checkEndpoint: "Confirm the Base URL does not duplicate /chat/completions, /responses, /messages, or /models.",
     checkAuth: "Confirm the API key or custom authentication header belongs to the selected provider.",
     checkCapabilities: "Keep image/PDF/streaming toggles aligned with the model's real capabilities.",
@@ -3567,6 +3596,12 @@ function providerLiveVerifyCaseForWorkbench(profile, provider = workbenchProvide
     "vercel-ai-anthropic": ["vercel-ai-anthropic", "VERCEL_AI_ANTHROPIC"],
     cline_api: ["cline-api", "CLINE"],
     "cline-api": ["cline-api", "CLINE"],
+    litellm_proxy_chat: ["litellm-proxy-chat", "LITELLM_PROXY", true],
+    "litellm-proxy-chat": ["litellm-proxy-chat", "LITELLM_PROXY", true],
+    litellm_proxy_responses: ["litellm-proxy-responses", "LITELLM_PROXY_RESPONSES", true],
+    "litellm-proxy-responses": ["litellm-proxy-responses", "LITELLM_PROXY_RESPONSES", true],
+    litellm_proxy_anthropic: ["litellm-proxy-anthropic", "LITELLM_PROXY_ANTHROPIC", true],
+    "litellm-proxy-anthropic": ["litellm-proxy-anthropic", "LITELLM_PROXY_ANTHROPIC", true],
     cloudflare_ai_chat: ["cloudflare-ai-chat", "CLOUDFLARE", true],
     "cloudflare-ai-chat": ["cloudflare-ai-chat", "CLOUDFLARE", true],
     cloudflare_workers_ai: ["cloudflare-ai-chat", "CLOUDFLARE", true],
@@ -3778,6 +3813,11 @@ function providerEnvAliasesForWorkbench(provider, prefix) {
     aliases.apiKey.push("CLINE_BOT_API_KEY");
     aliases.model.push("CLINE_API_MODEL");
     aliases.baseURL.push("CLINE_API_BASE_URL", "CLINE_ENDPOINT");
+  }
+  if (key === "litellm_proxy_chat" || key === "litellm_proxy_responses" || key === "litellm_proxy_anthropic") {
+    aliases.apiKey.push("LITELLM_API_KEY", "LITELLM_PROXY_KEY", "LITELLM_MASTER_KEY");
+    aliases.model.push("LITELLM_MODEL");
+    aliases.baseURL.push("LITELLM_BASE_URL", "LITELLM_PROXY_URL", "LITELLM_ENDPOINT");
   }
   if (key === "cloudflare_ai_chat" || key === "cloudflare_ai_responses" || key === "cloudflare_ai_anthropic") {
     aliases.apiKey.push("CLOUDFLARE_API_TOKEN");

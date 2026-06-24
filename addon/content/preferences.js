@@ -898,8 +898,8 @@ function prefFallbackMessage(key, lang) {
     modelSelectPlaceholder: zh ? "选择厂商推荐模型" : "Choose provider model",
     modelSelectCustom: zh ? "自定义模型..." : "Custom model...",
     modelPickerHelp: zh
-      ? "先选择模型厂商，模型下拉会自动显示该厂商的推荐模型；点击“刷新模型”可追加在线模型。普通用户直接选下拉项，只有私有部署或自定义路由才选“自定义模型”。"
-      : "Choose a provider first; the model dropdown shows that provider's recommended models. Refresh models adds online models when available. Most users can pick from the dropdown; use Custom model only for private deployments or custom routers.",
+      ? "先选择模型厂商，模型下拉会自动显示该厂商的推荐模型；点击“加载模型列表”可追加在线模型。普通用户直接选下拉项，只有私有部署或自定义路由才选“自定义模型”。"
+      : "Choose a provider first; the model dropdown shows that provider's recommended models. Load model list adds online models when available. Most users can pick from the dropdown; use Custom model only for private deployments or custom routers.",
     onlineModels: zh ? "在线模型" : "Online",
     recommendedModels: zh ? "推荐模型" : "Recommended",
     providerEnv: zh ? "粘贴环境变量配置" : "Paste env config",
@@ -943,7 +943,7 @@ function prefFallbackMessage(key, lang) {
     test: zh ? "测试连接" : "Test connection",
     saveAndTest: zh ? "保存并测试" : "Save and Test",
     testing: zh ? "正在测试连接" : "Testing connection",
-    loadModels: zh ? "刷新模型" : "Refresh models",
+    loadModels: zh ? "加载模型列表" : "Load model list",
     loadProfile: zh ? "加载档案" : "Load profile",
     saveProfile: zh ? "保存档案" : "Save profile",
     deleteProfile: zh ? "删除档案" : "Delete profile",
@@ -957,7 +957,7 @@ function prefFallbackMessage(key, lang) {
     modelListUnavailable: zh ? "当前档案不支持在线模型列表，已显示推荐模型" : "This profile cannot fetch an online model list; recommended models are shown",
     modelListLoaded: zh ? "已加载在线模型" : "Models loaded",
     modelListEmpty: zh ? "未返回在线模型，已保留推荐模型" : "No online models returned; kept recommendations",
-    modelListLoading: zh ? "正在刷新模型列表" : "Refreshing model list",
+    modelListLoading: zh ? "正在加载模型列表" : "Loading model list",
     modelRecommendationsLoaded: zh ? "已加载推荐模型" : "Recommended models loaded",
     modelListFailedUsingRecommendations: zh ? "在线模型列表加载失败，已保留推荐模型" : "Online model list failed; kept recommendations",
     testOk: zh ? "连接成功" : "Connection succeeded",
@@ -1059,6 +1059,9 @@ function providerMenuLabels(zh) {
     vercel_ai_responses: zh ? "Vercel AI Gateway Responses 接口" : "Vercel AI Gateway Responses",
     vercel_ai_anthropic: zh ? "Vercel AI Gateway Anthropic 接口" : "Vercel AI Gateway Anthropic",
     cline_api: zh ? "Cline API 聊天接口" : "Cline API Chat",
+    litellm_proxy_chat: zh ? "LiteLLM Proxy 聊天接口" : "LiteLLM Proxy Chat",
+    litellm_proxy_responses: zh ? "LiteLLM Proxy Responses 接口" : "LiteLLM Proxy Responses",
+    litellm_proxy_anthropic: zh ? "LiteLLM Proxy Anthropic 接口" : "LiteLLM Proxy Anthropic",
     cloudflare_ai_chat: zh ? "Cloudflare AI 聊天接口" : "Cloudflare AI Chat",
     cloudflare_ai_responses: zh ? "Cloudflare AI Responses 接口" : "Cloudflare AI Responses",
     cloudflare_ai_anthropic: zh ? "Cloudflare AI Anthropic 接口" : "Cloudflare AI Anthropic",
@@ -1136,8 +1139,8 @@ function applyPreferenceTextLabels(lang) {
     "zms-cap-toolUse-label": zh ? "工具调用" : "Tool use",
     "zms-cap-modelList-label": zh ? "在线模型列表" : "Model list",
     "zms-model-help": zh
-      ? "先选择模型厂商，模型下拉会自动显示该厂商的推荐模型；点击“刷新模型”可追加在线模型。普通用户直接选下拉项，只有私有部署或自定义路由才选“自定义模型”。"
-      : "Choose a provider first; the model dropdown shows that provider's recommended models. Refresh models adds online models when available. Most users can pick from the dropdown; use Custom model only for private deployments or custom routers.",
+      ? "先选择模型厂商，模型下拉会自动显示该厂商的推荐模型；点击“加载模型列表”可追加在线模型。普通用户直接选下拉项，只有私有部署或自定义路由才选“自定义模型”。"
+      : "Choose a provider first; the model dropdown shows that provider's recommended models. Load model list adds online models when available. Most users can pick from the dropdown; use Custom model only for private deployments or custom routers.",
     "zms-local-agent-note-1": zh
       ? "按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"
       : "Configure endpoint/tool/timeout/payloadMode by skill id. Empty objects are allowed. ask-all/check fall back to ask-gemini / ask-claude / ask-opencode when no separate mapping is set; ask-gemini-claude can call only Gemini and Claude.",
@@ -1968,7 +1971,7 @@ function providerSetupGuide(profile, language = "en-US") {
       `基础地址：${profile.baseURL || defaults.baseURL || "未填写"}`,
       `请求地址：${endpoint || "未配置"}`,
       `鉴权：${auth}`,
-      `模型：${profile.model || "请选择模型，或点击“刷新模型”后选择"}`,
+      `模型：${profile.model || "请选择模型，或点击“加载模型列表”后选择"}`,
       `能力：${capabilities || "文本"}`,
       `模型列表：${modelList || "当前档案不支持自动加载模型列表"}`,
       `保存后测试：点击“测试连接”；失败信息会隐藏完整 API Key。`,
@@ -1990,7 +1993,7 @@ function providerSetupGuide(profile, language = "en-US") {
     `Base URL: ${profile.baseURL || defaults.baseURL || "not set"}`,
     `Request endpoint: ${endpoint || "not configured"}`,
     `Auth: ${auth}`,
-    `Model: ${profile.model || "choose a model, or use Refresh models"}`,
+    `Model: ${profile.model || "choose a model, or use Load model list"}`,
     `Capabilities: ${capabilities || "text"}`,
     `Model list: ${modelList || "not available for this profile"}`,
     "After saving: click Test connection. Failure messages hide full API keys.",
@@ -2150,6 +2153,15 @@ function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)
   }
   if (provider === "cline_api") {
     return { include: "cline-api", apiKeyEnv: "CLINE_API_KEY", modelEnv: "CLINE_MODEL", baseURLEnv: "CLINE_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "litellm_proxy_chat") {
+    return { include: "litellm-proxy-chat", apiKeyEnv: "LITELLM_PROXY_API_KEY", modelEnv: "LITELLM_PROXY_MODEL", baseURLEnv: "LITELLM_PROXY_BASE_URL", includeBaseURL: true, apiKeyOptional };
+  }
+  if (provider === "litellm_proxy_responses") {
+    return { include: "litellm-proxy-responses", apiKeyEnv: "LITELLM_PROXY_RESPONSES_API_KEY", modelEnv: "LITELLM_PROXY_RESPONSES_MODEL", baseURLEnv: "LITELLM_PROXY_RESPONSES_BASE_URL", includeBaseURL: true, apiKeyOptional };
+  }
+  if (provider === "litellm_proxy_anthropic") {
+    return { include: "litellm-proxy-anthropic", apiKeyEnv: "LITELLM_PROXY_ANTHROPIC_API_KEY", modelEnv: "LITELLM_PROXY_ANTHROPIC_MODEL", baseURLEnv: "LITELLM_PROXY_ANTHROPIC_BASE_URL", includeBaseURL: true, apiKeyOptional };
   }
   if (provider === "cloudflare_ai_chat") {
     return { include: "cloudflare-ai-chat", apiKeyEnv: "CLOUDFLARE_API_KEY", modelEnv: "CLOUDFLARE_MODEL", baseURLEnv: "CLOUDFLARE_BASE_URL", includeBaseURL: true, apiKeyOptional };
@@ -2391,6 +2403,11 @@ function providerEnvAliases(provider, prefix) {
     aliases.apiKey.push("CLINE_BOT_API_KEY");
     aliases.model.push("CLINE_API_MODEL");
     aliases.baseURL.push("CLINE_API_BASE_URL", "CLINE_ENDPOINT");
+  }
+  if (key === "litellm_proxy_chat" || key === "litellm_proxy_responses" || key === "litellm_proxy_anthropic") {
+    aliases.apiKey.push("LITELLM_API_KEY", "LITELLM_PROXY_KEY", "LITELLM_MASTER_KEY");
+    aliases.model.push("LITELLM_MODEL");
+    aliases.baseURL.push("LITELLM_BASE_URL", "LITELLM_PROXY_URL", "LITELLM_ENDPOINT");
   }
   if (key === "gemini") {
     aliases.apiKey.push("GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY");
@@ -4956,6 +4973,45 @@ function providerDefaultsRaw(provider) {
       bodyExtra: {}
     };
   }
+  if (id === "litellm_proxy_chat" || id === "litellm-proxy-chat") {
+    return {
+      id: "litellm-proxy-chat",
+      name: "LiteLLM Proxy Chat",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "http://localhost:4000",
+      fullURL: "",
+      model: "",
+      capabilities: { ...imageCapabilities, pdfBase64: false },
+      bodyExtra: {}
+    };
+  }
+  if (id === "litellm_proxy_responses" || id === "litellm-proxy-responses") {
+    return {
+      id: "litellm-proxy-responses",
+      name: "LiteLLM Proxy Responses",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "http://localhost:4000",
+      fullURL: "",
+      model: "",
+      capabilities: { ...imageCapabilities, pdfBase64: true },
+      bodyExtra: {}
+    };
+  }
+  if (id === "litellm_proxy_anthropic" || id === "litellm-proxy-anthropic") {
+    return {
+      id: "litellm-proxy-anthropic",
+      name: "LiteLLM Proxy Anthropic",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "http://localhost:4000",
+      fullURL: "",
+      model: "",
+      capabilities: { ...imageCapabilities, pdfBase64: true },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    };
+  }
   if (id === "cloudflare_ai_chat" || id === "cloudflare-ai-chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") {
     return {
       id: "cloudflare-ai-chat",
@@ -5413,7 +5469,7 @@ function recommendedDefaultModelForProvider(provider, defaults = {}) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "vercel_ai_chat", "vercel_ai_responses", "vercel_ai_anthropic", "cline_api", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "vercel_ai_chat", "vercel_ai_responses", "vercel_ai_anthropic", "cline_api", "litellm_proxy_chat", "litellm_proxy_responses", "litellm_proxy_anthropic", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = providerDefaults(provider);
     return {
       id: defaults.id,
@@ -5466,6 +5522,9 @@ function providerProfileCatalogKey(profile) {
   if (id === "vercel_ai_responses") return "vercel-ai-responses";
   if (id === "vercel_ai_anthropic") return "vercel-ai-anthropic";
   if (id === "cline_api") return "cline-api";
+  if (id === "litellm_proxy_chat") return "litellm-proxy-chat";
+  if (id === "litellm_proxy_responses") return "litellm-proxy-responses";
+  if (id === "litellm_proxy_anthropic") return "litellm-proxy-anthropic";
   if (id === "cloudflare_ai_chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") return "cloudflare-ai-chat";
   if (id === "cloudflare_ai_responses") return "cloudflare-ai-responses";
   if (id === "cloudflare_ai_anthropic") return "cloudflare-ai-anthropic";
@@ -5510,6 +5569,12 @@ function isKnownProviderId(value) {
     "vercel_ai_anthropic",
     "cline-api",
     "cline_api",
+    "litellm-proxy-chat",
+    "litellm_proxy_chat",
+    "litellm-proxy-responses",
+    "litellm_proxy_responses",
+    "litellm-proxy-anthropic",
+    "litellm_proxy_anthropic",
     "cloudflare-ai-chat",
     "cloudflare_ai_chat",
     "cloudflare-workers-ai",
@@ -5583,6 +5648,10 @@ function isKnownProviderBaseURL(value) {
     "https://ai-gateway.vercel.sh",
     "https://ai-gateway.vercel.sh/v1",
     "https://api.cline.bot/api/v1",
+    "http://localhost:4000",
+    "http://localhost:4000/v1",
+    "http://127.0.0.1:4000",
+    "http://127.0.0.1:4000/v1",
     "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
     "https://models.github.ai/inference",
     "https://router.huggingface.co/v1",
@@ -5639,6 +5708,9 @@ function allRecommendedProviderModelIds() {
     "vercel_ai_responses",
     "vercel_ai_anthropic",
     "cline_api",
+    "litellm_proxy_chat",
+    "litellm_proxy_responses",
+    "litellm_proxy_anthropic",
     "cloudflare_ai_chat",
     "cloudflare_ai_responses",
     "cloudflare_ai_anthropic",
@@ -5832,6 +5904,9 @@ function providerFromProfile(profile) {
   if (id === "vercel-ai-responses" || id === "vercel_ai_responses") return "vercel_ai_responses";
   if (id === "vercel-ai-anthropic" || id === "vercel_ai_anthropic") return "vercel_ai_anthropic";
   if (id === "cline-api" || id === "cline_api") return "cline_api";
+  if (id === "litellm-proxy-chat" || id === "litellm_proxy_chat") return "litellm_proxy_chat";
+  if (id === "litellm-proxy-responses" || id === "litellm_proxy_responses") return "litellm_proxy_responses";
+  if (id === "litellm-proxy-anthropic" || id === "litellm_proxy_anthropic") return "litellm_proxy_anthropic";
   if (id === "cloudflare-ai-chat" || id === "cloudflare_ai_chat" || id === "cloudflare-workers-ai" || id === "cloudflare_workers_ai") return "cloudflare_ai_chat";
   if (id === "cloudflare-ai-responses" || id === "cloudflare_ai_responses") return "cloudflare_ai_responses";
   if (id === "cloudflare-ai-anthropic" || id === "cloudflare_ai_anthropic") return "cloudflare_ai_anthropic";
@@ -5870,6 +5945,11 @@ function providerFromProfile(profile) {
     if (profile?.protocol === "anthropic_messages") return "vercel_ai_anthropic";
   }
   if (baseURL === "https://api.cline.bot/api/v1" || baseURL === "https://api.cline.bot/api/v1/chat/completions") return "cline_api";
+  if (baseURL === "http://localhost:4000" || baseURL === "http://localhost:4000/v1" || baseURL === "http://localhost:4000/v1/chat/completions" || baseURL === "http://localhost:4000/v1/responses" || baseURL === "http://localhost:4000/v1/messages" || baseURL === "http://127.0.0.1:4000" || baseURL === "http://127.0.0.1:4000/v1" || baseURL === "http://127.0.0.1:4000/v1/chat/completions" || baseURL === "http://127.0.0.1:4000/v1/responses" || baseURL === "http://127.0.0.1:4000/v1/messages") {
+    if (profile?.protocol === "openai_responses") return "litellm_proxy_responses";
+    if (profile?.protocol === "anthropic_messages") return "litellm_proxy_anthropic";
+    return "litellm_proxy_chat";
+  }
   if (/^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[^/]+\/ai\/v1(?:\/(?:chat\/completions|responses|messages))?$/i.test(baseURL)) {
     if (profile?.protocol === "openai_responses") return "cloudflare_ai_responses";
     if (profile?.protocol === "anthropic_messages") return "cloudflare_ai_anthropic";
@@ -5975,6 +6055,9 @@ function defaultProviderProfileIds() {
     "vercel-ai-responses",
     "vercel-ai-anthropic",
     "cline-api",
+    "litellm-proxy-chat",
+    "litellm-proxy-responses",
+    "litellm-proxy-anthropic",
     "cloudflare-ai-chat",
     "cloudflare-ai-responses",
     "cloudflare-ai-anthropic",

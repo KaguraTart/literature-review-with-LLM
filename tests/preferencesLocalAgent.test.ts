@@ -1542,6 +1542,28 @@ describe("preferences local-agent config helpers", () => {
       model: "anthropic/claude-sonnet-4-6",
       capabilities: { streaming: true, pdfBase64: false, imageBase64: true, modelList: true }
     });
+    expect(helpers.providerDefaults("litellm_proxy_chat")).toMatchObject({
+      id: "litellm-proxy-chat",
+      protocol: "openai_chat",
+      baseURL: "http://localhost:4000",
+      model: "openai/gpt-4o-mini",
+      capabilities: { streaming: true, pdfBase64: false, imageBase64: true, modelList: true }
+    });
+    expect(helpers.providerDefaults("litellm_proxy_responses")).toMatchObject({
+      id: "litellm-proxy-responses",
+      protocol: "openai_responses",
+      baseURL: "http://localhost:4000",
+      model: "openai/gpt-4o-mini",
+      capabilities: { streaming: true, pdfBase64: true, imageBase64: true, modelList: true }
+    });
+    expect(helpers.providerDefaults("litellm_proxy_anthropic")).toMatchObject({
+      id: "litellm-proxy-anthropic",
+      protocol: "anthropic_messages",
+      baseURL: "http://localhost:4000",
+      model: "anthropic/claude-sonnet-4-6",
+      capabilities: { streaming: true, pdfBase64: true, imageBase64: true, modelList: true },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    });
     expect(helpers.providerDefaults("cloudflare_ai_chat")).toMatchObject({
       id: "cloudflare-ai-chat",
       protocol: "openai_chat",
@@ -1750,6 +1772,9 @@ describe("preferences local-agent config helpers", () => {
       "vercel-ai-responses",
       "vercel-ai-anthropic",
       "cline-api",
+      "litellm-proxy-chat",
+      "litellm-proxy-responses",
+      "litellm-proxy-anthropic",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -2072,6 +2097,9 @@ describe("preferences local-agent config helpers", () => {
       "vercel-ai-responses",
       "vercel-ai-anthropic",
       "cline-api",
+      "litellm-proxy-chat",
+      "litellm-proxy-responses",
+      "litellm-proxy-anthropic",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -2221,6 +2249,24 @@ describe("preferences local-agent config helpers", () => {
       baseURL: "https://api.cline.bot/api/v1/chat/completions",
       bodyExtra: {}
     })).toBe("cline_api");
+    expect(helpers.providerFromProfile({
+      id: "custom-litellm",
+      protocol: "openai_chat",
+      baseURL: "http://localhost:4000/v1/chat/completions",
+      bodyExtra: {}
+    })).toBe("litellm_proxy_chat");
+    expect(helpers.providerFromProfile({
+      id: "custom-litellm-responses",
+      protocol: "openai_responses",
+      baseURL: "http://localhost:4000/v1/responses",
+      bodyExtra: {}
+    })).toBe("litellm_proxy_responses");
+    expect(helpers.providerFromProfile({
+      id: "custom-litellm-anthropic",
+      protocol: "anthropic_messages",
+      baseURL: "http://127.0.0.1:4000/v1/messages",
+      bodyExtra: {}
+    })).toBe("litellm_proxy_anthropic");
     expect(helpers.providerFromProfile({
       id: "cloudflare_workers_ai",
       protocol: "openai_chat",
@@ -2660,6 +2706,11 @@ describe("preferences local-agent config helpers", () => {
       apiKey: "cline-secret",
       model: "anthropic/claude-sonnet-4-6"
     }, "en-US");
+    const litellmGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("litellm_proxy_chat"),
+      apiKey: "litellm-secret",
+      model: "openai/gpt-4o-mini"
+    }, "en-US");
 
     expect(minimaxGuide).toContain("MINIMAX_API_KEY=...");
     expect(minimaxGuide).toContain("MINIMAX_MODEL=MiniMax-M2.7-highspeed");
@@ -2699,6 +2750,11 @@ describe("preferences local-agent config helpers", () => {
     expect(clineGuide).toContain("--include cline-api");
     expect(clineGuide).toContain("Image live check: CLINE_API_KEY=... CLINE_MODEL=anthropic/claude-sonnet-4-6 npm run verify:provider:image:live -- --include cline-api");
     expect(clineGuide).not.toContain("cline-secret");
+    expect(litellmGuide).toContain("Auth: Local endpoint; API key is usually optional unless your gateway requires one.");
+    expect(litellmGuide).toContain("LITELLM_PROXY_MODEL=openai/gpt-4o-mini");
+    expect(litellmGuide).toContain("LITELLM_PROXY_BASE_URL=http://localhost:4000");
+    expect(litellmGuide).toContain("--include litellm-proxy-chat");
+    expect(litellmGuide).not.toContain("litellm-secret");
   });
 
   it("imports pasted provider env text into a settings profile", () => {
@@ -2879,8 +2935,8 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-provider-label").value).toBe("模型厂商");
     expect(elements.get("zms-baseURL-label").value).toBe("接口地址");
     expect(elements.get("zms-model-label").value).toBe("模型");
-    expect(elements.get("zms-model-help").value).toContain("刷新模型");
-    expect(elements.get("zms-load-models-button").label).toBe("刷新模型");
+    expect(elements.get("zms-model-help").value).toContain("加载模型列表");
+    expect(elements.get("zms-load-models-button").label).toBe("加载模型列表");
     expect(elements.get("zms-test-button").label).toBe("保存并测试");
     expect(elements.get("zms-profileEndpointMode-label").value).toBe("接口模式");
     expect(elements.get("zms-outputDir-label").value).toBe("输出目录");
@@ -2908,6 +2964,34 @@ describe("preferences local-agent config helpers", () => {
     expect(selectOptionByValue(elements.get("zms-model-select"), "deepseek-v4-flash").textContent).toContain("DeepSeek V4 Flash");
     expect(selectOptionValues(elements.get("zms-model-select"))).toContain("deepseek-chat");
     expect(elements.get("zms-status").value).toBe("Recommended models loaded: 4");
+  });
+
+  it("shows multi-vendor LiteLLM Proxy model recommendations before credentials are configured", async () => {
+    const { controller, elements } = loadPreferencesController();
+    elements.get("zms-provider").value = "litellm_proxy_chat";
+    elements.get("zms-activeProfileId").value = "litellm-proxy-chat";
+    elements.get("zms-profileName").value = "LiteLLM Proxy Chat";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "http://localhost:4000";
+    elements.get("zms-apiKey").value = "";
+    elements.get("zms-model").value = "";
+
+    await controller.loadModels();
+
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("openai/gpt-4o-mini");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("anthropic/claude-sonnet-4-6");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("gemini/gemini-2.5-flash");
+    expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual([
+      "OpenAI · Recommended",
+      "Anthropic · Recommended",
+      "Google Gemini · Recommended",
+      "DeepSeek · Recommended",
+      "xAI · Recommended",
+      "Ollama · Recommended"
+    ]);
+    expect(elements.get("zms-model").value).toBe("openai/gpt-4o-mini");
+    expect(elements.get("zms-model").hidden).toBe(true);
+    expect(elements.get("zms-status").value).toBe("Recommended models loaded: 6");
   });
 
   it("updates the model field from the recommended model dropdown", () => {
@@ -3522,6 +3606,9 @@ describe("preferences local-agent config helpers", () => {
       "vercel-ai-responses",
       "vercel-ai-anthropic",
       "cline-api",
+      "litellm-proxy-chat",
+      "litellm-proxy-responses",
+      "litellm-proxy-anthropic",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -3571,6 +3658,9 @@ describe("preferences local-agent config helpers", () => {
       "vercel-ai-responses",
       "vercel-ai-anthropic",
       "cline-api",
+      "litellm-proxy-chat",
+      "litellm-proxy-responses",
+      "litellm-proxy-anthropic",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",

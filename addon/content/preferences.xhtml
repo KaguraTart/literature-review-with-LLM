@@ -61,6 +61,9 @@
             <menuitem label="Vercel AI Gateway Responses 兼容" value="vercel_ai_responses"/>
             <menuitem label="Vercel AI Gateway Anthropic 兼容" value="vercel_ai_anthropic"/>
             <menuitem label="Cline API OpenAI 兼容" value="cline_api"/>
+            <menuitem label="LiteLLM Proxy OpenAI 兼容" value="litellm_proxy_chat"/>
+            <menuitem label="LiteLLM Proxy Responses 兼容" value="litellm_proxy_responses"/>
+            <menuitem label="LiteLLM Proxy Anthropic 兼容" value="litellm_proxy_anthropic"/>
             <menuitem label="Cloudflare AI OpenAI 兼容" value="cloudflare_ai_chat"/>
             <menuitem label="Cloudflare AI Responses 兼容" value="cloudflare_ai_responses"/>
             <menuitem label="Cloudflare AI Anthropic 兼容" value="cloudflare_ai_anthropic"/>
@@ -108,9 +111,9 @@
         <html:select class="zms-field zms-model-select" id="zms-model-select" onchange="ZoteroMarkdownSummaryPrefs.selectModelFromDropdown()"></html:select>
         <html:input class="zms-field zms-model-custom" id="zms-model" hidden="hidden" placeholder="自定义模型名称"/>
         <html:datalist id="zms-model-options"/>
-        <button id="zms-load-models-button" label="刷新模型" oncommand="ZoteroMarkdownSummaryPrefs.loadModels()"/>
+        <button id="zms-load-models-button" label="加载模型列表" oncommand="ZoteroMarkdownSummaryPrefs.loadModels()"/>
       </hbox>
-      <html:label id="zms-model-help" class="zms-small-note" value="先选择模型厂商，再从下拉框选择模型；“刷新模型”会显示推荐模型，有 API Key 时追加在线模型，私有部署再选自定义模型。"/>
+      <html:label id="zms-model-help" class="zms-small-note" value="先选择模型厂商，再从下拉框选择模型；“加载模型列表”会显示推荐模型，有 API Key 时追加在线模型，私有部署再选自定义模型。"/>
       <vbox class="zms-row">
         <label id="zms-providerEnv-label" value="粘贴环境变量配置"/>
         <html:textarea class="zms-small-json" id="zms-providerEnvText" placeholder="OPENAI_API_KEY=...&#10;OPENAI_MODEL=..."/>

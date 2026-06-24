@@ -2741,6 +2741,7 @@ describe("workbench writeback helpers", () => {
       modelSelectPlaceholder: "Choose a recommended model",
       modelSelectCustom: "Custom model...",
       recommendedModels: "Recommended",
+      modelListFailedUsingRecommendations: "Online model list failed; kept recommendations",
       apiKeyMissing: "API key missing"
     }[key] || key);
     const profile = {
@@ -2770,6 +2771,62 @@ describe("workbench writeback helpers", () => {
     expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-v4-flash").textContent).toContain("DeepSeek V4 Flash");
     expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-chat");
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 4");
+  });
+
+  it("loads multi-vendor LiteLLM Proxy recommendations in the workbench without credentials", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-profile-name": "LiteLLM Proxy Chat",
+      "zms-profile-base-url": "http://localhost:4000",
+      "zms-profile-api-key": "",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    loaded.fetch = async () => {
+      throw new Error("network should not be called without credentials");
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelRecommendationsLoaded: "Recommended models loaded",
+      modelSelectPlaceholder: "Choose a recommended model",
+      modelSelectCustom: "Custom model...",
+      recommendedModels: "Recommended",
+      modelListFailedUsingRecommendations: "Online model list failed; kept recommendations",
+      apiKeyMissing: "API key missing"
+    }[key] || key);
+    const profile = {
+      id: "litellm-proxy-chat",
+      name: "LiteLLM Proxy Chat",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "http://localhost:4000",
+      apiKey: "",
+      model: "",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    await workbench.loadModelsForWorkbench();
+
+    const modelSelect = dom.getElementById("zms-profile-model-select");
+    expect(selectOptionValues(modelSelect)).toContain("openai/gpt-4o-mini");
+    expect(selectOptionValues(modelSelect)).toContain("anthropic/claude-sonnet-4-6");
+    expect(selectOptionValues(modelSelect)).toContain("gemini/gemini-2.5-flash");
+    expect(selectGroupLabels(modelSelect)).toEqual([
+      "OpenAI · Recommended",
+      "Anthropic · Recommended",
+      "Google Gemini · Recommended",
+      "DeepSeek · Recommended",
+      "xAI · Recommended",
+      "Ollama · Recommended"
+    ]);
+    expect(dom.getElementById("zms-profile-model").value).toBe("openai/gpt-4o-mini");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
+    expect(dom.elements.get("zms-chat-status").textContent).toContain("Online model list failed; kept recommendations");
   });
 
   it("keeps recommended workbench models when the online model list fails", async () => {
@@ -2864,7 +2921,9 @@ describe("workbench writeback helpers", () => {
     const providerSelect = dom.getElementById("zms-workbench-provider");
     expect(providerSelect.value).toBe("deepseek");
     expect(providerSelect.children.map((option: any) => option.value)).toContain("anthropic");
+    expect(providerSelect.children.map((option: any) => option.value)).toContain("litellm_proxy_chat");
     expect(providerSelect.children.map((option: any) => option.textContent)).toContain("DeepSeek 聊天接口");
+    expect(providerSelect.children.map((option: any) => option.textContent)).toContain("LiteLLM Proxy 聊天接口");
     expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-v4-flash");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
     expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-reasoner");
@@ -2882,7 +2941,7 @@ describe("workbench writeback helpers", () => {
     const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
     workbench.t = (key: string) => ({
       modelPickerHelp: "先选择模型厂商，再从下拉框选择推荐模型",
-      loadModels: "刷新模型",
+      loadModels: "加载模型列表",
       placeholder: "向当前论文提问",
       placeholderHint: "Enter 换行",
       candidateSearchPlaceholder: "输入检索式"
@@ -2891,8 +2950,8 @@ describe("workbench writeback helpers", () => {
     workbench.applyLanguage();
 
     expect(dom.getElementById("zms-workbench-model-help").textContent).toContain("先选择模型厂商");
-    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("刷新模型");
-    expect(dom.getElementById("zms-load-models-workbench").title).toBe("刷新模型");
+    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("加载模型列表");
+    expect(dom.getElementById("zms-load-models-workbench").title).toBe("加载模型列表");
   });
 
   it("applies a workbench provider preset without reusing the previous provider API key", () => {
