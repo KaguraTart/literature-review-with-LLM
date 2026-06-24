@@ -3414,15 +3414,13 @@ function renderModelOptions(modelOptions) {
       option.setAttribute?.("label", entry.label);
     }
     if (list) list.appendChild(option);
-    if (select) {
-      const selectOption = document.createElement("option");
-      selectOption.value = entry.id;
-      selectOption.textContent = modelOptionDisplayText(
-        entry,
-        (key) => prefFallbackMessage(key, resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale()))
-      );
-      select.appendChild(selectOption);
-    }
+  }
+  if (select) {
+    appendGroupedModelSelectOptions(
+      select,
+      entries,
+      (key) => prefFallbackMessage(key, resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale()))
+    );
   }
   if (select) {
     const custom = document.createElement("option");
@@ -3545,11 +3543,33 @@ function tagModelOptions(modelOptions, source) {
   }));
 }
 
-function modelOptionDisplayText(entry, translate = (key) => key) {
-  const base = entry.label && entry.label !== entry.id ? `${entry.label} (${entry.id})` : entry.id;
-  if (entry.source === "online") return `${translate("onlineModels")} · ${base}`;
-  if (entry.source === "recommended") return `${translate("recommendedModels")} · ${base}`;
-  return base;
+function appendGroupedModelSelectOptions(select, entries, translate = (key) => key) {
+  const sourceOrder = ["online", "recommended", ""];
+  for (const source of sourceOrder) {
+    const groupEntries = entries.filter((entry) => source ? entry.source === source : entry.source !== "online" && entry.source !== "recommended");
+    if (!groupEntries.length) continue;
+    const group = document.createElement("optgroup");
+    const label = source === "online"
+      ? translate("onlineModels")
+      : (source === "recommended" ? translate("recommendedModels") : translate("modelSelectCustom"));
+    group.label = label;
+    group.setAttribute?.("label", label);
+    for (const entry of groupEntries) {
+      group.appendChild(modelSelectOption(entry));
+    }
+    select.appendChild(group);
+  }
+}
+
+function modelSelectOption(entry) {
+  const option = document.createElement("option");
+  option.value = entry.id;
+  option.textContent = modelOptionBaseText(entry);
+  return option;
+}
+
+function modelOptionBaseText(entry) {
+  return entry.label && entry.label !== entry.id ? `${entry.label} (${entry.id})` : entry.id;
 }
 
 function connectionTestBodyForProfile(profile) {

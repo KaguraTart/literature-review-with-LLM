@@ -399,6 +399,22 @@ function loadPreferencesController(options: {
   };
 }
 
+function selectOptions(element: any): any[] {
+  return (element?.children || []).flatMap((child: any) => child.localName === "optgroup" ? selectOptions(child) : [child]);
+}
+
+function selectOptionValues(element: any): string[] {
+  return selectOptions(element).map((option: any) => option.value);
+}
+
+function selectOptionByValue(element: any, value: string): any {
+  return selectOptions(element).find((option: any) => option.value === value);
+}
+
+function selectGroupLabels(element: any): string[] {
+  return (element?.children || []).filter((child: any) => child.localName === "optgroup").map((child: any) => child.label);
+}
+
 describe("preferences local-agent config helpers", () => {
   const helpers = loadPreferencesHelpers();
 
@@ -2840,11 +2856,12 @@ describe("preferences local-agent config helpers", () => {
     await controller.loadModels();
 
     expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toContain("deepseek-chat");
-    expect(elements.get("zms-model-select").children.map((option: any) => option.value)).toContain("deepseek-chat");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("deepseek-chat");
     expect(elements.get("zms-model").value).toBe("deepseek-chat");
     expect(elements.get("zms-model-select").value).toBe("deepseek-chat");
     expect(elements.get("zms-model").hidden).toBe(true);
-    expect(elements.get("zms-model-select").children[1].textContent).toContain("Recommended · DeepSeek Chat");
+    expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual(["Recommended"]);
+    expect(selectOptionByValue(elements.get("zms-model-select"), "deepseek-chat").textContent).toContain("DeepSeek Chat");
     expect(elements.get("zms-status").value).toBe("Recommended models loaded: 2");
   });
 
@@ -3508,14 +3525,15 @@ describe("preferences local-agent config helpers", () => {
       headers: { authorization: "Bearer sk-test-secret", "x-route": "paper" }
     });
     const optionValues = elements.get("zms-model-options").children.map((option: any) => option.value);
-    const selectValues = elements.get("zms-model-select").children.map((option: any) => option.value);
+    const selectValues = selectOptionValues(elements.get("zms-model-select"));
     expect(optionValues.slice(0, 2)).toEqual(["model-a", "model-b"]);
     expect(optionValues).toContain("gpt-4.1");
     expect(selectValues.slice(0, 3)).toEqual(["", "model-a", "model-b"]);
     expect(selectValues).toContain("gpt-4.1");
     expect(selectValues.at(-1)).toBe("__custom");
-    expect(elements.get("zms-model-select").children[1].textContent).toBe("Online · model-a");
-    expect(elements.get("zms-model-select").children.find((option: any) => option.value === "gpt-4.1").textContent).toContain("Recommended · GPT-4.1");
+    expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual(["Online", "Recommended"]);
+    expect(selectOptionByValue(elements.get("zms-model-select"), "model-a").textContent).toBe("model-a");
+    expect(selectOptionByValue(elements.get("zms-model-select"), "gpt-4.1").textContent).toContain("GPT-4.1");
     expect(elements.get("zms-model-select").value).toBe("model-a");
     expect(elements.get("zms-model").value).toBe("model-a");
     expect(elements.get("zms-status").value).toBe("Models loaded: 2");
@@ -3556,7 +3574,7 @@ describe("preferences local-agent config helpers", () => {
     expect(options.map((option: any) => option.value).slice(0, 2)).toEqual(["claude-opus-4-8", "claude-sonnet-4-5"]);
     expect(options.map((option: any) => option.label).slice(0, 2)).toEqual(["Claude Opus 4.8", "Claude Sonnet 4.5"]);
     expect(options.map((option: any) => option.value)).toContain("claude-sonnet-4-20250514");
-    const selectValues = elements.get("zms-model-select").children.map((option: any) => option.value);
+    const selectValues = selectOptionValues(elements.get("zms-model-select"));
     expect(selectValues.slice(0, 3)).toEqual(["", "claude-opus-4-8", "claude-sonnet-4-5"]);
     expect(selectValues).toContain("claude-sonnet-4-20250514");
     expect(selectValues.at(-1)).toBe("__custom");

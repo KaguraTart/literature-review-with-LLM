@@ -400,6 +400,22 @@ function fakeDocument(values: Record<string, string> = {}) {
   };
 }
 
+function selectOptions(element: any): any[] {
+  return (element?.children || []).flatMap((child: any) => child.localName === "optgroup" ? selectOptions(child) : [child]);
+}
+
+function selectOptionValues(element: any): string[] {
+  return selectOptions(element).map((option: any) => option.value);
+}
+
+function selectOptionByValue(element: any, value: string): any {
+  return selectOptions(element).find((option: any) => option.value === value);
+}
+
+function selectGroupLabels(element: any): string[] {
+  return (element?.children || []).filter((child: any) => child.localName === "optgroup").map((child: any) => child.label);
+}
+
 function findNode(root: any, predicate: (node: any) => boolean): any {
   if (!root) return null;
   if (predicate(root)) return root;
@@ -2683,12 +2699,12 @@ describe("workbench writeback helpers", () => {
       headers: { authorization: "Bearer new-secret" }
     });
     expect(dom.getElementById("zms-profile-model").value).toBe("model-x");
-    const modelSelectValues = dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value);
+    const modelSelectValues = selectOptionValues(dom.getElementById("zms-profile-model-select"));
     expect(modelSelectValues.slice(0, 3)).toEqual(["", "model-x", "model-y"]);
     expect(modelSelectValues).toContain("deepseek-chat");
-    expect(dom.getElementById("zms-profile-model-select").children[1].textContent).toBe("Online · model-x");
-    expect(dom.getElementById("zms-profile-model-select").children.find((option: any) => option.value === "deepseek-chat").textContent).toContain("Recommended ·");
-    expect(dom.getElementById("zms-profile-model-select").children.find((option: any) => option.value === "deepseek-chat").textContent).toContain("deepseek-chat");
+    expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual(["Online", "Recommended"]);
+    expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "model-x").textContent).toBe("model-x");
+    expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-chat").textContent).toContain("deepseek-chat");
     expect(modelSelectValues.at(-1)).toBe("__custom");
     expect(dom.getElementById("zms-profile-model-select").value).toBe("model-x");
     expect(prefs.apiKey).toBe("new-secret");
@@ -2741,11 +2757,12 @@ describe("workbench writeback helpers", () => {
     await workbench.loadModelsForWorkbench();
 
     expect(dom.getElementById("zms-workbench-model-options").children.map((option: any) => option.value)).toContain("deepseek-chat");
-    expect(dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value)).toContain("deepseek-chat");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-chat");
     expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
     expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-chat");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
-    expect(dom.getElementById("zms-profile-model-select").children[1].textContent).toContain("Recommended · DeepSeek Chat");
+    expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual(["Recommended"]);
+    expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-chat").textContent).toContain("DeepSeek Chat");
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 2");
   });
 
@@ -2786,7 +2803,7 @@ describe("workbench writeback helpers", () => {
     expect(providerSelect.children.map((option: any) => option.textContent)).toContain("DeepSeek 聊天接口");
     expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
-    expect(dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value)).toContain("deepseek-reasoner");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-reasoner");
   });
 
   it("localizes the workbench model picker help text", () => {
@@ -2862,7 +2879,7 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-profile-api-key").value).toBe("");
     expect(dom.getElementById("zms-profile-model").value).toBe("claude-sonnet-4-20250514");
     expect(dom.getElementById("zms-workbench-provider").value).toBe("anthropic");
-    expect(dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value)).toContain("claude-3-5-haiku-latest");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("claude-3-5-haiku-latest");
 
     const saved = workbench.saveProfileSettings();
 
