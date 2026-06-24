@@ -770,7 +770,7 @@ var ZoteroMarkdownSummaryPrefs = {
     }
     const vendorSelect = document.getElementById("zms-model-vendor-select");
     if (vendorSelect && vendorSelect.dataset?.zmsModelVendorBound !== "1") {
-      vendorSelect.addEventListener("change", () => this.renderModelOptionsFromCache());
+      vendorSelect.addEventListener("change", () => this.renderModelOptionsFromCache({ selectFirstVisible: true }));
       if (vendorSelect.dataset) vendorSelect.dataset.zmsModelVendorBound = "1";
     }
     const model = document.getElementById("zms-model");
@@ -782,8 +782,12 @@ var ZoteroMarkdownSummaryPrefs = {
     syncModelSelectFromInput();
   },
 
-  renderModelOptionsFromCache() {
-    renderModelOptions(modelOptionsFromOptionsElement("zms-model-options"));
+  renderModelOptionsFromCache(options = {}) {
+    renderModelOptions(modelOptionsFromOptionsElement("zms-model-options"), options);
+    if (options.selectFirstVisible) {
+      this.refreshProfileStatus();
+      this.refreshProviderGuide();
+    }
   },
 
   selectModelFromDropdown() {
@@ -914,16 +918,16 @@ function prefFallbackMessage(key, lang) {
     outputLanguage: zh ? "输出语言" : "Output language",
     promptPackId: zh ? "提示模板包" : "Prompt pack",
     activeProfileId: zh ? "默认接口档案" : "Default profile",
-    provider: zh ? "模型厂商" : "Provider",
+    provider: zh ? "接口厂商" : "Provider",
     baseURL: zh ? "接口地址" : "Base URL",
     apiKey: zh ? "API 密钥" : "API Key",
     model: zh ? "模型" : "Model",
     modelVendorFilter: zh ? "模型系列" : "Model family",
     allModelVendors: zh ? "全部模型系列" : "All model families",
-    modelSelectPlaceholder: zh ? "选择厂商推荐模型" : "Choose provider model",
+    modelSelectPlaceholder: zh ? "选择接口厂商推荐模型" : "Choose provider model",
     modelSelectCustom: zh ? "自定义模型..." : "Custom model...",
     modelPickerHelp: zh
-      ? "先选择模型厂商，模型下拉会自动显示该厂商的推荐模型；点击“加载模型列表”可追加在线模型。普通用户直接选下拉项，只有私有部署或自定义路由才选“自定义模型”。"
+      ? "先选择接口厂商，模型下拉会自动显示该厂商的推荐模型；点击“加载模型列表”可追加在线模型。普通用户直接选下拉项，只有私有部署或自定义路由才选“自定义模型”。"
       : "Choose a provider first; the model dropdown shows that provider's recommended models. Load model list adds online models when available. Most users can pick from the dropdown; use Custom model only for private deployments or custom routers.",
     onlineModels: zh ? "在线模型" : "Online",
     recommendedModels: zh ? "推荐模型" : "Recommended",
@@ -1163,8 +1167,10 @@ function applyPreferenceTextLabels(lang) {
     "zms-cap-jsonMode-label": zh ? "JSON 模式" : "JSON mode",
     "zms-cap-toolUse-label": zh ? "工具调用" : "Tool use",
     "zms-cap-modelList-label": zh ? "在线模型列表" : "Model list",
+    "zms-model-vendor-filter-label": zh ? "模型系列" : "Model family",
+    "zms-model-select-label": zh ? "推荐/在线模型" : "Recommended / online model",
     "zms-model-help": zh
-      ? "先选择模型厂商，模型下拉会自动显示该厂商的推荐模型；点击“加载模型列表”可追加在线模型。普通用户直接选下拉项，只有私有部署或自定义路由才选“自定义模型”。"
+      ? "先选择接口厂商，模型下拉会自动显示该厂商的推荐模型；点击“加载模型列表”可追加在线模型。普通用户直接选下拉项，只有私有部署或自定义路由才选“自定义模型”。"
       : "Choose a provider first; the model dropdown shows that provider's recommended models. Load model list adds online models when available. Most users can pick from the dropdown; use Custom model only for private deployments or custom routers.",
     "zms-local-agent-note-1": zh
       ? "按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"
@@ -3560,7 +3566,7 @@ function unclosedThinkAnswer(value) {
   return marker ? value.slice((marker.index || 0) + marker[0].length).trim() : "";
 }
 
-function renderModelOptions(modelOptions) {
+function renderModelOptions(modelOptions, options = {}) {
   const list = document.getElementById("zms-model-options");
   const select = document.getElementById("zms-model-select");
   const vendorSelect = document.getElementById("zms-model-vendor-select");
@@ -3600,7 +3606,7 @@ function renderModelOptions(modelOptions) {
     custom.value = "__custom";
     custom.textContent = prefFallbackMessage("modelSelectCustom", resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale()));
     select.appendChild(custom);
-    syncModelSelectFromInput(visibleEntries);
+    syncModelSelectFromInput(visibleEntries, options);
   }
 }
 
@@ -3671,7 +3677,7 @@ function filterModelOptionsByVendor(entries, vendor) {
   return normalized.filter((entry) => (entry.vendor || inferredModelVendor(entry)) === selected);
 }
 
-function syncModelSelectFromInput(modelOptions) {
+function syncModelSelectFromInput(modelOptions, options = {}) {
   const select = document.getElementById("zms-model-select");
   const model = document.getElementById("zms-model");
   if (!select || !model) return;
@@ -3685,6 +3691,12 @@ function syncModelSelectFromInput(modelOptions) {
     .map((option) => ({ id: String(option.value || ""), label: String(option.label || option.value || "") }));
   if (entries.some((entry) => entry.id === value)) {
     select.value = value;
+    setCustomModelInputVisible(model, false);
+    return;
+  }
+  if (options.selectFirstVisible && entries[0]?.id) {
+    model.value = entries[0].id;
+    select.value = entries[0].id;
     setCustomModelInputVisible(model, false);
     return;
   }

@@ -2627,7 +2627,7 @@ describe("workbench writeback helpers", () => {
 
     const reportPath = "/tmp/out/diagnostics/provider-deepseek.md";
     const report = files.get(reportPath) || "";
-    expect(report).toContain("# 模型厂商配置诊断");
+    expect(report).toContain("# 接口厂商配置诊断");
     expect(report).toContain("deepseek-chat");
     expect(report).toContain("DEEPSEEK_API_KEY=...");
     expect(report).toContain("DEEPSEEK_MODEL=deepseek-chat");
@@ -2951,14 +2951,16 @@ describe("workbench writeback helpers", () => {
       "Ollama"
     ]);
     dom.getElementById("zms-profile-model-vendor-select").value = "Anthropic";
-    workbench.renderWorkbenchModelOptionsFromCache();
+    workbench.renderWorkbenchModelOptionsFromCache({ selectFirstVisible: true });
 
     const modelSelect = dom.getElementById("zms-profile-model-select");
     const values = selectOptionValues(modelSelect);
     expect(values).toContain("anthropic/claude-sonnet-4-6");
     expect(values).not.toContain("openai/gpt-4o-mini");
     expect(selectGroupLabels(modelSelect)).toEqual(["Anthropic · Recommended"]);
-    expect(modelSelect.value).toBe("__custom");
+    expect(modelSelect.value).toBe("anthropic/claude-sonnet-4-6");
+    expect(dom.getElementById("zms-profile-model").value).toBe("anthropic/claude-sonnet-4-6");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
 
     modelSelect.value = "anthropic/claude-sonnet-4-6";
     workbench.selectWorkbenchModelFromDropdown();
@@ -3082,7 +3084,7 @@ describe("workbench writeback helpers", () => {
     ];
     const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
     workbench.t = (key: string) => ({
-      modelPickerHelp: "先选择模型厂商，再从下拉框选择推荐模型",
+      modelPickerHelp: "先选择接口厂商，再从下拉框选择推荐模型",
       loadModels: "加载模型列表",
       placeholder: "向当前论文提问",
       placeholderHint: "Enter 换行",
@@ -3091,7 +3093,7 @@ describe("workbench writeback helpers", () => {
 
     workbench.applyLanguage();
 
-    expect(dom.getElementById("zms-workbench-model-help").textContent).toContain("先选择模型厂商");
+    expect(dom.getElementById("zms-workbench-model-help").textContent).toContain("先选择接口厂商");
     expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("加载模型列表");
     expect(dom.getElementById("zms-load-models-workbench").title).toBe("加载模型列表");
   });

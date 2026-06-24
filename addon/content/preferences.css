@@ -80,26 +80,53 @@ hbox.zms-row {
   white-space: nowrap;
 }
 
+.zms-model-row {
+  align-items: flex-start;
+}
+
+.zms-model-picker {
+  flex: 1 1 36em;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.zms-model-picker-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  max-width: 100%;
+}
+
+.zms-inline-label {
+  flex: 0 0 auto;
+  color: #4b5563;
+  white-space: nowrap;
+}
+
 .zms-model-select {
-  flex: 2 1 18em;
-  min-width: min(100%, 14em);
+  flex: 2 1 20em;
+  min-width: min(100%, 16em);
 }
 
 .zms-model-vendor-select {
-  flex: 1 1 11em;
+  flex: 1 1 12em;
   min-width: min(100%, 10em);
 }
 
 .zms-model-custom {
-  flex: 1 1 12em;
-  min-width: min(100%, 12em);
+  display: block;
+  width: 100%;
+  max-width: 36em;
+  margin-top: 6px;
+  box-sizing: border-box;
 }
 
 .zms-model-custom[hidden] {
   display: none !important;
 }
 
-.zms-model-row > button {
+.zms-model-picker-controls > button {
   flex: 0 1 auto;
   min-width: 7em;
 }
@@ -116,6 +143,8 @@ hbox.zms-row {
 
   .zms-field,
   .zms-row menulist,
+  .zms-model-picker,
+  .zms-model-picker-controls,
   .zms-model-select,
   .zms-model-vendor-select,
   .zms-model-custom,
@@ -125,7 +154,11 @@ hbox.zms-row {
     min-width: 0;
   }
 
-  .zms-model-row > button,
+  .zms-inline-label {
+    flex: 1 1 100%;
+  }
+
+  .zms-model-picker-controls > button,
   .zms-outputDir-button {
     flex: 1 1 auto;
   }
@@ -251,6 +284,10 @@ hbox.zms-row {
 
 @media (prefers-color-scheme: dark) {
   .zms-small-note {
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  .zms-inline-label {
     color: rgba(255, 255, 255, 0.72);
   }
 

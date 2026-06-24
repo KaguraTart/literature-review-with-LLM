@@ -287,7 +287,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     }
     const modelVendorSelect = document.getElementById("zms-profile-model-vendor-select");
     if (modelVendorSelect && modelVendorSelect.dataset?.zmsModelVendorBound !== "1") {
-      modelVendorSelect.addEventListener("change", () => this.renderWorkbenchModelOptionsFromCache());
+      modelVendorSelect.addEventListener("change", () => this.renderWorkbenchModelOptionsFromCache({ selectFirstVisible: true }));
       if (modelVendorSelect.dataset) modelVendorSelect.dataset.zmsModelVendorBound = "1";
     }
     const modelInput = document.getElementById("zms-profile-model");
@@ -592,6 +592,8 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-profile-base-url-label", this.t("baseURL"));
     setText("zms-profile-api-key-label", this.t("apiKey"));
     setText("zms-profile-model-label", this.t("model"));
+    setText("zms-profile-model-vendor-filter-label", this.t("modelVendorFilter"));
+    setText("zms-profile-model-select-label", this.t("recommendedOnlineModel"));
     const modelVendorSelect = document.getElementById("zms-profile-model-vendor-select");
     if (modelVendorSelect) {
       modelVendorSelect.setAttribute("aria-label", this.t("modelVendorFilter"));
@@ -986,7 +988,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     }
   },
 
-  renderWorkbenchModelOptions(modelOptions) {
+  renderWorkbenchModelOptions(modelOptions, options = {}) {
     const list = document.getElementById("zms-workbench-model-options");
     const select = document.getElementById("zms-profile-model-select");
     const vendorSelect = document.getElementById("zms-profile-model-vendor-select");
@@ -1020,12 +1022,12 @@ var ZoteroMarkdownSummaryWorkbench = {
       custom.value = "__custom";
       custom.textContent = this.t("modelSelectCustom");
       select.appendChild(custom);
-      this.syncWorkbenchModelSelect(visibleEntries);
+      this.syncWorkbenchModelSelect(visibleEntries, options);
     }
   },
 
-  renderWorkbenchModelOptionsFromCache() {
-    this.renderWorkbenchModelOptions(modelOptionsFromOptionsElement("zms-workbench-model-options"));
+  renderWorkbenchModelOptionsFromCache(options = {}) {
+    this.renderWorkbenchModelOptions(modelOptionsFromOptionsElement("zms-workbench-model-options"), options);
   },
 
   renderWorkbenchModelRecommendations(options = {}) {
@@ -1040,7 +1042,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     return recommendations;
   },
 
-  syncWorkbenchModelSelect(modelOptions) {
+  syncWorkbenchModelSelect(modelOptions, options = {}) {
     const select = document.getElementById("zms-profile-model-select");
     const modelInput = document.getElementById("zms-profile-model");
     if (!select || !modelInput) return;
@@ -1052,8 +1054,20 @@ var ZoteroMarkdownSummaryWorkbench = {
     }
     const entries = modelOptions || Array.from(document.getElementById("zms-workbench-model-options")?.children || [])
       .map((option) => ({ id: String(option.value || ""), label: String(option.label || option.value || "") }));
-    select.value = entries.some((entry) => entry.id === value) ? value : "__custom";
-    setWorkbenchCustomModelInputVisible(modelInput, select.value === "__custom");
+    if (entries.some((entry) => entry.id === value)) {
+      select.value = value;
+      setWorkbenchCustomModelInputVisible(modelInput, false);
+      return;
+    }
+    if (options.selectFirstVisible && entries[0]?.id) {
+      modelInput.value = entries[0].id;
+      select.value = entries[0].id;
+      setWorkbenchCustomModelInputVisible(modelInput, false);
+      this.commitWorkbenchModelPickerSelection();
+      return;
+    }
+    select.value = "__custom";
+    setWorkbenchCustomModelInputVisible(modelInput, true);
   },
 
   selectWorkbenchModelFromDropdown() {
@@ -3254,10 +3268,10 @@ function providerDiagnosticsLabels(outputLanguage) {
   const zh = /^zh/i.test(String(outputLanguage || ""));
   if (zh) {
     return {
-      title: "模型厂商配置诊断",
+      title: "接口厂商配置诊断",
       profile: "档案",
       profileId: "档案 ID",
-      providerKey: "厂商识别",
+      providerKey: "接口厂商识别",
       protocol: "协议",
       baseURL: "Base URL",
       endpoint: "请求 endpoint",

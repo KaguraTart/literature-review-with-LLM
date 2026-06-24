@@ -211,6 +211,8 @@ function loadPreferencesController(options: {
   createElement("zms-model-vendor-select", { localName: "select" });
   createElement("zms-model-select", { localName: "select" });
   createElement("zms-model-options", { localName: "datalist" });
+  createElement("zms-model-vendor-filter-label", { localName: "label" });
+  createElement("zms-model-select-label", { localName: "label" });
   createElement("zms-model-help", { localName: "label" });
   createElement("zms-profile-options", { localName: "datalist" });
   createElement("zms-profileStatus", { localName: "pre" });
@@ -2971,10 +2973,12 @@ describe("preferences local-agent config helpers", () => {
 
     controller.applyLanguage();
 
-    expect(elements.get("zms-provider-label").value).toBe("模型厂商");
+    expect(elements.get("zms-provider-label").value).toBe("接口厂商");
     expect(elements.get("zms-baseURL-label").value).toBe("接口地址");
     expect(elements.get("zms-apiKey-label").value).toBe("API 密钥");
     expect(elements.get("zms-model-label").value).toBe("模型");
+    expect(elements.get("zms-model-vendor-filter-label").value).toBe("模型系列");
+    expect(elements.get("zms-model-select-label").value).toBe("推荐/在线模型");
     expect(elements.get("zms-model-help").value).toContain("加载模型列表");
     expect(elements.get("zms-load-models-button").label).toBe("加载模型列表");
     expect(elements.get("zms-test-button").label).toBe("保存并测试");
@@ -3069,13 +3073,15 @@ describe("preferences local-agent config helpers", () => {
       "Ollama"
     ]);
     elements.get("zms-model-vendor-select").value = "Anthropic";
-    controller.renderModelOptionsFromCache();
+    controller.renderModelOptionsFromCache({ selectFirstVisible: true });
 
     const modelValues = selectOptionValues(elements.get("zms-model-select"));
     expect(modelValues).toContain("anthropic/claude-sonnet-4-6");
     expect(modelValues).not.toContain("openai/gpt-4o-mini");
     expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual(["Anthropic · Recommended"]);
-    expect(elements.get("zms-model-select").value).toBe("__custom");
+    expect(elements.get("zms-model-select").value).toBe("anthropic/claude-sonnet-4-6");
+    expect(elements.get("zms-model").value).toBe("anthropic/claude-sonnet-4-6");
+    expect(elements.get("zms-model").hidden).toBe(true);
 
     elements.get("zms-model-select").value = "anthropic/claude-sonnet-4-6";
     controller.selectModelFromDropdown();
