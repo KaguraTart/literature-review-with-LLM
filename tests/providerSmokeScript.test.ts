@@ -46,22 +46,7 @@ const CORE_LIVE_CASE_IDS = ["openai", "openai-compatible", "openai-responses-com
 const OPENAI_CHAT_LIVE_CASE_IDS = ["openai-compatible", ...NAMED_LIVE_CASE_IDS.filter((id) => !["azure-openai", "sambanova-responses", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"].includes(id))];
 const OPENAI_RESPONSES_LIVE_CASE_IDS = ["openai", "openai-responses-compatible", "azure-openai", "sambanova-responses"];
 const ANTHROPIC_MESSAGES_LIVE_CASE_IDS = ["anthropic", "anthropic-compatible", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"];
-const MAINSTREAM_LIVE_CASE_IDS = [
-  "openai",
-  "openai-compatible",
-  "openai-responses-compatible",
-  "anthropic",
-  "anthropic-compatible",
-  "minimax",
-  "gemini",
-  "deepseek",
-  "openrouter",
-  "groq",
-  "dashscope",
-  "siliconflow",
-  "ollama",
-  "lm-studio"
-];
+const MAINSTREAM_LIVE_CASE_IDS = ALL_LIVE_CASE_IDS;
 
 describe("provider smoke verifier", () => {
   it("calls an OpenAI-compatible chat endpoint with the expected request shape", async () => {

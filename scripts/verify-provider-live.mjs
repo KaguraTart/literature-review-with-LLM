@@ -437,22 +437,7 @@ const DEFAULT_CASES = [
   }
 ];
 
-const MAINSTREAM_CASE_IDS = [
-  "openai",
-  "openai-compatible",
-  "openai-responses-compatible",
-  "anthropic",
-  "anthropic-compatible",
-  "minimax",
-  "gemini",
-  "deepseek",
-  "openrouter",
-  "groq",
-  "dashscope",
-  "siliconflow",
-  "ollama",
-  "lm-studio"
-];
+const MAINSTREAM_CASE_IDS = DEFAULT_CASES.map((entry) => entry.id);
 
 const DEFAULT_PROMPT = "Reply with OK only.";
 const DEFAULT_CONTEXT = "Live provider verification context.";
