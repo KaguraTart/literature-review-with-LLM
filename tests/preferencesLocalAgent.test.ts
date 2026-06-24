@@ -681,6 +681,32 @@ describe("preferences local-agent config helpers", () => {
       { type: "input_text", text: expect.stringContaining("SYSTEM:\nYou are a provider connection test endpoint") },
       { type: "input_text", text: "ping" }
     ]);
+
+    const azureRequest = helpers.connectionTestRequestForProfile({
+      id: "azure-openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://example-resource.openai.azure.com/openai/v1?api-version=preview",
+      apiKey: "azure-secret",
+      model: "azure-model",
+      capabilities: { modelList: true },
+      customHeaders: {},
+      bodyExtra: {}
+    });
+    expect(azureRequest.url).toBe("https://example-resource.openai.azure.com/openai/v1/responses?api-version=preview");
+    expect(azureRequest.headers).toMatchObject({ "api-key": "azure-secret" });
+    expect(azureRequest.headers).not.toHaveProperty("authorization");
+    expect(helpers.modelListRequestForProfile({
+      id: "azure-openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://example-resource.openai.azure.com/openai/v1?api-version=preview",
+      apiKey: "azure-secret",
+      model: "azure-model",
+      capabilities: { modelList: true },
+      customHeaders: {},
+      bodyExtra: {}
+    })?.url).toBe("https://example-resource.openai.azure.com/openai/v1/models?api-version=preview");
   });
 
   it("adds JSON mode defaults to settings connection test requests", () => {

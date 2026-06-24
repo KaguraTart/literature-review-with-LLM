@@ -241,6 +241,60 @@ describe("provider adapters", () => {
         baseURL: "https://api.perplexity.ai/chat/completions"
       }
     })).toBe("https://api.perplexity.ai/chat/completions");
+
+    expect(endpointFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        baseURL: "https://router.example/v1/chat/completions?api-version=2026-01-01"
+      }
+    })).toBe("https://router.example/v1/chat/completions?api-version=2026-01-01");
+    expect(modelsEndpointFor({
+      ...profile,
+      baseURL: "https://router.example/v1/chat/completions?api-version=2026-01-01"
+    })).toBe("https://router.example/v1/models?api-version=2026-01-01");
+    const azureWithQuery = {
+      ...profile,
+      id: "azure-openai",
+      name: "Azure OpenAI",
+      protocol: "openai_responses" as const,
+      baseURL: "https://example-resource.openai.azure.com/openai/v1?api-version=preview",
+      apiKey: "azure-secret"
+    };
+    expect(endpointFor({ ...baseRequest, profile: azureWithQuery }))
+      .toBe("https://example-resource.openai.azure.com/openai/v1/responses?api-version=preview");
+    expect(modelsEndpointFor(azureWithQuery))
+      .toBe("https://example-resource.openai.azure.com/openai/v1/models?api-version=preview");
+    expect(headersFor(azureWithQuery)).toMatchObject({ "api-key": "azure-secret" });
+    expect(headersFor(azureWithQuery)).not.toHaveProperty("authorization");
+    expect(endpointFor({
+      ...baseRequest,
+      profile: {
+        ...anthropicProfile,
+        baseURL: "https://api.anthropic.com/v1/messages?beta=true"
+      }
+    })).toBe("https://api.anthropic.com/v1/messages?beta=true");
+    expect(modelsEndpointFor({
+      ...anthropicProfile,
+      baseURL: "https://api.anthropic.com/v1/messages?beta=true"
+    })).toBe("https://api.anthropic.com/v1/models?beta=true");
+    expect(headersFor({
+      ...anthropicProfile,
+      baseURL: "https://api.anthropic.com?beta=true",
+      apiKey: "anthropic-secret"
+    })).toMatchObject({
+      "x-api-key": "anthropic-secret",
+      "anthropic-dangerous-direct-browser-access": "true"
+    });
+    expect(endpointFor({
+      ...baseRequest,
+      profile: {
+        ...profile,
+        id: "perplexity",
+        name: "Perplexity Sonar",
+        baseURL: "https://api.perplexity.ai?proxy=1"
+      }
+    })).toBe("https://api.perplexity.ai/chat/completions?proxy=1");
   });
 
   it("applies custom headers, body extra, and model list capability", () => {

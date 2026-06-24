@@ -407,6 +407,52 @@ describe("bootstrap provider helpers", () => {
     });
   });
 
+  it("keeps query parameters when normalizing bootstrap provider endpoints", () => {
+    const { helpers } = loadBootstrapProviderHelpers();
+
+    expect((helpers as any).endpointForProtocol(
+      "openai_chat",
+      "https://router.example/v1/chat/completions?api-version=2026-01-01"
+    )).toBe("https://router.example/v1/chat/completions?api-version=2026-01-01");
+    expect((helpers as any).endpointForProtocol(
+      "openai_responses",
+      "https://example-resource.openai.azure.com/openai/v1?api-version=preview"
+    )).toBe("https://example-resource.openai.azure.com/openai/v1/responses?api-version=preview");
+    expect((helpers as any).endpointForProtocol(
+      "anthropic_messages",
+      "https://api.anthropic.com/v1/messages?beta=true"
+    )).toBe("https://api.anthropic.com/v1/messages?beta=true");
+  });
+
+  it("keeps query parameters and Azure auth in bootstrap provider requests", async () => {
+    const { fetchCalls, helpers } = loadBootstrapProviderHelpers({ output_text: "ok" });
+
+    await helpers.callProvider({
+      id: "azure-openai",
+      provider: "azure-openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://example-resource.openai.azure.com/openai/v1?api-version=preview",
+      apiKey: "azure-secret",
+      model: "azure-model",
+      capabilities: { pdfBase64: false, streaming: false },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system prompt",
+        prompt: "summary prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+
+    expect(fetchCalls[0].url).toBe("https://example-resource.openai.azure.com/openai/v1/responses?api-version=preview");
+    expect(fetchCalls[0].headers).toMatchObject({ "api-key": "azure-secret" });
+    expect(fetchCalls[0].headers).not.toHaveProperty("authorization");
+  });
+
   it("generates bootstrap summaries from indexed text when the PDF path is unavailable", async () => {
     const { fetchCalls, helpers, linkedAttachments } = loadBootstrapProviderHelpers({
       output_text: "summary from indexed text"

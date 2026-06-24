@@ -2645,6 +2645,37 @@ describe("workbench writeback helpers", () => {
     })).not.toHaveProperty("anthropic-version");
   });
 
+  it("keeps query parameters when normalizing workbench provider endpoints", () => {
+    const loaded: any = loadWorkbenchHelpers();
+
+    expect(loaded.endpointForProtocol(
+      "openai_chat",
+      "https://router.example/v1/chat/completions?api-version=2026-01-01"
+    )).toBe("https://router.example/v1/chat/completions?api-version=2026-01-01");
+    expect(loaded.endpointForProtocol(
+      "openai_responses",
+      "https://example-resource.openai.azure.com/openai/v1?api-version=preview"
+    )).toBe("https://example-resource.openai.azure.com/openai/v1/responses?api-version=preview");
+    expect(loaded.workbenchModelsEndpointForProfile({
+      id: "azure-openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://example-resource.openai.azure.com/openai/v1?api-version=preview",
+      capabilities: { modelList: true }
+    })).toBe("https://example-resource.openai.azure.com/openai/v1/models?api-version=preview");
+    expect(loaded.endpointForProtocol(
+      "anthropic_messages",
+      "https://api.anthropic.com/v1/messages?beta=true"
+    )).toBe("https://api.anthropic.com/v1/messages?beta=true");
+    expect(loaded.headersForProfile({
+      id: "azure-openai",
+      protocol: "openai_responses",
+      baseURL: "https://example-resource.openai.azure.com/openai/v1?api-version=preview",
+      apiKey: "azure-secret",
+      customHeaders: {}
+    })).toMatchObject({ "api-key": "azure-secret" });
+  });
+
   it("flushes the final workbench stream event without a trailing newline", async () => {
     const response = {
       body: streamFromText("data: {\"type\":\"response.output_text.delta\",\"delta\":\"tail\"}")

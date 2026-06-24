@@ -167,9 +167,9 @@ export function modelsEndpointFor(profile: ProviderProfile): string | undefined 
   if (!profile.capabilities.modelList || profile.endpointMode === "full_url") return undefined;
   const base = stripKnownProviderEndpointPath(profile.baseURL);
   if (profile.protocol === "anthropic_messages") {
-    return /\/v\d+$/i.test(base) ? `${base}/models` : `${base}/v1/models`;
+    return /\/v\d+$/i.test(providerURLPath(base)) ? appendProviderURLPath(base, "models") : appendProviderURLPath(base, "v1/models");
   }
-  return `${openAICompatibleBaseWithVersion(base)}/models`;
+  return appendProviderURLPath(openAICompatibleBaseWithVersion(base), "models");
 }
 
 export function extractResponseText(protocol: ProviderProtocol, data: unknown): string {
@@ -707,7 +707,7 @@ function withoutBlankHeaders(headers: Record<string, string>): Record<string, st
 
 function usesAzureOpenAIAuth(profile: ProviderProfile): boolean {
   const id = String(profile?.id || "").toLowerCase();
-  const baseURL = String(profile?.baseURL || "");
+  const baseURL = providerURLPath(profile?.baseURL || "");
   return id === "azure-openai" || id === "azure_openai" || /\.openai\.azure\.com\/openai\/v1\/?$/i.test(baseURL) || /\.services\.ai\.azure\.com\/openai\/v1\/?$/i.test(baseURL);
 }
 
@@ -726,7 +726,7 @@ function anthropicAuthHeaderName(profile: ProviderProfile): "authorization" | "x
 }
 
 function isOfficialAnthropicBaseURL(baseURL: string): boolean {
-  const normalized = stripKnownProviderEndpointPath(baseURL).replace(/\/+$/, "");
+  const normalized = providerURLPath(stripKnownProviderEndpointPath(baseURL)).replace(/\/+$/, "");
   return normalized === "https://api.anthropic.com" || normalized.startsWith("https://api.anthropic.com/");
 }
 
@@ -737,7 +737,7 @@ function shouldAddAnthropicDirectBrowserAccess(profile: ProviderProfile): boolea
     ?? (profile as any)?.anthropicDirectBrowserAccess;
   if (explicit === false || String(explicit).toLowerCase() === "false") return false;
   if (explicit === true || String(explicit).toLowerCase() === "true") return true;
-  const baseURL = String(profile.baseURL || "").replace(/\/+$/, "");
+  const baseURL = providerURLPath(profile.baseURL || "").replace(/\/+$/, "");
   return baseURL === "https://api.anthropic.com" || baseURL.startsWith("https://api.anthropic.com/");
 }
 
@@ -1959,29 +1959,56 @@ function endpointForProtocol(protocol: ProviderProtocol, baseURL: string): strin
   const base = stripKnownProviderEndpointPath(baseURL);
   if (!base) throw new Error("Base URL endpoint is required");
   if (protocol === "anthropic_messages") {
-    return /\/v\d+$/i.test(base) ? `${base}/messages` : `${base}/v1/messages`;
+    return /\/v\d+$/i.test(providerURLPath(base)) ? appendProviderURLPath(base, "messages") : appendProviderURLPath(base, "v1/messages");
   }
-  if (protocol === "openai_responses") return `${openAICompatibleBaseWithVersion(base)}/responses`;
-  return `${openAICompatibleBaseWithVersion(base)}/chat/completions`;
+  if (protocol === "openai_responses") return appendProviderURLPath(openAICompatibleBaseWithVersion(base), "responses");
+  return appendProviderURLPath(openAICompatibleBaseWithVersion(base), "chat/completions");
 }
 
 function stripKnownProviderEndpointPath(baseURL: string): string {
-  return String(baseURL || "")
-    .replace(/\/+$/, "")
-    .replace(/\/(?:chat\/completions|responses|messages|models)$/i, "");
+  const parts = splitProviderURLSuffix(baseURL);
+  return `${parts.path.replace(/\/+$/, "").replace(/\/(?:chat\/completions|responses|messages|models)$/i, "")}${parts.suffix}`;
 }
 
 function openAICompatibleBaseWithVersion(baseURL: string): string {
-  const base = String(baseURL || "").replace(/\/+$/, "");
-  return hasOpenAICompatibleVersionPath(base) || usesVersionlessOpenAICompatibleBase(base) ? base : `${base}/v1`;
+  const base = trimProviderURLPath(baseURL);
+  return hasOpenAICompatibleVersionPath(base) || usesVersionlessOpenAICompatibleBase(base) ? base : appendProviderURLPath(base, "v1");
 }
 
 function hasOpenAICompatibleVersionPath(baseURL: string): boolean {
-  return /\/v\d+(?:[a-z]+)?$/i.test(baseURL) || /\/v\d+(?:[a-z]+)?\/openai$/i.test(baseURL);
+  const path = providerURLPath(baseURL);
+  return /\/v\d+(?:[a-z]+)?$/i.test(path) || /\/v\d+(?:[a-z]+)?\/openai$/i.test(path);
 }
 
 function usesVersionlessOpenAICompatibleBase(baseURL: string): boolean {
-  const normalized = String(baseURL || "").replace(/\/+$/, "");
+  const normalized = providerURLPath(baseURL).replace(/\/+$/, "");
   return /^https:\/\/api\.perplexity\.ai$/i.test(normalized)
     || /^https:\/\/models\.github\.ai\/inference$/i.test(normalized);
+}
+
+function appendProviderURLPath(baseURL: string, path: string): string {
+  const parts = splitProviderURLSuffix(baseURL);
+  return `${parts.path.replace(/\/+$/, "")}/${String(path || "").replace(/^\/+/, "")}${parts.suffix}`;
+}
+
+function trimProviderURLPath(baseURL: string): string {
+  const parts = splitProviderURLSuffix(baseURL);
+  return `${parts.path.replace(/\/+$/, "")}${parts.suffix}`;
+}
+
+function providerURLPath(baseURL: unknown): string {
+  return splitProviderURLSuffix(baseURL).path;
+}
+
+function splitProviderURLSuffix(baseURL: unknown): { path: string; suffix: string } {
+  const text = String(baseURL || "").trim();
+  const hashIndex = text.indexOf("#");
+  const beforeHash = hashIndex >= 0 ? text.slice(0, hashIndex) : text;
+  const hash = hashIndex >= 0 ? text.slice(hashIndex) : "";
+  const queryIndex = beforeHash.indexOf("?");
+  if (queryIndex < 0) return { path: beforeHash, suffix: hash };
+  return {
+    path: beforeHash.slice(0, queryIndex),
+    suffix: `${beforeHash.slice(queryIndex)}${hash}`
+  };
 }
