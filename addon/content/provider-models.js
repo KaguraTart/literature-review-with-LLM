@@ -133,6 +133,19 @@
     glm: "Zhipu GLM"
   };
 
+  const MODEL_FEATURE_ORDER = ["image", "pdf", "reasoning", "fast", "local"];
+  const MODEL_TEXT_ONLY_PATTERNS = [
+    /deepseek-(?:chat|v\d)/i,
+    /moonshot-v1/i,
+    /sonar(?:-pro)?$/i,
+    /llama(?:-|\.|3|4)/i,
+    /mistral-(?:large|small)|mistral-large|mistral-small/i,
+    /qwen(?:2|3|[-_](?:plus|max|turbo))/i,
+    /ernie/i,
+    /hunyuan/i,
+    /doubao-(?!.*vision|.*vl)/i
+  ];
+
   function recommendedModelOptionsForProviderCatalog(provider) {
     const key = providerModelCatalogKey(provider);
     const fallback = key.includes("anthropic")
@@ -141,7 +154,8 @@
     return (MODEL_CATALOG[key] || fallback || []).map(([id, label]) => ({
       id,
       label,
-      vendor: modelVendorForProviderCatalogEntry(key, id, label)
+      vendor: modelVendorForProviderCatalogEntry(key, id, label),
+      features: modelFeatureHintsForProviderCatalogEntry(key, id, label)
     }));
   }
 
@@ -193,9 +207,66 @@
     return labels.find(([needle]) => normalized.includes(needle))?.[1] || "";
   }
 
+  function modelFeatureHintsForProviderCatalogEntry(provider, id, label) {
+    const key = providerModelCatalogKey(provider);
+    const text = `${key} ${id || ""} ${label || ""}`.toLowerCase();
+    const features = new Set();
+
+    if (modelLooksLocal(key, text)) features.add("local");
+    if (modelLooksFast(text)) features.add("fast");
+    if (modelLooksReasoning(text)) features.add("reasoning");
+    if (modelLooksImageCapable(text)) features.add("image");
+    if (modelLooksPdfCapable(key, text)) features.add("pdf");
+
+    for (const pattern of MODEL_TEXT_ONLY_PATTERNS) {
+      if (pattern.test(text) && !modelLooksExplicitVision(text)) {
+        features.delete("image");
+        features.delete("pdf");
+      }
+    }
+
+    return MODEL_FEATURE_ORDER.filter((feature) => features.has(feature));
+  }
+
+  function modelLikelyTextOnlyForProviderCatalogEntry(provider, id, label) {
+    const key = providerModelCatalogKey(provider);
+    const text = `${key} ${id || ""} ${label || ""}`.toLowerCase();
+    return MODEL_TEXT_ONLY_PATTERNS.some((pattern) => pattern.test(text)) && !modelLooksExplicitVision(text);
+  }
+
+  function modelLooksLocal(provider, text) {
+    return provider === "ollama" || provider === "lm_studio" || provider === "local_agents" || /\bollama\/|local model|local-agents/.test(text);
+  }
+
+  function modelLooksFast(text) {
+    return /\b(?:mini|nano|flash|lite|highspeed|turbo|air|instant|small)\b|gpt-5\.4-mini|gpt-4\.1-mini|o4-mini/.test(text);
+  }
+
+  function modelLooksReasoning(text) {
+    return /\b(?:o3|o4|reasoner|reasoning|r1|opus|gpt-5|gpt-5\.|sonar-reasoning)\b/.test(text);
+  }
+
+  function modelLooksExplicitVision(text) {
+    return /(?:vision|image|multimodal|\bvl\b|qwen-vl|glm-4v|pixtral|grok-2-vision|gpt-4o|gpt-4\.1|gpt-5|gemini|claude)/.test(text);
+  }
+
+  function modelLooksImageCapable(text) {
+    return modelLooksExplicitVision(text);
+  }
+
+  function modelLooksPdfCapable(provider, text) {
+    const isOpenAIResponses = provider === "openai" || provider.includes("responses");
+    const isAnthropicMessages = provider === "anthropic" || provider.includes("anthropic");
+    if (isOpenAIResponses && /(?:gpt-4o|gpt-4\.1|gpt-5|o3|o4)/.test(text)) return true;
+    if (isAnthropicMessages && /claude/.test(text)) return true;
+    return false;
+  }
+
   root.zmsProviderModelCatalog = MODEL_CATALOG;
   root.zmsRecommendedModelOptionsForProvider = recommendedModelOptionsForProviderCatalog;
   root.zmsRecommendedDefaultModelForProvider = recommendedDefaultModelForProviderCatalog;
   root.zmsProviderModelCatalogLabel = providerLabelForModelCatalog;
   root.zmsModelVendorForProviderModel = modelVendorForProviderCatalogEntry;
+  root.zmsModelFeatureHintsForProviderModel = modelFeatureHintsForProviderCatalogEntry;
+  root.zmsModelLikelyTextOnlyForProviderModel = modelLikelyTextOnlyForProviderCatalogEntry;
 })(typeof globalThis !== "undefined" ? globalThis : window);

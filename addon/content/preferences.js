@@ -3652,9 +3652,22 @@ function normalizeModelOptions(modelOptions) {
       id: String(entry?.id || "").trim(),
       label: String(entry?.label || "").trim(),
       source: String(entry?.source || "").trim(),
-      vendor: String(entry?.vendor || "").trim()
+      vendor: String(entry?.vendor || "").trim(),
+      features: normalizeModelFeatureList(entry?.features || entry?.featureHints || entry?.traits)
     }))
     .filter((entry) => entry.id);
+}
+
+function normalizeModelFeatureList(value) {
+  const source = Array.isArray(value) ? value : (typeof value === "string" ? value.split(/[\s,|/]+/) : []);
+  const allowed = new Set(["image", "pdf", "reasoning", "fast", "local"]);
+  const result = [];
+  for (const item of source) {
+    const feature = String(item || "").trim().toLowerCase();
+    if (!allowed.has(feature) || result.includes(feature)) continue;
+    result.push(feature);
+  }
+  return result;
 }
 
 function tagModelOptions(modelOptions, source) {
@@ -3662,7 +3675,8 @@ function tagModelOptions(modelOptions, source) {
   return normalizeModelOptions(modelOptions).map((entry) => ({
     ...entry,
     source: entry.source || nextSource,
-    vendor: entry.vendor || inferredModelVendor(entry)
+    vendor: entry.vendor || inferredModelVendor(entry),
+    features: entry.features.length ? entry.features : inferredModelFeatures(entry)
   }));
 }
 
@@ -3676,21 +3690,48 @@ function appendGroupedModelSelectOptions(select, entries, translate = (key) => k
     group.label = label;
     group.setAttribute?.("label", label);
     for (const entry of groupEntries) {
-      group.appendChild(modelSelectOption(entry));
+      group.appendChild(modelSelectOption(entry, translate));
     }
     select.appendChild(group);
   }
 }
 
-function modelSelectOption(entry) {
+function modelSelectOption(entry, translate = (key) => key) {
   const option = document.createElement("option");
   option.value = entry.id;
-  option.textContent = modelOptionBaseText(entry);
+  const features = normalizeModelFeatureList(entry.features);
+  const featureText = modelFeatureText(features, translate);
+  option.textContent = modelOptionBaseText(entry, featureText);
+  if (features.length) {
+    option.setAttribute?.("data-features", features.join(" "));
+    option.setAttribute?.("title", `${entry.id} · ${featureText}`);
+  }
   return option;
 }
 
-function modelOptionBaseText(entry) {
-  return entry.label && entry.label !== entry.id ? `${entry.label} (${entry.id})` : entry.id;
+function modelOptionBaseText(entry, featureText = "") {
+  const base = entry.label && entry.label !== entry.id ? `${entry.label} (${entry.id})` : entry.id;
+  return featureText ? `${base} · ${featureText}` : base;
+}
+
+function modelFeatureText(features, translate = (key) => key) {
+  return normalizeModelFeatureList(features)
+    .map((feature) => modelFeatureLabel(feature, translate))
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function modelFeatureLabel(feature, translate = (key) => key) {
+  const key = {
+    image: "modelFeatureImage",
+    pdf: "modelFeaturePdf",
+    reasoning: "modelFeatureReasoning",
+    fast: "modelFeatureFast",
+    local: "modelFeatureLocal"
+  }[feature];
+  if (!key) return "";
+  const value = translate(key);
+  return value && value !== key ? value : feature;
 }
 
 function groupedModelSelectEntries(entries) {
@@ -3731,6 +3772,15 @@ function inferredModelVendor(entry) {
     return zmsModelVendorForProviderModel("", id, label);
   }
   return "";
+}
+
+function inferredModelFeatures(entry) {
+  const id = String(entry?.id || "");
+  const label = String(entry?.label || "");
+  if (typeof zmsModelFeatureHintsForProviderModel === "function") {
+    return normalizeModelFeatureList(zmsModelFeatureHintsForProviderModel("", id, label));
+  }
+  return [];
 }
 
 function connectionTestBodyForProfile(profile) {

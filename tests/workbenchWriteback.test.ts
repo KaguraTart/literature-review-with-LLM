@@ -1214,6 +1214,40 @@ describe("workbench writeback helpers", () => {
       capabilities: { streaming: true, imageBase64: false },
       bodyExtra: {}
     }, messages, "zh-CN", "system", requestInput, false)).toThrow("does not support image input");
+
+    expect(() => helpers.bodyForProfile({
+      id: "deepseek",
+      protocol: "openai_chat",
+      model: "deepseek-chat",
+      capabilities: { streaming: true, imageBase64: true },
+      bodyExtra: {}
+    }, messages, "zh-CN", "system", requestInput, false)).toThrow("text-only");
+  });
+
+  it("blocks raw PDF requests for explicitly text-only models", () => {
+    const requestInput = {
+      type: "pdf_base64",
+      source: "pdf_base64",
+      base64: "cGRm",
+      filename: "paper.pdf",
+      images: []
+    };
+
+    expect(() => helpers.bodyForProfile({
+      id: "deepseek",
+      protocol: "openai_responses",
+      model: "deepseek-chat",
+      capabilities: { streaming: true, imageBase64: false, pdfBase64: true },
+      bodyExtra: {}
+    }, [{ role: "user", content: "读 PDF" }], "zh-CN", "system", requestInput, false)).toThrow("text-only");
+
+    expect(() => helpers.bodyForProfile({
+      id: "openai",
+      protocol: "openai_responses",
+      model: "gpt-5.4-mini",
+      capabilities: { streaming: true, imageBase64: true, pdfBase64: true },
+      bodyExtra: {}
+    }, [{ role: "user", content: "读 PDF" }], "zh-CN", "system", requestInput, false)).not.toThrow();
   });
 
   it("builds a default prompt for image-only sends", () => {
@@ -1452,7 +1486,12 @@ describe("workbench writeback helpers", () => {
       modelSelectPlaceholder: "Choose provider model",
       modelSelectCustom: "Custom model...",
       onlineModels: "Online",
-      recommendedModels: "Recommended"
+      recommendedModels: "Recommended",
+      modelFeatureImage: "image",
+      modelFeaturePdf: "PDF",
+      modelFeatureReasoning: "reasoning",
+      modelFeatureFast: "fast",
+      modelFeatureLocal: "local"
     }[key] || key);
     const profile = {
       id: "openai-responses-compatible",
@@ -2432,8 +2471,9 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("### text");
     expect(report).toContain("### image");
     expect(report).toContain("\"messages\"");
-    expect(report).toContain("\"image_url\"");
-    expect(report).toContain("data:image/png;base64,[omitted]");
+    expect(report).toContain("Preview unavailable: Selected model deepseek-chat is text-only");
+    expect(report).not.toContain("\"image_url\"");
+    expect(report).not.toContain("data:image/png;base64,[omitted]");
     expect(report).toContain("\"api_key\": \"[redacted]\"");
     expect(report).toContain("\"token\": \"[redacted]\"");
     expect(report).toContain("\"reasoning_split\": true");
@@ -2741,6 +2781,11 @@ describe("workbench writeback helpers", () => {
       modelSelectPlaceholder: "Choose a recommended model",
       modelSelectCustom: "Custom model...",
       recommendedModels: "Recommended",
+      modelFeatureImage: "image",
+      modelFeaturePdf: "PDF",
+      modelFeatureReasoning: "reasoning",
+      modelFeatureFast: "fast",
+      modelFeatureLocal: "local",
       modelListFailedUsingRecommendations: "Online model list failed; kept recommendations",
       apiKeyMissing: "API key missing"
     }[key] || key);
@@ -2769,6 +2814,7 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
     expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual(["DeepSeek · Recommended"]);
     expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-v4-flash").textContent).toContain("DeepSeek V4 Flash");
+    expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-v4-flash").textContent).toContain("fast");
     expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-chat");
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 4");
   });
@@ -2791,6 +2837,11 @@ describe("workbench writeback helpers", () => {
       modelSelectPlaceholder: "Choose a recommended model",
       modelSelectCustom: "Custom model...",
       recommendedModels: "Recommended",
+      modelFeatureImage: "image",
+      modelFeaturePdf: "PDF",
+      modelFeatureReasoning: "reasoning",
+      modelFeatureFast: "fast",
+      modelFeatureLocal: "local",
       modelListFailedUsingRecommendations: "Online model list failed; kept recommendations",
       apiKeyMissing: "API key missing"
     }[key] || key);
@@ -2824,6 +2875,8 @@ describe("workbench writeback helpers", () => {
       "xAI · Recommended",
       "Ollama · Recommended"
     ]);
+    expect(selectOptionByValue(modelSelect, "openai/gpt-4o-mini").textContent).toContain("image / fast");
+    expect(selectOptionByValue(modelSelect, "anthropic/claude-sonnet-4-6").textContent).toContain("image");
     expect(dom.getElementById("zms-profile-model").value).toBe("openai/gpt-4o-mini");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
     expect(dom.elements.get("zms-chat-status").textContent).toContain("Online model list failed; kept recommendations");
@@ -2854,6 +2907,11 @@ describe("workbench writeback helpers", () => {
       modelSelectCustom: "Custom model...",
       recommendedModels: "Recommended",
       onlineModels: "Online",
+      modelFeatureImage: "image",
+      modelFeaturePdf: "PDF",
+      modelFeatureReasoning: "reasoning",
+      modelFeatureFast: "fast",
+      modelFeatureLocal: "local",
       testFailed: "Connection failed"
     }[key] || key);
     const profile = {

@@ -92,6 +92,11 @@ function loadPreferencesController(options: {
     modelListUnavailable: "Model list unavailable",
     modelRecommendationsLoaded: "Recommended models loaded",
     modelListFailedUsingRecommendations: "Online model list failed; kept recommendations",
+    modelFeatureImage: "image",
+    modelFeaturePdf: "PDF",
+    modelFeatureReasoning: "reasoning",
+    modelFeatureFast: "fast",
+    modelFeatureLocal: "local",
     profilesReset: "Default provider profiles restored",
     resetProfiles: "Reset default profiles",
     testOk: "Connection OK",
@@ -2962,6 +2967,8 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model").hidden).toBe(true);
     expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual(["DeepSeek · Recommended"]);
     expect(selectOptionByValue(elements.get("zms-model-select"), "deepseek-v4-flash").textContent).toContain("DeepSeek V4 Flash");
+    expect(selectOptionByValue(elements.get("zms-model-select"), "deepseek-v4-flash").textContent).toContain("fast");
+    expect(selectOptionByValue(elements.get("zms-model-select"), "deepseek-v4-flash").attributes["data-features"]).toBe("fast");
     expect(selectOptionValues(elements.get("zms-model-select"))).toContain("deepseek-chat");
     expect(elements.get("zms-status").value).toBe("Recommended models loaded: 4");
   });
@@ -2989,6 +2996,8 @@ describe("preferences local-agent config helpers", () => {
       "xAI · Recommended",
       "Ollama · Recommended"
     ]);
+    expect(selectOptionByValue(elements.get("zms-model-select"), "openai/gpt-4o-mini").textContent).toContain("image / fast");
+    expect(selectOptionByValue(elements.get("zms-model-select"), "anthropic/claude-sonnet-4-6").textContent).toContain("image");
     expect(elements.get("zms-model").value).toBe("openai/gpt-4o-mini");
     expect(elements.get("zms-model").hidden).toBe(true);
     expect(elements.get("zms-status").value).toBe("Recommended models loaded: 6");

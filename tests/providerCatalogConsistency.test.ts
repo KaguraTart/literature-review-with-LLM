@@ -128,7 +128,8 @@ function loadPreferencesHelpers() {
   return context as {
     defaultProviderProfiles: () => any[];
     providerDefaults: (provider: string) => any;
-    zmsRecommendedModelOptionsForProvider: (provider: string) => Array<{ id: string; label: string; vendor?: string }>;
+    zmsRecommendedModelOptionsForProvider: (provider: string) => Array<{ id: string; label: string; vendor?: string; features?: string[] }>;
+    zmsModelLikelyTextOnlyForProviderModel: (provider: string, id: string, label?: string) => boolean;
   };
 }
 
@@ -149,7 +150,7 @@ function loadWorkbenchHelpers() {
   return context as {
     defaultProviderProfiles: () => any[];
     workbenchProviderDefaults: (provider: string) => any;
-    zmsRecommendedModelOptionsForProvider: (provider: string) => Array<{ id: string; label: string; vendor?: string }>;
+    zmsRecommendedModelOptionsForProvider: (provider: string) => Array<{ id: string; label: string; vendor?: string; features?: string[] }>;
   };
 }
 
@@ -239,6 +240,35 @@ describe("provider catalog consistency", () => {
     expect([...new Set(openrouterVendors)]).toEqual(["OpenAI", "Anthropic", "Google Gemini", "DeepSeek"]);
     expect(preferences.zmsRecommendedModelOptionsForProvider("openai_compatible")[0].vendor).toBe("OpenAI");
     expect(preferences.zmsRecommendedModelOptionsForProvider("deepseek")[0].vendor).toBe("DeepSeek");
+  });
+
+  it("adds model capability hints to mainstream recommendations", () => {
+    const preferences = loadPreferencesHelpers();
+
+    expect(preferences.zmsRecommendedModelOptionsForProvider("openai")[0]).toMatchObject({
+      id: "gpt-5.4-mini",
+      features: expect.arrayContaining(["image", "pdf", "reasoning", "fast"])
+    });
+    expect(preferences.zmsRecommendedModelOptionsForProvider("anthropic")[0]).toMatchObject({
+      id: "claude-sonnet-4-6",
+      features: expect.arrayContaining(["image", "pdf"])
+    });
+    expect(preferences.zmsRecommendedModelOptionsForProvider("deepseek").find((option) => option.id === "deepseek-reasoner")).toMatchObject({
+      features: expect.arrayContaining(["reasoning"])
+    });
+    expect(preferences.zmsRecommendedModelOptionsForProvider("deepseek").find((option) => option.id === "deepseek-chat")?.features || []).not.toContain("image");
+    expect(preferences.zmsRecommendedModelOptionsForProvider("ollama")[0]).toMatchObject({
+      features: expect.arrayContaining(["local"])
+    });
+  });
+
+  it("marks explicit text-only model IDs without blocking multimodal IDs", () => {
+    const preferences = loadPreferencesHelpers();
+
+    expect(preferences.zmsModelLikelyTextOnlyForProviderModel("deepseek", "deepseek-chat")).toBe(true);
+    expect(preferences.zmsModelLikelyTextOnlyForProviderModel("deepseek", "deepseek-reasoner")).toBe(false);
+    expect(preferences.zmsModelLikelyTextOnlyForProviderModel("openai", "gpt-5.4-mini")).toBe(false);
+    expect(preferences.zmsModelLikelyTextOnlyForProviderModel("zhipu", "glm-4v-plus")).toBe(false);
   });
 
   it("keeps official OpenAI and Anthropic recommendations current without changing cost-friendly defaults", () => {
