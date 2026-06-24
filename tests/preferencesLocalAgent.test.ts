@@ -2966,11 +2966,21 @@ describe("preferences local-agent config helpers", () => {
 
     expect(elements.get("zms-provider-label").value).toBe("模型厂商");
     expect(elements.get("zms-baseURL-label").value).toBe("接口地址");
+    expect(elements.get("zms-apiKey-label").value).toBe("API 密钥");
     expect(elements.get("zms-model-label").value).toBe("模型");
     expect(elements.get("zms-model-help").value).toContain("加载模型列表");
     expect(elements.get("zms-load-models-button").label).toBe("加载模型列表");
     expect(elements.get("zms-test-button").label).toBe("保存并测试");
+    expect(elements.get("zms-temperature-label").value).toBe("温度");
+    expect(elements.get("zms-profileProtocol-label").value).toBe("接口协议");
     expect(elements.get("zms-profileEndpointMode-label").value).toBe("接口模式");
+    expect(elements.get("zms-profileFullURL-label").value).toBe("完整接口地址");
+    expect(elements.get("zms-profileCustomHeaders-label").value).toBe("自定义请求头（JSON）");
+    expect(elements.get("zms-profileBodyExtra-label").value).toBe("额外请求体（JSON）");
+    expect(elements.get("zms-profileLocalAgentEndpoint-label").value).toBe("代理地址");
+    expect(elements.get("zms-profileLocalAgentPayloadMode-label").value).toBe("请求格式");
+    expect(elements.get("zms-profileLocalAgentHeaders-label").value).toBe("代理请求头（JSON）");
+    expect(elements.get("zms-profileLocalAgentSkills-label").value).toBe("技能级配置（JSON，可选）");
     expect(elements.get("zms-outputDir-label").value).toBe("输出目录");
     expect(elements.get("zms-choose-outputDir-button").label).toBe("选择文件夹...");
   });
