@@ -1241,6 +1241,24 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("treats 0.0.0.0 model-list dry runs as local without API credentials", async () => {
+    const report = await runSmoke([
+      "--profile", "openai-compatible",
+      "--base-url", "http://0.0.0.0:11434/v1",
+      "--models",
+      "--dry-run",
+      "--json"
+    ]);
+
+    expect(report).toMatchObject({
+      ok: true,
+      dryRun: true,
+      models: true,
+      endpoint: "http://0.0.0.0:11434/v1/models"
+    });
+    expect(report.request.headerNames).not.toContain("authorization");
+  });
+
   it("loads wrapped local model-list responses without API credentials", async () => {
     await withMockProvider(async (baseURL) => {
       const report = await runSmoke([
@@ -1711,6 +1729,30 @@ describe("provider smoke verifier", () => {
     });
     expect(multimodalStdout).toContain("image: npm run verify:provider:image:live -- --include openai --provider-env-file .env.local");
     expect(multimodalStdout).toContain("pdf: npm run verify:provider:pdf:live -- --include openai --provider-env-file .env.local");
+  });
+
+  it("treats 0.0.0.0 live provider doctor endpoints as local without API credentials", async () => {
+    const report = await runLive(["--doctor", "--include", "openai-compatible", "--json"], scrubProviderEnv({
+      OPENAI_COMPATIBLE_MODEL: "local-compatible",
+      OPENAI_COMPATIBLE_BASE_URL: "http://0.0.0.0:11434/v1"
+    }));
+
+    expect(report).toMatchObject({
+      ok: true,
+      configurationReady: true,
+      liveProviderDoctor: true,
+      counts: {
+        ready: 1,
+        missing: 0
+      }
+    });
+    expect(report.cases[0]).toMatchObject({
+      id: "openai-compatible",
+      status: "ready",
+      auth: "local-no-auth",
+      endpoint: "http://0.0.0.0:11434/v1/chat/completions",
+      modelsEndpoint: "http://0.0.0.0:11434/v1/models"
+    });
   });
 
   it("loads provider doctor env files without leaking secrets", async () => {

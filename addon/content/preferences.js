@@ -886,6 +886,9 @@ function prefFallbackMessage(key, lang) {
     model: zh ? "模型" : "Model",
     modelSelectPlaceholder: zh ? "选择厂商推荐模型" : "Choose provider model",
     modelSelectCustom: zh ? "自定义模型..." : "Custom model...",
+    modelPickerHelp: zh
+      ? "先选择模型厂商，模型下拉框会显示常用模型；填写 API Key 后可刷新在线模型列表，未列出的部署名可选自定义模型。"
+      : "Choose a model provider first. The dropdown shows common models; after entering an API key, refresh the online model list. Use Custom model for deployments not listed.",
     providerEnv: zh ? "粘贴环境变量配置" : "Paste env config",
     providerGuide: zh ? "配置指南" : "Setup guide",
     profileStatus: zh ? "档案状态" : "Profile status",
@@ -926,7 +929,7 @@ function prefFallbackMessage(key, lang) {
     applyProviderEnv: zh ? "应用到当前档案" : "Apply to current profile",
     test: zh ? "测试连接" : "Test connection",
     testing: zh ? "正在测试连接" : "Testing connection",
-    loadModels: zh ? "加载模型" : "Load models",
+    loadModels: zh ? "刷新在线模型" : "Refresh online models",
     loadProfile: zh ? "加载档案" : "Load profile",
     saveProfile: zh ? "保存档案" : "Save profile",
     deleteProfile: zh ? "删除档案" : "Delete profile",
@@ -1114,6 +1117,9 @@ function applyPreferenceTextLabels(lang) {
     "zms-cap-jsonMode-label": zh ? "JSON 模式" : "JSON mode",
     "zms-cap-toolUse-label": zh ? "工具调用" : "Tool use",
     "zms-cap-modelList-label": zh ? "在线模型列表" : "Model list",
+    "zms-model-help": zh
+      ? "先选择模型厂商，模型下拉框会显示常用模型；填写 API Key 后可刷新在线模型列表，未列出的部署名可选自定义模型。"
+      : "Choose a model provider first. The dropdown shows common models; after entering an API key, refresh the online model list. Use Custom model for deployments not listed.",
     "zms-local-agent-note-1": zh
       ? "按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"
       : "Configure endpoint/tool/timeout/payloadMode by skill id. Empty objects are allowed. ask-all/check fall back to ask-gemini / ask-claude / ask-opencode when no separate mapping is set; ask-gemini-claude can call only Gemini and Claude.",
@@ -1944,7 +1950,7 @@ function providerSetupGuide(profile, language = "en-US") {
       `基础地址：${profile.baseURL || defaults.baseURL || "未填写"}`,
       `请求地址：${endpoint || "未配置"}`,
       `鉴权：${auth}`,
-      `模型：${profile.model || "请填写模型名称，或点击“加载模型”后选择"}`,
+      `模型：${profile.model || "请填写模型名称，或点击“刷新在线模型”后选择"}`,
       `能力：${capabilities || "文本"}`,
       `模型列表：${modelList || "当前档案不支持自动加载模型列表"}`,
       `保存后测试：点击“测试连接”；失败信息会隐藏完整 API Key。`,
@@ -1966,7 +1972,7 @@ function providerSetupGuide(profile, language = "en-US") {
     `Base URL: ${profile.baseURL || defaults.baseURL || "not set"}`,
     `Request endpoint: ${endpoint || "not configured"}`,
     `Auth: ${auth}`,
-    `Model: ${profile.model || "enter a model name, or use Load models"}`,
+    `Model: ${profile.model || "enter a model name, or use Refresh online models"}`,
     `Capabilities: ${capabilities || "text"}`,
     `Model list: ${modelList || "not available for this profile"}`,
     "After saving: click Test connection. Failure messages hide full API keys.",
@@ -2745,7 +2751,7 @@ function urlWithQueryParam(currentUrl, param, value) {
 
 function isOllamaProfileId(id, baseURL) {
   if (id === "ollama") return true;
-  return /^https?:\/\/(localhost|127\.0\.0\.1):11434/i.test(String(baseURL || ""));
+  return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|::1):11434/i.test(String(baseURL || ""));
 }
 
 async function fetchOllamaTags(profile) {

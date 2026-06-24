@@ -99,6 +99,16 @@ hbox.zms-row {
   min-width: 7em;
 }
 
+.zms-small-note {
+  display: block;
+  width: 100%;
+  max-width: 58em;
+  margin: -2px 0 10px 10em;
+  color: #5f6b7a;
+  line-height: 1.45;
+  white-space: normal;
+}
+
 .zms-json {
   width: 100%;
   max-width: 58em;
@@ -198,6 +208,10 @@ hbox.zms-row {
 }
 
 @media (prefers-color-scheme: dark) {
+  .zms-small-note {
+    color: rgba(255, 255, 255, 0.72);
+  }
+
   .zms-profile-status,
   .zms-provider-guide {
     border-color: rgba(255, 255, 255, 0.18);
@@ -222,6 +236,10 @@ hbox.zms-row {
   .zms-outputDir-control {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .zms-small-note {
+    margin-left: 0;
   }
 
   #zms-status {

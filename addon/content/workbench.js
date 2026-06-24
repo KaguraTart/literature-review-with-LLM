@@ -3212,7 +3212,7 @@ function providerDiagnosticsLabels(outputLanguage) {
       modelListLiveCheck: "模型列表 live 检查",
       statusSnapshot: "当前状态快照",
       troubleshooting: "排查清单",
-      checkModel: "确认模型名称真实存在，必要时先点击 Load models。",
+      checkModel: "确认模型名称真实存在，必要时先点击“刷新在线模型”。",
       checkEndpoint: "确认 Base URL 不重复包含 /chat/completions、/responses、/messages 或 /models。",
       checkAuth: "确认 API key 或自定义认证 header 属于当前厂商。",
       checkCapabilities: "图片/PDF/流式开关要和模型能力一致。",
@@ -3284,7 +3284,7 @@ function providerDiagnosticsLabels(outputLanguage) {
     modelListLiveCheck: "Model-list Live Check",
     statusSnapshot: "Current Status Snapshot",
     troubleshooting: "Troubleshooting Checklist",
-    checkModel: "Confirm the model name exists. Use Load models first when available.",
+    checkModel: "Confirm the model name exists. Use Refresh online models first when available.",
     checkEndpoint: "Confirm the Base URL does not duplicate /chat/completions, /responses, /messages, or /models.",
     checkAuth: "Confirm the API key or custom authentication header belongs to the selected provider.",
     checkCapabilities: "Keep image/PDF/streaming toggles aligned with the model's real capabilities.",
@@ -15791,7 +15791,7 @@ function isOllamaProfile(profile) {
   if (!profile) return false;
   if (profile.id === "ollama") return true;
   const base = String(profile.baseURL || "");
-  return /^https?:\/\/(localhost|127\.0\.0\.1):11434/i.test(base);
+  return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|::1):11434/i.test(base);
 }
 
 async function workbenchFetchOllamaTags(profile) {

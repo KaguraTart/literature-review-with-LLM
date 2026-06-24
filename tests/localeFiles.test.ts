@@ -66,12 +66,14 @@ describe("locale files", () => {
       "contextFulltextMissing",
       "ask-all-agents",
       "ask-gemini-claude",
+      "loadModels",
       "writeFrontmatter"
     ]));
     expect(Object.keys(ZMS_I18N["zh-CN"].preferences)).toEqual(expect.arrayContaining([
       "profileProtocol",
       "profileEndpointMode",
       "profileCustomHeaders",
+      "modelPickerHelp",
       "modelListLoaded",
       "testFailed"
     ]));

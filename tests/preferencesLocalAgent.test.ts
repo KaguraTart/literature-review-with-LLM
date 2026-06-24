@@ -198,12 +198,14 @@ function loadPreferencesController(options: {
   createElement("zms-save-outputDir-button", { localName: "button" });
   createElement("zms-model-select", { localName: "select" });
   createElement("zms-model-options", { localName: "datalist" });
+  createElement("zms-model-help", { localName: "label" });
   createElement("zms-profile-options", { localName: "datalist" });
   createElement("zms-profileStatus", { localName: "pre" });
   createElement("zms-providerGuide", { localName: "pre" });
   createElement("zms-providerEnvText", { localName: "textarea" });
   createElement("zms-apply-provider-env-button", { localName: "button" });
   createElement("zms-doctor-button", { localName: "button" });
+  createElement("zms-load-models-button", { localName: "button" });
   setChecked("zms-stream", false);
   setChecked("zms-profileLocalAgentFallback", false);
   setChecked("zms-profileLocalAgentEnabled", false);
@@ -2815,6 +2817,8 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-provider-label").value).toBe("模型厂商");
     expect(elements.get("zms-baseURL-label").value).toBe("接口地址");
     expect(elements.get("zms-model-label").value).toBe("模型");
+    expect(elements.get("zms-model-help").value).toContain("模型下拉框会显示常用模型");
+    expect(elements.get("zms-load-models-button").label).toBe("刷新在线模型");
     expect(elements.get("zms-profileEndpointMode-label").value).toBe("接口模式");
     expect(elements.get("zms-outputDir-label").value).toBe("输出目录");
     expect(elements.get("zms-choose-outputDir-button").label).toBe("选择文件夹...");
