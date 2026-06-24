@@ -3122,6 +3122,138 @@ describe("workbench writeback helpers", () => {
     expect(prefValues.outputDir).toBe("/tmp/picked output");
   });
 
+  it("uses Windows file URLs from the workbench folder picker when file.path is empty", async () => {
+    const filePickerConstants = { modeGetFolder: 2, returnOK: 0, returnReplace: 2 };
+    const filePickerCalls: any[] = [];
+    const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      exists: async () => true
+    }, prefValues);
+    (loaded as any).Cc = {
+      "@mozilla.org/filepicker;1": {
+        createInstance: () => {
+          const picker: any = {
+            file: { path: "" },
+            fileURL: { spec: "file:///C:/Users/tart/Zotero/Review%20Output" },
+            init: (_parent: any, title: string, mode: number) => filePickerCalls.push({ title, mode }),
+            show: () => filePickerConstants.returnOK
+          };
+          Object.defineProperty(picker, "displayDirectory", {
+            set(value: any) {
+              const last = filePickerCalls[filePickerCalls.length - 1];
+              if (last) last.displayDirectory = value?.path || "";
+            }
+          });
+          return picker;
+        }
+      },
+      "@mozilla.org/file/local;1": {
+        createInstance: () => ({
+          path: "",
+          initWithPath(path: string) {
+            this.path = path;
+          },
+          get parent() {
+            const parentPath = this.path.replace(/[\\/][^\\/]*$/, "") || this.path;
+            return parentPath && parentPath !== this.path
+              ? { path: parentPath, parent: null, exists: () => true, isDirectory: () => true }
+              : null;
+          },
+          exists: () => true,
+          isDirectory: () => true
+        })
+      }
+    };
+    (loaded as any).Ci = {
+      nsIFilePicker: filePickerConstants,
+      nsIFile: function nsIFile() {}
+    };
+    const dom = fakeDocument({
+      "zms-workbench-output-dir": "/tmp/current output"
+    });
+    (loaded as any).document = dom;
+    loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir = "/tmp/out";
+    loaded.ZoteroMarkdownSummaryWorkbench.t = (key: string) => ({
+      chooseOutputDirTitle: "Choose output folder",
+      outputDirSaved: "Output directory saved"
+    }[key] || key);
+
+    await expect((loaded.ZoteroMarkdownSummaryWorkbench as any).chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      displayDirectory: "/tmp/current output"
+    });
+    expect(dom.elements.get("zms-workbench-output-dir").value).toBe("C:\\Users\\tart\\Zotero\\Review Output");
+    expect(prefValues.outputDir).toBe("C:\\Users\\tart\\Zotero\\Review Output");
+  });
+
+  it("uses macOS file URLs from the workbench folder picker after retrying init without a window parent", async () => {
+    const filePickerConstants = { modeGetFolder: 2, returnOK: 0, returnReplace: 2 };
+    const filePickerCalls: any[] = [];
+    const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      exists: async () => true
+    }, prefValues);
+    (loaded as any).Cc = {
+      "@mozilla.org/filepicker;1": {
+        createInstance: () => {
+          const picker: any = {
+            file: { path: "" },
+            fileURL: { spec: "file:///Users/tart/Zotero/Literature%20Review%20with%20LLM" },
+            init: (parent: any, title: string, mode: number) => {
+              if (parent) throw new Error("window parent unsupported");
+              filePickerCalls.push({ title, mode, parent: null });
+            },
+            show: () => filePickerConstants.returnOK
+          };
+          Object.defineProperty(picker, "displayDirectory", {
+            set(value: any) {
+              const last = filePickerCalls[filePickerCalls.length - 1];
+              if (last) last.displayDirectory = value?.path || "";
+            }
+          });
+          return picker;
+        }
+      },
+      "@mozilla.org/file/local;1": {
+        createInstance: () => ({
+          path: "",
+          initWithPath(path: string) {
+            this.path = path;
+          },
+          exists: () => true,
+          isDirectory: () => true
+        })
+      }
+    };
+    (loaded as any).Ci = {
+      nsIFilePicker: filePickerConstants,
+      nsIFile: function nsIFile() {}
+    };
+    const dom = fakeDocument({
+      "zms-workbench-output-dir": "/tmp/current output"
+    });
+    (loaded as any).document = dom;
+    loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir = "/tmp/out";
+    loaded.ZoteroMarkdownSummaryWorkbench.t = (key: string) => ({
+      chooseOutputDirTitle: "Choose output folder",
+      outputDirSaved: "Output directory saved"
+    }[key] || key);
+
+    await expect((loaded.ZoteroMarkdownSummaryWorkbench as any).chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      parent: null,
+      displayDirectory: "/tmp/current output"
+    });
+    expect(dom.elements.get("zms-workbench-output-dir").value).toBe("/Users/tart/Zotero/Literature Review with LLM");
+    expect(prefValues.outputDir).toBe("/Users/tart/Zotero/Literature Review with LLM");
+  });
+
   it("opens the workbench folder picker at the nearest existing output directory", async () => {
     const filePickerConstants = { modeGetFolder: 2, returnOK: 0, returnReplace: 2 };
     const filePickerCalls: any[] = [];

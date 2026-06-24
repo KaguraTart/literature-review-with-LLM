@@ -50,6 +50,10 @@ function loadPreferencesController(options: {
   initialModel?: string;
   skillFiles?: string[];
   filePickerPath?: string;
+  filePickerFile?: any;
+  filePickerFileURL?: any;
+  filePickerUseShow?: boolean;
+  filePickerInitThrowsWithWindow?: boolean;
   filePickerReturn?: number;
   filePickerExistingPaths?: string[];
 } = {}) {
@@ -63,7 +67,7 @@ function loadPreferencesController(options: {
     returnCancel: 1,
     returnReplace: 2
   };
-  const filePickerCalls: Array<{ title: string; mode: number; displayDirectory?: string }> = [];
+  const filePickerCalls: Array<{ title: string; mode: number; parent?: string | null; displayDirectory?: string }> = [];
   const messageMap: Record<string, string> = {
     apiKeyMissing: "API key missing",
     chooseOutputDir: "Choose Folder...",
@@ -256,14 +260,20 @@ function loadPreferencesController(options: {
       "@mozilla.org/filepicker;1": {
         createInstance: () => {
           const picker: any = {
-            file: { path: options.filePickerPath || "/tmp/chosen output" },
-            init: (_parent: any, title: string, mode: number) => {
-              filePickerCalls.push({ title, mode });
-            },
-            open: (callback: (result: number) => void) => {
-              callback(options.filePickerReturn ?? filePickerConstants.returnOK);
+            file: options.filePickerFile ?? { path: options.filePickerPath || "/tmp/chosen output" },
+            fileURL: options.filePickerFileURL,
+            init: (parent: any, title: string, mode: number) => {
+              if (options.filePickerInitThrowsWithWindow && parent) throw new Error("window parent unsupported");
+              filePickerCalls.push({ title, mode, parent: parent ? "window" : null });
             }
           };
+          if (options.filePickerUseShow) {
+            picker.show = () => options.filePickerReturn ?? filePickerConstants.returnOK;
+          } else {
+            picker.open = (callback: (result: number) => void) => {
+              callback(options.filePickerReturn ?? filePickerConstants.returnOK);
+            };
+          }
           Object.defineProperty(picker, "displayDirectory", {
             set(value: any) {
               const last = filePickerCalls[filePickerCalls.length - 1];
@@ -2336,6 +2346,38 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-outputDir").value).toBe("/tmp/picked output");
     expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("/tmp/picked output");
     expect(madeDirectories).toContain("/tmp/picked output");
+  });
+
+  it("uses a Windows file URL when the native folder picker does not expose file.path", async () => {
+    const { controller, elements, prefValues, madeDirectories } = loadPreferencesController({
+      filePickerFile: { path: "" },
+      filePickerFileURL: { spec: "file:///C:/Users/tart/Documents/Literature%20Review%20with%20LLM" }
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(elements.get("zms-outputDir").value).toBe("C:\\Users\\tart\\Documents\\Literature Review with LLM");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("C:\\Users\\tart\\Documents\\Literature Review with LLM");
+    expect(madeDirectories).toContain("C:\\Users\\tart\\Documents\\Literature Review with LLM");
+  });
+
+  it("uses a macOS file URL and retries folder picker initialization without a window parent", async () => {
+    const { controller, elements, filePickerCalls } = loadPreferencesController({
+      filePickerFile: { path: "" },
+      filePickerFileURL: { spec: "file:///Users/tart/Zotero/Literature%20Review%20with%20LLM" },
+      filePickerUseShow: true,
+      filePickerInitThrowsWithWindow: true
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      parent: null,
+      displayDirectory: "/tmp/out"
+    });
+    expect(elements.get("zms-outputDir").value).toBe("/Users/tart/Zotero/Literature Review with LLM");
   });
 
   it("opens the native folder picker at the nearest existing output directory", async () => {

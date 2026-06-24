@@ -3881,13 +3881,20 @@ async function chooseOutputDirectory(currentPath, title) {
     throw new Error("Folder picker is not available in this Zotero runtime");
   }
   const picker = pickerFactory.createInstance(nsIFilePicker);
-  picker.init(window, title || "Choose output folder", nsIFilePicker.modeGetFolder);
+  initDirectoryPicker(picker, title || "Choose output folder", nsIFilePicker);
   const displayDirectory = fileForDirectoryPicker(currentPath);
   if (displayDirectory) picker.displayDirectory = displayDirectory;
   const result = await openDirectoryPicker(picker);
-  const accepted = result === nsIFilePicker.returnOK || result === nsIFilePicker.returnReplace;
-  if (!accepted) return "";
-  return String(picker.file?.path || "").trim();
+  if (!isAcceptedDirectoryPickerResult(result, nsIFilePicker)) return "";
+  return selectedDirectoryPathFromPicker(picker);
+}
+
+function initDirectoryPicker(picker, title, nsIFilePicker) {
+  try {
+    picker.init(window, title, nsIFilePicker.modeGetFolder);
+  } catch (_err) {
+    picker.init(null, title, nsIFilePicker.modeGetFolder);
+  }
 }
 
 function fileForDirectoryPicker(path) {
@@ -3937,6 +3944,91 @@ async function openDirectoryPicker(picker) {
   }
   if (typeof picker.show === "function") return picker.show();
   throw new Error("Folder picker cannot be opened");
+}
+
+function isAcceptedDirectoryPickerResult(result, nsIFilePicker) {
+  return result === nsIFilePicker.returnOK || result === nsIFilePicker.returnReplace || result === 0;
+}
+
+function selectedDirectoryPathFromPicker(picker) {
+  const seen = typeof WeakSet !== "undefined" ? new WeakSet() : null;
+  return firstDirectoryPath(
+    seen,
+    picker?.file,
+    picker?.fileURL,
+    picker?.file?.path,
+    picker?.domFileOrDirectoryPath,
+    picker?.fileURL?.file,
+    picker?.fileURL?.filePath,
+    picker?.fileURL?.spec,
+    picker?.fileURL?.displaySpec
+  );
+}
+
+function firstDirectoryPath(seen, ...values) {
+  for (const value of values) {
+    const path = directoryPathFromPickerValue(value, seen);
+    if (path) return path;
+  }
+  return "";
+}
+
+function directoryPathFromPickerValue(value, seen, depth = 0) {
+  if (!value || depth > 3) return "";
+  if (typeof value === "string") return pathFromPickerString(value);
+  if (typeof value !== "object") return "";
+  if (seen) {
+    if (seen.has(value)) return "";
+    seen.add(value);
+  }
+  const queried = filePathFromQueryInterface(value);
+  if (queried) return queried;
+  return firstDirectoryPath(
+    seen,
+    value.path,
+    value.filePath,
+    value.nativePath,
+    value.domFileOrDirectoryPath,
+    value.persistentDescriptor,
+    value.target,
+    value.file,
+    value.spec,
+    value.displaySpec
+  );
+}
+
+function filePathFromQueryInterface(value) {
+  try {
+    const nsIFileURL = typeof Ci !== "undefined" ? Ci.nsIFileURL : undefined;
+    const fileURL = nsIFileURL && typeof value.QueryInterface === "function" ? value.QueryInterface(nsIFileURL) : null;
+    return String(fileURL?.file?.path || fileURL?.filePath || "").trim();
+  } catch (_err) {
+    return "";
+  }
+}
+
+function pathFromPickerString(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (!/^file:/i.test(text)) return text;
+  try {
+    const url = new URL(text);
+    if (url.protocol !== "file:") return text;
+    const host = decodeURIComponent(url.hostname || "");
+    let pathname = decodeURIComponent(url.pathname || "");
+    if (host && host.toLowerCase() !== "localhost") {
+      return `\\\\${host}${pathname.replace(/\//g, "\\")}`;
+    }
+    if (/^\/[A-Za-z]:\//.test(pathname)) {
+      return pathname.slice(1).replace(/\//g, "\\");
+    }
+    if (/^\/[A-Za-z]\|\//.test(pathname)) {
+      return `${pathname[1]}:${pathname.slice(3)}`.replace(/\//g, "\\");
+    }
+    return pathname || text;
+  } catch (_err) {
+    return text;
+  }
 }
 
 function shouldPersistResolvedOutputDir(value) {
