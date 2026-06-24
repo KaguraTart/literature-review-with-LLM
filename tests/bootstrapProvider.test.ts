@@ -796,6 +796,39 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[0].body.params.arguments.prompt).toContain("paper text");
   });
 
+  it("keeps Local Agents thinking out of direct summary Markdown", async () => {
+    const { helpers } = loadBootstrapProviderHelpers({
+      result: {
+        content: [{ type: "text", text: "<think>private local notes</think>\n\nlocal visible summary" }]
+      }
+    });
+
+    await expect(helpers.callProvider({
+      provider: "local-agents",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "http://127.0.0.1:3333/v1",
+      apiKey: "",
+      model: "",
+      capabilities: { pdfBase64: false, streaming: false },
+      customHeaders: {},
+      bodyExtra: {
+        localAgent: {
+          endpoint: "http://127.0.0.1:3333/mcp",
+          "ask-all-agents": { tool: "ask_all_agents" }
+        }
+      },
+      request: {
+        system: "system prompt",
+        prompt: "summary prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash")).resolves.toMatchObject({ markdown: "local visible summary" });
+  });
+
   it("finds arbitrary Markdown attachments for the reader entry", async () => {
     const { helpers, zoteroItems } = loadBootstrapProviderHelpers();
     const pdfAttachment = {
@@ -2666,6 +2699,29 @@ describe("bootstrap provider helpers", () => {
         stream: false
       }
     }, "hash", false)).resolves.toMatchObject({ markdown: "visible summary" });
+
+    const markedUnclosedThink = loadBootstrapProviderHelpers({
+      choices: [{ message: { content: "<think>private chain\n\n最终回答：visible summary after marker" } }]
+    });
+    await expect(markedUnclosedThink.helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false)).resolves.toMatchObject({ markdown: "visible summary after marker" });
   });
 
   it("adds JSON mode defaults in bootstrap OpenAI provider requests", async () => {
@@ -3218,6 +3274,28 @@ describe("bootstrap provider helpers", () => {
         stream: false
       }
     }, "hash")).resolves.toMatchObject({ markdown: "wrapped anthropic summary" });
+
+    const markedUnclosedThink = loadBootstrapProviderHelpers({
+      content: "<think>private anthropic notes\n\nAnswer: anthropic visible summary"
+    });
+    await expect(markedUnclosedThink.helpers.callAnthropic({
+      provider: "anthropic",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash")).resolves.toMatchObject({ markdown: "anthropic visible summary" });
   });
 
   it("extracts shallow provider text containers in the bootstrap provider path", async () => {
