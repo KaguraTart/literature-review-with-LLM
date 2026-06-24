@@ -1942,6 +1942,9 @@ describe("provider adapters", () => {
       choices: [{ message: { content: [{ type: "text", value: "assistant direct value" }] } }]
     } as any)).toBe("assistant direct value");
     expect(extractResponseText("openai_chat", {
+      choices: [{ message: { content: null, parsed: { answer: "structured chat answer", evidence: ["metadata"] } } }]
+    } as any)).toBe("{\n  \"answer\": \"structured chat answer\",\n  \"evidence\": [\n    \"metadata\"\n  ]\n}");
+    expect(extractResponseText("openai_chat", {
       choices: [{ message: { content: [{ type: "reasoning", text: "hidden" }, { type: "output_text", text: "final" }] } }]
     } as any)).toBe("final");
     expect(extractResponseText("openai_chat", {
@@ -1954,6 +1957,9 @@ describe("provider adapters", () => {
       output: [{ content: [{ type: "output_text", text: { value: "responses value text" } }] }]
     } as any)).toBe("responses value text");
     expect(extractResponseText("openai_responses", {
+      output: [{ content: [{ type: "output_text", output_parsed: { answer: "structured responses answer" } }] }]
+    } as any)).toBe("{\n  \"answer\": \"structured responses answer\"\n}");
+    expect(extractResponseText("openai_responses", {
       text: "responses direct text"
     } as any)).toBe("responses direct text");
     expect(extractResponseText("openai_chat", {
@@ -1962,6 +1968,9 @@ describe("provider adapters", () => {
     expect(extractResponseText("anthropic_messages", {
       content: [{ type: "text", text: { value: "anthropic value text" } }]
     } as any)).toBe("anthropic value text");
+    expect(extractResponseText("anthropic_messages", {
+      content: [{ type: "text", json: { answer: "structured anthropic answer" } }]
+    } as any)).toBe("{\n  \"answer\": \"structured anthropic answer\"\n}");
     expect(extractResponseText("anthropic_messages", {
       payload: { text: { value: "anthropic wrapped direct text" } }
     } as any)).toBe("anthropic wrapped direct text");

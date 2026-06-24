@@ -15,7 +15,11 @@ const MODEL_TEXT_CONTAINER_KEYS = [
   "candidate",
   "candidates",
   "content_block",
-  "completion"
+  "completion",
+  "parsed",
+  "json",
+  "output_parsed",
+  "outputParsed"
 ];
 const PROVIDER_USAGE_CONTAINER_KEYS = [
   ...PROVIDER_RESPONSE_WRAPPER_KEYS,
@@ -627,6 +631,11 @@ function extractOpenAIMessageContent(content, depth = 0) {
     if (typeof content?.content === "string") return content.content;
     if (typeof content?.completion === "string") return content.completion;
     if (typeof content?.refusal === "string") return content.refusal;
+    const structured = extractStructuredModelText(content?.parsed, depth + 1)
+      || extractStructuredModelText(content?.json, depth + 1)
+      || extractStructuredModelText(content?.output_parsed, depth + 1)
+      || extractStructuredModelText(content?.outputParsed, depth + 1);
+    if (structured) return structured;
     for (const key of MODEL_TEXT_CONTAINER_KEYS) {
       const nested = content?.[key];
       if (!nested || nested === content) continue;
@@ -635,6 +644,26 @@ function extractOpenAIMessageContent(content, depth = 0) {
     }
   }
   return "";
+}
+
+function extractStructuredModelText(value, depth = 0) {
+  if (value === undefined || value === null || depth > 5) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "object") {
+    const nested = extractOpenAIMessageContent(value, depth + 1);
+    if (nested) return nested;
+    return stringifyProviderJSON(value);
+  }
+  return "";
+}
+
+function stringifyProviderJSON(value) {
+  try {
+    return JSON.stringify(value, null, 2) || "";
+  } catch (_err) {
+    return "";
+  }
 }
 
 function extractOpenAIContentArray(value) {

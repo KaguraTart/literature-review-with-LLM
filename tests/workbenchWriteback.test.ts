@@ -2947,11 +2947,17 @@ describe("workbench writeback helpers", () => {
       choices: [{ message: { content: [{ type: "text", text: { value: "chat value text", annotations: [] } }] } }]
     })).toBe("chat value text");
     expect(helpers.extractResponseText("openai_chat", {
+      choices: [{ message: { content: null, parsed: { answer: "structured chat text", evidence: ["metadata"] } } }]
+    })).toBe("{\n  \"answer\": \"structured chat text\",\n  \"evidence\": [\n    \"metadata\"\n  ]\n}");
+    expect(helpers.extractResponseText("openai_chat", {
       content: [{ type: "text", text: "top-level content" }]
     })).toBe("top-level content");
     expect(helpers.extractResponseText("openai_responses", {
       output: [{ content: [{ type: "output_text", text: { value: "responses value text" } }] }]
     })).toBe("responses value text");
+    expect(helpers.extractResponseText("openai_responses", {
+      output: [{ content: [{ type: "output_text", outputParsed: { answer: "structured responses text" } }] }]
+    })).toBe("{\n  \"answer\": \"structured responses text\"\n}");
     expect(helpers.extractResponseText("openai_responses", {
       text: "responses direct text"
     })).toBe("responses direct text");
@@ -2976,6 +2982,9 @@ describe("workbench writeback helpers", () => {
     expect(helpers.extractResponseText("anthropic_messages", {
       payload: { message: { content: [{ type: "redacted_thinking", text: "hidden" }, { type: "text", text: "anthropic message text" }] } }
     })).toBe("anthropic message text");
+    expect(helpers.extractResponseText("anthropic_messages", {
+      payload: { message: { content: [{ type: "text", json: { answer: "structured anthropic text" } }] } }
+    })).toBe("{\n  \"answer\": \"structured anthropic text\"\n}");
     expect(helpers.extractResponseText("anthropic_messages", {
       payload: { message: { content: [{ type: "redacted_thinking", text: "hidden" }, { type: "text", text: { value: "anthropic value text" } }] } }
     })).toBe("anthropic value text");

@@ -10015,7 +10015,11 @@ const MODEL_TEXT_CONTAINER_KEYS = [
   "candidate",
   "candidates",
   "content_block",
-  "completion"
+  "completion",
+  "parsed",
+  "json",
+  "output_parsed",
+  "outputParsed"
 ];
 const PROVIDER_USAGE_CONTAINER_KEYS = [
   ...PROVIDER_RESPONSE_WRAPPER_KEYS,
@@ -10691,6 +10695,11 @@ function modelTextFromValue(value, depth = 0) {
     if (typeof value.content === "string") return value.content;
     if (typeof value.completion === "string") return value.completion;
     if (typeof value.refusal === "string") return value.refusal;
+    const structured = structuredModelText(value?.parsed, depth + 1)
+      || structuredModelText(value?.json, depth + 1)
+      || structuredModelText(value?.output_parsed, depth + 1)
+      || structuredModelText(value?.outputParsed, depth + 1);
+    if (structured) return structured;
     for (const key of MODEL_TEXT_CONTAINER_KEYS) {
       const nested = value?.[key];
       if (!nested || nested === value) continue;
@@ -10699,6 +10708,26 @@ function modelTextFromValue(value, depth = 0) {
     }
   }
   return "";
+}
+
+function structuredModelText(value, depth = 0) {
+  if (value === undefined || value === null || depth > 5) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "object") {
+    const nested = modelTextFromValue(value, depth + 1);
+    if (nested) return nested;
+    return stringifyProviderJSON(value);
+  }
+  return "";
+}
+
+function stringifyProviderJSON(value) {
+  try {
+    return JSON.stringify(value, null, 2) || "";
+  } catch (_err) {
+    return "";
+  }
 }
 
 function modelTextFromChoices(choices) {

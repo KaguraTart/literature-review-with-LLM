@@ -69,7 +69,11 @@ const MODEL_TEXT_CONTAINER_KEYS = [
   "candidate",
   "candidates",
   "content_block",
-  "completion"
+  "completion",
+  "parsed",
+  "json",
+  "output_parsed",
+  "outputParsed"
 ] as const;
 const PROVIDER_USAGE_CONTAINER_KEYS = [
   ...PROVIDER_RESPONSE_WRAPPER_KEYS,
@@ -381,6 +385,11 @@ function extractMessageContent(content: unknown, depth = 0): string {
     if (typeof record.content === "string") return record.content;
     if (typeof record.completion === "string") return record.completion;
     if (typeof record.refusal === "string") return record.refusal;
+    const structured = extractStructuredModelText(record.parsed, depth + 1)
+      || extractStructuredModelText(record.json, depth + 1)
+      || extractStructuredModelText(record.output_parsed, depth + 1)
+      || extractStructuredModelText(record.outputParsed, depth + 1);
+    if (structured) return structured;
     for (const key of MODEL_TEXT_CONTAINER_KEYS) {
       const value = record[key];
       if (!value || value === content) continue;
@@ -389,6 +398,26 @@ function extractMessageContent(content: unknown, depth = 0): string {
     }
   }
   return "";
+}
+
+function extractStructuredModelText(value: unknown, depth = 0): string {
+  if (value === undefined || value === null || depth > 5) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "object") {
+    const nested = extractMessageContent(value, depth + 1);
+    if (nested) return nested;
+    return stringifyProviderJSON(value);
+  }
+  return "";
+}
+
+function stringifyProviderJSON(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2) || "";
+  } catch (_err) {
+    return "";
+  }
 }
 
 function extractOutputContent(output: unknown, depth = 0): string {

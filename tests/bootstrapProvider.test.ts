@@ -3469,6 +3469,56 @@ describe("bootstrap provider helpers", () => {
     }, "hash")).resolves.toMatchObject({ markdown: "wrapped direct Anthropic text" });
   });
 
+  it("extracts structured parsed provider text in the bootstrap provider path", async () => {
+    const openai = loadBootstrapProviderHelpers({
+      choices: [{ message: { content: null, parsed: { answer: "structured OpenAI text", evidence: ["metadata"] } } }]
+    });
+    await expect(openai.helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false)).resolves.toMatchObject({
+      markdown: "{\n  \"answer\": \"structured OpenAI text\",\n  \"evidence\": [\n    \"metadata\"\n  ]\n}"
+    });
+
+    const anthropic = loadBootstrapProviderHelpers({
+      content: [{ type: "text", json: { answer: "structured Anthropic text" } }]
+    });
+    await expect(anthropic.helpers.callAnthropic({
+      provider: "anthropic",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "sk-test-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash")).resolves.toMatchObject({
+      markdown: "{\n  \"answer\": \"structured Anthropic text\"\n}"
+    });
+  });
+
   it("allows disabling official Anthropic direct browser access in the bootstrap provider path", async () => {
     const { fetchCalls, helpers } = loadBootstrapProviderHelpers({
       content: [{ type: "text", text: "anthropic summary" }]

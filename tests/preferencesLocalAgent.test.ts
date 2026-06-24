@@ -2987,6 +2987,9 @@ describe("preferences local-agent config helpers", () => {
       choices: [{ message: { content: [{ type: "text", text: { value: "chat value ok", annotations: [] } }] } }]
     }))).toBe("chat value ok");
     expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
+      choices: [{ message: { content: null, parsed: { answer: "structured chat ok", evidence: ["metadata"] } } }]
+    }))).toBe("{\n  \"answer\": \"structured chat ok\",\n  \"evidence\": [\n    \"metadata\"\n  ]\n}");
+    expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
       choices: [{ message: { content: null } }, { message: { content: "second choice ok" } }]
     }))).toBe("second choice ok");
     expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
@@ -2998,6 +3001,9 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.extractProviderConnectionText("openai_responses", JSON.stringify({
       response: { output: [{ content: [{ type: "output_text", text: { value: "responses value ok" } }] }] }
     }))).toBe("responses value ok");
+    expect(helpers.extractProviderConnectionText("openai_responses", JSON.stringify({
+      output: [{ content: [{ type: "output_text", output_parsed: { answer: "structured responses ok" } }] }]
+    }))).toBe("{\n  \"answer\": \"structured responses ok\"\n}");
     expect(helpers.extractProviderConnectionText("openai_responses", JSON.stringify({
       type: "response.refusal.done",
       refusal: "responses refusal ok"
@@ -3017,6 +3023,9 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({
       content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "anthropic ok" }]
     }))).toBe("anthropic ok");
+    expect(helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({
+      content: [{ type: "text", json: { answer: "structured anthropic ok" } }]
+    }))).toBe("{\n  \"answer\": \"structured anthropic ok\"\n}");
     expect(helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({
       content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: { value: "anthropic value ok" } }]
     }))).toBe("anthropic value ok");
