@@ -3152,6 +3152,64 @@ describe("workbench writeback helpers", () => {
     expect(prefValues.outputDir).toBe("/tmp/picked output");
   });
 
+  it("still opens the workbench folder picker when the display directory is rejected", async () => {
+    const filePickerConstants = { modeGetFolder: 2, returnOK: 0, returnReplace: 2 };
+    const filePickerCalls: any[] = [];
+    const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      exists: async () => true
+    }, prefValues);
+    (loaded as any).Cc = {
+      "@mozilla.org/filepicker;1": {
+        createInstance: () => {
+          const picker: any = {
+            file: { path: "/tmp/picked output" },
+            init: (_parent: any, title: string, mode: number) => filePickerCalls.push({ title, mode }),
+            open: (callback: (result: number) => void) => callback(filePickerConstants.returnOK)
+          };
+          Object.defineProperty(picker, "displayDirectory", {
+            set() {
+              throw new Error("display directory unsupported");
+            }
+          });
+          return picker;
+        }
+      },
+      "@mozilla.org/file/local;1": {
+        createInstance: () => ({
+          path: "",
+          initWithPath(path: string) {
+            this.path = path;
+          },
+          exists: () => true,
+          isDirectory: () => true
+        })
+      }
+    };
+    (loaded as any).Ci = {
+      nsIFilePicker: filePickerConstants,
+      nsIFile: function nsIFile() {}
+    };
+    const dom = fakeDocument({
+      "zms-workbench-output-dir": "/tmp/current output"
+    });
+    (loaded as any).document = dom;
+    loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir = "/tmp/out";
+    loaded.ZoteroMarkdownSummaryWorkbench.t = (key: string) => ({
+      chooseOutputDirTitle: "Choose output folder",
+      outputDirSaved: "Output directory saved"
+    }[key] || key);
+
+    await expect((loaded.ZoteroMarkdownSummaryWorkbench as any).chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2
+    });
+    expect(dom.elements.get("zms-workbench-output-dir").value).toBe("/tmp/picked output");
+    expect(prefValues.outputDir).toBe("/tmp/picked output");
+  });
+
   it("uses Windows file URLs from the workbench folder picker when file.path is empty", async () => {
     const filePickerConstants = { modeGetFolder: 2, returnOK: 0, returnReplace: 2 };
     const filePickerCalls: any[] = [];
@@ -3263,6 +3321,21 @@ describe("workbench writeback helpers", () => {
   });
 
   it.each([
+    [
+      "encoded drive-colon file URL",
+      { spec: "file:///C%3A/Users/tart/Zotero/Review%20Output" },
+      "C:\\Users\\tart\\Zotero\\Review Output"
+    ],
+    [
+      "raw backslash Windows file URL",
+      { spec: "file:C:\\Users\\tart\\Zotero\\Review%20Output" },
+      "C:\\Users\\tart\\Zotero\\Review Output"
+    ],
+    [
+      "localhost UNC file URL",
+      { spec: "file://localhost//server/share/Review%20Output" },
+      "\\\\server\\share\\Review Output"
+    ],
     [
       "nsIFileURL QueryInterface slash-drive path",
       {

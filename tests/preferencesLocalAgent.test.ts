@@ -56,6 +56,7 @@ function loadPreferencesController(options: {
   filePickerUseShow?: boolean;
   filePickerInitThrowsWithWindow?: boolean;
   filePickerOpenThrowsWithWindow?: boolean;
+  filePickerDisplayDirectoryThrows?: boolean;
   filePickerReturn?: number;
   filePickerExistingPaths?: string[];
   makeDirectoryThrows?: boolean;
@@ -291,6 +292,7 @@ function loadPreferencesController(options: {
           }
           Object.defineProperty(picker, "displayDirectory", {
             set(value: any) {
+              if (options.filePickerDisplayDirectoryThrows) throw new Error("display directory unsupported");
               const last = filePickerCalls[filePickerCalls.length - 1];
               if (last) last.displayDirectory = value?.path || "";
             }
@@ -2619,6 +2621,30 @@ describe("preferences local-agent config helpers", () => {
 
   it.each([
     [
+      "encoded drive-colon file URL",
+      {
+        filePickerFile: { path: "" },
+        filePickerFileURL: { spec: "file:///C%3A/Users/tart/Documents/Review%20Output" }
+      },
+      "C:\\Users\\tart\\Documents\\Review Output"
+    ],
+    [
+      "raw backslash Windows file URL",
+      {
+        filePickerFile: { path: "" },
+        filePickerFileURL: { spec: "file:C:\\Users\\tart\\Documents\\Review%20Output" }
+      },
+      "C:\\Users\\tart\\Documents\\Review Output"
+    ],
+    [
+      "localhost UNC file URL",
+      {
+        filePickerFile: { path: "" },
+        filePickerFileURL: { spec: "file://localhost//server/share/Review%20Output" }
+      },
+      "\\\\server\\share\\Review Output"
+    ],
+    [
       "localhost pipe-drive file URL",
       {
         filePickerFile: { path: "" },
@@ -2766,6 +2792,24 @@ describe("preferences local-agent config helpers", () => {
       mode: 2,
       displayDirectory: "/tmp"
     });
+  });
+
+  it("still opens and saves when the native folder picker rejects the display directory", async () => {
+    const { controller, elements, prefValues, madeDirectories, filePickerCalls } = loadPreferencesController({
+      filePickerPath: "/tmp/picked output",
+      filePickerDisplayDirectoryThrows: true
+    });
+    elements.get("zms-outputDir").value = "/tmp/current output";
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2
+    });
+    expect(elements.get("zms-outputDir").value).toBe("/tmp/picked output");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("/tmp/picked output");
+    expect(madeDirectories).toContain("/tmp/picked output");
   });
 
   it("keeps the current output directory when folder picking is cancelled", async () => {

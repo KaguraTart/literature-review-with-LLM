@@ -3938,7 +3938,7 @@ async function chooseOutputDirectory(currentPath, title) {
 
 async function chooseOutputDirectoryWithPicker(picker, title, nsIFilePicker, displayDirectory, useWindowParent) {
   initDirectoryPicker(picker, title, nsIFilePicker, useWindowParent);
-  if (displayDirectory) picker.displayDirectory = displayDirectory;
+  setPickerDisplayDirectory(picker, displayDirectory);
   const result = await openDirectoryPicker(picker);
   if (!isAcceptedDirectoryPickerResult(result, nsIFilePicker)) return "";
   const selected = selectedDirectoryPathFromPicker(picker);
@@ -3994,6 +3994,16 @@ function directoryForPicker(file) {
     return file;
   } catch (_err) {
     return null;
+  }
+}
+
+function setPickerDisplayDirectory(picker, directory) {
+  if (!picker || !directory) return false;
+  try {
+    picker.displayDirectory = directory;
+    return true;
+  } catch (_err) {
+    return false;
   }
 }
 
@@ -4157,6 +4167,7 @@ function normalizePickerPathString(value) {
   if (/^\/+\\\\\?\\UNC\\/i.test(text)) return `\\\\${text.replace(/^\/+\\\\\?\\UNC\\/i, "")}`;
   if (/^\/+\\\\\?\\[A-Za-z]:\\/i.test(text)) return text.replace(/^\/+\\\\\?\\/i, "");
   if (/^\/+\\\\[^\\]+\\[^\\]+/.test(text)) return text.replace(/^\/+/, "");
+  if (/^\/+[A-Za-z]:$/.test(text)) return `${text.replace(/^\/+/, "")}\\`;
   if (/^\/\/\?\/UNC\//i.test(text)) return `\\\\${text.replace(/^\/\/\?\/UNC\//i, "").replace(/\//g, "\\")}`;
   if (/^\/\/\?\/[A-Za-z]:\//i.test(text)) return text.replace(/^\/\/\?\//i, "").replace(/\//g, "\\");
   if (/^\\\\\?\\UNC\\/i.test(text)) return `\\\\${text.slice(8)}`;
