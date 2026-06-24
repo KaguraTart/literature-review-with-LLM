@@ -2919,7 +2919,7 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model-select").value).toBe("claude-sonnet-4-6");
   });
 
-  it("applies provider presets over custom profile fields and clears stale API keys", () => {
+  it("applies provider presets over custom profile fields without reusing stale API keys", () => {
     const { controller, elements } = loadPreferencesController();
     elements.get("zms-provider").value = "anthropic";
     elements.get("zms-activeProfileId").value = "custom-router";

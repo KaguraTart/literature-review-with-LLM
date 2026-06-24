@@ -298,6 +298,12 @@ const SOURCE_MARKERS = [
     markers: ["fetchModelOptions", "nextModelListURL", "MODEL_LIST_MAX_PAGES", "workbenchFetchModelOptions", "workbenchNextModelListURL", "WORKBENCH_MODEL_LIST_MAX_PAGES", "providerRequestHeadersWithFallback", "retries settings model lists without a rejected Anthropic version header", "retries workbench model lists without a rejected Anthropic version header", "follows bounded wrapped model-list pagination in the workbench"]
   },
   {
+    id: "provider.model-picker-presets",
+    description: "Settings and workbench expose provider-specific recommended model dropdowns before falling back to custom model input",
+    files: ["addon/content/provider-models.js", "addon/content/preferences.xhtml", "addon/content/preferences.js", "addon/content/workbench.xhtml", "addon/content/workbench.js", "tests/preferencesLocalAgent.test.ts", "tests/workbenchWriteback.test.ts", "tests/providerCatalogConsistency.test.ts"],
+    markers: ["MODEL_CATALOG", "zms-model-select", "zms-profile-model-select", "recommendedModelOptionsForProvider", "renderWorkbenchModelRecommendations", "appendGroupedModelSelectOptions", "Custom model", "自定义模型", "preloads recommended provider models without requiring an API key", "loads recommended workbench models before API credentials are configured", "tags aggregate-provider recommendations with concrete model vendors"]
+  },
+  {
     id: "local-agents.bridge",
     description: "Gemini, Claude, opencode, all-agent, OCR, PDF page extraction, and health-check MCP tools are exposed by the local bridge",
     files: ["scripts/local-agent-mcp.mjs"],
@@ -694,6 +700,7 @@ export function collectReadinessChecks(options = {}) {
   addSkillChecks(checks);
   addSourceMarkerChecks(checks);
   addReadmeReleaseLinkChecks(checks);
+  addReadmeUiTextChecks(checks);
   addXpiChecks(checks, normalizedOptions);
 
   return {
@@ -923,6 +930,54 @@ function addReadmeReleaseLinkChecks(checks) {
       file,
       "README release links should use /releases/latest"
     ));
+  }
+}
+
+function addReadmeUiTextChecks(checks) {
+  const specs = [
+    {
+      file: "README.md",
+      required: [
+        { id: "refresh-models", marker: "`Refresh models`" },
+        { id: "restores-provider-credentials", marker: "switching back to a previously saved provider restores that provider's own key and model" }
+      ],
+      forbidden: [
+        { id: "load-model-list", marker: "`Load model list`" },
+        { id: "clears-old-api-key", marker: "clears the old API key" }
+      ]
+    },
+    {
+      file: "README.zh-CN.md",
+      required: [
+        { id: "refresh-models", marker: "`刷新模型`" },
+        { id: "restores-provider-credentials", marker: "切回已保存过的厂商时会恢复该厂商自己的 key 和模型" }
+      ],
+      forbidden: [
+        { id: "load-model-list", marker: "`加载模型列表`" },
+        { id: "clears-old-api-key", marker: "清空旧 API key" }
+      ]
+    }
+  ];
+  for (const spec of specs) {
+    const text = readText(spec.file);
+    for (const { id, marker } of spec.required) {
+      checks.push(check(
+        `readme.ui-text.required.${spec.file}.${id}`,
+        `${spec.file} documents current provider/model-picker UI wording: ${marker}`,
+        text.includes(marker),
+        spec.file,
+        "README should describe the current provider settings behavior"
+      ));
+    }
+    for (const { id, marker } of spec.forbidden) {
+      checks.push(check(
+        `readme.ui-text.forbidden.${spec.file}.${id}`,
+        `${spec.file} does not document stale provider/model-picker UI wording: ${marker}`,
+        !text.includes(marker),
+        spec.file,
+        "Remove stale provider/model-picker wording from README"
+      ));
+    }
   }
 }
 

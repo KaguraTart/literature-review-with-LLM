@@ -63,4 +63,29 @@ describe("project readiness check", () => {
     expect(checkById.get("readme.release-link.xpi.README.zh-CN.md")).toBe("pass");
     expect(checkById.get("readme.release-link.no-versioned.README.zh-CN.md")).toBe("pass");
   });
+
+  it("keeps README provider model-picker wording aligned with the UI", () => {
+    const report = collectReadinessChecks({ includeXpi: false });
+    const checkById = new Map(report.checks.map((check: { id: string; status: string }) => [check.id, check.status]));
+
+    expect(checkById.get("readme.ui-text.required.README.md.refresh-models")).toBe("pass");
+    expect(checkById.get("readme.ui-text.required.README.md.restores-provider-credentials")).toBe("pass");
+    expect(checkById.get("readme.ui-text.forbidden.README.md.load-model-list")).toBe("pass");
+    expect(checkById.get("readme.ui-text.forbidden.README.md.clears-old-api-key")).toBe("pass");
+    expect(checkById.get("readme.ui-text.required.README.zh-CN.md.refresh-models")).toBe("pass");
+    expect(checkById.get("readme.ui-text.required.README.zh-CN.md.restores-provider-credentials")).toBe("pass");
+    expect(checkById.get("readme.ui-text.forbidden.README.zh-CN.md.load-model-list")).toBe("pass");
+    expect(checkById.get("readme.ui-text.forbidden.README.zh-CN.md.clears-old-api-key")).toBe("pass");
+  });
+
+  it("keeps provider-specific model dropdowns covered by readiness checks", () => {
+    const report = collectReadinessChecks({ includeXpi: false });
+    const checkById = new Map(report.checks.map((check: { id: string; status: string }) => [check.id, check.status]));
+
+    expect(checkById.get("provider.model-picker-presets.MODEL_CATALOG")).toBe("pass");
+    expect(checkById.get("provider.model-picker-presets.zms-model-select")).toBe("pass");
+    expect(checkById.get("provider.model-picker-presets.zms-profile-model-select")).toBe("pass");
+    expect(checkById.get("provider.model-picker-presets.appendGroupedModelSelectOptions")).toBe("pass");
+    expect(checkById.get("provider.model-picker-presets.loads recommended workbench models before API credentials are configured")).toBe("pass");
+  });
 });
