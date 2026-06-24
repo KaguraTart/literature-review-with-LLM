@@ -9449,7 +9449,7 @@ describe("workbench writeback helpers", () => {
     loaded.fetch = async (_url: string, init: any) => {
       const body = JSON.parse(init.body);
       fetchCalls.push({ body });
-      if (body.text) {
+      if (body.text?.format) {
         return {
           ok: false,
           status: 400,
@@ -9461,7 +9461,7 @@ describe("workbench writeback helpers", () => {
           })
         };
       }
-      if (body.max_output_tokens) {
+      if (fetchCalls.length === 2) {
         return {
           ok: false,
           status: 400,
@@ -9483,6 +9483,7 @@ describe("workbench writeback helpers", () => {
     const response = await loaded.requestModelWithRetry({
       ...providerProfile(),
       protocol: "openai_responses",
+      bodyExtra: { text: { format: { type: "json_object" }, verbosity: "low" } },
       capabilities: { ...providerProfile().capabilities, jsonMode: true }
     }, [
       { role: "user", content: "hello" }
@@ -9491,12 +9492,12 @@ describe("workbench writeback helpers", () => {
     expect(response.ok).toBe(true);
     expect(fetchCalls).toHaveLength(3);
     expect(fetchCalls[0].body).toMatchObject({
-      text: { format: { type: "json_object" } },
+      text: { format: { type: "json_object" }, verbosity: "low" },
       max_output_tokens: 8192
     });
-    expect(fetchCalls[1].body).not.toHaveProperty("text");
+    expect(fetchCalls[1].body).toMatchObject({ text: { verbosity: "low" } });
     expect(fetchCalls[1].body).toMatchObject({ max_output_tokens: 8192 });
-    expect(fetchCalls[2].body).not.toHaveProperty("text");
+    expect(fetchCalls[2].body).toMatchObject({ text: { verbosity: "low" } });
     expect(fetchCalls[2].body).not.toHaveProperty("max_output_tokens");
   });
 

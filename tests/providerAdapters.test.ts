@@ -774,7 +774,7 @@ describe("provider adapters", () => {
     const responsesBody = {
       model: "responses-model",
       input: [],
-      text: { format: { type: "json_object" } },
+      text: { format: { type: "json_object" }, verbosity: "low" },
       max_output_tokens: 1024,
       temperature: 0.2,
       stream: false
@@ -784,7 +784,15 @@ describe("provider adapters", () => {
       responsesBody,
       400,
       "Unsupported parameters: text.format, max_output_tokens, temperature, stream"
-    )).toEqual(["stream", "temperature", "text", "max_output_tokens"]);
+    )).toEqual(["stream", "temperature", "text.format", "max_output_tokens"]);
+    expect(omitProviderRequestBodyFields(responsesBody, ["text.format"])).toMatchObject({
+      text: { verbosity: "low" },
+      max_output_tokens: 1024
+    });
+    expect(omitProviderRequestBodyFields(responsesBody, ["text.verbosity"])).toMatchObject({
+      text: { format: { type: "json_object" } },
+      max_output_tokens: 1024
+    });
     expect(providerCompatibilityFallbackFields(
       "openai_responses",
       responsesBody,
@@ -799,7 +807,7 @@ describe("provider adapters", () => {
           parameters: ["max_output_tokens", "request.temperature", "stream"]
         }
       })
-    )).toEqual(["text", "max_output_tokens", "temperature", "stream"]);
+    )).toEqual(["text.format", "max_output_tokens", "temperature", "stream"]);
     expect(providerCompatibilityFallbackFields(
       "openai_responses",
       responsesBody,
@@ -824,7 +832,7 @@ describe("provider adapters", () => {
           { type: "extra_forbidden", loc: ["body", "stream"], msg: "Extra inputs are not permitted" }
         ]
       })
-    )).toEqual(["text", "max_output_tokens", "temperature", "stream"]);
+    )).toEqual(["text.format", "max_output_tokens", "temperature", "stream"]);
     const responsesPDFBody = {
       model: "responses-model",
       input: [
@@ -911,7 +919,7 @@ describe("provider adapters", () => {
       },
       422,
       "Unsupported parameters: instructions, reasoning, text.verbosity, verbosity"
-    )).toEqual(["text", "instructions", "reasoning", "verbosity"]);
+    )).toEqual(["text.verbosity", "instructions", "reasoning", "verbosity"]);
     const responsesRetryBody = omitProviderRequestBodyFields({
       model: "responses-model",
       input: [{ role: "user", content: [{ type: "input_text", text: "ping" }] }],
@@ -919,8 +927,9 @@ describe("provider adapters", () => {
       text: { verbosity: "low" },
       reasoning: { effort: "low" },
       verbosity: "low"
-    }, ["text", "instructions", "reasoning", "verbosity"]);
+    }, ["text.verbosity", "instructions", "reasoning", "verbosity"]);
     expect(responsesRetryBody).not.toHaveProperty("instructions");
+    expect(responsesRetryBody).not.toHaveProperty("text");
     expect((responsesRetryBody.input as any[])[0].content).toEqual([
       { type: "input_text", text: "SYSTEM:\nsystem" },
       { type: "input_text", text: "ping" }

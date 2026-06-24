@@ -71,6 +71,8 @@ const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "max_completion_tokens",
   "max_tokens",
   "text",
+  "text.format",
+  "text.verbosity",
   "max_output_tokens",
   "instructions",
   "reasoning",
@@ -10085,8 +10087,27 @@ function omitProviderBodyFields(body, bodyExtra) {
   const fields = providerBodyOmitFields(bodyExtra);
   if (!fields.size) return body;
   const next = { ...body };
-  for (const field of fields) delete next[field];
+  for (const field of fields) {
+    if (field === "text.format") {
+      removeOpenAIResponsesTextField(next, "format");
+      continue;
+    }
+    if (field === "text.verbosity") {
+      removeOpenAIResponsesTextField(next, "verbosity");
+      continue;
+    }
+    delete next[field];
+  }
   return next;
+}
+
+function removeOpenAIResponsesTextField(body, field) {
+  const text = body.text;
+  if (!text || typeof text !== "object" || Array.isArray(text)) return;
+  const nextText = { ...text };
+  delete nextText[field];
+  if (Object.keys(nextText).length) body.text = nextText;
+  else delete body.text;
 }
 
 function providerBodyOmitFields(bodyExtra) {
@@ -10523,7 +10544,13 @@ function providerUnsupportedOptionalFields(protocol, body, text, usedFallback = 
   if (body?.max_tokens !== undefined && (/max_tokens|max tokens|max token/.test(detail) || providerDetailMentionsCanonicalField(detail, "max_tokens"))) {
     fields.push("max_tokens");
   }
-  if (body?.text !== undefined && /text\.format|text format|text\.verbosity|text verbosity|(?:^|[^a-z0-9_])text(?:[^a-z0-9_]|$)|json mode|json_schema|json schema/.test(detail)) {
+  if (providerTextFieldPresent(body, "format") && (/text\.format|text format|json mode|json_schema|json schema/.test(detail) || providerDetailMentionsCanonicalField(detail, "text.format"))) {
+    fields.push("text.format");
+  }
+  if (providerTextFieldPresent(body, "verbosity") && (/text\.verbosity|text verbosity/.test(detail) || providerDetailMentionsCanonicalField(detail, "text.verbosity"))) {
+    fields.push("text.verbosity");
+  }
+  if (!fields.includes("text.format") && !fields.includes("text.verbosity") && body?.text !== undefined && /(?:^|[^a-z0-9_])text(?![._\-\s]*(?:format|verbosity))(?:[^a-z0-9_]|$)/.test(detail)) {
     fields.push("text");
   }
   if (body?.max_output_tokens !== undefined && (/max_output_tokens|max output tokens|max output token/.test(detail) || providerDetailMentionsCanonicalField(detail, "max_output_tokens"))) {
@@ -10734,7 +10761,10 @@ function collectProviderFieldHintValue(value, hints) {
   }
   if (Array.isArray(value)) {
     const path = providerFieldHintArrayPath(value);
-    if (path) hints.push(path);
+    if (path) {
+      hints.push(path);
+      return;
+    }
     for (const item of value) collectProviderFieldHintValue(item, hints);
     return;
   }
@@ -10762,6 +10792,7 @@ function providerFieldHintArrayPath(value) {
     }
     if (typeof item !== "string" || !item.trim()) return "";
     const text = item.trim();
+    if (value.length > 1 && /[./]/.test(text)) return "";
     path += path ? `.${text}` : text;
   }
   return path.includes(".") || path.includes("[") ? path : "";
@@ -10825,6 +10856,8 @@ function canonicalProviderFieldHint(value) {
     maxcompletiontokens: "max_completion_tokens",
     maxtokens: "max_tokens",
     maxoutputtokens: "max_output_tokens",
+    textformat: "text.format",
+    textverbosity: "text.verbosity",
     topp: "top_p",
     presencepenalty: "presence_penalty",
     frequencypenalty: "frequency_penalty",
@@ -10855,6 +10888,8 @@ function canonicalProviderFieldHint(value) {
 }
 
 function providerFallbackFieldPresent(body, field) {
+  if (field === "text.format") return providerTextFieldPresent(body, "format");
+  if (field === "text.verbosity") return providerTextFieldPresent(body, "verbosity");
   if (field === "messages.content") return anthropicMessagesHaveStringContent(body);
   if (field === "messages.content.image") return anthropicMessagesHaveImageBlock(body);
   if (field === "messages.content.document") return anthropicMessagesHaveDocumentBlock(body);
@@ -10869,6 +10904,7 @@ function providerFallbackFieldPresent(body, field) {
 
 function providerFallbackFieldSupported(body, field, protocol = "") {
   if (!field) return false;
+  if (field === "text.format" || field === "text.verbosity") return protocol === "openai_responses";
   if (field === "messages.content") return protocol === "anthropic_messages";
   if (field === "messages.content.image") return protocol === "anthropic_messages";
   if (field === "messages.content.document") return protocol === "anthropic_messages";
@@ -10883,6 +10919,11 @@ function providerFallbackCustomBodyFieldPresent(body, field) {
   if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(field)) return false;
   if (PROVIDER_REQUIRED_BODY_FIELDS.has(field.toLowerCase())) return false;
   return Object.prototype.hasOwnProperty.call(body || {}, field);
+}
+
+function providerTextFieldPresent(body, field) {
+  const text = body?.text;
+  return !!text && typeof text === "object" && !Array.isArray(text) && Object.prototype.hasOwnProperty.call(text, field);
 }
 
 function rejectedAnthropicMessagesContentField(body, detail) {
