@@ -889,10 +889,16 @@ function numericUsageValue(value) {
 }
 
 function providerUsageFromResponse(data, depth = 0) {
-  if (!data || typeof data !== "object" || depth > 3) return undefined;
+  if (!data || typeof data !== "object" || depth > 5) return undefined;
+  if (Array.isArray(data)) {
+    return data
+      .map((item) => providerUsageFromResponse(item, depth + 1))
+      .filter(Boolean)
+      .reduce((merged, usage) => mergeStreamUsage(merged, usage), undefined);
+  }
   const direct = directProviderUsage(data);
   let nested;
-  for (const key of PROVIDER_RESPONSE_WRAPPER_KEYS) {
+  for (const key of PROVIDER_USAGE_CONTAINER_KEYS) {
     const value = data?.[key];
     if (!value || typeof value !== "object") continue;
     nested = mergeStreamUsage(nested, providerUsageFromResponse(value, depth + 1));

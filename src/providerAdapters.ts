@@ -71,6 +71,18 @@ const MODEL_TEXT_CONTAINER_KEYS = [
   "content_block",
   "completion"
 ] as const;
+const PROVIDER_USAGE_CONTAINER_KEYS = [
+  ...PROVIDER_RESPONSE_WRAPPER_KEYS,
+  "delta",
+  "choices",
+  "output",
+  "content",
+  "parts",
+  "part",
+  "item",
+  "candidate",
+  "candidates"
+] as const;
 
 type OpenAIResponsesInputItem = {
   role: "user" | "assistant";
@@ -508,10 +520,16 @@ function firstString(...values: unknown[]): string {
 }
 
 function providerUsageFromValue(value: unknown, depth = 0): ProviderUsage | null {
-  if (!value || typeof value !== "object" || depth > 3) return null;
+  if (!value || typeof value !== "object" || depth > 5) return null;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => providerUsageFromValue(item, depth + 1))
+      .filter((usage): usage is ProviderUsage => !!usage)
+      .reduce((merged, usage) => mergeProviderUsage(merged, usage), null as ProviderUsage | null);
+  }
   const data = value as any;
   const direct = directProviderUsageFromValue(data);
-  const nested = PROVIDER_RESPONSE_WRAPPER_KEYS
+  const nested = PROVIDER_USAGE_CONTAINER_KEYS
     .map((key) => providerUsageFromValue(data?.[key], depth + 1))
     .filter((usage): usage is ProviderUsage => !!usage)
     .reduce((merged, usage) => mergeProviderUsage(merged, usage), null as ProviderUsage | null);
@@ -527,6 +545,8 @@ function directProviderUsageFromValue(data: any): ProviderUsage | null {
     data?.usageMetadata,
     data?.token_counts,
     data?.tokenCounts,
+    data?.message?.usage,
+    data?.delta?.usage,
     data?.metadata?.usage,
     data?.metadata?.usage_metadata,
     data?.metadata?.usageMetadata

@@ -2723,6 +2723,25 @@ describe("workbench writeback helpers", () => {
       totalTokens: 18
     });
 
+    const nestedResponse: any = {
+      body: streamFromText([
+        "data: {\"choices\":[{\"delta\":{\"content\":\"nested \",\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":1}}}]}",
+        "",
+        "data: {\"output\":[{\"content\":[{\"text\":\"usage\",\"usageMetadata\":{\"inputTokenCount\":\"5\",\"outputTokenCount\":\"2\",\"thoughtsTokenCount\":\"1\"}}]}]}"
+      ].join("\n"))
+    };
+    const nestedDeltas: string[] = [];
+    const nestedText = await helpers.readStream(nestedResponse, "openai_chat", (delta) => nestedDeltas.push(delta));
+
+    expect(nestedText).toBe("nested usage");
+    expect(nestedDeltas).toEqual(["nested ", "usage"]);
+    expect(nestedResponse.zmsUsage).toEqual({
+      inputTokens: 5,
+      outputTokens: 2,
+      totalTokens: 7,
+      reasoningTokens: 1
+    });
+
     const anthropicResponse: any = {
       body: streamFromText([
         "event: content_block_delta",

@@ -3558,5 +3558,19 @@ describe("bootstrap provider helpers", () => {
       cachedInputTokens: 1,
       reasoningTokens: 2
     });
+    expect(helpers.streamUsage({
+      choices: [{ delta: { usage: { prompt_tokens: 6, completion_tokens: 3, total_tokens: 9 } } }]
+    })).toEqual({
+      inputTokens: 6,
+      outputTokens: 3,
+      totalTokens: 9
+    });
+    expect(helpers.streamUsage({
+      output: [{ content: [{ usageMetadata: { inputTokenCount: "4", outputTokenCount: "2", totalTokenCount: "6" } }] }]
+    })).toEqual({
+      inputTokens: 4,
+      outputTokens: 2,
+      totalTokens: 6
+    });
   });
 });

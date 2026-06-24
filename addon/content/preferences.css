@@ -12,16 +12,19 @@
 }
 
 .zms-outputDir-row {
-  max-width: 72em;
+  max-width: 58em;
+  width: 58em;
 }
 
 #zms-outputDir.zms-outputDir-field {
-  width: 30em;
-  max-width: 30em;
+  width: 28em;
+  min-width: 16em;
+  max-width: 28em;
 }
 
 .zms-outputDir-button {
-  min-width: 7.5em;
+  min-width: 6.5em;
+  margin-left: 6px;
 }
 
 .zms-json {

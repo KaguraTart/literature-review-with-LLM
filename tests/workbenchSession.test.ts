@@ -322,6 +322,36 @@ describe("workbench session helpers", () => {
       cachedInputTokens: 4,
       reasoningTokens: 6
     });
+    expect(helpers.providerUsageFromResponse({
+      choices: [{
+        delta: {
+          usage: {
+            prompt_tokens: 6,
+            completion_tokens: 3,
+            total_tokens: 9
+          }
+        }
+      }]
+    })).toEqual({
+      inputTokens: 6,
+      outputTokens: 3,
+      totalTokens: 9
+    });
+    expect(helpers.providerUsageFromResponse({
+      output: [{
+        content: [{
+          usageMetadata: {
+            inputTokenCount: "4",
+            outputTokenCount: "2",
+            totalTokenCount: "6"
+          }
+        }]
+      }]
+    })).toEqual({
+      inputTokens: 4,
+      outputTokens: 2,
+      totalTokens: 6
+    });
     expect(helpers.mergeProviderUsage(
       { inputTokens: 3, outputTokens: 0, totalTokens: 3 },
       { outputTokens: 7, totalTokens: 7 }

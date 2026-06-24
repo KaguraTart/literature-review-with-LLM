@@ -8786,6 +8786,18 @@ const MODEL_TEXT_CONTAINER_KEYS = [
   "content_block",
   "completion"
 ];
+const PROVIDER_USAGE_CONTAINER_KEYS = [
+  ...PROVIDER_RESPONSE_WRAPPER_KEYS,
+  "delta",
+  "choices",
+  "output",
+  "content",
+  "parts",
+  "part",
+  "item",
+  "candidate",
+  "candidates"
+];
 
 function streamTextFromData(protocol, data, depth = 0) {
   if (!data) return "";
@@ -8950,9 +8962,15 @@ function firstProviderErrorString(...values) {
 }
 
 function providerUsageFromResponse(data, depth = 0) {
-  if (!data || typeof data !== "object" || depth > 3) return null;
+  if (!data || typeof data !== "object" || depth > 5) return null;
+  if (Array.isArray(data)) {
+    return data
+      .map((item) => providerUsageFromResponse(item, depth + 1))
+      .filter(Boolean)
+      .reduce((merged, usage) => mergeProviderUsage(merged, usage), null);
+  }
   const direct = directProviderUsageFromResponse(data);
-  const nested = PROVIDER_RESPONSE_WRAPPER_KEYS
+  const nested = PROVIDER_USAGE_CONTAINER_KEYS
     .map((key) => providerUsageFromResponse(data?.[key], depth + 1))
     .filter(Boolean)
     .reduce((merged, usage) => mergeProviderUsage(merged, usage), null);
@@ -8968,6 +8986,8 @@ function directProviderUsageFromResponse(data) {
     data?.usageMetadata,
     data?.token_counts,
     data?.tokenCounts,
+    data?.message?.usage,
+    data?.delta?.usage,
     data?.metadata?.usage,
     data?.metadata?.usage_metadata,
     data?.metadata?.usageMetadata

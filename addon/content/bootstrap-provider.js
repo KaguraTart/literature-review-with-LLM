@@ -17,6 +17,18 @@ const MODEL_TEXT_CONTAINER_KEYS = [
   "content_block",
   "completion"
 ];
+const PROVIDER_USAGE_CONTAINER_KEYS = [
+  ...PROVIDER_RESPONSE_WRAPPER_KEYS,
+  "delta",
+  "choices",
+  "output",
+  "content",
+  "parts",
+  "part",
+  "item",
+  "candidate",
+  "candidates"
+];
 const PROVIDER_FALLBACK_BODY_FIELDS = new Set([
   "stream_options",
   "stream",
@@ -133,9 +145,15 @@ function streamUsage(chunk) {
 }
 
 function providerUsageFromValue(value, depth = 0) {
-  if (!value || typeof value !== "object" || depth > 3) return null;
+  if (!value || typeof value !== "object" || depth > 5) return null;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => providerUsageFromValue(item, depth + 1))
+      .filter(Boolean)
+      .reduce((merged, usage) => mergeProviderUsage(merged, usage), null);
+  }
   const direct = directProviderUsageFromValue(value);
-  const nested = PROVIDER_RESPONSE_WRAPPER_KEYS
+  const nested = PROVIDER_USAGE_CONTAINER_KEYS
     .map((key) => providerUsageFromValue(value?.[key], depth + 1))
     .filter(Boolean)
     .reduce((merged, usage) => mergeProviderUsage(merged, usage), null);

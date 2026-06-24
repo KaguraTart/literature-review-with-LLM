@@ -1727,6 +1727,37 @@ describe("provider adapters", () => {
       cachedInputTokens: 1,
       reasoningTokens: 4
     });
+    expect(extractProviderUsage({
+      choices: [{
+        delta: {
+          usage: {
+            prompt_tokens: 6,
+            completion_tokens: 3,
+            total_tokens: 9
+          }
+        }
+      }]
+    })).toEqual({
+      inputTokens: 6,
+      outputTokens: 3,
+      totalTokens: 9
+    });
+
+    expect(extractProviderUsage({
+      output: [{
+        content: [{
+          usageMetadata: {
+            inputTokenCount: "4",
+            outputTokenCount: "2",
+            totalTokenCount: "6"
+          }
+        }]
+      }]
+    })).toEqual({
+      inputTokens: 4,
+      outputTokens: 2,
+      totalTokens: 6
+    });
   });
 
   it("extracts provider token usage from stream chunks", () => {
@@ -1752,6 +1783,17 @@ describe("provider adapters", () => {
       totalTokens: 10,
       cachedInputTokens: 1,
       reasoningTokens: 2
+    });
+
+    expect(parseStreamUsage([
+      "data: {\"choices\":[{\"delta\":{\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":1}}}]}",
+      "",
+      "data: {\"output\":[{\"content\":[{\"usageMetadata\":{\"inputTokenCount\":\"5\",\"outputTokenCount\":\"2\",\"thoughtsTokenCount\":\"1\"}}]}]}"
+    ].join("\n"))).toEqual({
+      inputTokens: 5,
+      outputTokens: 2,
+      totalTokens: 7,
+      reasoningTokens: 1
     });
   });
 
