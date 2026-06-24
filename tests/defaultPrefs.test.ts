@@ -29,6 +29,7 @@ describe("default provider profiles", () => {
       "azure-openai",
       "github-models",
       "huggingface",
+      "deepinfra",
       "fireworks",
       "cerebras",
       "nvidia-nim",
@@ -114,6 +115,12 @@ describe("default provider profiles", () => {
       protocol: "openai_chat",
       endpointMode: "base_url",
       baseURL: "https://router.huggingface.co/v1",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
+    });
+    expect(profiles.find((profile: any) => profile.id === "deepinfra")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepinfra.com/v1/openai",
       capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "fireworks")).toMatchObject({

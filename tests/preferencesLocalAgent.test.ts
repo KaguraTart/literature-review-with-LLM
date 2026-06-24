@@ -51,6 +51,7 @@ function loadPreferencesController(options: {
   skillFiles?: string[];
   filePickerPath?: string;
   filePickerFile?: any;
+  filePickerFiles?: any;
   filePickerFileURL?: any;
   filePickerUseShow?: boolean;
   filePickerInitThrowsWithWindow?: boolean;
@@ -263,6 +264,7 @@ function loadPreferencesController(options: {
           let initializedParent: string | null = null;
           const picker: any = {
             file: options.filePickerFile ?? { path: options.filePickerPath || "/tmp/chosen output" },
+            files: options.filePickerFiles,
             fileURL: options.filePickerFileURL,
             init: (parent: any, title: string, mode: number) => {
               if (options.filePickerInitThrowsWithWindow && parent) throw new Error("window parent unsupported");
@@ -1412,6 +1414,12 @@ describe("preferences local-agent config helpers", () => {
       baseURL: "https://router.huggingface.co/v1",
       capabilities: { streaming: true, pdfBase64: false, imageBase64: true, modelList: true }
     });
+    expect(helpers.providerDefaults("deepinfra")).toMatchObject({
+      id: "deepinfra",
+      protocol: "openai_chat",
+      baseURL: "https://api.deepinfra.com/v1/openai",
+      capabilities: { streaming: true, pdfBase64: false, imageBase64: true, modelList: true }
+    });
     expect(helpers.providerDefaults("fireworks")).toMatchObject({
       id: "fireworks",
       protocol: "openai_chat",
@@ -1580,6 +1588,7 @@ describe("preferences local-agent config helpers", () => {
       "azure-openai",
       "github-models",
       "huggingface",
+      "deepinfra",
       "fireworks",
       "cerebras",
       "nvidia-nim",
@@ -1658,6 +1667,12 @@ describe("preferences local-agent config helpers", () => {
       protocol: "openai_chat",
       endpointMode: "base_url",
       baseURL: "https://router.huggingface.co/v1",
+      capabilities: { imageBase64: true, modelList: true }
+    });
+    expect(profiles.find((profile) => profile.id === "deepinfra")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepinfra.com/v1/openai",
       capabilities: { imageBase64: true, modelList: true }
     });
     expect(profiles.find((profile) => profile.id === "fireworks")).toMatchObject({
@@ -1830,6 +1845,7 @@ describe("preferences local-agent config helpers", () => {
       "azure-openai",
       "github-models",
       "huggingface",
+      "deepinfra",
       "fireworks",
       "cerebras",
       "nvidia-nim",
@@ -1943,6 +1959,12 @@ describe("preferences local-agent config helpers", () => {
       baseURL: "https://router.huggingface.co/v1",
       bodyExtra: {}
     })).toBe("huggingface");
+    expect(helpers.providerFromProfile({
+      id: "deep_infra",
+      protocol: "openai_chat",
+      baseURL: "https://api.deepinfra.com/v1/openai",
+      bodyExtra: {}
+    })).toBe("deepinfra");
   });
 
   it("keeps local-agent skill reset templates specific to their tools", () => {
@@ -2208,6 +2230,21 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).not.toContain("hf_test-secret");
   });
 
+  it("uses named live-check variables for DeepInfra setup guides", () => {
+    const helpers = loadPreferencesHelpers();
+    const guide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("deepinfra"),
+      apiKey: "deepinfra_test-secret",
+      model: "meta-llama/Meta-Llama-3.1-8B-Instruct"
+    }, "en-US");
+
+    expect(guide).toContain("Active profile: DeepInfra");
+    expect(guide).toContain("DEEPINFRA_API_KEY=...");
+    expect(guide).toContain("DEEPINFRA_MODEL=meta-llama/Meta-Llama-3.1-8B-Instruct");
+    expect(guide).toContain("--include deepinfra");
+    expect(guide).not.toContain("deepinfra_test-secret");
+  });
+
   it("includes edited Base URL for named provider live-check commands", () => {
     const helpers = loadPreferencesHelpers();
     const guide = helpers.providerSetupGuide({
@@ -2465,6 +2502,57 @@ describe("preferences local-agent config helpers", () => {
     expect(madeDirectories).toContain("\\\\server\\share\\Review Output");
   });
 
+  it.each([
+    [
+      "localhost pipe-drive file URL",
+      {
+        filePickerFile: { path: "" },
+        filePickerFileURL: { spec: "file://localhost/C|/Users/tart/Documents/Review%20Output" }
+      },
+      "C:\\Users\\tart\\Documents\\Review Output"
+    ],
+    [
+      "over-slashed UNC file URL",
+      {
+        filePickerFile: { path: "" },
+        filePickerFileURL: { spec: "file://///server/share/Review%20Output" }
+      },
+      "\\\\server\\share\\Review Output"
+    ],
+    [
+      "Windows long-path nsIFile path",
+      {
+        filePickerFile: { path: "\\\\?\\C:\\Users\\tart\\Documents\\Review Output" }
+      },
+      "C:\\Users\\tart\\Documents\\Review Output"
+    ],
+    [
+      "picker.files enumerator fallback",
+      {
+        filePickerFile: { path: "" },
+        filePickerFiles: {
+          used: false,
+          hasMoreElements() {
+            return !this.used;
+          },
+          getNext() {
+            this.used = true;
+            return { path: "C:\\Users\\tart\\Documents\\Review Output" };
+          }
+        }
+      },
+      "C:\\Users\\tart\\Documents\\Review Output"
+    ]
+  ])("normalizes Windows %s from the native folder picker", async (_name, pickerOptions, expected) => {
+    const { controller, elements, prefValues, madeDirectories } = loadPreferencesController(pickerOptions);
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(elements.get("zms-outputDir").value).toBe(expected);
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe(expected);
+    expect(madeDirectories).toContain(expected);
+  });
+
   it("uses a macOS file URL and retries folder picker initialization without a window parent", async () => {
     const { controller, elements, filePickerCalls } = loadPreferencesController({
       filePickerFile: { path: "" },
@@ -2601,6 +2689,7 @@ describe("preferences local-agent config helpers", () => {
       "azure-openai",
       "github-models",
       "huggingface",
+      "deepinfra",
       "fireworks",
       "cerebras",
       "nvidia-nim",
@@ -2642,6 +2731,7 @@ describe("preferences local-agent config helpers", () => {
       "azure-openai",
       "github-models",
       "huggingface",
+      "deepinfra",
       "fireworks",
       "cerebras",
       "nvidia-nim",

@@ -135,6 +135,19 @@ const DEFAULT_CASES = [
     allowLocalNoAuth: true
   },
   {
+    id: "deepinfra",
+    label: "DeepInfra",
+    profile: "deepinfra",
+    protocol: "openai_chat",
+    apiKeyEnv: "DEEPINFRA_API_KEY",
+    modelEnv: "DEEPINFRA_MODEL",
+    baseURLEnv: "DEEPINFRA_BASE_URL",
+    headersEnv: "DEEPINFRA_HEADERS_JSON",
+    bodyExtraEnv: "DEEPINFRA_BODY_EXTRA_JSON",
+    requireBaseURL: false,
+    allowLocalNoAuth: true
+  },
+  {
     id: "fireworks",
     label: "Fireworks AI",
     profile: "fireworks",
@@ -1515,6 +1528,7 @@ function usage() {
     "  AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=... AZURE_OPENAI_BASE_URL=... npm run verify:provider:live -- --include azure-openai",
     "  GITHUB_MODELS_API_KEY=... GITHUB_MODELS_MODEL=... npm run verify:provider:live -- --include github-models",
     "  HUGGINGFACE_API_KEY=... HUGGINGFACE_MODEL=... npm run verify:provider:live -- --include huggingface",
+    "  DEEPINFRA_API_KEY=... DEEPINFRA_MODEL=... npm run verify:provider:live -- --include deepinfra",
     "  FIREWORKS_API_KEY=... FIREWORKS_MODEL=... npm run verify:provider:live -- --include fireworks",
     "  CEREBRAS_API_KEY=... CEREBRAS_MODEL=... npm run verify:provider:live -- --include cerebras",
     "  NVIDIA_NIM_API_KEY=... NVIDIA_NIM_MODEL=... npm run verify:provider:live -- --include nvidia-nim",

@@ -264,6 +264,11 @@ describe("bootstrap provider helpers", () => {
       baseURL: "https://router.huggingface.co/v1",
       capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
     });
+    expect(helpers.settingsProviderDefaults("deepinfra")).toMatchObject({
+      protocol: "openai_chat",
+      baseURL: "https://api.deepinfra.com/v1/openai",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
+    });
     expect(helpers.settingsProviderDefaults("zai_anthropic")).toMatchObject({
       protocol: "anthropic_messages",
       baseURL: "https://api.z.ai/api/anthropic",
@@ -317,6 +322,10 @@ describe("bootstrap provider helpers", () => {
       protocol: "openai_chat",
       baseURL: "https://router.huggingface.co/v1"
     })).toBe("huggingface");
+    expect(helpers.settingsProviderFromProfile({
+      protocol: "openai_chat",
+      baseURL: "https://api.deepinfra.com/v1/openai"
+    })).toBe("deepinfra");
     expect(helpers.settingsProviderFromProfile({
       id: "zai-anthropic",
       protocol: "anthropic_messages",

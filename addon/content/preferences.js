@@ -927,13 +927,15 @@ function selectedDirectoryPathFromPicker(picker) {
   return firstDirectoryPath(
     seen,
     picker?.file,
+    picker?.files,
     picker?.fileURL,
     picker?.file?.path,
     picker?.domFileOrDirectoryPath,
     picker?.fileURL?.file,
     picker?.fileURL?.filePath,
     picker?.fileURL?.spec,
-    picker?.fileURL?.displaySpec
+    picker?.fileURL?.displaySpec,
+    picker?.fileURL?.asciiSpec
   );
 }
 
@@ -955,6 +957,8 @@ function directoryPathFromPickerValue(value, seen, depth = 0) {
   }
   const queried = filePathFromQueryInterface(value);
   if (queried) return queried;
+  const enumerated = firstDirectoryPathFromEnumerable(value, seen, depth);
+  if (enumerated) return enumerated;
   return firstDirectoryPath(
     seen,
     value.path,
@@ -965,8 +969,16 @@ function directoryPathFromPickerValue(value, seen, depth = 0) {
     value.fullPath,
     value.displayPath,
     value.persistentDescriptor,
+    value.url,
+    value.URL,
+    value.href,
+    value.uri,
+    value.asciiSpec,
     value.target,
     value.file,
+    value.files,
+    value.directory,
+    value.fileURL,
     value.spec,
     value.displaySpec
   );
@@ -974,12 +986,49 @@ function directoryPathFromPickerValue(value, seen, depth = 0) {
 
 function filePathFromQueryInterface(value) {
   try {
+    if (typeof value.QueryInterface !== "function") return "";
+    const nsIFile = typeof Ci !== "undefined" ? Ci.nsIFile : undefined;
+    const file = nsIFile ? value.QueryInterface(nsIFile) : null;
+    const filePath = pathFromPickerString(file?.path || file?.persistentDescriptor || "");
+    if (filePath) return filePath;
+  } catch (_err) {
+    // Try nsIFileURL below.
+  }
+  try {
+    if (typeof value.QueryInterface !== "function") return "";
     const nsIFileURL = typeof Ci !== "undefined" ? Ci.nsIFileURL : undefined;
-    const fileURL = nsIFileURL && typeof value.QueryInterface === "function" ? value.QueryInterface(nsIFileURL) : null;
-    return pathFromPickerString(fileURL?.file?.path || fileURL?.filePath || fileURL?.path || fileURL?.spec || "");
+    const fileURL = nsIFileURL ? value.QueryInterface(nsIFileURL) : null;
+    return pathFromPickerString(fileURL?.file?.path || fileURL?.filePath || fileURL?.path || fileURL?.spec || fileURL?.asciiSpec || "");
   } catch (_err) {
     return "";
   }
+}
+
+function firstDirectoryPathFromEnumerable(value, seen, depth) {
+  if (Array.isArray(value)) {
+    return firstDirectoryPath(seen, ...value);
+  }
+  if (typeof value?.[Symbol.iterator] === "function") {
+    const paths = [];
+    let count = 0;
+    for (const entry of value) {
+      paths.push(entry);
+      count += 1;
+      if (count >= 8) break;
+    }
+    return firstDirectoryPath(seen, ...paths);
+  }
+  if (typeof value?.hasMoreElements === "function" && typeof value?.getNext === "function") {
+    const paths = [];
+    for (let count = 0; count < 8 && value.hasMoreElements(); count += 1) {
+      paths.push(value.getNext());
+    }
+    return firstDirectoryPath(seen, ...paths);
+  }
+  if (depth > 0 || typeof value?.length !== "number" || value.length < 1 || value.length > 8) return "";
+  const paths = [];
+  for (let index = 0; index < value.length; index += 1) paths.push(value[index]);
+  return firstDirectoryPath(seen, ...paths);
 }
 
 function pathFromPickerString(value) {
@@ -1000,14 +1049,20 @@ function pathFromPickerString(value) {
     }
     return normalizePickerPathString(pathname || text);
   } catch (_err) {
-    return normalizePickerPathString(text);
+    return normalizePickerPathString(text.replace(/^file:(?:\/\/)?/i, ""));
   }
 }
 
 function normalizePickerPathString(value) {
   const text = safeDecodePickerPath(value).trim().replace(/\0/g, "");
+  if (/^\\\\\?\\UNC\\/i.test(text)) return `\\\\${text.slice(8)}`;
+  if (/^\\\\\?\\[A-Za-z]:\\/i.test(text)) return text.slice(4);
   if (/^\\\\[^\\]+\\[^\\]+/.test(text)) return text;
+  if (/^\/\/\/+[^/\\]+[\\/][^/\\]+/.test(text)) return text.replace(/^\/+/, "//").replace(/\//g, "\\");
   if (/^\/\/[^/\\]+[\\/][^/\\]+/.test(text)) return text.replace(/\//g, "\\");
+  if (/^localhost[\\/]/i.test(text)) return normalizePickerPathString(text.replace(/^localhost[\\/]+/i, "/"));
+  if (/^[A-Za-z]:$/.test(text)) return `${text}\\`;
+  if (/^[\\/][A-Za-z]:$/.test(text)) return `${text[1]}:\\`;
   if (/^[A-Za-z]:[\\/]/.test(text)) return text.replace(/\//g, "\\");
   if (/^[\\/][A-Za-z]:[\\/]/.test(text)) return text.slice(1).replace(/\//g, "\\");
   if (/^[A-Za-z]\|[\\/]/.test(text)) return `${text[0]}:${text.slice(2)}`.replace(/\//g, "\\");
@@ -1453,6 +1508,9 @@ function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)
   }
   if (provider === "huggingface") {
     return { include: "huggingface", apiKeyEnv: "HUGGINGFACE_API_KEY", modelEnv: "HUGGINGFACE_MODEL", baseURLEnv: "HUGGINGFACE_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
+  }
+  if (provider === "deepinfra") {
+    return { include: "deepinfra", apiKeyEnv: "DEEPINFRA_API_KEY", modelEnv: "DEEPINFRA_MODEL", baseURLEnv: "DEEPINFRA_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
   }
   if (provider === "fireworks") {
     return { include: "fireworks", apiKeyEnv: "FIREWORKS_API_KEY", modelEnv: "FIREWORKS_MODEL", baseURLEnv: "FIREWORKS_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
@@ -2425,7 +2483,7 @@ function truncateErrorText(text, limit = 1200) {
 function redact(value) {
   return String(value)
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-    .replace(/\b(?:sk|ak|xai|gsk|pplx|ms|rk|hf)[-_][A-Za-z0-9._-]+/gi, "[redacted]")
+    .replace(/\b(?:sk|ak|xai|gsk|pplx|ms|rk|hf|deepinfra)[-_][A-Za-z0-9._-]+/gi, "[redacted]")
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, "[redacted]")
     .slice(0, 800);
 }
@@ -3676,6 +3734,19 @@ function providerDefaults(provider) {
       bodyExtra: {}
     };
   }
+  if (id === "deepinfra" || id === "deep_infra") {
+    return {
+      id: "deepinfra",
+      name: "DeepInfra",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepinfra.com/v1/openai",
+      fullURL: "",
+      model: "",
+      capabilities: { ...imageCapabilities, pdfBase64: false },
+      bodyExtra: {}
+    };
+  }
   if (id === "fireworks") {
     return {
       id: "fireworks",
@@ -4041,7 +4112,7 @@ function providerDefaults(provider) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "github_models", "huggingface", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = providerDefaults(provider);
     return {
       id: defaults.id,
@@ -4092,6 +4163,7 @@ function providerProfileCatalogKey(profile) {
   if (id === "azure_openai") return "azure-openai";
   if (id === "github_models") return "github-models";
   if (id === "hugging_face" || id === "hf") return "huggingface";
+  if (id === "deep_infra") return "deepinfra";
   if (id === "nvidia_nim") return "nvidia-nim";
   if (id === "sambanova_responses") return "sambanova-responses";
   if (id === "sambanova_anthropic") return "sambanova-anthropic";
@@ -4125,6 +4197,8 @@ function isKnownProviderId(value) {
     "huggingface",
     "hugging_face",
     "hf",
+    "deepinfra",
+    "deep_infra",
     "fireworks",
     "cerebras",
     "nvidia-nim",
@@ -4182,6 +4256,7 @@ function isKnownProviderBaseURL(value) {
     "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1",
     "https://models.github.ai/inference",
     "https://router.huggingface.co/v1",
+    "https://api.deepinfra.com/v1/openai",
     "https://api.fireworks.ai/inference/v1",
     "https://api.cerebras.ai/v1",
     "https://integrate.api.nvidia.com/v1",
@@ -4343,6 +4418,7 @@ function providerFromProfile(profile) {
   if (id === "azure-openai" || id === "azure_openai") return "azure_openai";
   if (id === "github-models" || id === "github_models") return "github_models";
   if (id === "huggingface" || id === "hugging_face" || id === "hf") return "huggingface";
+  if (id === "deepinfra" || id === "deep_infra") return "deepinfra";
   if (id === "fireworks") return "fireworks";
   if (id === "cerebras") return "cerebras";
   if (id === "nvidia-nim" || id === "nvidia_nim") return "nvidia_nim";
@@ -4368,6 +4444,7 @@ function providerFromProfile(profile) {
   if (/^https:\/\/[^/]+\.openai\.azure\.com\/openai\/v1$/i.test(baseURL) || /^https:\/\/[^/]+\.services\.ai\.azure\.com\/openai\/v1$/i.test(baseURL)) return "azure_openai";
   if (baseURL === "https://models.github.ai/inference" || baseURL === "https://models.github.ai/inference/chat/completions") return "github_models";
   if (baseURL === "https://router.huggingface.co/v1" || baseURL === "https://router.huggingface.co/v1/chat/completions") return "huggingface";
+  if (baseURL === "https://api.deepinfra.com/v1/openai" || baseURL === "https://api.deepinfra.com/v1/openai/chat/completions") return "deepinfra";
   if (baseURL === "https://api.fireworks.ai/inference/v1") return "fireworks";
   if (baseURL === "https://api.cerebras.ai/v1") return "cerebras";
   if (baseURL === "https://integrate.api.nvidia.com/v1") return "nvidia_nim";

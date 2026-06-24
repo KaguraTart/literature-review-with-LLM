@@ -14,6 +14,7 @@ const NAMED_LIVE_SPECS = [
   { id: "azure-openai", envPrefix: "AZURE_OPENAI", protocol: "openai_responses", basePath: "/azure/openai/v1", model: "azure-gpt-4.1", secret: "live-azure-secret" },
   { id: "github-models", envPrefix: "GITHUB_MODELS", protocol: "openai_chat", basePath: "/inference", model: "github/model", secret: "live-github-secret" },
   { id: "huggingface", envPrefix: "HUGGINGFACE", protocol: "openai_chat", basePath: "/huggingface/v1", model: "Qwen/Qwen2.5-VL-7B-Instruct", secret: "live-huggingface-secret" },
+  { id: "deepinfra", envPrefix: "DEEPINFRA", protocol: "openai_chat", basePath: "/deepinfra/v1/openai", model: "meta-llama/Meta-Llama-3.1-8B-Instruct", secret: "live-deepinfra-secret" },
   { id: "fireworks", envPrefix: "FIREWORKS", protocol: "openai_chat", basePath: "/fireworks/v1", model: "accounts/fireworks/models/llama-v3p1-8b-instruct", secret: "live-fireworks-secret" },
   { id: "cerebras", envPrefix: "CEREBRAS", protocol: "openai_chat", basePath: "/cerebras/v1", model: "llama3.1-8b", secret: "live-cerebras-secret" },
   { id: "nvidia-nim", envPrefix: "NVIDIA_NIM", protocol: "openai_chat", basePath: "/nvidia/v1", model: "meta/llama-3.1-8b-instruct", secret: "live-nvidia-secret" },
@@ -1074,6 +1075,12 @@ describe("provider smoke verifier", () => {
       protocol: "openai_chat",
       endpoint: "https://router.huggingface.co/v1/chat/completions",
       modelsEndpoint: "https://router.huggingface.co/v1/models"
+    });
+    expect(report.results.find((result: any) => result.id === "deepinfra")).toMatchObject({
+      ok: true,
+      protocol: "openai_chat",
+      endpoint: "https://api.deepinfra.com/v1/openai/chat/completions",
+      modelsEndpoint: "https://api.deepinfra.com/v1/openai/models"
     });
     expect(report.results.find((result: any) => result.id === "openai")).toMatchObject({
       ok: true,
