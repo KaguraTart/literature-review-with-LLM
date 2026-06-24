@@ -1018,7 +1018,7 @@ function parseEnvFileValue(value) {
 function selectedCases(include) {
   const requested = String(include || "")
     .split(",")
-    .map((value) => value.trim().toLowerCase())
+    .map((value) => providerSelectorKey(value))
     .filter(Boolean);
   if (!requested.length) return DEFAULT_CASES;
   const byId = new Map(DEFAULT_CASES.map((entry) => [entry.id, entry]));
@@ -1157,6 +1157,10 @@ function readDefaultProfiles() {
 
 function providerCaseKey(value) {
   return String(value || "").trim().toLowerCase().replace(/_/g, "-");
+}
+
+function providerSelectorKey(value) {
+  return providerCaseKey(value);
 }
 
 function isLocalEndpoint(url) {
@@ -1513,7 +1517,7 @@ function usage() {
     "  OPENAI_API_KEY=... OPENAI_MODEL=... npm run verify:provider:live -- --include openai --stream",
     "",
     "Options:",
-    "  --include LIST           Comma-separated live case ids or groups. Groups: all, mainstream, core, openai-chat, openai-responses, anthropic-messages, remote, local",
+    "  --include LIST           Comma-separated live case ids or groups; underscores are accepted as aliases. Groups: all, mainstream, core, openai-chat, openai-responses, anthropic-messages, remote, local",
     "  --list                   Print available live case ids and environment variable names, then exit",
     "  --env-template           Print copyable placeholder env lines for selected live case ids, then exit",
     "  --dotenv-template        With --env-template, print a plain KEY=value draft for a local env file",

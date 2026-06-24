@@ -1458,6 +1458,21 @@ describe("provider smoke verifier", () => {
     expect(stdout).toContain("anthropic-compatible\tanthropic_messages\tno\tno\tyes\tANTHROPIC_COMPATIBLE_API_KEY\tANTHROPIC_COMPATIBLE_MODEL\tANTHROPIC_COMPATIBLE_BASE_URL\tANTHROPIC_COMPATIBLE_HEADERS_JSON\tANTHROPIC_COMPATIBLE_BODY_EXTRA_JSON");
   });
 
+  it("accepts underscore aliases for live provider include selectors", async () => {
+    const report = await runLive([
+      "--list",
+      "--include",
+      "openai_compatible,anthropic_messages,lm_studio,openai-compatible",
+      "--json"
+    ], scrubProviderEnv());
+
+    expect(report.cases.map((entry: any) => entry.id)).toEqual([
+      "openai-compatible",
+      ...ANTHROPIC_MESSAGES_LIVE_CASE_IDS,
+      "lm-studio"
+    ]);
+  });
+
   it("prints live provider environment templates", async () => {
     const report = await runLive(["--env-template", "--include", "openai-compatible,anthropic-compatible,ollama,lm-studio", "--json"], scrubProviderEnv());
 
