@@ -891,8 +891,8 @@ function prefFallbackMessage(key, lang) {
     modelSelectPlaceholder: zh ? "选择厂商推荐模型" : "Choose provider model",
     modelSelectCustom: zh ? "自定义模型..." : "Custom model...",
     modelPickerHelp: zh
-      ? "先选择模型厂商，模型下拉框会显示常用模型；点击“加载模型列表”会先加载推荐模型，有 API Key 时再追加在线模型；未列出的部署名可选自定义模型。"
-      : "Choose a model provider first. Load model list shows common recommendations first, and adds online models when an API key is available. Use Custom model for deployments not listed.",
+      ? "先选择模型厂商，模型下拉框会按来源显示常用模型；点击“加载模型列表”会先加载推荐模型，有 API Key 时再追加在线模型；私有部署可选自定义模型。"
+      : "Choose a model provider first. The model list is grouped by source; Load model list shows recommendations first, and adds online models when an API key is available. Use Custom model for private deployments.",
     onlineModels: zh ? "在线模型" : "Online",
     recommendedModels: zh ? "推荐模型" : "Recommended",
     providerEnv: zh ? "粘贴环境变量配置" : "Paste env config",
@@ -1127,8 +1127,8 @@ function applyPreferenceTextLabels(lang) {
     "zms-cap-toolUse-label": zh ? "工具调用" : "Tool use",
     "zms-cap-modelList-label": zh ? "在线模型列表" : "Model list",
     "zms-model-help": zh
-      ? "先选择模型厂商，模型下拉框会显示常用模型；点击“加载模型列表”会先加载推荐模型，有 API Key 时再追加在线模型；未列出的部署名可选自定义模型。"
-      : "Choose a model provider first. Load model list shows common recommendations first, and adds online models when an API key is available. Use Custom model for deployments not listed.",
+      ? "先选择模型厂商，模型下拉框会按来源显示常用模型；点击“加载模型列表”会先加载推荐模型，有 API Key 时再追加在线模型；私有部署可选自定义模型。"
+      : "Choose a model provider first. The model list is grouped by source; Load model list shows recommendations first, and adds online models when an API key is available. Use Custom model for private deployments.",
     "zms-local-agent-note-1": zh
       ? "按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"
       : "Configure endpoint/tool/timeout/payloadMode by skill id. Empty objects are allowed. ask-all/check fall back to ask-gemini / ask-claude / ask-opencode when no separate mapping is set; ask-gemini-claude can call only Gemini and Claude.",
@@ -3530,7 +3530,8 @@ function normalizeModelOptions(modelOptions) {
     .map((entry) => ({
       id: String(entry?.id || "").trim(),
       label: String(entry?.label || "").trim(),
-      source: String(entry?.source || "").trim()
+      source: String(entry?.source || "").trim(),
+      vendor: String(entry?.vendor || "").trim()
     }))
     .filter((entry) => entry.id);
 }
@@ -3539,19 +3540,18 @@ function tagModelOptions(modelOptions, source) {
   const nextSource = String(source || "").trim();
   return normalizeModelOptions(modelOptions).map((entry) => ({
     ...entry,
-    source: entry.source || nextSource
+    source: entry.source || nextSource,
+    vendor: entry.vendor || inferredModelVendor(entry)
   }));
 }
 
 function appendGroupedModelSelectOptions(select, entries, translate = (key) => key) {
-  const sourceOrder = ["online", "recommended", ""];
-  for (const source of sourceOrder) {
-    const groupEntries = entries.filter((entry) => source ? entry.source === source : entry.source !== "online" && entry.source !== "recommended");
+  const grouped = groupedModelSelectEntries(entries);
+  for (const groupInfo of grouped) {
+    const groupEntries = groupInfo.entries;
     if (!groupEntries.length) continue;
     const group = document.createElement("optgroup");
-    const label = source === "online"
-      ? translate("onlineModels")
-      : (source === "recommended" ? translate("recommendedModels") : translate("modelSelectCustom"));
+    const label = modelSelectGroupLabel(groupInfo, translate);
     group.label = label;
     group.setAttribute?.("label", label);
     for (const entry of groupEntries) {
@@ -3570,6 +3570,46 @@ function modelSelectOption(entry) {
 
 function modelOptionBaseText(entry) {
   return entry.label && entry.label !== entry.id ? `${entry.label} (${entry.id})` : entry.id;
+}
+
+function groupedModelSelectEntries(entries) {
+  const order = ["online", "recommended", ""];
+  const groups = [];
+  const normalized = normalizeModelOptions(entries);
+  for (const source of order) {
+    const sourceEntries = normalized.filter((entry) => source ? entry.source === source : entry.source !== "online" && entry.source !== "recommended");
+    const vendorNames = [];
+    for (const entry of sourceEntries) {
+      const vendor = entry.vendor || inferredModelVendor(entry);
+      if (vendor && !vendorNames.includes(vendor)) vendorNames.push(vendor);
+    }
+    if (vendorNames.length <= 1) {
+      if (sourceEntries.length) groups.push({ source, vendor: vendorNames[0] || "", entries: sourceEntries });
+      continue;
+    }
+    for (const vendor of vendorNames) {
+      groups.push({ source, vendor, entries: sourceEntries.filter((entry) => (entry.vendor || inferredModelVendor(entry)) === vendor) });
+    }
+    const ungrouped = sourceEntries.filter((entry) => !(entry.vendor || inferredModelVendor(entry)));
+    if (ungrouped.length) groups.push({ source, vendor: "", entries: ungrouped });
+  }
+  return groups;
+}
+
+function modelSelectGroupLabel(groupInfo, translate = (key) => key) {
+  const suffix = groupInfo.source === "online"
+    ? translate("onlineModels")
+    : (groupInfo.source === "recommended" ? translate("recommendedModels") : translate("modelSelectCustom"));
+  return groupInfo.vendor ? `${groupInfo.vendor} · ${suffix}` : suffix;
+}
+
+function inferredModelVendor(entry) {
+  const id = String(entry?.id || "");
+  const label = String(entry?.label || "");
+  if (typeof zmsModelVendorForProviderModel === "function") {
+    return zmsModelVendorForProviderModel("", id, label);
+  }
+  return "";
 }
 
 function connectionTestBodyForProfile(profile) {

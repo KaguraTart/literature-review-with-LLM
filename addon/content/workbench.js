@@ -5333,7 +5333,8 @@ function normalizeModelOptions(modelOptions) {
     .map((entry) => ({
       id: String(entry?.id || "").trim(),
       label: String(entry?.label || "").trim(),
-      source: String(entry?.source || "").trim()
+      source: String(entry?.source || "").trim(),
+      vendor: String(entry?.vendor || "").trim()
     }))
     .filter((entry) => entry.id);
 }
@@ -5342,19 +5343,18 @@ function tagModelOptions(modelOptions, source) {
   const nextSource = String(source || "").trim();
   return normalizeModelOptions(modelOptions).map((entry) => ({
     ...entry,
-    source: entry.source || nextSource
+    source: entry.source || nextSource,
+    vendor: entry.vendor || inferredModelVendor(entry)
   }));
 }
 
 function appendGroupedModelSelectOptions(select, entries, translate = (key) => key) {
-  const sourceOrder = ["online", "recommended", ""];
-  for (const source of sourceOrder) {
-    const groupEntries = entries.filter((entry) => source ? entry.source === source : entry.source !== "online" && entry.source !== "recommended");
+  const grouped = groupedModelSelectEntries(entries);
+  for (const groupInfo of grouped) {
+    const groupEntries = groupInfo.entries;
     if (!groupEntries.length) continue;
     const group = document.createElement("optgroup");
-    const label = source === "online"
-      ? translate("onlineModels")
-      : (source === "recommended" ? translate("recommendedModels") : translate("modelSelectCustom"));
+    const label = modelSelectGroupLabel(groupInfo, translate);
     group.label = label;
     group.setAttribute?.("label", label);
     for (const entry of groupEntries) {
@@ -5373,6 +5373,46 @@ function modelSelectOption(entry) {
 
 function modelOptionBaseText(entry) {
   return entry.label && entry.label !== entry.id ? `${entry.label} (${entry.id})` : entry.id;
+}
+
+function groupedModelSelectEntries(entries) {
+  const order = ["online", "recommended", ""];
+  const groups = [];
+  const normalized = normalizeModelOptions(entries);
+  for (const source of order) {
+    const sourceEntries = normalized.filter((entry) => source ? entry.source === source : entry.source !== "online" && entry.source !== "recommended");
+    const vendorNames = [];
+    for (const entry of sourceEntries) {
+      const vendor = entry.vendor || inferredModelVendor(entry);
+      if (vendor && !vendorNames.includes(vendor)) vendorNames.push(vendor);
+    }
+    if (vendorNames.length <= 1) {
+      if (sourceEntries.length) groups.push({ source, vendor: vendorNames[0] || "", entries: sourceEntries });
+      continue;
+    }
+    for (const vendor of vendorNames) {
+      groups.push({ source, vendor, entries: sourceEntries.filter((entry) => (entry.vendor || inferredModelVendor(entry)) === vendor) });
+    }
+    const ungrouped = sourceEntries.filter((entry) => !(entry.vendor || inferredModelVendor(entry)));
+    if (ungrouped.length) groups.push({ source, vendor: "", entries: ungrouped });
+  }
+  return groups;
+}
+
+function modelSelectGroupLabel(groupInfo, translate = (key) => key) {
+  const suffix = groupInfo.source === "online"
+    ? translate("onlineModels")
+    : (groupInfo.source === "recommended" ? translate("recommendedModels") : translate("modelSelectCustom"));
+  return groupInfo.vendor ? `${groupInfo.vendor} · ${suffix}` : suffix;
+}
+
+function inferredModelVendor(entry) {
+  const id = String(entry?.id || "");
+  const label = String(entry?.label || "");
+  if (typeof zmsModelVendorForProviderModel === "function") {
+    return zmsModelVendorForProviderModel("", id, label);
+  }
+  return "";
 }
 
 function clearOptionsElement(element) {

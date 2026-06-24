@@ -2702,7 +2702,12 @@ describe("workbench writeback helpers", () => {
     const modelSelectValues = selectOptionValues(dom.getElementById("zms-profile-model-select"));
     expect(modelSelectValues.slice(0, 3)).toEqual(["", "model-x", "model-y"]);
     expect(modelSelectValues).toContain("deepseek-chat");
-    expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual(["Online", "Recommended"]);
+    expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual([
+      "Online",
+      "OpenAI · Recommended",
+      "DeepSeek · Recommended",
+      "Qwen · Recommended"
+    ]);
     expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "model-x").textContent).toBe("model-x");
     expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-chat").textContent).toContain("deepseek-chat");
     expect(modelSelectValues.at(-1)).toBe("__custom");
@@ -2761,7 +2766,7 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
     expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-chat");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
-    expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual(["Recommended"]);
+    expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual(["DeepSeek · Recommended"]);
     expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-chat").textContent).toContain("DeepSeek Chat");
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 2");
   });

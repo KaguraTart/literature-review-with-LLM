@@ -48,12 +48,91 @@
     return String(provider || "").trim().replace(/-/g, "_");
   }
 
+  const PROVIDER_LABELS = {
+    minimax: "MiniMax",
+    openai: "OpenAI",
+    openai_compatible: "OpenAI Compatible",
+    openai_responses_compatible: "OpenAI Responses",
+    anthropic: "Anthropic",
+    anthropic_compatible: "Anthropic Compatible",
+    gemini: "Google Gemini",
+    azure_openai: "Azure OpenAI",
+    vercel_ai_chat: "Vercel AI Gateway",
+    vercel_ai_responses: "Vercel AI Gateway",
+    vercel_ai_anthropic: "Vercel AI Gateway",
+    cloudflare_ai_chat: "Cloudflare AI",
+    cloudflare_ai_responses: "Cloudflare AI",
+    cloudflare_ai_anthropic: "Cloudflare AI",
+    github_models: "GitHub Models",
+    huggingface: "Hugging Face",
+    deepinfra: "DeepInfra",
+    fireworks: "Fireworks AI",
+    cerebras: "Cerebras",
+    nvidia_nim: "NVIDIA NIM",
+    sambanova: "SambaNova",
+    sambanova_responses: "SambaNova",
+    sambanova_anthropic: "SambaNova",
+    xai: "xAI",
+    groq: "Groq",
+    mistral: "Mistral",
+    together: "Together AI",
+    kimi: "Moonshot",
+    perplexity: "Perplexity",
+    deepseek: "DeepSeek",
+    deepseek_anthropic: "DeepSeek",
+    zai_anthropic: "Z.AI",
+    openrouter: "OpenRouter",
+    dashscope: "DashScope",
+    siliconflow: "SiliconFlow",
+    zhipu: "Zhipu",
+    volcengine: "Volcengine Ark",
+    qianfan: "Baidu Qianfan",
+    hunyuan: "Tencent Hunyuan",
+    ollama: "Ollama",
+    lm_studio: "LM Studio",
+    local_agents: "Local Agents"
+  };
+
+  const MODEL_VENDOR_PREFIXES = {
+    openai: "OpenAI",
+    gpt: "OpenAI",
+    anthropic: "Anthropic",
+    google: "Google Gemini",
+    gemini: "Google Gemini",
+    deepseek: "DeepSeek",
+    qwen: "Qwen",
+    dashscope: "DashScope",
+    mistral: "Mistral",
+    "mistral-ai": "Mistral",
+    mistralai: "Mistral",
+    meta: "Meta Llama",
+    "meta-llama": "Meta Llama",
+    llama: "Meta Llama",
+    "deepseek-ai": "DeepSeek",
+    "z-ai": "Z.AI",
+    zai: "Z.AI",
+    moonshot: "Moonshot",
+    xai: "xAI",
+    grok: "xAI",
+    nvidia: "NVIDIA",
+    baidu: "Baidu",
+    tencent: "Tencent",
+    hunyuan: "Tencent Hunyuan",
+    ernie: "Baidu ERNIE",
+    doubao: "Doubao",
+    glm: "Zhipu GLM"
+  };
+
   function recommendedModelOptionsForProviderCatalog(provider) {
     const key = providerModelCatalogKey(provider);
     const fallback = key.includes("anthropic")
       ? MODEL_CATALOG.anthropic_compatible
       : (key.includes("responses") ? MODEL_CATALOG.openai_responses_compatible : MODEL_CATALOG.openai_compatible);
-    return (MODEL_CATALOG[key] || fallback || []).map(([id, label]) => ({ id, label }));
+    return (MODEL_CATALOG[key] || fallback || []).map(([id, label]) => ({
+      id,
+      label,
+      vendor: modelVendorForProviderCatalogEntry(key, id, label)
+    }));
   }
 
   function recommendedDefaultModelForProviderCatalog(provider, defaults) {
@@ -62,7 +141,50 @@
     return recommendedModelOptionsForProviderCatalog(key)[0]?.id || "";
   }
 
+  function providerLabelForModelCatalog(provider) {
+    const key = providerModelCatalogKey(provider);
+    return PROVIDER_LABELS[key] || key.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  function modelVendorForProviderCatalogEntry(provider, id, label) {
+    const normalizedId = String(id || "").trim();
+    const normalizedLabel = String(label || "").trim();
+    if (/^(?:gpt-|o\d\b|o\d-|o\d[A-Za-z]?-\w)/i.test(normalizedId)) return "OpenAI";
+    const prefix = normalizedId.split(/[/:]/)[0]?.toLowerCase();
+    if (MODEL_VENDOR_PREFIXES[prefix]) return MODEL_VENDOR_PREFIXES[prefix];
+    for (const [candidate, vendor] of Object.entries(MODEL_VENDOR_PREFIXES)) {
+      if (normalizedId.toLowerCase().startsWith(`${candidate}-`)) return vendor;
+    }
+    const labelVendor = modelVendorFromLabel(normalizedLabel);
+    if (labelVendor) return labelVendor;
+    return providerLabelForModelCatalog(provider);
+  }
+
+  function modelVendorFromLabel(label) {
+    const normalized = String(label || "").trim().toLowerCase();
+    if (!normalized) return "";
+    const labels = [
+      ["openai", "OpenAI"],
+      ["anthropic", "Anthropic"],
+      ["claude", "Anthropic"],
+      ["google", "Google Gemini"],
+      ["gemini", "Google Gemini"],
+      ["deepseek", "DeepSeek"],
+      ["qwen", "Qwen"],
+      ["mistral", "Mistral"],
+      ["llama", "Meta Llama"],
+      ["glm", "Zhipu GLM"],
+      ["grok", "xAI"],
+      ["doubao", "Doubao"],
+      ["ernie", "Baidu ERNIE"],
+      ["hunyuan", "Tencent Hunyuan"]
+    ];
+    return labels.find(([needle]) => normalized.includes(needle))?.[1] || "";
+  }
+
   root.zmsProviderModelCatalog = MODEL_CATALOG;
   root.zmsRecommendedModelOptionsForProvider = recommendedModelOptionsForProviderCatalog;
   root.zmsRecommendedDefaultModelForProvider = recommendedDefaultModelForProviderCatalog;
+  root.zmsProviderModelCatalogLabel = providerLabelForModelCatalog;
+  root.zmsModelVendorForProviderModel = modelVendorForProviderCatalogEntry;
 })(typeof globalThis !== "undefined" ? globalThis : window);

@@ -120,7 +120,7 @@ function loadPreferencesHelpers() {
   return context as {
     defaultProviderProfiles: () => any[];
     providerDefaults: (provider: string) => any;
-    zmsRecommendedModelOptionsForProvider: (provider: string) => Array<{ id: string; label: string }>;
+    zmsRecommendedModelOptionsForProvider: (provider: string) => Array<{ id: string; label: string; vendor?: string }>;
   };
 }
 
@@ -141,7 +141,7 @@ function loadWorkbenchHelpers() {
   return context as {
     defaultProviderProfiles: () => any[];
     workbenchProviderDefaults: (provider: string) => any;
-    zmsRecommendedModelOptionsForProvider: (provider: string) => Array<{ id: string; label: string }>;
+    zmsRecommendedModelOptionsForProvider: (provider: string) => Array<{ id: string; label: string; vendor?: string }>;
   };
 }
 
@@ -217,6 +217,18 @@ describe("provider catalog consistency", () => {
       expect(workbench.zmsRecommendedModelOptionsForProvider(id)).toEqual(preferences.zmsRecommendedModelOptionsForProvider(id));
       expect(workbench.workbenchProviderDefaults(id).model).toBe(preferences.providerDefaults(id).model);
     }
+  });
+
+  it("tags aggregate-provider recommendations with concrete model vendors", () => {
+    const preferences = loadPreferencesHelpers();
+
+    const openrouterVendors = preferences
+      .zmsRecommendedModelOptionsForProvider("openrouter")
+      .map((option) => option.vendor);
+
+    expect(openrouterVendors).toEqual(["OpenAI", "Anthropic", "Google Gemini", "DeepSeek"]);
+    expect(preferences.zmsRecommendedModelOptionsForProvider("openai_compatible")[0].vendor).toBe("OpenAI");
+    expect(preferences.zmsRecommendedModelOptionsForProvider("deepseek")[0].vendor).toBe("DeepSeek");
   });
 
   it("keeps bootstrap fallback provider defaults aligned with the editable catalog", () => {

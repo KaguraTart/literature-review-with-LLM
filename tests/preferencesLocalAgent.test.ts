@@ -2835,7 +2835,7 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-provider-label").value).toBe("模型厂商");
     expect(elements.get("zms-baseURL-label").value).toBe("接口地址");
     expect(elements.get("zms-model-label").value).toBe("模型");
-    expect(elements.get("zms-model-help").value).toContain("模型下拉框会显示常用模型");
+    expect(elements.get("zms-model-help").value).toContain("模型下拉框会按来源显示常用模型");
     expect(elements.get("zms-load-models-button").label).toBe("加载模型列表");
     expect(elements.get("zms-test-button").label).toBe("保存并测试");
     expect(elements.get("zms-profileEndpointMode-label").value).toBe("接口模式");
@@ -2860,7 +2860,7 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model").value).toBe("deepseek-chat");
     expect(elements.get("zms-model-select").value).toBe("deepseek-chat");
     expect(elements.get("zms-model").hidden).toBe(true);
-    expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual(["Recommended"]);
+    expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual(["DeepSeek · Recommended"]);
     expect(selectOptionByValue(elements.get("zms-model-select"), "deepseek-chat").textContent).toContain("DeepSeek Chat");
     expect(elements.get("zms-status").value).toBe("Recommended models loaded: 2");
   });
@@ -3531,7 +3531,7 @@ describe("preferences local-agent config helpers", () => {
     expect(selectValues.slice(0, 3)).toEqual(["", "model-a", "model-b"]);
     expect(selectValues).toContain("gpt-4.1");
     expect(selectValues.at(-1)).toBe("__custom");
-    expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual(["Online", "Recommended"]);
+    expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual(["Online", "OpenAI · Recommended"]);
     expect(selectOptionByValue(elements.get("zms-model-select"), "model-a").textContent).toBe("model-a");
     expect(selectOptionByValue(elements.get("zms-model-select"), "gpt-4.1").textContent).toContain("GPT-4.1");
     expect(elements.get("zms-model-select").value).toBe("model-a");
