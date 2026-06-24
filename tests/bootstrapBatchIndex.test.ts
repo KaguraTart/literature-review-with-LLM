@@ -512,9 +512,19 @@ describe("batch papers index", () => {
         candidateQueries: expect.arrayContaining(["Safety / Risk Bayesian risk model No deployment evidence"])
       })
     ]));
+    expect(payload.priorityBoard).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "recurring_gap",
+        priority: "Recurring gap: No deployment evidence",
+        reason: "Gap repeats across 2 collections",
+        collections: expect.arrayContaining(["Old Collection", "New Collection"])
+      })
+    ]));
     const synthesis = writes.get(artifacts.crossCollectionSynthesisPath) || "";
     expect(synthesis).toContain("Cross-Collection Synthesis Map");
     expect(synthesis).toContain("Cross-Collection Gap Board");
+    expect(synthesis).toContain("Cross-Collection Priority Board");
+    expect(synthesis).toContain("Recurring gap: No deployment evidence");
     expect(synthesis).toContain("Old Collection");
     expect(synthesis).toContain("New Collection");
     expect(synthesis).toContain("Urban Airspace");
@@ -540,6 +550,7 @@ describe("batch papers index", () => {
     expect(writes.get(english.synthesisConflictsPath)).toContain("Support Level");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Synthesis Roadmap");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Cross-theme Evidence Map");
+    expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Priority Board");
     expect(writes.get(english.reviewReportPath)).toContain("Formal Review Report");
     expect(writes.get(english.reviewReportPath)).toContain("Evidence-backed Synthesis Claims");
     expect(writes.get(english.reviewReportPath)).toContain("Synthesis Conflicts and Evidence Gaps");
@@ -561,6 +572,7 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.synthesisConflictsPath)).toContain("支持レベル");
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("統合ロードマップ");
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("テーマ横断エビデンスマップ");
+    expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("Collection 横断優先度ボード");
     expect(writes.get(japanese.reviewReportPath)).toContain("正式レビュー報告書");
     expect(writes.get(japanese.reviewReportPath)).toContain("証拠に基づく統合主張");
     expect(writes.get(japanese.reviewReportPath)).toContain("統合コンフリクトと証拠ギャップ");

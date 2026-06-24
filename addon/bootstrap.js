@@ -1328,12 +1328,14 @@ async function writeCrossCollectionSynthesisIndex(settings, collectionContext, r
   const entry = crossCollectionEntry(collectionContext, results, outputLanguage, summaryInsights, artifacts);
   const collections = upsertCrossCollectionEntry(previous.collections, entry);
   const labels = collectionTemplateLabels(outputLanguage);
+  const gapBoard = crossCollectionGapEntries(collections, labels);
   const payload = {
     templateVersion: "cross-collection-index-v1",
     generatedAt: new Date().toISOString(),
     outputLanguage,
     stats: crossCollectionStats(collections),
-    gapBoard: crossCollectionGapEntries(collections, labels),
+    gapBoard,
+    priorityBoard: crossCollectionPriorityEntries(collections, gapBoard, labels),
     collections
   };
   await writeText(indexPath, JSON.stringify(payload, null, 2));
@@ -1458,10 +1460,31 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
     "",
     renderCrossCollectionGapRows(indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels),
     "",
+    `## ${labels.crossCollectionPriorityBoard}`,
+    "",
+    renderCrossCollectionPriorityRows(indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels), labels),
+    "",
     `## ${labels.reportNextActions}`,
     "",
     labels.crossCollectionNextActions,
     ""
+  ].join("\n");
+}
+
+function renderCrossCollectionPriorityRows(priorityEntries, labels) {
+  const rows = (priorityEntries || []).slice(0, 12)
+    .map((entry) => [
+      escapeMarkdownTable(entry.priority || labels.crossCollectionPriorityPending),
+      escapeMarkdownTable(entry.reason || labels.crossCollectionPriorityReasonPending),
+      escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
+      escapeMarkdownTable((entry.evidence || []).join("; ") || labels.pendingSummaryPath),
+      escapeMarkdownTable(entry.nextAction || labels.reviewActionColumn)
+    ].join(" | "))
+    .map((row) => `| ${row} |`);
+  return [
+    `| ${labels.crossCollectionPriorityColumn} | ${labels.crossCollectionReasonColumn} | ${labels.collectionColumn} | ${labels.evidenceColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | --- | --- | --- | --- |",
+    rows.join("\n") || "|  |  |  |  |  |"
   ].join("\n");
 }
 
@@ -1520,6 +1543,51 @@ function crossCollectionGapEntries(collections = [], labels = collectionTemplate
     })
     .sort((left, right) => right.collectionCount - left.collectionCount || left.gap.localeCompare(right.gap))
     .slice(0, 20);
+}
+
+function crossCollectionPriorityEntries(collections = [], gapEntries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const entries = [];
+  for (const gap of gapEntries || []) {
+    const count = Number(gap?.collectionCount || 0);
+    const evidence = uniqueInsightLines([
+      ...(gap?.themes || []).map((theme) => `${labels.clusterColumn}: ${theme}`),
+      ...(gap?.candidateQueries || []).map((query) => `${labels.roadmapCandidateQueryColumn}: ${query}`)
+    ]).slice(0, 5);
+    entries.push({
+      kind: "recurring_gap",
+      score: count * 100 + evidence.length,
+      priority: labels.crossCollectionPriorityGap(count, gap?.gap || labels.gapMatrixPendingEvidence),
+      reason: count >= 2 ? labels.crossCollectionPriorityRecurringReason(count) : labels.crossCollectionPrioritySingleReason,
+      collections: gap?.collections || [],
+      evidence,
+      nextAction: gap?.nextAction || labels.crossCollectionGapAction(count, gap?.gap || labels.gapMatrixPendingEvidence)
+    });
+  }
+  for (const collection of collections || []) {
+    const collectionName = collection?.name || collection?.key || "";
+    for (const cluster of collection?.clusters || []) {
+      const paperCount = Number(cluster?.paperCount || 0);
+      const gapSignals = uniqueInsightLines(cluster?.gapSignals || []).slice(0, 4);
+      if (paperCount >= 2 && !gapSignals.length) continue;
+      entries.push({
+        kind: "weak_theme",
+        score: paperCount < 2 ? 60 + gapSignals.length : 40 + gapSignals.length,
+        priority: labels.crossCollectionPriorityWeakTheme(cluster?.label || labels.clusterOther, paperCount),
+        reason: paperCount < 2 ? labels.crossCollectionPriorityWeakThemeReason : labels.crossCollectionPriorityGapSignalReason,
+        collections: [collectionName].filter(Boolean),
+        evidence: uniqueInsightLines([
+          ...(cluster?.methodSignals || []).map((method) => `${labels.methodSignalColumn}: ${method}`),
+          ...gapSignals.map((gap) => `${labels.gapSignalColumn}: ${gap}`)
+        ]).slice(0, 5),
+        nextAction: labels.crossCollectionPriorityWeakThemeAction(cluster?.label || labels.clusterOther)
+      });
+    }
+  }
+  return entries
+    .filter((entry) => entry.priority)
+    .sort((left, right) => right.score - left.score || left.priority.localeCompare(right.priority))
+    .slice(0, 20)
+    .map(({ score: _score, ...entry }) => entry);
 }
 
 function crossCollectionGapSignals(collection, labels) {
@@ -2316,6 +2384,22 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionInventory: "Collection Inventory",
       crossCollectionThemeMap: "Cross-Collection Theme Map",
       crossCollectionGapBoard: "Cross-Collection Gap Board",
+      crossCollectionPriorityBoard: "Cross-Collection Priority Board",
+      crossCollectionPriorityColumn: "Priority",
+      crossCollectionReasonColumn: "Reason",
+      crossCollectionPriorityPending: "Pending priority review",
+      crossCollectionPriorityReasonPending: "Pending reason",
+      crossCollectionPriorityRecurringReason: (count) => `Gap repeats across ${count} collections`,
+      crossCollectionPrioritySingleReason: "Collection-specific gap; verify scope before broadening",
+      crossCollectionPriorityWeakThemeReason: "Weak theme support",
+      crossCollectionPriorityGapSignalReason: "Theme has unresolved gap signals",
+      crossCollectionPriorityGap: (count, gap) => count >= 2
+        ? `Recurring gap: ${gap}`
+        : `Scope check: ${gap}`,
+      crossCollectionPriorityWeakTheme: (theme, count) => count >= 2
+        ? `Review theme gaps: ${theme}`
+        : `Add support for theme: ${theme}`,
+      crossCollectionPriorityWeakThemeAction: (theme) => `Open the collection report, verify ${theme}, and run candidate search if evidence is thin.`,
       collectionColumn: "Collection",
       reportColumn: "Report",
       crossCollectionStatsLine: (stats) => `Collections ${stats.collections}, papers ${stats.totalPapers}, available summaries ${stats.availableSummaries}, skipped without PDF ${stats.skippedNoPdf}, failed ${stats.failed}.`,
@@ -2482,6 +2566,22 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionInventory: "Collection 一覧",
       crossCollectionThemeMap: "Collection 横断テーママップ",
       crossCollectionGapBoard: "Collection 横断ギャップボード",
+      crossCollectionPriorityBoard: "Collection 横断優先度ボード",
+      crossCollectionPriorityColumn: "優先項目",
+      crossCollectionReasonColumn: "理由",
+      crossCollectionPriorityPending: "優先度確認待ち",
+      crossCollectionPriorityReasonPending: "理由の確認待ち",
+      crossCollectionPriorityRecurringReason: (count) => `${count} 件の collection に反復するギャップ`,
+      crossCollectionPrioritySingleReason: "Collection 固有の可能性があるギャップ。範囲拡張前に確認する",
+      crossCollectionPriorityWeakThemeReason: "テーマを支える証拠が薄い",
+      crossCollectionPriorityGapSignalReason: "テーマに未解決のギャップ手がかりがある",
+      crossCollectionPriorityGap: (count, gap) => count >= 2
+        ? `反復ギャップ: ${gap}`
+        : `範囲確認: ${gap}`,
+      crossCollectionPriorityWeakTheme: (theme, count) => count >= 2
+        ? `テーマギャップを確認: ${theme}`
+        : `テーマの支持を追加: ${theme}`,
+      crossCollectionPriorityWeakThemeAction: (theme) => `Collection 報告書を開き、${theme} を確認し、証拠が薄い場合は候補論文検索を実行する。`,
       collectionColumn: "Collection",
       reportColumn: "報告書",
       crossCollectionStatsLine: (stats) => `Collection ${stats.collections} 件、論文 ${stats.totalPapers} 件、利用可能な要約 ${stats.availableSummaries} 件、PDF なしスキップ ${stats.skippedNoPdf} 件、失敗 ${stats.failed} 件。`,
@@ -2647,6 +2747,22 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionInventory: "集合清单",
     crossCollectionThemeMap: "跨集合主题地图",
     crossCollectionGapBoard: "跨集合缺口看板",
+    crossCollectionPriorityBoard: "跨集合优先级看板",
+    crossCollectionPriorityColumn: "优先项",
+    crossCollectionReasonColumn: "原因",
+    crossCollectionPriorityPending: "待确定优先级",
+    crossCollectionPriorityReasonPending: "待补充原因",
+    crossCollectionPriorityRecurringReason: (count) => `缺口在 ${count} 个集合中重复出现`,
+    crossCollectionPrioritySingleReason: "可能是单集合缺口，扩大范围前先核对",
+    crossCollectionPriorityWeakThemeReason: "主题支持证据偏薄",
+    crossCollectionPriorityGapSignalReason: "主题仍有未解决的缺口线索",
+    crossCollectionPriorityGap: (count, gap) => count >= 2
+      ? `重复缺口：${gap}`
+      : `范围核对：${gap}`,
+    crossCollectionPriorityWeakTheme: (theme, count) => count >= 2
+      ? `核对主题缺口：${theme}`
+      : `补充主题支持：${theme}`,
+    crossCollectionPriorityWeakThemeAction: (theme) => `打开集合报告核对“${theme}”，证据薄弱时继续运行候选论文检索。`,
     collectionColumn: "集合",
     reportColumn: "报告",
     crossCollectionStatsLine: (stats) => `集合 ${stats.collections} 个，论文 ${stats.totalPapers} 篇，可用总结 ${stats.availableSummaries} 篇，无 PDF 跳过 ${stats.skippedNoPdf} 篇，失败 ${stats.failed} 篇。`,
