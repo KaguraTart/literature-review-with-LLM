@@ -3912,7 +3912,7 @@ function initDirectoryPicker(picker, title, nsIFilePicker, useWindowParent = tru
 }
 
 function fileForDirectoryPicker(path) {
-  const raw = String(path || "").trim();
+  const raw = pathFromPickerString(path);
   if (!raw) return null;
   try {
     const cc = typeof Cc !== "undefined" ? Cc : undefined;
@@ -4003,6 +4003,9 @@ function directoryPathFromPickerValue(value, seen, depth = 0) {
     value.filePath,
     value.nativePath,
     value.domFileOrDirectoryPath,
+    value.mozFullPath,
+    value.fullPath,
+    value.displayPath,
     value.persistentDescriptor,
     value.target,
     value.file,
@@ -4015,7 +4018,7 @@ function filePathFromQueryInterface(value) {
   try {
     const nsIFileURL = typeof Ci !== "undefined" ? Ci.nsIFileURL : undefined;
     const fileURL = nsIFileURL && typeof value.QueryInterface === "function" ? value.QueryInterface(nsIFileURL) : null;
-    return String(fileURL?.file?.path || fileURL?.filePath || "").trim();
+    return pathFromPickerString(fileURL?.file?.path || fileURL?.filePath || fileURL?.path || fileURL?.spec || "");
   } catch (_err) {
     return "";
   }
@@ -4027,11 +4030,15 @@ function pathFromPickerString(value) {
   if (!/^file:/i.test(text)) return normalizePickerPathString(text);
   try {
     const url = new URL(text);
-    if (url.protocol !== "file:") return text;
-    const host = decodeURIComponent(url.hostname || "");
-    let pathname = decodeURIComponent(url.pathname || "");
+    if (url.protocol !== "file:") return normalizePickerPathString(text);
+    const host = safeDecodePickerPath(url.hostname || "");
+    const pathname = safeDecodePickerPath(url.pathname || "");
+    const slashPath = pathname.replace(/\\/g, "/");
     if (host && host.toLowerCase() !== "localhost") {
-      return `\\\\${host}${pathname.replace(/\//g, "\\")}`;
+      if (/^[A-Za-z]$/.test(host)) {
+        return normalizePickerPathString(`${host}:${slashPath.startsWith("/") ? slashPath : `/${slashPath}`}`);
+      }
+      return normalizePickerPathString(`//${host}${slashPath.startsWith("/") ? slashPath : `/${slashPath}`}`);
     }
     return normalizePickerPathString(pathname || text);
   } catch (_err) {
@@ -4040,12 +4047,23 @@ function pathFromPickerString(value) {
 }
 
 function normalizePickerPathString(value) {
-  const text = String(value || "").trim();
+  const text = safeDecodePickerPath(value).trim().replace(/\0/g, "");
+  if (/^\\\\[^\\]+\\[^\\]+/.test(text)) return text;
+  if (/^\/\/[^/\\]+[\\/][^/\\]+/.test(text)) return text.replace(/\//g, "\\");
   if (/^[A-Za-z]:[\\/]/.test(text)) return text.replace(/\//g, "\\");
   if (/^[\\/][A-Za-z]:[\\/]/.test(text)) return text.slice(1).replace(/\//g, "\\");
   if (/^[A-Za-z]\|[\\/]/.test(text)) return `${text[0]}:${text.slice(2)}`.replace(/\//g, "\\");
   if (/^[\\/][A-Za-z]\|[\\/]/.test(text)) return `${text[1]}:${text.slice(3)}`.replace(/\//g, "\\");
   return text;
+}
+
+function safeDecodePickerPath(value) {
+  const text = String(value || "");
+  try {
+    return decodeURIComponent(text);
+  } catch (_err) {
+    return text;
+  }
 }
 
 function shouldPersistResolvedOutputDir(value) {

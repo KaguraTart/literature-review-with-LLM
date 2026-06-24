@@ -300,7 +300,8 @@ function loadPreferencesController(options: {
     },
     Ci: {
       nsIFilePicker: filePickerConstants,
-      nsIFile: function nsIFile() {}
+      nsIFile: function nsIFile() {},
+      nsIFileURL: function nsIFileURL() {}
     },
     Zotero: {
       DataDirectory: {
@@ -2383,6 +2384,50 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-outputDir").value).toBe("C:\\Users\\tart\\Documents\\Literature Review with LLM");
     expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("C:\\Users\\tart\\Documents\\Literature Review with LLM");
     expect(madeDirectories).toContain("C:\\Users\\tart\\Documents\\Literature Review with LLM");
+  });
+
+  it("normalizes Windows paths returned through nsIFileURL QueryInterface", async () => {
+    const { controller, elements, prefValues, madeDirectories } = loadPreferencesController({
+      filePickerFile: { path: "" },
+      filePickerFileURL: {
+        QueryInterface: () => ({
+          file: { path: "" },
+          filePath: "/C:/Users/tart/Documents/Review%20Output"
+        })
+      }
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(elements.get("zms-outputDir").value).toBe("C:\\Users\\tart\\Documents\\Review Output");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("C:\\Users\\tart\\Documents\\Review Output");
+    expect(madeDirectories).toContain("C:\\Users\\tart\\Documents\\Review Output");
+  });
+
+  it("normalizes nonstandard Windows drive file URLs from the native folder picker", async () => {
+    const { controller, elements, prefValues, madeDirectories } = loadPreferencesController({
+      filePickerFile: { path: "" },
+      filePickerFileURL: { spec: "file://C:/Users/tart/Documents/Review%20Output" }
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(elements.get("zms-outputDir").value).toBe("C:\\Users\\tart\\Documents\\Review Output");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("C:\\Users\\tart\\Documents\\Review Output");
+    expect(madeDirectories).toContain("C:\\Users\\tart\\Documents\\Review Output");
+  });
+
+  it("normalizes Windows UNC file URLs from the native folder picker", async () => {
+    const { controller, elements, prefValues, madeDirectories } = loadPreferencesController({
+      filePickerFile: { path: "" },
+      filePickerFileURL: { spec: "file://server/share/Review%20Output" }
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(elements.get("zms-outputDir").value).toBe("\\\\server\\share\\Review Output");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("\\\\server\\share\\Review Output");
+    expect(madeDirectories).toContain("\\\\server\\share\\Review Output");
   });
 
   it("uses a macOS file URL and retries folder picker initialization without a window parent", async () => {
