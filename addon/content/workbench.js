@@ -3900,12 +3900,17 @@ function fileForDirectoryPicker(path) {
     if (!fileFactory) return null;
     const file = fileFactory.createInstance(ci?.nsIFile);
     file.initWithPath(raw);
-    if (typeof file.exists === "function" && !file.exists()) {
-      return file.parent || null;
-    }
-    if (typeof file.isDirectory === "function" && !file.isDirectory()) {
-      return file.parent || null;
-    }
+    return directoryForPicker(file) || directoryForPicker(file.parent);
+  } catch (_err) {
+    return null;
+  }
+}
+
+function directoryForPicker(file) {
+  if (!file) return null;
+  try {
+    if (typeof file.exists === "function" && !file.exists()) return null;
+    if (typeof file.isDirectory === "function" && !file.isDirectory()) return null;
     return file;
   } catch (_err) {
     return null;

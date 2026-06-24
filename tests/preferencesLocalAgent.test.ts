@@ -51,6 +51,7 @@ function loadPreferencesController(options: {
   skillFiles?: string[];
   filePickerPath?: string;
   filePickerReturn?: number;
+  filePickerExistingPaths?: string[];
 } = {}) {
   const code = readFileSync(resolve(process.cwd(), "addon/content/preferences.js"), "utf8");
   const elements = new Map<string, any>();
@@ -269,7 +270,9 @@ function loadPreferencesController(options: {
               isDirectory: () => true
             };
           },
-          exists: () => true,
+          exists() {
+            return !options.filePickerExistingPaths || options.filePickerExistingPaths.includes(this.path);
+          },
           isDirectory: () => true
         })
       }
@@ -2333,6 +2336,22 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-outputDir").value).toBe("/tmp/picked output");
     expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("/tmp/picked output");
     expect(madeDirectories).toContain("/tmp/picked output");
+  });
+
+  it("opens the native folder picker at the nearest existing output directory", async () => {
+    const { controller, elements, filePickerCalls } = loadPreferencesController({
+      filePickerPath: "/tmp/picked output",
+      filePickerExistingPaths: ["/tmp"]
+    });
+    elements.get("zms-outputDir").value = "/tmp/missing output";
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      displayDirectory: "/tmp"
+    });
   });
 
   it("keeps the current output directory when folder picking is cancelled", async () => {

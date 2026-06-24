@@ -3109,6 +3109,68 @@ describe("workbench writeback helpers", () => {
     expect(prefValues.outputDir).toBe("/tmp/picked output");
   });
 
+  it("opens the workbench folder picker at the nearest existing output directory", async () => {
+    const filePickerConstants = { modeGetFolder: 2, returnOK: 0, returnReplace: 2 };
+    const filePickerCalls: any[] = [];
+    const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      exists: async () => true
+    }, prefValues);
+    (loaded as any).Cc = {
+      "@mozilla.org/filepicker;1": {
+        createInstance: () => {
+          const picker: any = {
+            file: { path: "/tmp/picked output" },
+            init: (_parent: any, title: string, mode: number) => filePickerCalls.push({ title, mode }),
+            open: (callback: (result: number) => void) => callback(filePickerConstants.returnOK)
+          };
+          Object.defineProperty(picker, "displayDirectory", {
+            set(value: any) {
+              const last = filePickerCalls[filePickerCalls.length - 1];
+              if (last) last.displayDirectory = value?.path || "";
+            }
+          });
+          return picker;
+        }
+      },
+      "@mozilla.org/file/local;1": {
+        createInstance: () => ({
+          path: "",
+          parent: null as any,
+          initWithPath(path: string) {
+            this.path = path;
+            this.parent = { path: path.replace(/[\\/][^\\/]*$/, "") || path, exists: () => true, isDirectory: () => true };
+          },
+          exists() {
+            return this.path === "/tmp";
+          },
+          isDirectory: () => true
+        })
+      }
+    };
+    (loaded as any).Ci = {
+      nsIFilePicker: filePickerConstants,
+      nsIFile: function nsIFile() {}
+    };
+    const dom = fakeDocument({
+      "zms-workbench-output-dir": "/tmp/missing output"
+    });
+    (loaded as any).document = dom;
+    loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir = "/tmp/out";
+    loaded.ZoteroMarkdownSummaryWorkbench.t = (key: string) => ({
+      chooseOutputDirTitle: "Choose output folder",
+      outputDirSaved: "Output directory saved"
+    }[key] || key);
+
+    await expect((loaded.ZoteroMarkdownSummaryWorkbench as any).chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      displayDirectory: "/tmp"
+    });
+  });
+
   it("falls back to the built-in skill template when the configured output directory is unreadable", async () => {
     const loaded = loadWorkbenchHelpers(new Map(), {
       exists: async (path: string) => {
