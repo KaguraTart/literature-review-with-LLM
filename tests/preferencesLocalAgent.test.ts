@@ -36,6 +36,7 @@ function loadPreferencesHelpers() {
     providerDefaults: (provider: string) => any;
     providerSetupGuide: (profile: any, language?: string) => string;
     providerConfigDoctor: (profile: any, language?: string) => any;
+    applyProviderEnvTextToProfile: (profile: any, raw: string, provider?: string) => any;
     defaultProviderProfiles: () => any[];
     mergeDefaultProviderProfiles: (profiles: any[]) => any[];
     normalizeProviderProfile: (profile: any) => any;
@@ -87,6 +88,9 @@ function loadPreferencesController(options: {
     testFailed: "Connection failed",
     doctorOk: "Configuration preflight passed",
     doctorFailed: "Configuration preflight failed",
+    providerEnvApplied: "Config imported",
+    providerEnvNoInput: "Paste KEY=value config first",
+    providerEnvNoMatch: "No matching environment variables for this profile",
     noProfile: "No profile",
     profileProtocolStatus: "Protocol",
     profileModelStatus: "Model",
@@ -187,6 +191,8 @@ function loadPreferencesController(options: {
   createElement("zms-profile-options", { localName: "datalist" });
   createElement("zms-profileStatus", { localName: "pre" });
   createElement("zms-providerGuide", { localName: "pre" });
+  createElement("zms-providerEnvText", { localName: "textarea" });
+  createElement("zms-apply-provider-env-button", { localName: "button" });
   createElement("zms-doctor-button", { localName: "button" });
   setChecked("zms-stream", false);
   setChecked("zms-profileLocalAgentFallback", false);
@@ -2543,6 +2549,53 @@ describe("preferences local-agent config helpers", () => {
     expect(vercelAnthropicGuide).not.toContain("vercel-anthropic-secret");
   });
 
+  it("imports pasted provider env text into a settings profile", () => {
+    const helpers = loadPreferencesHelpers();
+    const result = helpers.applyProviderEnvTextToProfile({
+      ...helpers.providerDefaults("openai_compatible"),
+      apiKey: "old-secret",
+      model: "old-model",
+      customHeaders: { "x-existing": "yes" },
+      capabilities: { imageBase64: false, pdfBase64: false, streaming: true }
+    }, [
+      "export OPENAI_COMPATIBLE_API_KEY=\"sk-new-secret\"",
+      "OPENAI_COMPATIBLE_MODEL=router-model",
+      "OPENAI_COMPATIBLE_BASE_URL=https://router.example/v1 # comment",
+      "OPENAI_COMPATIBLE_CAPABILITIES_JSON='{\"imageBase64\":true}'",
+      "OPENAI_COMPATIBLE_HEADERS_JSON='{\"x-route\":\"paper\"}'",
+      "OPENAI_COMPATIBLE_BODY_EXTRA_JSON='{\"response_format\":{\"type\":\"json_object\"}}'"
+    ].join("\n"), "openai_compatible");
+
+    expect(result.changed).toEqual(["apiKey", "model", "baseURL", "capabilities", "customHeaders", "bodyExtra"]);
+    expect(result.profile).toMatchObject({
+      apiKey: "sk-new-secret",
+      model: "router-model",
+      baseURL: "https://router.example/v1",
+      capabilities: { imageBase64: true },
+      customHeaders: { "x-existing": "yes", "x-route": "paper" },
+      bodyExtra: { response_format: { type: "json_object" } }
+    });
+  });
+
+  it("accepts Vercel AI Gateway env aliases in settings imports", () => {
+    const helpers = loadPreferencesHelpers();
+    const result = helpers.applyProviderEnvTextToProfile({
+      ...helpers.providerDefaults("vercel_ai_anthropic"),
+      apiKey: "",
+      model: ""
+    }, [
+      "AI_GATEWAY_API_KEY=vercel-gateway-secret",
+      "AI_GATEWAY_MODEL=anthropic/claude-sonnet-4.5"
+    ].join("\n"), "vercel_ai_anthropic");
+
+    expect(result.changed).toEqual(["apiKey", "model"]);
+    expect(result.profile).toMatchObject({
+      apiKey: "vercel-gateway-secret",
+      model: "anthropic/claude-sonnet-4.5",
+      protocol: "anthropic_messages"
+    });
+  });
+
   it("updates the settings provider guide from edited fields", () => {
     const { controller, elements } = loadPreferencesController({ initialModel: "gpt-4.1" });
     elements.get("zms-profileCustomHeaders").value = "{\"Authorization\":\"Bearer routed-secret\"}";
@@ -2588,6 +2641,45 @@ describe("preferences local-agent config helpers", () => {
       baseURL: "https://new.example/v1",
       isDefault: true
     });
+  });
+
+  it("applies pasted env config and persists it through the settings controller", () => {
+    const { controller, elements, prefValues } = loadPreferencesController({ initialModel: "old-model" });
+    elements.get("zms-profilesJson").value = JSON.stringify([
+      {
+        id: "openai",
+        name: "OpenAI",
+        protocol: "openai_responses",
+        endpointMode: "base_url",
+        baseURL: "https://api.openai.com/v1",
+        apiKey: "old-secret",
+        model: "old-model",
+        capabilities: { pdfBase64: true, imageBase64: true, streaming: true, modelList: true },
+        customHeaders: {},
+        bodyExtra: {},
+        isDefault: true
+      }
+    ]);
+    elements.get("zms-providerEnvText").value = [
+      "OPENAI_API_KEY=sk-env-secret",
+      "OPENAI_MODEL=gpt-4.1-mini",
+      "OPENAI_BODY_EXTRA_JSON='{\"metadata\":{\"source\":\"settings\"}}'"
+    ].join("\n");
+
+    const result = controller.applyProviderEnvFromText();
+
+    expect(result.changed).toEqual(["apiKey", "model", "bodyExtra"]);
+    const profiles = JSON.parse(elements.get("zms-profilesJson").value);
+    expect(profiles[0]).toMatchObject({
+      id: "openai",
+      apiKey: "sk-env-secret",
+      model: "gpt-4.1-mini",
+      bodyExtra: { metadata: { source: "settings" } },
+      isDefault: true
+    });
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.apiKey")).toBe("sk-env-secret");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.model")).toBe("gpt-4.1-mini");
+    expect(elements.get("zms-status").value).toContain("Config imported");
   });
 
   it("persists edited output directory and creates it from the top settings field", async () => {

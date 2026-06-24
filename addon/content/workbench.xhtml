@@ -38,6 +38,13 @@
           <html:datalist id="zms-workbench-model-options"/>
           <html:button id="zms-load-models-workbench" class="zms-load-models-button" type="button" title="Fetch the model list from the current provider">Load models</html:button>
         </html:div>
+        <html:details class="zms-settings-details">
+          <html:summary id="zms-workbench-provider-env-heading">Paste env config</html:summary>
+          <html:textarea id="zms-workbench-provider-env-text" class="zms-provider-env-text" placeholder="OPENAI_API_KEY=...&#10;OPENAI_MODEL=..."></html:textarea>
+          <html:div class="zms-actions">
+            <html:button id="zms-workbench-apply-provider-env" type="button">Apply to current profile</html:button>
+          </html:div>
+        </html:details>
         <html:label class="zms-checkbox-row" id="zms-profile-image-label">
           <html:input id="zms-profile-image-input" type="checkbox"/>
           <html:span id="zms-profile-image-text">Images</html:span>

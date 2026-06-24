@@ -108,6 +108,13 @@
         <button id="zms-load-models-button" label="加载模型" oncommand="ZoteroMarkdownSummaryPrefs.loadModels()"/>
       </hbox>
       <vbox class="zms-row">
+        <label id="zms-providerEnv-label" value="粘贴环境变量配置"/>
+        <html:textarea class="zms-small-json" id="zms-providerEnvText" placeholder="OPENAI_API_KEY=...&#10;OPENAI_MODEL=..."/>
+        <hbox align="center" class="zms-actions">
+          <button id="zms-apply-provider-env-button" label="应用到当前档案" oncommand="ZoteroMarkdownSummaryPrefs.applyProviderEnvFromText()"/>
+        </hbox>
+      </vbox>
+      <vbox class="zms-row">
         <label id="zms-providerGuide-label" value="配置指南"/>
         <html:pre class="zms-provider-guide" id="zms-providerGuide"></html:pre>
       </vbox>

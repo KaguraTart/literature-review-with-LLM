@@ -191,6 +191,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     profileStatusText: (profile: any, translate?: (key: string) => string) => string;
     renderProviderDiagnosticsMarkdown: (profile: any, options?: any) => string;
     providerDiagnosticsMarkdownPath: (outputDir: string, profile: any) => string;
+    applyProviderEnvTextToProfileForWorkbench: (profile: any, raw: string, provider?: string) => any;
     profileMessageMetadata: (profile: any) => any;
     providerErrorText: (status: number, text: string) => string;
     extractResponseText: (protocol: string, data: any) => string;
@@ -693,6 +694,110 @@ describe("workbench writeback helpers", () => {
       apiKey: "kept-secret",
       model: "kept-model"
     });
+  });
+
+  it("imports pasted env text into a workbench provider profile", () => {
+    const loaded = loadWorkbenchHelpers();
+    const profile = {
+      id: "anthropic-compatible",
+      name: "Anthropic Compatible Messages",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://YOUR-ANTHROPIC-COMPATIBLE-ENDPOINT",
+      fullURL: "",
+      apiKey: "",
+      model: "",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    };
+
+    const result = loaded.applyProviderEnvTextToProfileForWorkbench(profile, [
+      "export ANTHROPIC_COMPATIBLE_API_KEY='anthropic-router-secret'",
+      "ANTHROPIC_COMPATIBLE_MODEL=claude-router",
+      "ANTHROPIC_COMPATIBLE_BASE_URL=https://anthropic-router.example",
+      "ANTHROPIC_COMPATIBLE_CAPABILITIES_JSON='{\"imageBase64\":true,\"pdfBase64\":true}'"
+    ].join("\n"), "anthropic_compatible");
+
+    expect(result.changed).toEqual(["apiKey", "model", "baseURL", "capabilities"]);
+    expect(result.profile).toMatchObject({
+      apiKey: "anthropic-router-secret",
+      model: "claude-router",
+      baseURL: "https://anthropic-router.example",
+      protocol: "anthropic_messages",
+      capabilities: { imageBase64: true, pdfBase64: true }
+    });
+  });
+
+  it("applies pasted env config through the workbench settings panel", () => {
+    const prefs: Record<string, any> = {};
+    const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      saved: "Saved",
+      providerEnvApplied: "Config imported",
+      providerEnvNoInput: "Paste KEY=value config first",
+      providerEnvNoMatch: "No matching environment variables for this profile",
+      noProfile: "No profile",
+      profileProtocolStatus: "Protocol",
+      profileModelStatus: "Model",
+      profileEndpointStatus: "Endpoint",
+      profileEndpointMissing: "Not configured",
+      profileModelMissing: "Not configured",
+      profileModelOptional: "Optional",
+      profileAuthReady: "Authentication configured",
+      profileAuthMissing: "Missing authentication",
+      profilePdfReady: "Raw PDF input supported",
+      profilePdfTextOnly: "Text input only",
+      profileImageReady: "Image input supported",
+      profileImageOff: "Image input disabled",
+      profileStreamReady: "Streaming supported",
+      profileStreamOff: "Streaming disabled"
+    }[key] || key);
+    const profile = {
+      id: "vercel-ai-chat",
+      name: "Vercel AI Gateway Chat",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://ai-gateway.vercel.sh/v1",
+      fullURL: "",
+      apiKey: "",
+      model: "",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {}
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+    workbench.state.localOcrEnabled = false;
+    workbench.state.localOcrEndpoint = "";
+    workbench.state.localOcrTool = "";
+    workbench.state.localOcrLanguage = "";
+    workbench.renderProfileEditor();
+    dom.getElementById("zms-workbench-provider-env-text").value = [
+      "AI_GATEWAY_API_KEY=vercel-gateway-secret",
+      "AI_GATEWAY_MODEL=openai/gpt-4.1-mini"
+    ].join("\n");
+
+    const result = workbench.applyProviderEnvFromText();
+
+    expect(result.changed).toEqual(["apiKey", "model"]);
+    expect(workbench.state.profile).toMatchObject({
+      id: "vercel-ai-chat",
+      apiKey: "vercel-gateway-secret",
+      model: "openai/gpt-4.1-mini"
+    });
+    expect(JSON.parse(prefs.profilesJson)[0]).toMatchObject({
+      id: "vercel-ai-chat",
+      apiKey: "vercel-gateway-secret",
+      model: "openai/gpt-4.1-mini",
+      isDefault: true
+    });
+    expect(prefs.apiKey).toBe("vercel-gateway-secret");
+    expect(prefs.model).toBe("openai/gpt-4.1-mini");
+    expect(dom.elements.get("zms-status").textContent).toContain("Config imported");
   });
 
   it("normalizes damaged workbench provider profiles before use", () => {

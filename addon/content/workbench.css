@@ -958,6 +958,12 @@ textarea {
   line-height: 1.45;
 }
 
+.zms-provider-env-text {
+  min-height: 84px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  resize: vertical;
+}
+
 select:focus,
 textarea:focus,
 input:focus {

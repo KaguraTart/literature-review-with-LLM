@@ -259,6 +259,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-workbench-save-output-dir": () => this.saveOutputDir(),
       "zms-save-profile-settings": () => this.saveProfileSettings(),
       "zms-test-profile-settings": () => this.testProfileSettings(),
+      "zms-workbench-apply-provider-env": () => this.applyProviderEnvFromText(),
       "zms-export-provider-diagnostics": () => this.exportProviderDiagnostics(),
       "zms-attach-image": () => this.chooseImages(),
       "zms-load-models-workbench": () => this.loadModelsForWorkbench(),
@@ -561,6 +562,8 @@ var ZoteroMarkdownSummaryWorkbench = {
     setButtonLabel("zms-workbench-save-output-dir", this.t("saveOutputDir"), this.t("saveOutputDir"));
     setText("zms-save-profile-settings", this.t("save"));
     setText("zms-test-profile-settings", this.t("saveAndTest"));
+    setText("zms-workbench-provider-env-heading", this.t("providerEnv"));
+    setText("zms-workbench-apply-provider-env", this.t("applyProviderEnv"));
     setText("zms-export-provider-diagnostics", this.t("exportProviderDiagnostics"));
     setText("zms-profile-name-label", this.t("profileName"));
     setText("zms-profile-base-url-label", this.t("baseURL"));
@@ -706,6 +709,25 @@ var ZoteroMarkdownSummaryWorkbench = {
     setInputValue("zms-local-ocr-endpoint", this.state.localOcrEndpoint || "http://127.0.0.1:3333/mcp");
     setInputValue("zms-local-ocr-tool", this.state.localOcrTool || "ocr_image");
     setInputValue("zms-local-ocr-language", this.state.localOcrLanguage || "eng");
+  },
+
+  applyProviderEnvFromText() {
+    const profile = this.profileFromSettingsPanel();
+    const raw = document.getElementById("zms-workbench-provider-env-text")?.value || "";
+    if (!profile) {
+      this.setStatus(this.t("noProfile"));
+      return null;
+    }
+    const result = applyProviderEnvTextToProfileForWorkbench(profile, raw, workbenchProviderFromProfile(profile, profile.id));
+    if (!result.changed.length) {
+      this.setStatus(this.t(raw.trim() ? "providerEnvNoMatch" : "providerEnvNoInput"));
+      return result;
+    }
+    this.state.profile = hydrateProfile(result.profile);
+    this.renderProfileEditor();
+    this.saveProfileSettings({ status: false });
+    this.setStatus(`${this.t("providerEnvApplied")}: ${result.changed.join(", ")}`);
+    return result;
   },
 
   profileFromSettingsPanel() {
@@ -3260,6 +3282,172 @@ function providerLiveVerifyCaseForWorkbench(profile, provider = workbenchProvide
     includeBaseURL: !!alwaysIncludeBaseURL || includeBaseURL,
     apiKeyOptional
   };
+}
+
+function applyProviderEnvTextToProfileForWorkbench(profile, raw, provider = workbenchProviderFromProfile(profile, profile?.id || "")) {
+  const env = parseProviderEnvTextForWorkbench(raw);
+  const next = hydrateProfile(profile || {});
+  const entry = providerLiveVerifyCaseForWorkbench(next, provider);
+  const changed = [];
+  const apiKey = providerEnvFirstValueForWorkbench(env, providerEnvCandidateNamesForWorkbench(entry, provider, "apiKey"));
+  const model = providerEnvFirstValueForWorkbench(env, providerEnvCandidateNamesForWorkbench(entry, provider, "model"));
+  const baseURL = providerEnvFirstValueForWorkbench(env, providerEnvCandidateNamesForWorkbench(entry, provider, "baseURL"));
+  const capabilities = providerEnvJSONValueForWorkbench(env, providerEnvCandidateNamesForWorkbench(entry, provider, "capabilities"));
+  const headers = providerEnvJSONValueForWorkbench(env, providerEnvCandidateNamesForWorkbench(entry, provider, "headers"));
+  const bodyExtra = providerEnvJSONValueForWorkbench(env, providerEnvCandidateNamesForWorkbench(entry, provider, "bodyExtra"));
+
+  if (apiKey !== undefined) {
+    next.apiKey = apiKey;
+    changed.push("apiKey");
+  }
+  if (model !== undefined) {
+    next.model = model;
+    changed.push("model");
+  }
+  if (baseURL !== undefined) {
+    next.baseURL = baseURL;
+    changed.push("baseURL");
+  }
+  if (capabilities && typeof capabilities === "object" && !Array.isArray(capabilities)) {
+    next.capabilities = normalizeProviderCapabilities({ ...(next.capabilities || {}), ...capabilities }, next.capabilities || {});
+    changed.push("capabilities");
+  }
+  if (headers && typeof headers === "object" && !Array.isArray(headers)) {
+    next.customHeaders = normalizeObjectStringMap({ ...(next.customHeaders || {}), ...headers }) || {};
+    changed.push("customHeaders");
+  }
+  if (bodyExtra && typeof bodyExtra === "object" && !Array.isArray(bodyExtra)) {
+    next.bodyExtra = normalizeObjectStringMap({ ...(next.bodyExtra || {}), ...bodyExtra }) || {};
+    changed.push("bodyExtra");
+  }
+
+  return { profile: hydrateProfile(next), changed, env };
+}
+
+function parseProviderEnvTextForWorkbench(raw) {
+  const env = {};
+  for (const line of String(raw || "").split(/\r?\n/)) {
+    const parsed = parseProviderEnvLineForWorkbench(line);
+    if (parsed) env[parsed.key] = parsed.value;
+  }
+  return env;
+}
+
+function parseProviderEnvLineForWorkbench(line) {
+  let text = String(line || "").trim();
+  if (!text || text.startsWith("#")) return null;
+  text = text.replace(/^export\s+/i, "").trim();
+  const match = text.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([\s\S]*)$/);
+  if (!match) return null;
+  return { key: match[1], value: normalizeProviderEnvValueForWorkbench(match[2]) };
+}
+
+function normalizeProviderEnvValueForWorkbench(value) {
+  let text = String(value || "").trim();
+  if (!text) return "";
+  const quote = text[0];
+  if ((quote === "\"" || quote === "'") && text.length >= 2) {
+    const end = findProviderEnvQuoteEndForWorkbench(text, quote);
+    if (end > 0) return unquoteProviderEnvValueForWorkbench(text.slice(0, end + 1));
+  }
+  text = text.replace(/\s+#.*$/, "").trim();
+  return unquoteProviderEnvValueForWorkbench(text);
+}
+
+function findProviderEnvQuoteEndForWorkbench(text, quote) {
+  for (let index = 1; index < text.length; index += 1) {
+    if (text[index] !== quote) continue;
+    if (quote === "\"" && text[index - 1] === "\\") continue;
+    return index;
+  }
+  return -1;
+}
+
+function unquoteProviderEnvValueForWorkbench(value) {
+  const text = String(value || "").trim();
+  if (text.length < 2) return text;
+  const quote = text[0];
+  if ((quote !== "\"" && quote !== "'") || text[text.length - 1] !== quote) return text;
+  const inner = text.slice(1, -1);
+  if (quote === "'") return inner;
+  try {
+    return JSON.parse(text);
+  } catch (_err) {
+    return inner.replace(/\\"/g, "\"").replace(/\\n/g, "\n").replace(/\\\\/g, "\\");
+  }
+}
+
+function providerEnvFirstValueForWorkbench(env, names) {
+  for (const name of names) {
+    const value = env?.[name];
+    if (providerEnvValueUsableForWorkbench(value)) return String(value).trim();
+  }
+  return undefined;
+}
+
+function providerEnvJSONValueForWorkbench(env, names) {
+  const value = providerEnvFirstValueForWorkbench(env, names);
+  if (value === undefined) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function providerEnvValueUsableForWorkbench(value) {
+  const text = String(value ?? "").trim();
+  return !!text && text !== "..." && !/^YOUR[_-]/i.test(text);
+}
+
+function providerEnvCandidateNamesForWorkbench(entry, provider, field) {
+  const prefix = String(entry?.apiKeyEnv || "").replace(/_API_KEY$/, "");
+  const aliases = providerEnvAliasesForWorkbench(provider, prefix);
+  if (field === "apiKey") return providerEnvUniqueNamesForWorkbench(entry?.apiKeyEnv, `${prefix}_KEY`, ...aliases.apiKey, "API_KEY");
+  if (field === "model") return providerEnvUniqueNamesForWorkbench(entry?.modelEnv, `${prefix}_MODEL`, ...aliases.model, "MODEL");
+  if (field === "baseURL") return providerEnvUniqueNamesForWorkbench(entry?.baseURLEnv, `${prefix}_BASE_URL`, `${prefix}_ENDPOINT`, ...aliases.baseURL, "BASE_URL", "ENDPOINT");
+  if (field === "capabilities") return providerEnvUniqueNamesForWorkbench(providerCapabilitiesEnvNameForWorkbench(entry), `${prefix}_CAPABILITIES_JSON`, "CAPABILITIES_JSON");
+  if (field === "headers") return providerEnvUniqueNamesForWorkbench(`${prefix}_HEADERS_JSON`, `${prefix}_CUSTOM_HEADERS_JSON`, "HEADERS_JSON", "CUSTOM_HEADERS_JSON");
+  if (field === "bodyExtra") return providerEnvUniqueNamesForWorkbench(`${prefix}_BODY_EXTRA_JSON`, `${prefix}_EXTRA_BODY_JSON`, "BODY_EXTRA_JSON", "EXTRA_BODY_JSON");
+  return [];
+}
+
+function providerEnvAliasesForWorkbench(provider, prefix) {
+  const key = String(provider || "").replace(/-/g, "_");
+  const aliases = { apiKey: [], model: [], baseURL: [] };
+  if (key.includes("vercel_ai")) {
+    aliases.apiKey.push("AI_GATEWAY_API_KEY", "VERCEL_API_KEY");
+    aliases.model.push("AI_GATEWAY_MODEL");
+    aliases.baseURL.push("AI_GATEWAY_BASE_URL");
+  }
+  if (key === "gemini") {
+    aliases.apiKey.push("GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY");
+    aliases.model.push("GOOGLE_MODEL", "GOOGLE_GENERATIVE_AI_MODEL");
+    aliases.baseURL.push("GOOGLE_BASE_URL", "GOOGLE_GENERATIVE_AI_BASE_URL");
+  }
+  if (key === "azure_openai") {
+    aliases.baseURL.push("AZURE_OPENAI_ENDPOINT");
+  }
+  if (key === "cloudflare_ai_chat" || key === "cloudflare_ai_responses" || key === "cloudflare_ai_anthropic") {
+    aliases.apiKey.push("CLOUDFLARE_API_TOKEN");
+  }
+  if (key === "openai_compatible" || key === "openai_responses_compatible") {
+    aliases.apiKey.push("OPENAI_API_KEY");
+    aliases.model.push("OPENAI_MODEL");
+    aliases.baseURL.push("OPENAI_BASE_URL");
+  }
+  if (key === "anthropic_compatible") {
+    aliases.apiKey.push("ANTHROPIC_API_KEY");
+    aliases.model.push("ANTHROPIC_MODEL");
+    aliases.baseURL.push("ANTHROPIC_BASE_URL");
+  }
+  if (prefix && prefix !== "OPENAI") aliases.apiKey.push(`${prefix}_TOKEN`);
+  return aliases;
+}
+
+function providerEnvUniqueNamesForWorkbench(...names) {
+  return Array.from(new Set(names.map((name) => String(name || "").trim()).filter(Boolean)));
 }
 
 function providerBaseURLDiffersForWorkbench(profile, provider = workbenchProviderFromProfile(profile, profile?.id || "")) {
