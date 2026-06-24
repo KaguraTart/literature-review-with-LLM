@@ -385,6 +385,7 @@ function extractOpenAITextValue(data, depth = 0) {
     || extractOpenAIMessageContent(data?.candidates)
     || extractOpenAIEventContainer(data)
     || extractOpenAIMessageContent(data?.text)
+    || extractOpenAIMessageContent(data?.refusal)
     || extractWrappedResponseContent("openai", data, depth);
 }
 

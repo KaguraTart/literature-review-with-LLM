@@ -2809,6 +2809,29 @@ describe("bootstrap provider helpers", () => {
       }
     }, "hash", false)).resolves.toMatchObject({ markdown: "chat refusal" });
 
+    const topLevelRefusal = loadBootstrapProviderHelpers({
+      refusal: "top-level refusal"
+    });
+    await expect(topLevelRefusal.helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false)).resolves.toMatchObject({ markdown: "top-level refusal" });
+
     const laterChoice = loadBootstrapProviderHelpers({
       choices: [{ message: { content: null } }, { message: { content: "second choice text" } }]
     });
