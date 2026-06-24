@@ -95,4 +95,17 @@ describe("locale files", () => {
     expect(zmsMessage("bootstrap", "batchReport", "zh-CN")).toBe("批量报告");
     expect(zmsMessage("bootstrap", "missingKey", "zh-CN")).toBe("missingKey");
   });
+
+  it("keeps Chinese settings labels localized for configuration fields", () => {
+    const { zmsMessage } = loadSharedMessages();
+
+    expect(zmsMessage("preferences", "uiLanguage", "zh-CN")).toBe("界面语言");
+    expect(zmsMessage("preferences", "apiKey", "zh-CN")).toBe("API 密钥");
+    expect(zmsMessage("preferences", "profileEndpointStatus", "zh-CN")).toBe("接口");
+    expect(zmsMessage("preferences", "profileProtocol", "zh-CN")).toBe("接口协议");
+    expect(zmsMessage("preferences", "profileCustomHeaders", "zh-CN")).toBe("自定义请求头（JSON）");
+    expect(zmsMessage("preferences", "profileBodyExtra", "zh-CN")).toBe("额外请求体（JSON）");
+    expect(zmsMessage("preferences", "profileLocalAgentHeaders", "zh-CN")).toBe("代理请求头（JSON）");
+    expect(zmsMessage("preferences", "profileLocalAgentSkills", "zh-CN")).toBe("技能级配置（JSON，可选）");
+  });
 });
