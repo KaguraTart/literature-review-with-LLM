@@ -57,9 +57,14 @@ function loadPreferencesController(options: {
   filePickerUseShow?: boolean;
   filePickerInitThrowsWithWindow?: boolean;
   filePickerOpenThrowsWithWindow?: boolean;
+  filePickerOpenReturnsPromise?: boolean;
   filePickerDisplayDirectoryThrows?: boolean;
   filePickerReturn?: number;
   filePickerExistingPaths?: string[];
+  filePickerExtraProps?: Record<string, any>;
+  filePickerWindowBrowsingContext?: boolean;
+  filePickerUseZoteroWrapper?: boolean;
+  noZmsMessage?: boolean;
   makeDirectoryThrows?: boolean;
 } = {}) {
   const code = readFileSync(resolve(process.cwd(), "addon/content/preferences.js"), "utf8");
@@ -82,6 +87,7 @@ function loadPreferencesController(options: {
     modelListEmpty: "No models",
     modelListLoaded: "Models loaded",
     modelListUnavailable: "Model list unavailable",
+    modelRecommendationsLoaded: "Recommended models loaded",
     profilesReset: "Default provider profiles restored",
     resetProfiles: "Reset default profiles",
     testOk: "Connection OK",
@@ -187,6 +193,7 @@ function loadPreferencesController(options: {
   createElement("zms-status", { localName: "label" });
   createElement("zms-choose-outputDir-button", { localName: "button" });
   createElement("zms-save-outputDir-button", { localName: "button" });
+  createElement("zms-model-select", { localName: "select" });
   createElement("zms-model-options", { localName: "datalist" });
   createElement("zms-profile-options", { localName: "datalist" });
   createElement("zms-profileStatus", { localName: "pre" });
@@ -222,8 +229,12 @@ function loadPreferencesController(options: {
     isDirectory: () => true
   });
 
-  const context = createContext({
-    window: {},
+  const windowObject: any = {};
+  if (options.filePickerWindowBrowsingContext) {
+    windowObject.browsingContext = { zmsKind: "browsingContext" };
+  }
+  const contextValues: Record<string, any> = {
+    window: windowObject,
     document: {
       getElementById(id: string) {
         return elements.get(id) || createElement(id);
@@ -252,7 +263,6 @@ function loadPreferencesController(options: {
         text: async () => JSON.stringify(payload)
       };
     },
-    zmsMessage: (_scope: string, key: string) => messageMap[key] || key,
     IOUtils: {
       exists: async (path: string) => path === "/tmp/out/skills",
       getChildren: async (path: string) => path === "/tmp/out/skills" ? [...skillFiles] : [],
@@ -276,17 +286,27 @@ function loadPreferencesController(options: {
             files: options.filePickerFiles,
             fileURL: options.filePickerFileURL,
             init: (parent: any, title: string, mode: number) => {
-              if (options.filePickerInitThrowsWithWindow && parent) throw new Error("window parent unsupported");
-              initializedParent = parent ? "window" : null;
+              if (options.filePickerInitThrowsWithWindow && parent && parent.zmsKind !== "browsingContext") {
+                throw new Error("window parent unsupported");
+              }
+              initializedParent = parent?.zmsKind || (parent ? "window" : null);
               filePickerCalls.push({ title, mode, parent: initializedParent });
             }
           };
+          Object.assign(picker, options.filePickerExtraProps || {});
           if (options.filePickerUseShow) {
             picker.show = () => {
               if (options.filePickerOpenThrowsWithWindow && initializedParent === "window") {
                 throw new Error("window parent open unsupported");
               }
               return options.filePickerReturn ?? filePickerConstants.returnOK;
+            };
+          } else if (options.filePickerOpenReturnsPromise) {
+            picker.open = () => {
+              if (options.filePickerOpenThrowsWithWindow && initializedParent === "window") {
+                throw new Error("window parent open unsupported");
+              }
+              return Promise.resolve(options.filePickerReturn ?? filePickerConstants.returnOK);
             };
           } else {
             picker.open = (callback: (result: number) => void) => {
@@ -327,7 +347,40 @@ function loadPreferencesController(options: {
       }
     },
     console
-  });
+  };
+  if (!options.noZmsMessage) {
+    contextValues.zmsMessage = (_scope: string, key: string) => messageMap[key] || key;
+  }
+  if (options.filePickerUseZoteroWrapper) {
+    contextValues.ChromeUtils = {
+      importESModule: () => ({
+        FilePicker: class FilePicker {
+          modeGetFolder = filePickerConstants.modeGetFolder;
+          returnOK = filePickerConstants.returnOK;
+          returnCancel = filePickerConstants.returnCancel;
+          returnReplace = filePickerConstants.returnReplace;
+          filterAll = 1;
+          file = options.filePickerPath || "/tmp/zotero wrapper output";
+          _displayDirectory = "";
+          init(parent: any, title: string, mode: number) {
+            if (!parent?.browsingContext) throw new Error("missing browsing context");
+            filePickerCalls.push({ title, mode, parent: "zoteroWindow", displayDirectory: this._displayDirectory });
+          }
+          set displayDirectory(value: string) {
+            this._displayDirectory = value;
+            const last = filePickerCalls[filePickerCalls.length - 1];
+            if (last) last.displayDirectory = value;
+          }
+          appendFilters() {}
+          async show() {
+            return options.filePickerReturn ?? filePickerConstants.returnOK;
+          }
+        }
+      })
+    };
+    windowObject.browsingContext = { zmsKind: "browsingContext" };
+  }
+  const context = createContext(contextValues);
   runInContext(code, context, { filename: "preferences.js" });
   return {
     controller: (context as any).window.ZoteroMarkdownSummaryPrefs,
@@ -2717,6 +2770,52 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-save-outputDir-button").tooltiptext).toBe("Save the current output directory");
   });
 
+  it("falls back to fully localized Chinese labels when the message bundle is unavailable", () => {
+    const { controller, elements } = loadPreferencesController({ noZmsMessage: true });
+    elements.get("zms-uiLanguage").value = "zh-CN";
+
+    controller.applyLanguage();
+
+    expect(elements.get("zms-provider-label").value).toBe("模型厂商");
+    expect(elements.get("zms-baseURL-label").value).toBe("接口地址");
+    expect(elements.get("zms-model-label").value).toBe("模型");
+    expect(elements.get("zms-profileEndpointMode-label").value).toBe("接口模式");
+    expect(elements.get("zms-outputDir-label").value).toBe("输出目录");
+    expect(elements.get("zms-choose-outputDir-button").label).toBe("选择文件夹...");
+  });
+
+  it("preloads recommended provider models without requiring an API key", async () => {
+    const { controller, elements } = loadPreferencesController();
+    elements.get("zms-provider").value = "deepseek";
+    elements.get("zms-activeProfileId").value = "deepseek";
+    elements.get("zms-profileName").value = "DeepSeek";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "https://api.deepseek.com";
+    elements.get("zms-apiKey").value = "";
+    elements.get("zms-model").value = "";
+
+    await controller.loadModels();
+
+    expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toContain("deepseek-chat");
+    expect(elements.get("zms-model-select").children.map((option: any) => option.value)).toContain("deepseek-chat");
+    expect(elements.get("zms-status").value).toBe("Recommended models loaded: 2");
+  });
+
+  it("updates the model field from the recommended model dropdown", () => {
+    const { controller, elements } = loadPreferencesController();
+    elements.get("zms-provider").value = "deepseek";
+    elements.get("zms-profileName").value = "DeepSeek";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "https://api.deepseek.com";
+    elements.get("zms-model").value = "";
+
+    controller.refreshModelRecommendations();
+    elements.get("zms-model-select").value = "deepseek-reasoner";
+    controller.selectModelFromDropdown();
+
+    expect(elements.get("zms-model").value).toBe("deepseek-reasoner");
+  });
+
   it("chooses an output directory with the native folder picker and saves it", async () => {
     const { controller, elements, prefValues, madeDirectories, filePickerCalls } = loadPreferencesController({
       filePickerPath: "/tmp/picked output"
@@ -2732,6 +2831,25 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-outputDir").value).toBe("/tmp/picked output");
     expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("/tmp/picked output");
     expect(madeDirectories).toContain("/tmp/picked output");
+  });
+
+  it("chooses an output directory through Zotero's FilePicker wrapper when available", async () => {
+    const { controller, elements, prefValues, madeDirectories, filePickerCalls } = loadPreferencesController({
+      filePickerUseZoteroWrapper: true,
+      filePickerPath: "/tmp/wrapper output"
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      parent: "zoteroWindow",
+      displayDirectory: "/tmp/out"
+    });
+    expect(elements.get("zms-outputDir").value).toBe("/tmp/wrapper output");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("/tmp/wrapper output");
+    expect(madeDirectories).toContain("/tmp/wrapper output");
   });
 
   it("uses a Windows file URL when the native folder picker does not expose file.path", async () => {
@@ -2758,6 +2876,57 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-outputDir").value).toBe("C:\\Users\\tart\\Documents\\Literature Review with LLM");
     expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("C:\\Users\\tart\\Documents\\Literature Review with LLM");
     expect(madeDirectories).toContain("C:\\Users\\tart\\Documents\\Literature Review with LLM");
+  });
+
+  it("uses a promised picker result from the native folder picker", async () => {
+    const { controller, elements, prefValues, madeDirectories } = loadPreferencesController({
+      filePickerFile: { path: "" },
+      filePickerFileURL: { spec: "file:///C:/Users/tart/Documents/Review%20Output" },
+      filePickerOpenReturnsPromise: true
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(elements.get("zms-outputDir").value).toBe("C:\\Users\\tart\\Documents\\Review Output");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("C:\\Users\\tart\\Documents\\Review Output");
+    expect(madeDirectories).toContain("C:\\Users\\tart\\Documents\\Review Output");
+  });
+
+  it("initializes the native folder picker with a browsing context in current Zotero runtimes", async () => {
+    const { controller, elements, filePickerCalls } = loadPreferencesController({
+      filePickerFile: { path: "" },
+      filePickerFileURL: { spec: "file:///Users/tart/Zotero/Literature%20Review%20with%20LLM" },
+      filePickerWindowBrowsingContext: true,
+      filePickerInitThrowsWithWindow: true
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      parent: "browsingContext",
+      displayDirectory: "/tmp/out"
+    });
+    expect(elements.get("zms-outputDir").value).toBe("/Users/tart/Zotero/Literature Review with LLM");
+  });
+
+  it("uses selected file wrapper fields from the native folder picker", async () => {
+    const { controller, elements, prefValues, madeDirectories } = loadPreferencesController({
+      filePickerFile: { path: "" },
+      filePickerExtraProps: {
+        selectedFile: { path: "" },
+        domFileOrDirectory: {
+          fileURL: { spec: "file:///C:/Users/tart/Documents/Review%20Output" }
+        }
+      }
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(elements.get("zms-outputDir").value).toBe("C:\\Users\\tart\\Documents\\Review Output");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBe("C:\\Users\\tart\\Documents\\Review Output");
+    expect(madeDirectories).toContain("C:\\Users\\tart\\Documents\\Review Output");
   });
 
   it("normalizes Windows paths returned through nsIFileURL QueryInterface", async () => {
@@ -3220,6 +3389,8 @@ describe("preferences local-agent config helpers", () => {
       headers: { authorization: "Bearer sk-test-secret", "x-route": "paper" }
     });
     expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toEqual(["model-a", "model-b"]);
+    expect(elements.get("zms-model-select").children.map((option: any) => option.value)).toEqual(["", "model-a", "model-b", "__custom"]);
+    expect(elements.get("zms-model-select").value).toBe("model-a");
     expect(elements.get("zms-model").value).toBe("model-a");
     expect(elements.get("zms-status").value).toBe("Models loaded: 2");
   });
@@ -3234,6 +3405,7 @@ describe("preferences local-agent config helpers", () => {
 
     expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toEqual(["model-a", "model-b"]);
     expect(elements.get("zms-model").value).toBe("manual-model");
+    expect(elements.get("zms-model-select").value).toBe("__custom");
   });
 
   it("renders model display names from Anthropic-compatible model lists", async () => {
@@ -3255,6 +3427,8 @@ describe("preferences local-agent config helpers", () => {
     const options = elements.get("zms-model-options").children;
     expect(options.map((option: any) => option.value)).toEqual(["claude-opus-4-8", "claude-sonnet-4-5"]);
     expect(options.map((option: any) => option.label)).toEqual(["Claude Opus 4.8", "Claude Sonnet 4.5"]);
+    expect(elements.get("zms-model-select").children.map((option: any) => option.value)).toEqual(["", "claude-opus-4-8", "claude-sonnet-4-5", "__custom"]);
+    expect(elements.get("zms-model-select").value).toBe("claude-opus-4-8");
     expect(elements.get("zms-model").value).toBe("claude-opus-4-8");
   });
 

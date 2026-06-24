@@ -2639,6 +2639,8 @@ describe("workbench writeback helpers", () => {
       headers: { authorization: "Bearer new-secret" }
     });
     expect(dom.getElementById("zms-profile-model").value).toBe("model-x");
+    expect(dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value)).toEqual(["", "model-x", "model-y", "__custom"]);
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("model-x");
     expect(prefs.apiKey).toBe("new-secret");
     expect(prefs.baseURL).toBe("https://router.example/v1");
     expect(prefs.model).toBe("model-x");
@@ -2648,6 +2650,83 @@ describe("workbench writeback helpers", () => {
       model: "model-x"
     });
     expect(dom.elements.get("zms-chat-status").textContent).toBe("modelListLoaded: 2");
+  });
+
+  it("loads recommended workbench models before API credentials are configured", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-profile-name": "DeepSeek",
+      "zms-profile-base-url": "https://api.deepseek.com",
+      "zms-profile-api-key": "",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    loaded.fetch = async () => {
+      throw new Error("network should not be called without credentials");
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelRecommendationsLoaded: "Recommended models loaded",
+      modelSelectPlaceholder: "Choose a recommended model",
+      modelSelectCustom: "Custom model...",
+      apiKeyMissing: "API key missing"
+    }[key] || key);
+    const profile = {
+      id: "deepseek",
+      name: "DeepSeek",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepseek.com",
+      apiKey: "",
+      model: "",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    await workbench.loadModelsForWorkbench();
+
+    expect(dom.getElementById("zms-workbench-model-options").children.map((option: any) => option.value)).toContain("deepseek-chat");
+    expect(dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value)).toContain("deepseek-chat");
+    expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 2");
+  });
+
+  it("updates the workbench model field from the recommended model dropdown", () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-profile-name": "DeepSeek",
+      "zms-profile-base-url": "https://api.deepseek.com",
+      "zms-profile-api-key": "",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelSelectPlaceholder: "Choose a recommended model",
+      modelSelectCustom: "Custom model..."
+    }[key] || key);
+    workbench.state.profile = {
+      id: "deepseek",
+      name: "DeepSeek",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepseek.com",
+      apiKey: "",
+      model: "",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+
+    workbench.renderWorkbenchModelRecommendations();
+    dom.getElementById("zms-profile-model-select").value = "deepseek-reasoner";
+    workbench.selectWorkbenchModelFromDropdown();
+
+    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-reasoner");
   });
 
   it("keeps custom auth headers when building workbench provider headers", () => {
@@ -3396,6 +3475,148 @@ describe("workbench writeback helpers", () => {
         createInstance: () => ({
           file: { path: "" },
           fileURL: { path: "/C:/Users/tart/Zotero/Review Output" },
+          init: () => {},
+          open: (callback: (result: number) => void) => callback(filePickerConstants.returnOK)
+        })
+      },
+      "@mozilla.org/file/local;1": {
+        createInstance: () => ({
+          initWithPath() {},
+          exists: () => true,
+          isDirectory: () => true
+        })
+      }
+    };
+    (loaded as any).Ci = {
+      nsIFilePicker: filePickerConstants,
+      nsIFile: function nsIFile() {}
+    };
+    const dom = fakeDocument({
+      "zms-workbench-output-dir": "/tmp/current output"
+    });
+    (loaded as any).document = dom;
+    loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir = "/tmp/out";
+    loaded.ZoteroMarkdownSummaryWorkbench.t = (key: string) => ({
+      chooseOutputDirTitle: "Choose output folder",
+      outputDirSaved: "Output directory saved"
+    }[key] || key);
+
+    await expect((loaded.ZoteroMarkdownSummaryWorkbench as any).chooseOutputDir()).resolves.toBe(true);
+
+    expect(dom.elements.get("zms-workbench-output-dir").value).toBe("C:\\Users\\tart\\Zotero\\Review Output");
+    expect(prefValues.outputDir).toBe("C:\\Users\\tart\\Zotero\\Review Output");
+  });
+
+  it("uses a promised result from the workbench folder picker", async () => {
+    const filePickerConstants = { modeGetFolder: 2, returnOK: 0, returnReplace: 2 };
+    const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      exists: async () => true
+    }, prefValues);
+    (loaded as any).Cc = {
+      "@mozilla.org/filepicker;1": {
+        createInstance: () => ({
+          file: { path: "" },
+          fileURL: { spec: "file:///C:/Users/tart/Zotero/Review%20Output" },
+          init: () => {},
+          open: () => Promise.resolve(filePickerConstants.returnOK)
+        })
+      },
+      "@mozilla.org/file/local;1": {
+        createInstance: () => ({
+          initWithPath() {},
+          exists: () => true,
+          isDirectory: () => true
+        })
+      }
+    };
+    (loaded as any).Ci = {
+      nsIFilePicker: filePickerConstants,
+      nsIFile: function nsIFile() {}
+    };
+    const dom = fakeDocument({
+      "zms-workbench-output-dir": "/tmp/current output"
+    });
+    (loaded as any).document = dom;
+    loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir = "/tmp/out";
+    loaded.ZoteroMarkdownSummaryWorkbench.t = (key: string) => ({
+      chooseOutputDirTitle: "Choose output folder",
+      outputDirSaved: "Output directory saved"
+    }[key] || key);
+
+    await expect((loaded.ZoteroMarkdownSummaryWorkbench as any).chooseOutputDir()).resolves.toBe(true);
+
+    expect(dom.elements.get("zms-workbench-output-dir").value).toBe("C:\\Users\\tart\\Zotero\\Review Output");
+    expect(prefValues.outputDir).toBe("C:\\Users\\tart\\Zotero\\Review Output");
+  });
+
+  it("initializes the workbench folder picker with a browsing context in current Zotero runtimes", async () => {
+    const filePickerConstants = { modeGetFolder: 2, returnOK: 0, returnReplace: 2 };
+    const filePickerCalls: any[] = [];
+    const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      exists: async () => true
+    }, prefValues);
+    (loaded as any).window.browsingContext = { zmsKind: "browsingContext" };
+    (loaded as any).Cc = {
+      "@mozilla.org/filepicker;1": {
+        createInstance: () => ({
+          file: { path: "" },
+          fileURL: { spec: "file:///Users/tart/Zotero/Literature%20Review%20with%20LLM" },
+          init: (parent: any, title: string, mode: number) => {
+            if (parent && parent.zmsKind !== "browsingContext") throw new Error("window parent unsupported");
+            filePickerCalls.push({ title, mode, parent: parent?.zmsKind || (parent ? "window" : null) });
+          },
+          open: (callback: (result: number) => void) => callback(filePickerConstants.returnOK)
+        })
+      },
+      "@mozilla.org/file/local;1": {
+        createInstance: () => ({
+          initWithPath() {},
+          exists: () => true,
+          isDirectory: () => true
+        })
+      }
+    };
+    (loaded as any).Ci = {
+      nsIFilePicker: filePickerConstants,
+      nsIFile: function nsIFile() {}
+    };
+    const dom = fakeDocument({
+      "zms-workbench-output-dir": "/tmp/current output"
+    });
+    (loaded as any).document = dom;
+    loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir = "/tmp/out";
+    loaded.ZoteroMarkdownSummaryWorkbench.t = (key: string) => ({
+      chooseOutputDirTitle: "Choose output folder",
+      outputDirSaved: "Output directory saved"
+    }[key] || key);
+
+    await expect((loaded.ZoteroMarkdownSummaryWorkbench as any).chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      parent: "browsingContext"
+    });
+    expect(dom.elements.get("zms-workbench-output-dir").value).toBe("/Users/tart/Zotero/Literature Review with LLM");
+    expect(prefValues.outputDir).toBe("/Users/tart/Zotero/Literature Review with LLM");
+  });
+
+  it("uses selected file wrapper fields from the workbench folder picker", async () => {
+    const filePickerConstants = { modeGetFolder: 2, returnOK: 0, returnReplace: 2 };
+    const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      exists: async () => true
+    }, prefValues);
+    (loaded as any).Cc = {
+      "@mozilla.org/filepicker;1": {
+        createInstance: () => ({
+          file: { path: "" },
+          selectedFile: { path: "" },
+          domFileOrDirectory: {
+            fileURL: { spec: "file:///C:/Users/tart/Zotero/Review%20Output" }
+          },
           init: () => {},
           open: (callback: (result: number) => void) => callback(filePickerConstants.returnOK)
         })

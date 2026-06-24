@@ -113,6 +113,7 @@
 
 .zms-output-dir-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   margin-bottom: 12px;
@@ -129,7 +130,33 @@
 }
 
 .zms-output-dir-row button {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  white-space: nowrap;
+}
+
+.zms-profile-model-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.zms-profile-model-row select {
+  flex: 1 1 13rem;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.zms-profile-model-row input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.zms-profile-model-row button {
+  flex: 0 1 auto;
+  margin-bottom: 0;
   white-space: nowrap;
 }
 
@@ -1322,6 +1349,11 @@ button:disabled {
 
 @media (max-width: 560px) {
   .zms-output-dir-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .zms-profile-model-row {
     align-items: stretch;
     flex-direction: column;
   }

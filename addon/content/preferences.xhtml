@@ -103,7 +103,8 @@
       </hbox>
       <hbox align="center" class="zms-row">
         <label class="zms-label" id="zms-model-label" value="Model"/>
-        <html:input class="zms-field" id="zms-model" list="zms-model-options"/>
+        <html:select class="zms-field zms-model-select" id="zms-model-select" onchange="ZoteroMarkdownSummaryPrefs.selectModelFromDropdown()"></html:select>
+        <html:input class="zms-field zms-model-custom" id="zms-model" list="zms-model-options" placeholder="自定义模型名称"/>
         <html:datalist id="zms-model-options"/>
         <button id="zms-load-models-button" label="加载模型" oncommand="ZoteroMarkdownSummaryPrefs.loadModels()"/>
       </hbox>
@@ -183,15 +184,15 @@
         <vbox class="zms-row">
           <label id="zms-profileCapabilities-label" value="能力声明"/>
           <html:div class="zms-capability-grid">
-            <html:label><html:input id="zms-cap-text" type="checkbox"/> Text</html:label>
-            <html:label><html:input id="zms-cap-pdfBase64" type="checkbox"/> PDF base64</html:label>
-            <html:label><html:input id="zms-cap-imageBase64" type="checkbox"/> Image input</html:label>
-            <html:label><html:input id="zms-cap-streaming" type="checkbox"/> Streaming</html:label>
-            <html:label><html:input id="zms-cap-fileReference" type="checkbox"/> File reference</html:label>
-            <html:label><html:input id="zms-cap-embeddings" type="checkbox"/> Embeddings</html:label>
-            <html:label><html:input id="zms-cap-jsonMode" type="checkbox"/> JSON mode</html:label>
-            <html:label><html:input id="zms-cap-toolUse" type="checkbox"/> Tool use</html:label>
-            <html:label><html:input id="zms-cap-modelList" type="checkbox"/> Model list</html:label>
+            <html:label><html:input id="zms-cap-text" type="checkbox"/> <html:span id="zms-cap-text-label">文本</html:span></html:label>
+            <html:label><html:input id="zms-cap-pdfBase64" type="checkbox"/> <html:span id="zms-cap-pdfBase64-label">PDF 原文</html:span></html:label>
+            <html:label><html:input id="zms-cap-imageBase64" type="checkbox"/> <html:span id="zms-cap-imageBase64-label">图片输入</html:span></html:label>
+            <html:label><html:input id="zms-cap-streaming" type="checkbox"/> <html:span id="zms-cap-streaming-label">流式输出</html:span></html:label>
+            <html:label><html:input id="zms-cap-fileReference" type="checkbox"/> <html:span id="zms-cap-fileReference-label">文件引用</html:span></html:label>
+            <html:label><html:input id="zms-cap-embeddings" type="checkbox"/> <html:span id="zms-cap-embeddings-label">向量嵌入</html:span></html:label>
+            <html:label><html:input id="zms-cap-jsonMode" type="checkbox"/> <html:span id="zms-cap-jsonMode-label">JSON 模式</html:span></html:label>
+            <html:label><html:input id="zms-cap-toolUse" type="checkbox"/> <html:span id="zms-cap-toolUse-label">工具调用</html:span></html:label>
+            <html:label><html:input id="zms-cap-modelList" type="checkbox"/> <html:span id="zms-cap-modelList-label">在线模型列表</html:span></html:label>
           </html:div>
         </vbox>
         <vbox class="zms-row">
@@ -240,11 +241,11 @@
           <vbox class="zms-row">
             <label id="zms-profileLocalAgentSkills-label" value="技能级配置 JSON（可选）"/>
             <html:textarea class="zms-small-json" id="zms-profileLocalAgentSkills"/>
-            <html:label class="zms-small-note" value="按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"/>
-            <html:label class="zms-small-note" value="三位子技能可共用同一 endpoint，若某 skill 未单独配置 tool，会按 skill id 自动映射到对应工具名（ask_gemini/ask_claude/ask_opencode）。"/>
-            <html:label class="zms-small-note" value="支持在技能配置中透传 args/body/params/payload，例如：{ &quot;ask_gemini&quot;: { &quot;tool&quot;: &quot;ask_gemini&quot;, &quot;method&quot;: &quot;tools/call&quot;, &quot;args&quot;: { &quot;timeoutSeconds&quot;: 120 } }。"/>
-            <html:label class="zms-small-note" value="若接口使用非 tools/call 方法，可在技能配置里设置 method，例如：{ &quot;ask_gemini&quot;: { &quot;method&quot;: &quot;mcp_call&quot; } }。"/>
-            <html:label class="zms-small-note" value="本地代理需是可 HTTP 调用的 JSON-RPC 端点（payloadMode 建议 jsonrpc）；原生 stdio MCP 可执行文件请先用 HTTP 桥接层转发后再配置。"/>
+            <html:label id="zms-local-agent-note-1" class="zms-small-note" value="按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"/>
+            <html:label id="zms-local-agent-note-2" class="zms-small-note" value="三位子技能可共用同一 endpoint，若某 skill 未单独配置 tool，会按 skill id 自动映射到对应工具名（ask_gemini/ask_claude/ask_opencode）。"/>
+            <html:label id="zms-local-agent-note-3" class="zms-small-note" value="支持在技能配置中透传 args/body/params/payload。"/>
+            <html:label id="zms-local-agent-note-4" class="zms-small-note" value="若接口使用非 tools/call 方法，可在技能配置里设置 method。"/>
+            <html:label id="zms-local-agent-note-5" class="zms-small-note" value="本地代理需是可 HTTP 调用的 JSON-RPC 端点（payloadMode 建议 jsonrpc）；原生 stdio MCP 可执行文件请先用 HTTP 桥接层转发后再配置。"/>
           </vbox>
         </vbox>
         <hbox class="zms-actions">

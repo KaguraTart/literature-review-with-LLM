@@ -70,9 +70,11 @@ var ZoteroMarkdownSummaryPrefs = {
     this.mergeDefaultProfilesIntoEditor();
     this.refreshProfileOptions();
     this.loadProfileEditor();
+    this.refreshModelRecommendations({ selectDefault: true });
     this.refreshProviderGuide();
     this.bindProfileStatusEvents();
     this.bindOutputDirEvents();
+    this.bindModelPickerEvents();
     document.getElementById("zms-skillId").value ||= "paper-deep-summary";
     this.refreshSkillMenu().then(() => this.loadSkillTemplateEditor());
   },
@@ -122,6 +124,7 @@ var ZoteroMarkdownSummaryPrefs = {
     document.getElementById("zms-profileFullURL").value = defaults.fullURL;
     document.getElementById("zms-profileBodyExtra").value = JSON.stringify(defaults.bodyExtra || {}, null, 2);
     this.setCapabilityValues(defaults.capabilities);
+    this.refreshModelRecommendations({ selectDefault: true });
     this.refreshProfileStatus();
     this.refreshProviderGuide();
   },
@@ -250,6 +253,7 @@ var ZoteroMarkdownSummaryPrefs = {
     this.loadLocalAgentEditor(hydrated.bodyExtra || {});
     this.setCapabilityValues(hydrated.capabilities || {});
     this.refreshProfileOptions();
+    this.refreshModelRecommendations();
     this.refreshProfileStatus();
     this.refreshProviderGuide();
   },
@@ -522,13 +526,14 @@ var ZoteroMarkdownSummaryPrefs = {
   async loadModels() {
     const profile = this.profileFromEditor();
     if (!profile) return;
+    const recommended = this.refreshModelRecommendations();
     if (!profileHasUsableAuth(profile)) {
-      this.setStatus(this.t("apiKeyMissing"));
+      this.setStatus(recommended.length ? `${this.t("modelRecommendationsLoaded")}: ${recommended.length}` : this.t("apiKeyMissing"));
       return;
     }
     const request = modelListRequestForProfile(profile);
     if (!request) {
-      this.setStatus(this.t("modelListUnavailable"));
+      this.setStatus(recommended.length ? `${this.t("modelRecommendationsLoaded")}: ${recommended.length}` : this.t("modelListUnavailable"));
       return;
     }
     try {
@@ -542,14 +547,28 @@ var ZoteroMarkdownSummaryPrefs = {
           throw err;
         }
       }
-      renderModelOptions(modelOptions);
-      if (modelOptions.length && !document.getElementById("zms-model").value.trim()) {
-        document.getElementById("zms-model").value = modelOptions[0].id;
+      const displayOptions = modelOptions.length ? modelOptions : recommended;
+      renderModelOptions(displayOptions);
+      if (displayOptions.length && !document.getElementById("zms-model").value.trim()) {
+        document.getElementById("zms-model").value = displayOptions[0].id;
       }
-      this.setStatus(modelOptions.length ? `${this.t("modelListLoaded")}: ${modelOptions.length}` : this.t("modelListEmpty"));
+      syncModelSelectFromInput(displayOptions);
+      this.setStatus(modelOptions.length ? `${this.t("modelListLoaded")}: ${modelOptions.length}` : `${this.t("modelRecommendationsLoaded")}: ${displayOptions.length}`);
     } catch (err) {
       this.setStatus(`${this.t("testFailed")}: ${safeError(err)}`);
     }
+  },
+
+  refreshModelRecommendations(options = {}) {
+    const profile = profileDraftFromEditor().profile;
+    const recommendations = recommendedModelOptionsForProfile(profile);
+    renderModelOptions(recommendations);
+    const model = document.getElementById("zms-model");
+    if (model && options.selectDefault && !String(model.value || "").trim() && recommendations[0]?.id) {
+      model.value = recommendations[0].id;
+    }
+    syncModelSelectFromInput(recommendations);
+    return recommendations;
   },
 
   activeProfile() {
@@ -725,14 +744,45 @@ var ZoteroMarkdownSummaryPrefs = {
     if (element.dataset) element.dataset.zmsOutputDirBound = "1";
   },
 
+  bindModelPickerEvents() {
+    const model = document.getElementById("zms-model");
+    if (!model || model.dataset?.zmsModelPickerBound === "1") return;
+    const sync = () => syncModelSelectFromInput();
+    model.addEventListener("input", sync);
+    model.addEventListener("change", sync);
+    if (model.dataset) model.dataset.zmsModelPickerBound = "1";
+    syncModelSelectFromInput();
+  },
+
+  selectModelFromDropdown() {
+    const select = document.getElementById("zms-model-select");
+    const model = document.getElementById("zms-model");
+    if (!select || !model) return;
+    const selected = String(select.value || "");
+    if (selected && selected !== "__custom") {
+      model.value = selected;
+      this.refreshProfileStatus();
+      this.refreshProviderGuide();
+      return;
+    }
+    model.focus?.();
+  },
+
   applyLanguage() {
     const lang = resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale());
     const setLabel = (id, key) => {
       const element = document.getElementById(id);
       if (!element) return;
-      if (element.localName === "button") element.setAttribute("label", this.t(key, lang));
-      else if (element.localName === "h2") element.textContent = this.t(key, lang);
-      else element.setAttribute("value", this.t(key, lang));
+      const text = this.t(key, lang);
+      if (element.localName === "button") {
+        element.setAttribute("label", text);
+        element.label = text;
+      } else if (element.localName === "h2") {
+        element.textContent = text;
+      } else {
+        element.setAttribute("value", text);
+        element.value = text;
+      }
     };
     const setTooltip = (id, key) => {
       const element = document.getElementById(id);
@@ -797,11 +847,16 @@ var ZoteroMarkdownSummaryPrefs = {
     setLabel("zms-load-skill-button", "loadSkill");
     setLabel("zms-save-skill-button", "saveSkill");
     setLabel("zms-reset-skill-button", "resetSkill");
+    applyPreferenceMenuLabels(lang);
+    applyPreferenceTextLabels(lang);
+    applyPreferencePlaceholders(lang);
   },
 
   t(key, lang) {
     const resolved = lang || resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale());
-    return prefMessage(key, resolved);
+    const message = prefMessage(key, resolved);
+    if (message && message !== key) return message;
+    return prefFallbackMessage(key, resolved);
   },
 
   setStatus(message) {
@@ -814,6 +869,243 @@ function runtimeLocale() {
     return Services.locale.appLocaleAsBCP47 || Services.locale.requestedLocale || "";
   } catch (_err) {
     return "";
+  }
+}
+
+function prefFallbackMessage(key, lang) {
+  const zh = String(lang || "").toLowerCase().startsWith("zh");
+  const fallback = {
+    title: "Literature Review with LLM",
+    uiLanguage: zh ? "界面语言" : "UI language",
+    outputLanguage: zh ? "输出语言" : "Output language",
+    promptPackId: zh ? "提示模板包" : "Prompt pack",
+    activeProfileId: zh ? "默认接口档案" : "Default profile",
+    provider: zh ? "模型厂商" : "Provider",
+    baseURL: zh ? "接口地址" : "Base URL",
+    apiKey: "API Key",
+    model: zh ? "模型" : "Model",
+    modelSelectPlaceholder: zh ? "选择推荐模型" : "Choose a recommended model",
+    modelSelectCustom: zh ? "自定义模型..." : "Custom model...",
+    providerEnv: zh ? "粘贴环境变量配置" : "Paste env config",
+    providerGuide: zh ? "配置指南" : "Setup guide",
+    profileStatus: zh ? "档案状态" : "Profile status",
+    outputDir: zh ? "输出目录" : "Output directory",
+    inputMode: zh ? "输入模式" : "Input mode",
+    maxOutputTokens: zh ? "最大输出 token" : "Max output tokens",
+    temperature: zh ? "温度" : "Temperature",
+    stream: zh ? "流式输出" : "Streaming",
+    profileEditor: zh ? "接口档案编辑器" : "Provider profile editor",
+    profileName: zh ? "档案名称" : "Profile name",
+    profileProtocol: zh ? "协议" : "Protocol",
+    profileEndpointMode: zh ? "接口模式" : "Endpoint mode",
+    profileFullURL: zh ? "完整接口地址" : "Full URL",
+    profileCapabilities: zh ? "能力声明" : "Capabilities",
+    profileCustomHeaders: zh ? "自定义请求头 JSON" : "Custom headers JSON",
+    profileBodyExtra: zh ? "额外请求体 JSON" : "Body extra JSON",
+    profileLocalAgent: zh ? "本地代理" : "Local agent",
+    profileLocalAgentEnabled: zh ? "启用本地代理" : "Enable local agent",
+    profileLocalAgentEndpoint: zh ? "代理地址" : "Endpoint",
+    profileLocalAgentTool: zh ? "默认工具名" : "Default tool",
+    profileLocalAgentPayloadMode: zh ? "请求格式" : "Payload mode",
+    profileLocalAgentTimeout: zh ? "超时（秒）" : "Timeout (seconds)",
+    profileLocalAgentHeaders: zh ? "代理请求头 JSON" : "Agent headers JSON",
+    profileLocalAgentSkills: zh ? "技能级配置 JSON（可选）" : "Skill-level config JSON (optional)",
+    profileLocalAgentFallback: zh ? "失败后回退远端" : "Fallback to remote",
+    systemPrompt: zh ? "系统提示词" : "System prompt",
+    userPrompt: zh ? "总结提示词" : "Summary prompt",
+    skillTemplate: zh ? "聊天技能提示词" : "Chat skill prompt",
+    skillId: zh ? "技能" : "Skill",
+    profilesJson: zh ? "接口档案 JSON" : "Provider profiles JSON",
+    save: zh ? "保存设置" : "Save settings",
+    doctor: zh ? "配置预检" : "Check config",
+    chooseOutputDir: zh ? "选择文件夹..." : "Choose Folder...",
+    chooseOutputDirTitle: zh ? "选择 Literature Review with LLM 输出文件夹" : "Choose Literature Review with LLM output folder",
+    chooseOutputDirTooltip: zh ? "从系统文件管理器选择输出文件夹" : "Choose an output folder with the system file manager",
+    saveOutputDir: zh ? "保存" : "Save",
+    saveOutputDirTooltip: zh ? "保存当前输入的输出目录" : "Save the current output directory",
+    applyProviderEnv: zh ? "应用到当前档案" : "Apply to current profile",
+    test: zh ? "测试连接" : "Test connection",
+    testing: zh ? "正在测试连接" : "Testing connection",
+    loadModels: zh ? "加载模型" : "Load models",
+    loadProfile: zh ? "加载档案" : "Load profile",
+    saveProfile: zh ? "保存档案" : "Save profile",
+    deleteProfile: zh ? "删除档案" : "Delete profile",
+    resetProfiles: zh ? "重置默认档案" : "Reset default profiles",
+    loadSkill: zh ? "加载技能模板" : "Load skill template",
+    saveSkill: zh ? "保存技能模板" : "Save skill template",
+    resetSkill: zh ? "重置为内置模板" : "Reset to built-in template",
+    saved: zh ? "已保存" : "Saved",
+    apiKeyMissing: zh ? "请先填写 API Key" : "Enter an API key first",
+    modelMissing: zh ? "请先选择或填写模型名称" : "Select or enter a model name first",
+    modelListUnavailable: zh ? "当前档案不支持在线模型列表，已显示推荐模型" : "This profile cannot fetch an online model list; recommended models are shown",
+    modelListLoaded: zh ? "已加载在线模型" : "Models loaded",
+    modelListEmpty: zh ? "未返回在线模型，已保留推荐模型" : "No online models returned; kept recommendations",
+    modelListLoading: zh ? "正在加载模型列表" : "Loading model list",
+    modelRecommendationsLoaded: zh ? "已加载推荐模型" : "Recommended models loaded",
+    testOk: zh ? "连接成功" : "Connection succeeded",
+    testFailed: zh ? "连接失败" : "Connection failed",
+    doctorOk: zh ? "配置预检通过" : "Configuration preflight passed",
+    doctorFailed: zh ? "配置预检未通过" : "Configuration preflight failed",
+    profileSaved: zh ? "接口档案已保存" : "Provider profile saved",
+    profileDeleted: zh ? "接口档案已删除" : "Provider profile deleted",
+    profilesReset: zh ? "已重置为默认接口档案" : "Default provider profiles restored",
+    jsonInvalid: zh ? "接口档案 JSON 格式错误" : "Provider profiles JSON is invalid",
+    providerEnvApplied: zh ? "已导入配置" : "Config imported",
+    providerEnvNoInput: zh ? "请先粘贴 KEY=value 配置" : "Paste KEY=value config first",
+    providerEnvNoMatch: zh ? "没有找到当前档案可用的环境变量" : "No matching environment variables for this profile",
+    skillSaved: zh ? "技能模板已保存" : "Skill template saved",
+    skillLoaded: zh ? "技能模板已加载" : "Skill template loaded",
+    skillReset: zh ? "已重置为内置模板" : "Reset to built-in template",
+    noProfile: zh ? "请先配置接口档案" : "Configure a provider profile first",
+    profileProtocolStatus: zh ? "协议" : "Protocol",
+    profileModelStatus: zh ? "模型" : "Model",
+    profileEndpointStatus: zh ? "接口" : "Endpoint",
+    profileEndpointMissing: zh ? "未配置" : "Not configured",
+    profileModelMissing: zh ? "未配置" : "Not configured",
+    profileModelOptional: zh ? "可选" : "Optional",
+    profileAuthReady: zh ? "鉴权已配置" : "Authentication configured",
+    profileAuthMissing: zh ? "缺少 API Key 或鉴权 Header" : "Missing API key or auth header",
+    profilePdfReady: zh ? "支持 PDF 原文输入" : "Raw PDF input supported",
+    profilePdfTextOnly: zh ? "仅使用文本输入" : "Text input only",
+    profileImageReady: zh ? "支持图片输入" : "Image input supported",
+    profileImageOff: zh ? "未启用图片输入" : "Image input disabled",
+    profileStreamReady: zh ? "支持流式输出" : "Streaming supported",
+    profileStreamOff: zh ? "未启用流式输出" : "Streaming disabled",
+    profileLocalAgentReady: zh ? "本地代理已配置" : "Local agent configured",
+    outputDirChooseFailed: zh ? "无法打开文件夹选择器" : "Could not open the folder picker",
+    outputDirCreateFailed: zh ? "输出目录已保存，但无法创建或访问" : "Output directory was saved, but could not be created or accessed",
+    outputDirSaved: zh ? "输出目录已保存" : "Output directory saved",
+    outputDirMissing: zh ? "请先填写输出目录" : "Enter an output directory first"
+  };
+  return fallback[key] || key;
+}
+
+function applyPreferenceMenuLabels(lang) {
+  const zh = String(lang || "").toLowerCase().startsWith("zh");
+  const maps = {
+    "zms-uiLanguage": {
+      auto: zh ? "自动" : "Auto",
+      "zh-CN": zh ? "中文" : "Chinese",
+      "en-US": "English"
+    },
+    "zms-outputLanguage": {
+      "zh-CN": zh ? "中文" : "Chinese",
+      "en-US": "English",
+      "ja-JP": zh ? "日文" : "Japanese"
+    },
+    "zms-promptPackId": {
+      general: zh ? "通用阅读" : "General",
+      "ai-ml": zh ? "AI / ML / 系统" : "AI / ML / Systems",
+      transportation: zh ? "交通与城市空域" : "Transportation",
+      biomedicine: zh ? "医学与生命科学" : "Biomedicine",
+      "social-science": zh ? "社科与政策" : "Social science",
+      "review-writing": zh ? "综述写作" : "Review writing"
+    },
+    "zms-inputMode": {
+      text: zh ? "提取文本" : "Extracted text",
+      pdf_base64: zh ? "PDF 原文" : "Raw PDF"
+    },
+    "zms-profileProtocol": {
+      openai_chat: zh ? "OpenAI 聊天补全" : "OpenAI Chat",
+      openai_responses: zh ? "OpenAI Responses" : "OpenAI Responses",
+      anthropic_messages: zh ? "Anthropic Messages" : "Anthropic Messages"
+    },
+    "zms-profileEndpointMode": {
+      base_url: zh ? "Base URL 自动拼接" : "Base URL",
+      full_url: zh ? "完整 URL" : "Full URL"
+    },
+    "zms-profileLocalAgentPayloadMode": {
+      jsonrpc: zh ? "JSON-RPC" : "JSON-RPC",
+      simple: zh ? "简化请求" : "Simple"
+    }
+  };
+  for (const [id, valueMap] of Object.entries(maps)) {
+    localizeMenuItems(id, valueMap);
+  }
+}
+
+function localizeMenuItems(id, valueMap) {
+  const element = document.getElementById(id);
+  const items = menuItemsForElement(element);
+  for (const item of items) {
+    const value = String(item?.getAttribute?.("value") || item?.value || "").trim();
+    const label = valueMap[value];
+    if (!label) continue;
+    item.setAttribute?.("label", label);
+    item.label = label;
+    item.textContent = label;
+  }
+}
+
+function menuItemsForElement(element) {
+  if (!element) return [];
+  try {
+    const queried = element.querySelectorAll?.("menuitem, option");
+    if (queried?.length) return Array.from(queried);
+  } catch (_err) {}
+  const items = [];
+  const visit = (node) => {
+    for (const child of Array.from(node?.children || [])) {
+      if (child?.localName === "menuitem" || child?.localName === "option") items.push(child);
+      visit(child);
+    }
+  };
+  visit(element);
+  return items;
+}
+
+function applyPreferenceTextLabels(lang) {
+  const zh = String(lang || "").toLowerCase().startsWith("zh");
+  const labels = {
+    "zms-cap-text-label": zh ? "文本" : "Text",
+    "zms-cap-pdfBase64-label": zh ? "PDF 原文" : "PDF base64",
+    "zms-cap-imageBase64-label": zh ? "图片输入" : "Image input",
+    "zms-cap-streaming-label": zh ? "流式输出" : "Streaming",
+    "zms-cap-fileReference-label": zh ? "文件引用" : "File reference",
+    "zms-cap-embeddings-label": zh ? "向量嵌入" : "Embeddings",
+    "zms-cap-jsonMode-label": zh ? "JSON 模式" : "JSON mode",
+    "zms-cap-toolUse-label": zh ? "工具调用" : "Tool use",
+    "zms-cap-modelList-label": zh ? "在线模型列表" : "Model list",
+    "zms-local-agent-note-1": zh
+      ? "按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"
+      : "Configure endpoint/tool/timeout/payloadMode by skill id. Empty objects are allowed. ask-all/check fall back to ask-gemini / ask-claude / ask-opencode when no separate mapping is set; ask-gemini-claude can call only Gemini and Claude.",
+    "zms-local-agent-note-2": zh
+      ? "三位子技能可共用同一 endpoint，若某 skill 未单独配置 tool，会按 skill id 自动映射到对应工具名（ask_gemini/ask_claude/ask_opencode）。"
+      : "Subskills can share one endpoint. If a skill has no explicit tool, the tool name is inferred from its skill id.",
+    "zms-local-agent-note-3": zh
+      ? "支持在技能配置中透传 args/body/params/payload。"
+      : "Skill config can pass args/body/params/payload through to the local endpoint.",
+    "zms-local-agent-note-4": zh
+      ? "若接口使用非 tools/call 方法，可在技能配置里设置 method。"
+      : "If the endpoint does not use tools/call, set method in the skill config.",
+    "zms-local-agent-note-5": zh
+      ? "本地代理需是可 HTTP 调用的 JSON-RPC 端点；原生 stdio MCP 可执行文件请先用 HTTP 桥接层转发后再配置。"
+      : "Local agents must expose an HTTP JSON-RPC endpoint. Bridge stdio MCP tools to HTTP before configuring them here."
+  };
+  for (const [id, text] of Object.entries(labels)) {
+    setTextLikeLabel(id, text);
+  }
+}
+
+function setTextLikeLabel(id, text) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.textContent = text;
+  element.value = text;
+  element.setAttribute?.("value", text);
+}
+
+function applyPreferencePlaceholders(lang) {
+  const zh = String(lang || "").toLowerCase().startsWith("zh");
+  const providerEnv = document.getElementById("zms-providerEnvText");
+  if (providerEnv) {
+    providerEnv.setAttribute?.("placeholder", zh
+      ? "粘贴如：\nDEEPSEEK_API_KEY=...\nDEEPSEEK_MODEL=deepseek-chat"
+      : "Paste for example:\nOPENAI_API_KEY=...\nOPENAI_MODEL=gpt-4.1-mini");
+  }
+  const model = document.getElementById("zms-model");
+  if (model) {
+    model.setAttribute?.("placeholder", zh ? "自定义模型名称" : "Custom model name");
   }
 }
 
@@ -861,17 +1153,71 @@ async function chooseOutputDirectory(currentPath, title) {
   const ci = typeof Ci !== "undefined" ? Ci : undefined;
   const nsIFilePicker = ci?.nsIFilePicker;
   const pickerFactory = cc?.["@mozilla.org/filepicker;1"];
+  const pickerTitle = title || "Choose output folder";
+  const displayPath = pathFromPickerString(currentPath);
+  const displayDirectory = fileForDirectoryPicker(currentPath);
+  const zoteroFilePicker = zoteroFilePickerClass();
+  if (zoteroFilePicker) {
+    try {
+      return await chooseOutputDirectoryWithZoteroFilePicker(zoteroFilePicker, pickerTitle, displayPath);
+    } catch (_err) {
+      // Fall back to the raw nsIFilePicker path below.
+    }
+  }
   if (!pickerFactory || !nsIFilePicker) {
     throw new Error("Folder picker is not available in this Zotero runtime");
   }
-  const pickerTitle = title || "Choose output folder";
-  const displayDirectory = fileForDirectoryPicker(currentPath);
   try {
     const picker = pickerFactory.createInstance(nsIFilePicker);
     return await chooseOutputDirectoryWithPicker(picker, pickerTitle, nsIFilePicker, displayDirectory, true);
   } catch (_err) {
     const picker = pickerFactory.createInstance(nsIFilePicker);
     return chooseOutputDirectoryWithPicker(picker, pickerTitle, nsIFilePicker, displayDirectory, false);
+  }
+}
+
+async function chooseOutputDirectoryWithZoteroFilePicker(FilePicker, title, displayPath) {
+  let lastError = null;
+  for (const parentWindow of directoryPickerWindowCandidates()) {
+    if (!parentWindow?.browsingContext) continue;
+    try {
+      const picker = new FilePicker();
+      if (displayPath) setZoteroPickerDisplayDirectory(picker, displayPath);
+      picker.init(parentWindow, title, picker.modeGetFolder ?? 2);
+      if (typeof picker.appendFilters === "function" && picker.filterAll !== undefined) {
+        try { picker.appendFilters(picker.filterAll); } catch (_err) {}
+      }
+      const result = typeof picker.show === "function" ? await picker.show() : await openDirectoryPicker(picker);
+      if (!isAcceptedDirectoryPickerResult(result, picker)) return "";
+      const selected = selectedDirectoryPathFromPicker(picker);
+      if (!selected) throw new Error("Folder picker did not return a usable folder path");
+      return selected;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error("Folder picker cannot be initialized");
+}
+
+function zoteroFilePickerClass() {
+  try {
+    if (typeof ChromeUtils !== "undefined") {
+      return ChromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs")?.FilePicker || null;
+    }
+  } catch (_err) {}
+  try {
+    return Zotero?.FilePicker || null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function setZoteroPickerDisplayDirectory(picker, displayPath) {
+  try {
+    picker.displayDirectory = displayPath;
+    return true;
+  } catch (_err) {
+    return false;
   }
 }
 
@@ -886,13 +1232,55 @@ async function chooseOutputDirectoryWithPicker(picker, title, nsIFilePicker, dis
 }
 
 function initDirectoryPicker(picker, title, nsIFilePicker, useWindowParent = true) {
-  const parent = useWindowParent && typeof window !== "undefined" ? window : null;
-  try {
-    picker.init(parent, title, nsIFilePicker.modeGetFolder);
-  } catch (err) {
-    if (!parent) throw err;
-    picker.init(null, title, nsIFilePicker.modeGetFolder);
+  const mode = typeof nsIFilePicker.modeGetFolder === "number" ? nsIFilePicker.modeGetFolder : 2;
+  let lastError = null;
+  for (const parent of directoryPickerParentCandidates(useWindowParent)) {
+    try {
+      picker.init(parent, title, mode);
+      return;
+    } catch (err) {
+      lastError = err;
+    }
   }
+  throw lastError || new Error("Folder picker cannot be initialized");
+}
+
+function directoryPickerParentCandidates(useWindowParent = true) {
+  const candidates = [];
+  const add = (value) => {
+    if (typeof value === "undefined" || candidates.includes(value)) return;
+    candidates.push(value);
+  };
+  const addWindow = (value) => {
+    if (!value) return;
+    try { add(value.browsingContext); } catch (_err) {}
+    add(value);
+  };
+  if (useWindowParent && typeof window !== "undefined") {
+    addWindow(window);
+    try { addWindow(window.top); } catch (_err) {}
+    try { addWindow(window.parent); } catch (_err) {}
+  }
+  try { addWindow(Services?.wm?.getMostRecentWindow?.("navigator:browser")); } catch (_err) {}
+  try { addWindow(Services?.wm?.getMostRecentWindow?.(null)); } catch (_err) {}
+  add(null);
+  return candidates;
+}
+
+function directoryPickerWindowCandidates() {
+  const candidates = [];
+  const add = (value) => {
+    if (!value || candidates.includes(value)) return;
+    candidates.push(value);
+  };
+  if (typeof window !== "undefined") {
+    add(window);
+    try { add(window.top); } catch (_err) {}
+    try { add(window.parent); } catch (_err) {}
+  }
+  try { add(Services?.wm?.getMostRecentWindow?.("navigator:browser")); } catch (_err) {}
+  try { add(Services?.wm?.getMostRecentWindow?.(null)); } catch (_err) {}
+  return candidates;
 }
 
 function fileForDirectoryPicker(path) {
@@ -948,7 +1336,18 @@ function setPickerDisplayDirectory(picker, directory) {
 
 async function openDirectoryPicker(picker) {
   if (typeof picker.open === "function") {
-    return new Promise((resolve) => picker.open(resolve));
+    return new Promise((resolve, reject) => {
+      try {
+        const returned = picker.open(resolve);
+        if (returned && typeof returned.then === "function") {
+          returned.then(resolve, reject);
+        } else if (typeof returned === "number") {
+          resolve(returned);
+        }
+      } catch (err) {
+        reject(err);
+      }
+    });
   }
   if (typeof picker.show === "function") return picker.show();
   throw new Error("Folder picker cannot be opened");
@@ -966,11 +1365,19 @@ function selectedDirectoryPathFromPicker(picker) {
       "file",
       "files",
       "fileURL",
+      "directoryURL",
+      "folderURL",
       "domFileOrDirectoryPath",
+      "domFileOrDirectory",
+      "selectedFile",
+      "selectedFiles",
       "selectedDirectory",
+      "resultFile",
+      "resultFiles",
       "targetFile",
       "target",
-      "directory"
+      "directory",
+      "folder"
     ]),
     ...safeObjectValues(safeObjectValue(picker, "file"), [
       "path",
@@ -1009,6 +1416,8 @@ function directoryPathFromPickerValue(value, seen, depth = 0) {
   if (queried) return queried;
   const enumerated = firstDirectoryPathFromEnumerable(value, seen, depth);
   if (enumerated) return enumerated;
+  const methodValue = firstDirectoryPathFromMethods(value, seen, depth);
+  if (methodValue) return methodValue;
   return firstDirectoryPath(
     seen,
     ...safeObjectValues(value, [
@@ -1029,10 +1438,17 @@ function directoryPathFromPickerValue(value, seen, depth = 0) {
       "target",
       "file",
       "files",
+      "selectedFile",
+      "selectedFiles",
       "directory",
       "selectedDirectory",
       "folder",
       "fileURL",
+      "directoryURL",
+      "folderURL",
+      "domFileOrDirectory",
+      "resultFile",
+      "resultFiles",
       "spec",
       "displaySpec"
     ])
@@ -1122,6 +1538,28 @@ function firstDirectoryPathFromEnumerable(value, seen, depth) {
   const paths = [];
   for (let index = 0; index < value.length; index += 1) paths.push(value[index]);
   return firstDirectoryPath(seen, ...paths);
+}
+
+function firstDirectoryPathFromMethods(value, seen, depth) {
+  if (depth > 1 || !value || typeof value !== "object") return "";
+  for (const name of [
+    "getFile",
+    "getFiles",
+    "getSelectedFile",
+    "getSelectedFiles",
+    "getDirectory",
+    "getFolder"
+  ]) {
+    const method = safeObjectValue(value, name);
+    if (typeof method !== "function") continue;
+    try {
+      const path = directoryPathFromPickerValue(method.call(value), seen, depth + 1);
+      if (path) return path;
+    } catch (_err) {
+      // Try the next nonstandard picker accessor.
+    }
+  }
+  return "";
 }
 
 function pathFromPickerString(value) {
@@ -1383,16 +1821,16 @@ function providerConfigDoctor(profile, language = "en-US") {
   const baseURL = String(profile?.baseURL || "").trim();
   const fullURL = String(profile?.fullURL || "").trim();
   const needsBaseURL = verify.includeBaseURL && profile?.endpointMode !== "full_url";
-  if (!endpoint) missing.push(zh ? "请求 endpoint" : "request endpoint");
-  if (needsBaseURL && (!baseURL || isPlaceholderEndpoint(baseURL))) missing.push("Base URL");
-  if (profile?.endpointMode === "full_url" && (!fullURL || isPlaceholderEndpoint(fullURL))) missing.push(zh ? "Full URL" : "Full URL");
+  if (!endpoint) missing.push(zh ? "请求地址" : "request endpoint");
+  if (needsBaseURL && (!baseURL || isPlaceholderEndpoint(baseURL))) missing.push(zh ? "基础地址" : "Base URL");
+  if (profile?.endpointMode === "full_url" && (!fullURL || isPlaceholderEndpoint(fullURL))) missing.push(zh ? "完整接口地址" : "Full URL");
   if (!authReady) missing.push(zh ? "API Key 或自定义认证 header" : "API key or custom auth header");
   if (!isLocalAgent && (!model || model === "...")) missing.push(zh ? "模型名称" : "model name");
   if (profile?.protocol === "openai_chat" && profile?.capabilities?.pdfBase64 === true) {
     warnings.push(zh ? "OpenAI Chat 档案会使用 Zotero 文本抽取，不能直接发送原始 PDF。" : "OpenAI Chat profiles use Zotero text extraction instead of raw PDF input.");
   }
   if (profile?.capabilities?.imageBase64 === true && profile?.protocol === "openai_chat" && provider === "openai_compatible") {
-    warnings.push(zh ? "通用兼容路由的图片能力取决于具体模型，发送前请用图片 live 检查确认。" : "Image support on generic compatible routes depends on the selected model; confirm with the image live check before use.");
+    warnings.push(zh ? "通用兼容路由的图片能力取决于具体模型，发送前请用图片联网检查确认。" : "Image support on generic compatible routes depends on the selected model; confirm with the image live check before use.");
   }
   const capabilityText = [
     profile?.capabilities?.text !== false ? (zh ? "文本" : "text") : "",
@@ -1410,8 +1848,8 @@ function providerConfigDoctor(profile, language = "en-US") {
     title,
     `${zh ? "档案" : "Profile"}: ${profile?.name || profile?.id || provider || ""}`,
     `${zh ? "协议" : "Protocol"}: ${providerProtocolLabel(profile?.protocol, zh)}`,
-    `${zh ? "请求 endpoint" : "Request endpoint"}: ${endpoint || (zh ? "未配置" : "not configured")}`,
-    `${zh ? "模型列表 endpoint" : "Model-list endpoint"}: ${modelList || (zh ? "不可用" : "not available")}`,
+    `${zh ? "请求地址" : "Request endpoint"}: ${endpoint || (zh ? "未配置" : "not configured")}`,
+    `${zh ? "模型列表地址" : "Model-list endpoint"}: ${modelList || (zh ? "不可用" : "not available")}`,
     `${zh ? "模型" : "Model"}: ${model || (isLocalAgent ? (zh ? "可选" : "optional") : (zh ? "缺失" : "missing"))}`,
     `${zh ? "鉴权" : "Auth"}: ${authStatus}`,
     `${zh ? "能力" : "Capabilities"}: ${capabilityText}`,
@@ -1455,8 +1893,8 @@ function providerSetupGuide(profile, language = "en-US") {
     return [
       `当前档案：${profile.name || defaults.name || profile.id || provider}`,
       `协议：${providerProtocolLabel(profile.protocol, zh)}`,
-      `Base URL：${profile.baseURL || defaults.baseURL || "未填写"}`,
-      `请求 endpoint：${endpoint || "未配置"}`,
+      `基础地址：${profile.baseURL || defaults.baseURL || "未填写"}`,
+      `请求地址：${endpoint || "未配置"}`,
       `鉴权：${auth}`,
       `模型：${profile.model || "请填写模型名称，或点击“加载模型”后选择"}`,
       `能力：${capabilities || "文本"}`,
@@ -1465,13 +1903,13 @@ function providerSetupGuide(profile, language = "en-US") {
       `复制环境变量模板：${verify.envTemplateCommand}`,
       `.env.local 草稿：${verify.dotenvTemplateCommand}`,
       `.env.local 配置预检：${verify.doctorCommand}`,
-      `.env.local live 检查：${verify.envFileCommand}`,
-      `终端 live 检查：${verify.liveCommand}`,
-      `图片 live 检查：${verify.imageCommand || "当前档案不支持图片输入"}`,
+      `.env.local 联网检查：${verify.envFileCommand}`,
+      `终端联网检查：${verify.liveCommand}`,
+      `图片联网检查：${verify.imageCommand || "当前档案不支持图片输入"}`,
       ...(verify.imageOverrideCommand ? [`图片能力覆盖检查：${verify.imageOverrideCommand}`] : []),
-      `PDF live 检查：${verify.pdfCommand || "当前档案使用 Zotero 文本抽取"}`,
+      `PDF 联网检查：${verify.pdfCommand || "当前档案使用 Zotero 文本抽取"}`,
       ...(verify.pdfOverrideCommand ? [`PDF 能力覆盖检查：${verify.pdfOverrideCommand}`] : []),
-      `模型列表 live 检查：${verify.modelsCommand}`
+      `模型列表联网检查：${verify.modelsCommand}`
     ].join("\n");
   }
   return [
@@ -1499,8 +1937,8 @@ function providerSetupGuide(profile, language = "en-US") {
 
 function providerProtocolLabel(protocol, zh = false) {
   if (protocol === "openai_responses") return zh ? "OpenAI Responses" : "OpenAI Responses";
-  if (protocol === "anthropic_messages") return zh ? "Anthropic Messages" : "Anthropic Messages";
-  return zh ? "OpenAI Chat Completions" : "OpenAI Chat Completions";
+  if (protocol === "anthropic_messages") return zh ? "Anthropic 消息接口" : "Anthropic Messages";
+  return zh ? "OpenAI 聊天补全" : "OpenAI Chat Completions";
 }
 
 function providerAuthGuide(profile, provider, zh = false) {
@@ -2825,17 +3263,281 @@ function unclosedThinkAnswer(value) {
 
 function renderModelOptions(modelOptions) {
   const list = document.getElementById("zms-model-options");
-  if (!list) return;
-  list.textContent = "";
-  for (const entry of normalizeModelOptions(modelOptions)) {
+  const select = document.getElementById("zms-model-select");
+  const entries = normalizeModelOptions(modelOptions);
+  clearOptionsElement(list);
+  if (select) {
+    clearOptionsElement(select);
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = prefFallbackMessage("modelSelectPlaceholder", resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale()));
+    select.appendChild(placeholder);
+  }
+  for (const entry of entries) {
     const option = document.createElement("option");
     option.value = entry.id;
     if (entry.label && entry.label !== entry.id) {
       option.label = entry.label;
       option.setAttribute?.("label", entry.label);
     }
-    list.appendChild(option);
+    if (list) list.appendChild(option);
+    if (select) {
+      const selectOption = document.createElement("option");
+      selectOption.value = entry.id;
+      selectOption.textContent = entry.label && entry.label !== entry.id ? `${entry.label} (${entry.id})` : entry.id;
+      select.appendChild(selectOption);
+    }
   }
+  if (select) {
+    const custom = document.createElement("option");
+    custom.value = "__custom";
+    custom.textContent = prefFallbackMessage("modelSelectCustom", resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale()));
+    select.appendChild(custom);
+    syncModelSelectFromInput(entries);
+  }
+}
+
+function clearOptionsElement(element) {
+  if (!element) return;
+  element.textContent = "";
+  if (Array.isArray(element.children)) element.children = [];
+}
+
+function syncModelSelectFromInput(modelOptions) {
+  const select = document.getElementById("zms-model-select");
+  const model = document.getElementById("zms-model");
+  if (!select || !model) return;
+  const value = String(model.value || "").trim();
+  if (!value) {
+    select.value = "";
+    return;
+  }
+  const entries = modelOptions || Array.from(document.getElementById("zms-model-options")?.children || [])
+    .map((option) => ({ id: String(option.value || ""), label: String(option.label || option.value || "") }));
+  if (entries.some((entry) => entry.id === value)) {
+    select.value = value;
+    return;
+  }
+  select.value = "__custom";
+}
+
+function mergeModelOptions(primary, secondary) {
+  const merged = new Map();
+  for (const entry of [...normalizeModelOptions(primary), ...normalizeModelOptions(secondary)]) {
+    if (!entry.id || merged.has(entry.id)) continue;
+    merged.set(entry.id, entry);
+  }
+  return [...merged.values()];
+}
+
+function recommendedModelOptionsForProfile(profile) {
+  const provider = providerFromProfile(profile) || document.getElementById("zms-provider")?.value || "openai_compatible";
+  const defaults = providerDefaults(provider);
+  const options = [
+    profile?.model ? { id: profile.model, label: profile.model } : null,
+    defaults?.model ? { id: defaults.model, label: defaults.model } : null,
+    ...recommendedModelOptionsForProvider(provider)
+  ].filter(Boolean);
+  return mergeModelOptions(options, []);
+}
+
+function recommendedModelOptionsForProvider(provider) {
+  const key = String(provider || "").replace(/-/g, "_");
+  const map = {
+    minimax: [
+      ["MiniMax-M2.7", "MiniMax-M2.7"],
+      ["MiniMax-M2.7-highspeed", "MiniMax-M2.7 highspeed"],
+      ["MiniMax-M1", "MiniMax-M1"]
+    ],
+    openai: [
+      ["gpt-4.1", "GPT-4.1"],
+      ["gpt-4.1-mini", "GPT-4.1 mini"],
+      ["gpt-4o", "GPT-4o"],
+      ["gpt-4o-mini", "GPT-4o mini"],
+      ["o3", "o3"],
+      ["o4-mini", "o4-mini"]
+    ],
+    openai_compatible: [
+      ["gpt-4.1-mini", "GPT-4.1 mini"],
+      ["gpt-4o-mini", "GPT-4o mini"],
+      ["deepseek-chat", "DeepSeek chat"],
+      ["qwen-plus", "Qwen plus"]
+    ],
+    openai_responses_compatible: [
+      ["gpt-4.1", "GPT-4.1"],
+      ["gpt-4.1-mini", "GPT-4.1 mini"],
+      ["gpt-4o", "GPT-4o"]
+    ],
+    anthropic: [
+      ["claude-sonnet-4-20250514", "Claude Sonnet 4"],
+      ["claude-3-5-sonnet-latest", "Claude 3.5 Sonnet latest"],
+      ["claude-3-5-haiku-latest", "Claude 3.5 Haiku latest"]
+    ],
+    anthropic_compatible: [
+      ["claude-sonnet-4-20250514", "Claude Sonnet 4"],
+      ["claude-3-5-sonnet-latest", "Claude 3.5 Sonnet latest"]
+    ],
+    gemini: [
+      ["gemini-2.5-pro", "Gemini 2.5 Pro"],
+      ["gemini-2.5-flash", "Gemini 2.5 Flash"],
+      ["gemini-2.0-flash", "Gemini 2.0 Flash"]
+    ],
+    azure_openai: [
+      ["gpt-4.1", "GPT-4.1 deployment"],
+      ["gpt-4.1-mini", "GPT-4.1 mini deployment"],
+      ["gpt-4o", "GPT-4o deployment"]
+    ],
+    vercel_ai_chat: [
+      ["openai/gpt-4.1-mini", "OpenAI GPT-4.1 mini"],
+      ["anthropic/claude-sonnet-4", "Anthropic Claude Sonnet 4"],
+      ["google/gemini-2.5-flash", "Google Gemini 2.5 Flash"]
+    ],
+    vercel_ai_responses: [
+      ["openai/gpt-4.1-mini", "OpenAI GPT-4.1 mini"],
+      ["openai/gpt-4.1", "OpenAI GPT-4.1"]
+    ],
+    vercel_ai_anthropic: [
+      ["anthropic/claude-sonnet-4", "Anthropic Claude Sonnet 4"],
+      ["anthropic/claude-3-5-haiku", "Anthropic Claude 3.5 Haiku"]
+    ],
+    cloudflare_ai_chat: [
+      ["@cf/meta/llama-3.1-8b-instruct", "Cloudflare Llama 3.1 8B"],
+      ["@cf/qwen/qwen1.5-14b-chat-awq", "Cloudflare Qwen 1.5 14B"]
+    ],
+    cloudflare_ai_responses: [
+      ["@cf/meta/llama-3.1-8b-instruct", "Cloudflare Llama 3.1 8B"]
+    ],
+    cloudflare_ai_anthropic: [
+      ["@cf/meta/llama-3.1-8b-instruct", "Cloudflare Llama 3.1 8B"]
+    ],
+    github_models: [
+      ["openai/gpt-4.1", "OpenAI GPT-4.1"],
+      ["openai/gpt-4.1-mini", "OpenAI GPT-4.1 mini"],
+      ["mistral-ai/mistral-medium-2505", "Mistral Medium"]
+    ],
+    huggingface: [
+      ["meta-llama/Llama-3.1-8B-Instruct", "Llama 3.1 8B Instruct"],
+      ["Qwen/Qwen2.5-72B-Instruct", "Qwen2.5 72B Instruct"],
+      ["mistralai/Mistral-7B-Instruct-v0.3", "Mistral 7B Instruct"]
+    ],
+    deepinfra: [
+      ["meta-llama/Meta-Llama-3.1-70B-Instruct", "Llama 3.1 70B Instruct"],
+      ["Qwen/Qwen2.5-72B-Instruct", "Qwen2.5 72B Instruct"],
+      ["deepseek-ai/DeepSeek-V3", "DeepSeek V3"]
+    ],
+    fireworks: [
+      ["accounts/fireworks/models/llama-v3p1-70b-instruct", "Llama 3.1 70B Instruct"],
+      ["accounts/fireworks/models/deepseek-v3", "DeepSeek V3"]
+    ],
+    cerebras: [
+      ["llama-4-scout-17b-16e-instruct", "Llama 4 Scout"],
+      ["llama3.1-8b", "Llama 3.1 8B"]
+    ],
+    nvidia_nim: [
+      ["meta/llama-3.1-70b-instruct", "Llama 3.1 70B Instruct"],
+      ["nvidia/llama-3.1-nemotron-70b-instruct", "Nemotron 70B"]
+    ],
+    sambanova: [
+      ["Meta-Llama-3.1-70B-Instruct", "Llama 3.1 70B Instruct"],
+      ["DeepSeek-R1", "DeepSeek R1"]
+    ],
+    sambanova_responses: [
+      ["Meta-Llama-3.1-70B-Instruct", "Llama 3.1 70B Instruct"]
+    ],
+    sambanova_anthropic: [
+      ["Meta-Llama-3.1-70B-Instruct", "Llama 3.1 70B Instruct"]
+    ],
+    xai: [
+      ["grok-3", "Grok 3"],
+      ["grok-3-mini", "Grok 3 mini"],
+      ["grok-2-vision-1212", "Grok 2 Vision"]
+    ],
+    groq: [
+      ["llama-3.3-70b-versatile", "Llama 3.3 70B Versatile"],
+      ["llama-3.1-8b-instant", "Llama 3.1 8B Instant"],
+      ["deepseek-r1-distill-llama-70b", "DeepSeek R1 Distill Llama 70B"]
+    ],
+    mistral: [
+      ["mistral-large-latest", "Mistral Large"],
+      ["mistral-small-latest", "Mistral Small"],
+      ["pixtral-large-latest", "Pixtral Large"]
+    ],
+    together: [
+      ["meta-llama/Llama-3.3-70B-Instruct-Turbo", "Llama 3.3 70B Turbo"],
+      ["deepseek-ai/DeepSeek-V3", "DeepSeek V3"],
+      ["Qwen/Qwen2.5-72B-Instruct-Turbo", "Qwen2.5 72B Turbo"]
+    ],
+    kimi: [
+      ["moonshot-v1-8k", "Moonshot v1 8k"],
+      ["moonshot-v1-32k", "Moonshot v1 32k"],
+      ["moonshot-v1-128k", "Moonshot v1 128k"]
+    ],
+    perplexity: [
+      ["sonar", "Sonar"],
+      ["sonar-pro", "Sonar Pro"],
+      ["sonar-reasoning", "Sonar Reasoning"]
+    ],
+    deepseek: [
+      ["deepseek-chat", "DeepSeek Chat"],
+      ["deepseek-reasoner", "DeepSeek Reasoner"]
+    ],
+    deepseek_anthropic: [
+      ["deepseek-chat", "DeepSeek Chat"],
+      ["deepseek-reasoner", "DeepSeek Reasoner"]
+    ],
+    zai_anthropic: [
+      ["glm-4.5", "GLM 4.5"],
+      ["glm-4.5-air", "GLM 4.5 Air"]
+    ],
+    openrouter: [
+      ["openai/gpt-4.1-mini", "OpenAI GPT-4.1 mini"],
+      ["anthropic/claude-sonnet-4", "Anthropic Claude Sonnet 4"],
+      ["google/gemini-2.5-pro", "Google Gemini 2.5 Pro"],
+      ["deepseek/deepseek-chat-v3", "DeepSeek Chat V3"]
+    ],
+    dashscope: [
+      ["qwen-plus", "Qwen Plus"],
+      ["qwen-max", "Qwen Max"],
+      ["qwen-turbo", "Qwen Turbo"],
+      ["qwen-vl-plus", "Qwen VL Plus"]
+    ],
+    siliconflow: [
+      ["deepseek-ai/DeepSeek-V3", "DeepSeek V3"],
+      ["deepseek-ai/DeepSeek-R1", "DeepSeek R1"],
+      ["Qwen/Qwen2.5-72B-Instruct", "Qwen2.5 72B Instruct"]
+    ],
+    zhipu: [
+      ["glm-4-plus", "GLM-4 Plus"],
+      ["glm-4-air", "GLM-4 Air"],
+      ["glm-4v-plus", "GLM-4V Plus"]
+    ],
+    volcengine: [
+      ["doubao-seed-1-6", "Doubao Seed 1.6"],
+      ["doubao-1-5-pro-32k", "Doubao 1.5 Pro 32K"],
+      ["doubao-1-5-lite-32k", "Doubao 1.5 Lite 32K"]
+    ],
+    qianfan: [
+      ["ernie-4.0-turbo-8k", "ERNIE 4.0 Turbo"],
+      ["ernie-3.5-8k", "ERNIE 3.5 8K"]
+    ],
+    hunyuan: [
+      ["hunyuan-turbos-latest", "Hunyuan Turbos"],
+      ["hunyuan-large", "Hunyuan Large"]
+    ],
+    ollama: [
+      ["llama3.2", "Llama 3.2"],
+      ["qwen2.5", "Qwen2.5"],
+      ["deepseek-r1", "DeepSeek R1"]
+    ],
+    lm_studio: [
+      ["local-model", "Local model"]
+    ],
+    local_agents: [
+      ["local-agents", "Local agents"]
+    ]
+  };
+  const fallback = key.includes("anthropic") ? map.anthropic_compatible : (key.includes("responses") ? map.openai_responses_compatible : map.openai_compatible);
+  return (map[key] || fallback || []).map(([id, label]) => ({ id, label }));
 }
 
 function renderProfileOptions(list, profileOptions) {
