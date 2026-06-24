@@ -4979,6 +4979,121 @@ describe("workbench writeback helpers", () => {
     expect(dom.elements.get("zms-status").textContent).toContain(`visualReportDone: ${reportPath}`);
   });
 
+  it("preserves editable chart review state when re-exporting a visual extraction report", async () => {
+    const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.json";
+    const files = new Map<string, string>([
+      [jsonPath, JSON.stringify({
+        chartReviewActions: [
+          {
+            queueId: "review-1",
+            actionId: "confirm-low-confidence-readings",
+            checkId: "confidence",
+            status: "warning",
+            detail: "high 0, medium 0, low 2, needs-review 1",
+            reviewState: "done",
+            reviewer: "Kagura",
+            due: "2026-07-01",
+            notes: "axes and units checked"
+          }
+        ]
+      })]
+    ]);
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "IMG",
+      getCollections: () => [10]
+    };
+    workbench.state.context = {
+      metadata: { title: "Visual Paper" }
+    };
+    workbench.state.messages = [
+      {
+        id: "user-visual",
+        role: "user",
+        content: "Extract chart values",
+        images: [{ name: "chart.png", mimeType: "image/png", size: 77 }]
+      },
+      {
+        id: "assistant-visual",
+        role: "assistant",
+        profileName: "MiniMax",
+        content: "## Pixel Coordinate Data Draft\n| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] |\n| baseline | p2 | 130 | 330 | 0.2 | 14 ms | low | [image] |\n\n## Axis Calibration Anchors\n| Axis | Pixel | Value | Unit | Source | Confidence |\n| --- | --- | --- | --- | --- | --- |\n| X | 80 | 0 | s | [image] | medium |\n| X | 420 | 10 | s | [image] | medium |\n| Y | 360 | 0 | ms | [image] | medium |\n| Y | 120 | 30 | ms | [image] | medium |"
+      }
+    ];
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportVisualExtractionReport();
+
+    const reportPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.md";
+    const report = files.get(reportPath) || "";
+    expect(report).toContain("| medium | done | confirm-low-confidence-readings | confidence (warning)");
+    expect(report).toContain("| Kagura | 2026-07-01 | axes and units checked |");
+    const parsed = JSON.parse(files.get(jsonPath) || "{}");
+    expect(parsed.chartReviewActions).toMatchObject([
+      {
+        queueId: "review-1",
+        actionId: "confirm-low-confidence-readings",
+        reviewState: "done",
+        reviewer: "Kagura",
+        due: "2026-07-01",
+        notes: "axes and units checked"
+      }
+    ]);
+    const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.csv";
+    expect(files.get(csvPath)).toContain("review-action:review-1,1,reviewState,done,,assistant-visual,chart.png");
+    expect(files.get(csvPath)).toContain("review-action:review-1,1,reviewer,Kagura,,assistant-visual,chart.png");
+    expect(files.get(csvPath)).toContain("review-action:review-1,1,notes,axes and units checked,,assistant-visual,chart.png");
+  });
+
+  it("merges previous chart review state by stable action key before queue id", () => {
+    const loaded = loadWorkbenchHelpers();
+    const payload = {
+      context: { metadata: { title: "Visual Paper" } },
+      item: { key: "IMG" },
+      exchange: {
+        user: { images: [{ name: "chart.png" }] },
+        assistant: {
+          content: "## Pixel Coordinate Data Draft\n| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] |"
+        }
+      }
+    };
+    const initialData = (loaded as any).visualExtractionReportData(payload, {
+      outputLanguage: "en-US"
+    });
+    const initialConfidenceAction = initialData.chartReviewActions.find((action: any) => action.actionId === "confirm-low-confidence-readings");
+    const reportData = (loaded as any).visualExtractionReportData(payload, {
+      outputLanguage: "en-US",
+      previousChartReviewActions: [
+        {
+          queueId: "review-9",
+          actionId: "confirm-low-confidence-readings",
+          checkId: "confidence",
+          status: "warning",
+          detail: initialConfidenceAction.detail,
+          reviewState: "in-review",
+          reviewer: "DT",
+          due: "2026-07-02",
+          notes: "confirm legend"
+        }
+      ]
+    });
+
+    const confidenceAction = reportData.chartReviewActions.find((action: any) => action.actionId === "confirm-low-confidence-readings");
+    expect(confidenceAction).toMatchObject({
+      actionId: "confirm-low-confidence-readings",
+      reviewState: "in-review",
+      reviewer: "DT",
+      due: "2026-07-02",
+      notes: "confirm legend"
+    });
+  });
+
   it("marks dense point tables as dense chart-data drafts in visual extraction exports", async () => {
     const files = new Map<string, string>();
     const loaded = loadWorkbenchHelpers(files);

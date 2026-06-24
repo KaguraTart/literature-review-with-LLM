@@ -1797,7 +1797,8 @@ var ZoteroMarkdownSummaryWorkbench = {
         reportPath,
         jsonPath,
         csvPath,
-        contextSourceHash: this.state.contextSourceHash
+        contextSourceHash: this.state.contextSourceHash,
+        previousChartReviewActions: await loadPreviousVisualExtractionChartReviewActions(jsonPath)
       };
       const reportData = visualExtractionReportData(payload, options);
       this.setStatus(this.t("visualReportExporting"));
@@ -6051,7 +6052,10 @@ function visualExtractionReportData(payload, options = {}) {
     images,
     calibrationAnchors
   });
-  const chartReviewActions = visualExtractionChartReviewActions(chartQualityReview, labels);
+  const chartReviewActions = visualExtractionMergeChartReviewActionState(
+    visualExtractionChartReviewActions(chartQualityReview, labels),
+    options.previousChartReviewActions || payload?.previousChartReviewActions
+  );
   return {
     templateVersion: "visual-extraction-report-v2",
     generatedAt,
@@ -7371,6 +7375,56 @@ function visualExtractionChartReviewActions(review, labels) {
       notes: "",
       ...action
     }));
+}
+
+function visualExtractionMergeChartReviewActionState(actions, previousActions) {
+  const generated = Array.isArray(actions) ? actions : [];
+  const previous = Array.isArray(previousActions) ? previousActions : [];
+  if (!generated.length || !previous.length) return generated;
+  const previousByStableKey = new Map();
+  const previousByQueueId = new Map();
+  for (const action of previous) {
+    const state = visualExtractionMutableChartReviewState(action);
+    if (!visualExtractionHasMutableChartReviewState(state)) continue;
+    const stableKey = visualExtractionChartReviewActionStableKey(action);
+    const queueKey = visualExtractionChartReviewActionQueueKey(action);
+    if (stableKey && !previousByStableKey.has(stableKey)) previousByStableKey.set(stableKey, state);
+    if (queueKey && !previousByQueueId.has(queueKey)) previousByQueueId.set(queueKey, state);
+  }
+  if (!previousByStableKey.size && !previousByQueueId.size) return generated;
+  return generated.map((action) => {
+    const stableKey = visualExtractionChartReviewActionStableKey(action);
+    const queueKey = visualExtractionChartReviewActionQueueKey(action);
+    const state = (stableKey && previousByStableKey.get(stableKey)) || (queueKey && previousByQueueId.get(queueKey));
+    return state ? { ...action, ...state } : action;
+  });
+}
+
+function visualExtractionMutableChartReviewState(action) {
+  return {
+    reviewState: mdText(action?.reviewState || ""),
+    reviewer: mdText(action?.reviewer || ""),
+    due: mdText(action?.due || ""),
+    notes: mdText(action?.notes || "")
+  };
+}
+
+function visualExtractionHasMutableChartReviewState(state) {
+  return Boolean(state && (state.reviewState || state.reviewer || state.due || state.notes));
+}
+
+function visualExtractionChartReviewActionStableKey(action) {
+  const parts = [
+    action?.actionId,
+    action?.checkId,
+    action?.status,
+    action?.detail
+  ].map((part) => mdText(part || "").toLowerCase());
+  return parts.some(Boolean) ? parts.join("::") : "";
+}
+
+function visualExtractionChartReviewActionQueueKey(action) {
+  return mdText(action?.queueId || "").toLowerCase();
 }
 
 function visualExtractionChartReviewActionForCheck(check, labels) {
@@ -11312,6 +11366,17 @@ async function appendImportLedgerEntries(path, entries) {
   const existing = await readTextIfExists(path);
   const next = `${existing ? `${existing.replace(/\s*$/, "")}\n` : ""}${renderImportLedgerJsonl(entries)}`;
   await writeTextAtomic(path, next, `${path}.${Date.now()}.tmp`);
+}
+
+async function loadPreviousVisualExtractionChartReviewActions(path) {
+  const text = await readTextIfExists(path);
+  if (!text.trim()) return [];
+  try {
+    const data = JSON.parse(text);
+    return Array.isArray(data?.chartReviewActions) ? data.chartReviewActions : [];
+  } catch (_err) {
+    return [];
+  }
 }
 
 async function readTextIfExists(path) {
