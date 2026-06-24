@@ -3083,10 +3083,14 @@ describe("workbench writeback helpers", () => {
       "@mozilla.org/file/local;1": {
         createInstance: () => ({
           path: "",
-          parent: null as any,
           initWithPath(path: string) {
             this.path = path;
-            this.parent = { path: path.replace(/[\\/][^\\/]*$/, "") || path, exists: () => true, isDirectory: () => true };
+          },
+          get parent() {
+            const parentPath = this.path.replace(/[\\/][^\\/]*$/, "") || this.path;
+            return parentPath && parentPath !== this.path
+              ? { path: parentPath, parent: null, exists: () => true, isDirectory: () => true }
+              : null;
           },
           exists: () => true,
           isDirectory: () => true
@@ -3125,6 +3129,20 @@ describe("workbench writeback helpers", () => {
     const loaded = loadWorkbenchHelpers(new Map(), {
       exists: async () => true
     }, prefValues);
+    const makeLocalFile = (initialPath = ""): any => ({
+      path: initialPath,
+      initWithPath(path: string) {
+        this.path = path;
+      },
+      get parent() {
+        const parentPath = this.path.replace(/[\\/][^\\/]*$/, "") || this.path;
+        return parentPath && parentPath !== this.path ? makeLocalFile(parentPath) : null;
+      },
+      exists() {
+        return this.path === "/tmp";
+      },
+      isDirectory: () => true
+    });
     (loaded as any).Cc = {
       "@mozilla.org/filepicker;1": {
         createInstance: () => {
@@ -3143,18 +3161,7 @@ describe("workbench writeback helpers", () => {
         }
       },
       "@mozilla.org/file/local;1": {
-        createInstance: () => ({
-          path: "",
-          parent: null as any,
-          initWithPath(path: string) {
-            this.path = path;
-            this.parent = { path: path.replace(/[\\/][^\\/]*$/, "") || path, exists: () => true, isDirectory: () => true };
-          },
-          exists() {
-            return this.path === "/tmp";
-          },
-          isDirectory: () => true
-        })
+        createInstance: () => makeLocalFile("")
       }
     };
     (loaded as any).Ci = {
@@ -3162,7 +3169,7 @@ describe("workbench writeback helpers", () => {
       nsIFile: function nsIFile() {}
     };
     const dom = fakeDocument({
-      "zms-workbench-output-dir": "/tmp/missing output"
+      "zms-workbench-output-dir": "/tmp/missing/deep/output"
     });
     (loaded as any).document = dom;
     loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir = "/tmp/out";

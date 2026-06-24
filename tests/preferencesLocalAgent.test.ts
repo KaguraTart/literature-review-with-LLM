@@ -193,6 +193,21 @@ function loadPreferencesController(options: {
   setChecked("zms-cap-toolUse", false);
   setChecked("zms-cap-modelList", true);
 
+  const makeLocalFile = (initialPath = ""): any => ({
+    path: initialPath,
+    initWithPath(path: string) {
+      this.path = path;
+    },
+    get parent() {
+      const parentPath = this.path.replace(/[\\/][^\\/]*$/, "") || this.path;
+      return parentPath && parentPath !== this.path ? makeLocalFile(parentPath) : null;
+    },
+    exists() {
+      return !options.filePickerExistingPaths || options.filePickerExistingPaths.includes(this.path);
+    },
+    isDirectory: () => true
+  });
+
   const context = createContext({
     window: {},
     document: {
@@ -259,22 +274,7 @@ function loadPreferencesController(options: {
         }
       },
       "@mozilla.org/file/local;1": {
-        createInstance: () => ({
-          path: "",
-          parent: null as any,
-          initWithPath(path: string) {
-            this.path = path;
-            this.parent = {
-              path: path.replace(/[\\/][^\\/]*$/, "") || path,
-              exists: () => true,
-              isDirectory: () => true
-            };
-          },
-          exists() {
-            return !options.filePickerExistingPaths || options.filePickerExistingPaths.includes(this.path);
-          },
-          isDirectory: () => true
-        })
+        createInstance: () => makeLocalFile("")
       }
     },
     Ci: {
@@ -2343,7 +2343,7 @@ describe("preferences local-agent config helpers", () => {
       filePickerPath: "/tmp/picked output",
       filePickerExistingPaths: ["/tmp"]
     });
-    elements.get("zms-outputDir").value = "/tmp/missing output";
+    elements.get("zms-outputDir").value = "/tmp/missing/deep/output";
 
     await expect(controller.chooseOutputDir()).resolves.toBe(true);
 

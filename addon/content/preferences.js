@@ -858,10 +858,24 @@ function fileForDirectoryPicker(path) {
     if (!fileFactory) return null;
     const file = fileFactory.createInstance(ci?.nsIFile);
     file.initWithPath(raw);
-    return directoryForPicker(file) || directoryForPicker(file.parent);
+    return nearestDirectoryForPicker(file);
   } catch (_err) {
     return null;
   }
+}
+
+function nearestDirectoryForPicker(file) {
+  const seen = new Set();
+  let current = file;
+  for (let depth = 0; current && depth < 64; depth += 1) {
+    const path = String(current.path || "");
+    if (path && seen.has(path)) break;
+    if (path) seen.add(path);
+    const directory = directoryForPicker(current);
+    if (directory) return directory;
+    current = current.parent || null;
+  }
+  return null;
 }
 
 function directoryForPicker(file) {
