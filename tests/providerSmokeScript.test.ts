@@ -12,6 +12,9 @@ const NAMED_LIVE_SPECS = [
   { id: "minimax", envPrefix: "MINIMAX", protocol: "openai_chat", basePath: "/minimax/v1", model: "MiniMax-M2.7-highspeed", secret: "live-minimax-secret" },
   { id: "gemini", envPrefix: "GEMINI", protocol: "openai_chat", basePath: "/gemini/v1beta/openai", model: "gemini-2.5-flash", secret: "live-gemini-secret" },
   { id: "azure-openai", envPrefix: "AZURE_OPENAI", protocol: "openai_responses", basePath: "/azure/openai/v1", model: "azure-gpt-4.1", secret: "live-azure-secret" },
+  { id: "vercel-ai-chat", envPrefix: "VERCEL_AI", protocol: "openai_chat", basePath: "/vercel/v1", model: "openai/gpt-4.1-mini", secret: "live-vercel-secret" },
+  { id: "vercel-ai-responses", envPrefix: "VERCEL_AI_RESPONSES", protocol: "openai_responses", basePath: "/vercel-responses/v1", model: "openai/gpt-4.1-mini", secret: "live-vercel-responses-secret" },
+  { id: "vercel-ai-anthropic", envPrefix: "VERCEL_AI_ANTHROPIC", protocol: "anthropic_messages", basePath: "/vercel-anthropic", model: "anthropic/claude-sonnet-4.5", secret: "live-vercel-anthropic-secret" },
   { id: "cloudflare-ai-chat", envPrefix: "CLOUDFLARE", protocol: "openai_chat", basePath: "/cloudflare/accounts/test/ai/v1", model: "@cf/meta/llama-3.1-8b-instruct", secret: "live-cloudflare-secret" },
   { id: "cloudflare-ai-responses", envPrefix: "CLOUDFLARE_RESPONSES", protocol: "openai_responses", basePath: "/cloudflare-responses/accounts/test/ai/v1", model: "@cf/meta/llama-3.1-8b-instruct", secret: "live-cloudflare-responses-secret" },
   { id: "cloudflare-ai-anthropic", envPrefix: "CLOUDFLARE_ANTHROPIC", protocol: "anthropic_messages", basePath: "/cloudflare-anthropic/accounts/test/ai/v1", model: "claude-3-5-sonnet-20241022", secret: "live-cloudflare-anthropic-secret" },
@@ -48,9 +51,9 @@ const BASIC_LIVE_CASES = BASIC_LIVE_CASE_IDS.join(",");
 const NAMED_LIVE_CASES = NAMED_LIVE_CASE_IDS.join(",");
 const ALL_LIVE_CASE_IDS = [...BASIC_LIVE_CASE_IDS, ...NAMED_LIVE_CASE_IDS];
 const CORE_LIVE_CASE_IDS = ["openai", "openai-compatible", "openai-responses-compatible", "anthropic", "anthropic-compatible"];
-const OPENAI_CHAT_LIVE_CASE_IDS = ["openai-compatible", ...NAMED_LIVE_CASE_IDS.filter((id) => !["azure-openai", "cloudflare-ai-responses", "cloudflare-ai-anthropic", "sambanova-responses", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"].includes(id))];
-const OPENAI_RESPONSES_LIVE_CASE_IDS = ["openai", "openai-responses-compatible", "azure-openai", "cloudflare-ai-responses", "sambanova-responses"];
-const ANTHROPIC_MESSAGES_LIVE_CASE_IDS = ["anthropic", "anthropic-compatible", "cloudflare-ai-anthropic", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"];
+const OPENAI_CHAT_LIVE_CASE_IDS = ["openai-compatible", ...NAMED_LIVE_CASE_IDS.filter((id) => !["azure-openai", "vercel-ai-responses", "vercel-ai-anthropic", "cloudflare-ai-responses", "cloudflare-ai-anthropic", "sambanova-responses", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"].includes(id))];
+const OPENAI_RESPONSES_LIVE_CASE_IDS = ["openai", "openai-responses-compatible", "azure-openai", "vercel-ai-responses", "cloudflare-ai-responses", "sambanova-responses"];
+const ANTHROPIC_MESSAGES_LIVE_CASE_IDS = ["anthropic", "anthropic-compatible", "vercel-ai-anthropic", "cloudflare-ai-anthropic", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"];
 const MAINSTREAM_LIVE_CASE_IDS = ALL_LIVE_CASE_IDS;
 
 describe("provider smoke verifier", () => {
@@ -1826,10 +1829,7 @@ describe("provider smoke verifier", () => {
     const deduped = await runLive(["--list", "--include", "core,openai,anthropic-messages,core", "--json"], scrubProviderEnv());
     expect(deduped.cases.map((entry: any) => entry.id)).toEqual([
       ...CORE_LIVE_CASE_IDS,
-      "cloudflare-ai-anthropic",
-      "sambanova-anthropic",
-      "deepseek-anthropic",
-      "zai-anthropic"
+      ...ANTHROPIC_MESSAGES_LIVE_CASE_IDS.filter((id) => !CORE_LIVE_CASE_IDS.includes(id))
     ]);
 
     let error: any;

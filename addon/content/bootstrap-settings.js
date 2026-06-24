@@ -50,6 +50,15 @@ function settingsProviderDefaults(provider) {
   if (id === "azure_openai" || id === "azure-openai") {
     return { ...common, protocol: "openai_responses", baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1", capabilities: { ...imageCapabilities, pdfBase64: true } };
   }
+  if (id === "vercel_ai_chat" || id === "vercel-ai-chat" || id === "vercel_ai_gateway" || id === "vercel-ai-gateway") {
+    return { ...common, protocol: "openai_chat", baseURL: "https://ai-gateway.vercel.sh/v1", capabilities: { ...imageCapabilities, pdfBase64: false } };
+  }
+  if (id === "vercel_ai_responses" || id === "vercel-ai-responses") {
+    return { ...common, protocol: "openai_responses", baseURL: "https://ai-gateway.vercel.sh/v1", capabilities: { ...imageCapabilities, pdfBase64: true } };
+  }
+  if (id === "vercel_ai_anthropic" || id === "vercel-ai-anthropic") {
+    return { ...common, protocol: "anthropic_messages", baseURL: "https://ai-gateway.vercel.sh", capabilities: { ...imageCapabilities, pdfBase64: true }, bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false } };
+  }
   if (id === "perplexity") {
     return { ...common, protocol: "openai_chat", baseURL: "https://api.perplexity.ai", capabilities: commonCapabilities };
   }
@@ -174,8 +183,11 @@ function settingsProviderDefaults(provider) {
 function settingsProviderFromProfile(profile) {
   if (profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent) return "local-agents";
   const id = String(profile?.id || "").trim();
-  if (["minimax", "openai", "openai-responses-compatible", "openai_responses_compatible", "anthropic", "anthropic-compatible", "anthropic_compatible", "openai-compatible", "openai_compatible", "gemini", "azure-openai", "azure_openai", "cloudflare-ai-chat", "cloudflare_ai_chat", "cloudflare-workers-ai", "cloudflare_workers_ai", "cloudflare-ai-responses", "cloudflare_ai_responses", "cloudflare-ai-anthropic", "cloudflare_ai_anthropic", "github-models", "github_models", "huggingface", "hugging_face", "hf", "deepinfra", "deep_infra", "fireworks", "cerebras", "nvidia-nim", "nvidia_nim", "sambanova", "sambanova-responses", "sambanova_responses", "sambanova-anthropic", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "moonshot", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "zai-anthropic", "zai_anthropic", "z_ai_anthropic", "z-ai-anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "glm", "bigmodel", "volcengine", "ark", "doubao", "qianfan", "baidu", "hunyuan", "tencent", "ollama", "lm-studio", "lm_studio"].includes(id)) {
+  if (["minimax", "openai", "openai-responses-compatible", "openai_responses_compatible", "anthropic", "anthropic-compatible", "anthropic_compatible", "openai-compatible", "openai_compatible", "gemini", "azure-openai", "azure_openai", "vercel-ai-chat", "vercel_ai_chat", "vercel-ai-gateway", "vercel_ai_gateway", "vercel-ai-responses", "vercel_ai_responses", "vercel-ai-anthropic", "vercel_ai_anthropic", "cloudflare-ai-chat", "cloudflare_ai_chat", "cloudflare-workers-ai", "cloudflare_workers_ai", "cloudflare-ai-responses", "cloudflare_ai_responses", "cloudflare-ai-anthropic", "cloudflare_ai_anthropic", "github-models", "github_models", "huggingface", "hugging_face", "hf", "deepinfra", "deep_infra", "fireworks", "cerebras", "nvidia-nim", "nvidia_nim", "sambanova", "sambanova-responses", "sambanova_responses", "sambanova-anthropic", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "moonshot", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "zai-anthropic", "zai_anthropic", "z_ai_anthropic", "z-ai-anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "glm", "bigmodel", "volcengine", "ark", "doubao", "qianfan", "baidu", "hunyuan", "tencent", "ollama", "lm-studio", "lm_studio"].includes(id)) {
     if (id === "azure-openai") return "azure_openai";
+    if (id === "vercel-ai-chat" || id === "vercel_ai_gateway" || id === "vercel-ai-gateway") return "vercel_ai_chat";
+    if (id === "vercel-ai-responses") return "vercel_ai_responses";
+    if (id === "vercel-ai-anthropic") return "vercel_ai_anthropic";
     if (id === "cloudflare-ai-chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") return "cloudflare_ai_chat";
     if (id === "cloudflare-ai-responses") return "cloudflare_ai_responses";
     if (id === "cloudflare-ai-anthropic") return "cloudflare_ai_anthropic";
@@ -200,6 +212,14 @@ function settingsProviderFromProfile(profile) {
   if (baseURL === "https://api.minimaxi.com/v1") return "minimax";
   if (baseURL === "https://generativelanguage.googleapis.com/v1beta/openai") return "gemini";
   if (/^https:\/\/[^/]+\.openai\.azure\.com\/openai\/v1$/i.test(baseURL) || /^https:\/\/[^/]+\.services\.ai\.azure\.com\/openai\/v1$/i.test(baseURL)) return "azure_openai";
+  if (baseURL === "https://ai-gateway.vercel.sh/v1" || baseURL === "https://ai-gateway.vercel.sh/v1/chat/completions" || baseURL === "https://ai-gateway.vercel.sh/v1/responses") {
+    if (profile?.protocol === "openai_responses") return "vercel_ai_responses";
+    if (profile?.protocol === "anthropic_messages") return "vercel_ai_anthropic";
+    return "vercel_ai_chat";
+  }
+  if (baseURL === "https://ai-gateway.vercel.sh" || baseURL === "https://ai-gateway.vercel.sh/v1/messages") {
+    if (profile?.protocol === "anthropic_messages") return "vercel_ai_anthropic";
+  }
   if (/^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[^/]+\/ai\/v1(?:\/(?:chat\/completions|responses|messages))?$/i.test(baseURL)) {
     if (profile?.protocol === "openai_responses") return "cloudflare_ai_responses";
     if (profile?.protocol === "anthropic_messages") return "cloudflare_ai_anthropic";

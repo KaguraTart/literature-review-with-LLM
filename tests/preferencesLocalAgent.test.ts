@@ -1405,6 +1405,25 @@ describe("preferences local-agent config helpers", () => {
       capabilities: { streaming: true, pdfBase64: false, modelList: true },
       bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     });
+    expect(helpers.providerDefaults("vercel_ai_chat")).toMatchObject({
+      id: "vercel-ai-chat",
+      protocol: "openai_chat",
+      baseURL: "https://ai-gateway.vercel.sh/v1",
+      capabilities: { streaming: true, pdfBase64: false, imageBase64: true, modelList: true }
+    });
+    expect(helpers.providerDefaults("vercel_ai_responses")).toMatchObject({
+      id: "vercel-ai-responses",
+      protocol: "openai_responses",
+      baseURL: "https://ai-gateway.vercel.sh/v1",
+      capabilities: { streaming: true, pdfBase64: true, imageBase64: true, modelList: true }
+    });
+    expect(helpers.providerDefaults("vercel_ai_anthropic")).toMatchObject({
+      id: "vercel-ai-anthropic",
+      protocol: "anthropic_messages",
+      baseURL: "https://ai-gateway.vercel.sh",
+      capabilities: { streaming: true, pdfBase64: true, imageBase64: true, modelList: true },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    });
     expect(helpers.providerDefaults("cloudflare_ai_chat")).toMatchObject({
       id: "cloudflare-ai-chat",
       protocol: "openai_chat",
@@ -1609,6 +1628,9 @@ describe("preferences local-agent config helpers", () => {
       "anthropic-compatible",
       "gemini",
       "azure-openai",
+      "vercel-ai-chat",
+      "vercel-ai-responses",
+      "vercel-ai-anthropic",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -1681,6 +1703,25 @@ describe("preferences local-agent config helpers", () => {
       endpointMode: "base_url",
       baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1",
       customHeaders: {}
+    });
+    expect(profiles.find((profile) => profile.id === "vercel-ai-chat")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://ai-gateway.vercel.sh/v1",
+      capabilities: { imageBase64: true, pdfBase64: false, modelList: true }
+    });
+    expect(profiles.find((profile) => profile.id === "vercel-ai-responses")).toMatchObject({
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://ai-gateway.vercel.sh/v1",
+      capabilities: { imageBase64: true, pdfBase64: true, modelList: true }
+    });
+    expect(profiles.find((profile) => profile.id === "vercel-ai-anthropic")).toMatchObject({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://ai-gateway.vercel.sh",
+      capabilities: { imageBase64: true, pdfBase64: true, modelList: true },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     });
     expect(profiles.find((profile) => profile.id === "cloudflare-ai-chat")).toMatchObject({
       protocol: "openai_chat",
@@ -1888,6 +1929,9 @@ describe("preferences local-agent config helpers", () => {
     expect(profiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([
       "gemini",
       "azure-openai",
+      "vercel-ai-chat",
+      "vercel-ai-responses",
+      "vercel-ai-anthropic",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -2013,6 +2057,24 @@ describe("preferences local-agent config helpers", () => {
       baseURL: "https://api.deepinfra.com/v1/openai",
       bodyExtra: {}
     })).toBe("deepinfra");
+    expect(helpers.providerFromProfile({
+      id: "vercel-ai-gateway",
+      protocol: "openai_chat",
+      baseURL: "https://ai-gateway.vercel.sh/v1",
+      bodyExtra: {}
+    })).toBe("vercel_ai_chat");
+    expect(helpers.providerFromProfile({
+      id: "custom-vercel-responses",
+      protocol: "openai_responses",
+      baseURL: "https://ai-gateway.vercel.sh/v1/responses",
+      bodyExtra: {}
+    })).toBe("vercel_ai_responses");
+    expect(helpers.providerFromProfile({
+      id: "custom-vercel-anthropic",
+      protocol: "anthropic_messages",
+      baseURL: "https://ai-gateway.vercel.sh/v1/messages",
+      bodyExtra: {}
+    })).toBe("vercel_ai_anthropic");
     expect(helpers.providerFromProfile({
       id: "cloudflare_workers_ai",
       protocol: "openai_chat",
@@ -2412,7 +2474,7 @@ describe("preferences local-agent config helpers", () => {
     expect(groqGuide).not.toContain("groq-secret");
   });
 
-  it("uses named live-check variables for MiniMax, Gemini, and Azure guides", () => {
+  it("uses named live-check variables for MiniMax, Gemini, Azure, and Vercel guides", () => {
     const helpers = loadPreferencesHelpers();
     const minimaxGuide = helpers.providerSetupGuide({
       ...helpers.providerDefaults("minimax"),
@@ -2429,6 +2491,21 @@ describe("preferences local-agent config helpers", () => {
       baseURL: "https://example-resource.openai.azure.com/openai/v1",
       apiKey: "azure-secret",
       model: "gpt-4.1"
+    }, "en-US");
+    const vercelChatGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("vercel_ai_chat"),
+      apiKey: "vercel-secret",
+      model: "openai/gpt-4.1-mini"
+    }, "en-US");
+    const vercelResponsesGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("vercel_ai_responses"),
+      apiKey: "vercel-responses-secret",
+      model: "openai/gpt-4.1-mini"
+    }, "en-US");
+    const vercelAnthropicGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("vercel_ai_anthropic"),
+      apiKey: "vercel-anthropic-secret",
+      model: "anthropic/claude-sonnet-4.5"
     }, "en-US");
 
     expect(minimaxGuide).toContain("MINIMAX_API_KEY=...");
@@ -2448,6 +2525,22 @@ describe("preferences local-agent config helpers", () => {
     expect(azureGuide).toContain("Image live check: AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=gpt-4.1 AZURE_OPENAI_BASE_URL=https://example-resource.openai.azure.com/openai/v1 npm run verify:provider:image:live -- --include azure-openai");
     expect(azureGuide).toContain("PDF live check: AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=gpt-4.1 AZURE_OPENAI_BASE_URL=https://example-resource.openai.azure.com/openai/v1 npm run verify:provider:pdf:live -- --include azure-openai");
     expect(azureGuide).not.toContain("azure-secret");
+    expect(vercelChatGuide).toContain("VERCEL_AI_API_KEY=...");
+    expect(vercelChatGuide).toContain("VERCEL_AI_MODEL=openai/gpt-4.1-mini");
+    expect(vercelChatGuide).toContain("--include vercel-ai-chat");
+    expect(vercelChatGuide).toContain("Image live check: VERCEL_AI_API_KEY=... VERCEL_AI_MODEL=openai/gpt-4.1-mini npm run verify:provider:image:live -- --include vercel-ai-chat");
+    expect(vercelChatGuide).toContain("PDF live check: uses Zotero extracted text");
+    expect(vercelChatGuide).not.toContain("vercel-secret");
+    expect(vercelResponsesGuide).toContain("VERCEL_AI_RESPONSES_API_KEY=...");
+    expect(vercelResponsesGuide).toContain("VERCEL_AI_RESPONSES_MODEL=openai/gpt-4.1-mini");
+    expect(vercelResponsesGuide).toContain("--include vercel-ai-responses");
+    expect(vercelResponsesGuide).toContain("PDF live check: VERCEL_AI_RESPONSES_API_KEY=... VERCEL_AI_RESPONSES_MODEL=openai/gpt-4.1-mini npm run verify:provider:pdf:live -- --include vercel-ai-responses");
+    expect(vercelResponsesGuide).not.toContain("vercel-responses-secret");
+    expect(vercelAnthropicGuide).toContain("VERCEL_AI_ANTHROPIC_API_KEY=...");
+    expect(vercelAnthropicGuide).toContain("VERCEL_AI_ANTHROPIC_MODEL=anthropic/claude-sonnet-4.5");
+    expect(vercelAnthropicGuide).toContain("--include vercel-ai-anthropic");
+    expect(vercelAnthropicGuide).toContain("Auth: API key is sent as Authorization: Bearer; anthropic-version is included.");
+    expect(vercelAnthropicGuide).not.toContain("vercel-anthropic-secret");
   });
 
   it("updates the settings provider guide from edited fields", () => {
@@ -2723,6 +2816,48 @@ describe("preferences local-agent config helpers", () => {
         }
       },
       "C:\\Users\\tart\\Documents\\Review Output"
+    ],
+    [
+      "quoted file path",
+      {
+        filePickerFile: { path: "\"C:\\Users\\tart\\Documents\\Review Output\"" }
+      },
+      "C:\\Users\\tart\\Documents\\Review Output"
+    ],
+    [
+      "quoted file URL from file.path",
+      {
+        filePickerFile: { path: "\"file:///C:/Users/tart/Documents/Review%20Output\"" }
+      },
+      "C:\\Users\\tart\\Documents\\Review Output"
+    ],
+    [
+      "drive-pipe host file URL",
+      {
+        filePickerFile: { path: "" },
+        filePickerFileURL: { spec: "file://C|/Users/tart/Documents/Review%20Output" }
+      },
+      "C:\\Users\\tart\\Documents\\Review Output"
+    ],
+    [
+      "over-slashed drive file URL",
+      {
+        filePickerFile: { path: "" },
+        filePickerFileURL: { spec: "file:////C:/Users/tart/Documents/Review%20Output" }
+      },
+      "C:\\Users\\tart\\Documents\\Review Output"
+    ],
+    [
+      "targetFile fallback when nsIFile.path getter throws",
+      {
+        filePickerFile: {
+          get path() {
+            throw new Error("path getter unavailable");
+          },
+          targetFile: { path: "C:\\Users\\tart\\Documents\\Review Output" }
+        }
+      },
+      "C:\\Users\\tart\\Documents\\Review Output"
     ]
   ])("normalizes Windows %s from the native folder picker", async (_name, pickerOptions, expected) => {
     const { controller, elements, prefValues, madeDirectories } = loadPreferencesController(pickerOptions);
@@ -2886,6 +3021,9 @@ describe("preferences local-agent config helpers", () => {
       "anthropic-compatible",
       "gemini",
       "azure-openai",
+      "vercel-ai-chat",
+      "vercel-ai-responses",
+      "vercel-ai-anthropic",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -2931,6 +3069,9 @@ describe("preferences local-agent config helpers", () => {
       "anthropic-compatible",
       "gemini",
       "azure-openai",
+      "vercel-ai-chat",
+      "vercel-ai-responses",
+      "vercel-ai-anthropic",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",

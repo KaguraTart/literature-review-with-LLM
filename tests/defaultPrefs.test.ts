@@ -27,6 +27,9 @@ describe("default provider profiles", () => {
       "anthropic-compatible",
       "gemini",
       "azure-openai",
+      "vercel-ai-chat",
+      "vercel-ai-responses",
+      "vercel-ai-anthropic",
       "cloudflare-ai-chat",
       "cloudflare-ai-responses",
       "cloudflare-ai-anthropic",
@@ -106,6 +109,25 @@ describe("default provider profiles", () => {
       baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1",
       customHeaders: {},
       capabilities: { pdfBase64: true, streaming: true, modelList: true }
+    });
+    expect(profiles.find((profile: any) => profile.id === "vercel-ai-chat")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://ai-gateway.vercel.sh/v1",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
+    });
+    expect(profiles.find((profile: any) => profile.id === "vercel-ai-responses")).toMatchObject({
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://ai-gateway.vercel.sh/v1",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true, modelList: true }
+    });
+    expect(profiles.find((profile: any) => profile.id === "vercel-ai-anthropic")).toMatchObject({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://ai-gateway.vercel.sh",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true, modelList: true },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     });
     expect(profiles.find((profile: any) => profile.id === "cloudflare-ai-chat")).toMatchObject({
       protocol: "openai_chat",

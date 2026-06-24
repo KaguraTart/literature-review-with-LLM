@@ -2287,7 +2287,7 @@ function hydrateProfile(profile) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "vercel_ai_chat", "vercel_ai_responses", "vercel_ai_anthropic", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = workbenchProviderDefaults(provider);
     return {
       id: defaults.id,
@@ -2336,6 +2336,9 @@ function providerProfileCatalogKey(profile) {
   if (id === "openai_responses_compatible") return "openai-responses-compatible";
   if (id === "anthropic_compatible") return "anthropic-compatible";
   if (id === "azure_openai") return "azure-openai";
+  if (id === "vercel_ai_chat" || id === "vercel_ai_gateway" || id === "vercel-ai-gateway") return "vercel-ai-chat";
+  if (id === "vercel_ai_responses") return "vercel-ai-responses";
+  if (id === "vercel_ai_anthropic") return "vercel-ai-anthropic";
   if (id === "cloudflare_ai_chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") return "cloudflare-ai-chat";
   if (id === "cloudflare_ai_responses") return "cloudflare-ai-responses";
   if (id === "cloudflare_ai_anthropic") return "cloudflare-ai-anthropic";
@@ -2440,6 +2443,15 @@ function workbenchProviderDefaults(provider) {
   if (id === "azure_openai" || id === "azure-openai") {
     return { id: "azure-openai", name: "Azure OpenAI", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1", model: "", capabilities: { ...imageCapabilities, pdfBase64: true }, customHeaders: {}, bodyExtra: {} };
   }
+  if (id === "vercel_ai_chat" || id === "vercel-ai-chat" || id === "vercel_ai_gateway" || id === "vercel-ai-gateway") {
+    return { id: "vercel-ai-chat", name: "Vercel AI Gateway Chat", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://ai-gateway.vercel.sh/v1", model: "", capabilities: { ...imageCapabilities, pdfBase64: false }, bodyExtra: {} };
+  }
+  if (id === "vercel_ai_responses" || id === "vercel-ai-responses") {
+    return { id: "vercel-ai-responses", name: "Vercel AI Gateway Responses", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://ai-gateway.vercel.sh/v1", model: "", capabilities: { ...imageCapabilities, pdfBase64: true }, bodyExtra: {} };
+  }
+  if (id === "vercel_ai_anthropic" || id === "vercel-ai-anthropic") {
+    return { id: "vercel-ai-anthropic", name: "Vercel AI Gateway Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://ai-gateway.vercel.sh", model: "", capabilities: { ...imageCapabilities, pdfBase64: true }, bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false } };
+  }
   if (id === "cloudflare_ai_chat" || id === "cloudflare-ai-chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") {
     return { id: "cloudflare-ai-chat", name: "Cloudflare AI OpenAI Chat", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
   }
@@ -2541,6 +2553,9 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   const id = String(profile?.id || fallbackProvider || "").trim();
   if (id === "moonshot") return "kimi";
   if (id === "github-models" || id === "github_models") return "github_models";
+  if (id === "vercel-ai-chat" || id === "vercel_ai_chat" || id === "vercel-ai-gateway" || id === "vercel_ai_gateway") return "vercel_ai_chat";
+  if (id === "vercel-ai-responses" || id === "vercel_ai_responses") return "vercel_ai_responses";
+  if (id === "vercel-ai-anthropic" || id === "vercel_ai_anthropic") return "vercel_ai_anthropic";
   if (id === "cloudflare-ai-chat" || id === "cloudflare_ai_chat" || id === "cloudflare-workers-ai" || id === "cloudflare_workers_ai") return "cloudflare_ai_chat";
   if (id === "cloudflare-ai-responses" || id === "cloudflare_ai_responses") return "cloudflare_ai_responses";
   if (id === "cloudflare-ai-anthropic" || id === "cloudflare_ai_anthropic") return "cloudflare_ai_anthropic";
@@ -2552,7 +2567,7 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   if (id === "zai-anthropic" || id === "zai_anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") return "zai_anthropic";
   if (id === "anthropic-compatible" || id === "anthropic_compatible") return "anthropic_compatible";
   if (id === "openai-responses-compatible" || id === "openai_responses_compatible") return "openai_responses_compatible";
-  if (["cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "deepinfra", "fireworks", "cerebras", "sambanova", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "gemini"].includes(id)) return id;
+  if (["vercel_ai_chat", "vercel_ai_responses", "vercel_ai_anthropic", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "deepinfra", "fireworks", "cerebras", "sambanova", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "gemini"].includes(id)) return id;
   if (id === "glm" || id === "bigmodel") return "zhipu";
   if (id === "ark" || id === "doubao") return "volcengine";
   if (id === "baidu") return "qianfan";
@@ -2564,6 +2579,14 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   if (baseURL === "https://api.minimaxi.com/v1") return "minimax";
   if (baseURL === "https://generativelanguage.googleapis.com/v1beta/openai") return "gemini";
   if (/^https:\/\/[^/]+\.openai\.azure\.com\/openai\/v1$/i.test(baseURL) || /^https:\/\/[^/]+\.services\.ai\.azure\.com\/openai\/v1$/i.test(baseURL)) return "azure_openai";
+  if (baseURL === "https://ai-gateway.vercel.sh/v1" || baseURL === "https://ai-gateway.vercel.sh/v1/chat/completions" || baseURL === "https://ai-gateway.vercel.sh/v1/responses") {
+    if (profile?.protocol === "openai_responses") return "vercel_ai_responses";
+    if (profile?.protocol === "anthropic_messages") return "vercel_ai_anthropic";
+    return "vercel_ai_chat";
+  }
+  if (baseURL === "https://ai-gateway.vercel.sh" || baseURL === "https://ai-gateway.vercel.sh/v1/messages") {
+    if (profile?.protocol === "anthropic_messages") return "vercel_ai_anthropic";
+  }
   if (/^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[^/]+\/ai\/v1(?:\/(?:chat\/completions|responses|messages))?$/i.test(baseURL)) {
     if (profile?.protocol === "openai_responses") return "cloudflare_ai_responses";
     if (profile?.protocol === "anthropic_messages") return "cloudflare_ai_anthropic";
@@ -3169,6 +3192,14 @@ function providerLiveVerifyCaseForWorkbench(profile, provider = workbenchProvide
     gemini: ["gemini", "GEMINI"],
     azure_openai: ["azure-openai", "AZURE_OPENAI", true],
     "azure-openai": ["azure-openai", "AZURE_OPENAI", true],
+    vercel_ai_chat: ["vercel-ai-chat", "VERCEL_AI"],
+    "vercel-ai-chat": ["vercel-ai-chat", "VERCEL_AI"],
+    vercel_ai_gateway: ["vercel-ai-chat", "VERCEL_AI"],
+    "vercel-ai-gateway": ["vercel-ai-chat", "VERCEL_AI"],
+    vercel_ai_responses: ["vercel-ai-responses", "VERCEL_AI_RESPONSES"],
+    "vercel-ai-responses": ["vercel-ai-responses", "VERCEL_AI_RESPONSES"],
+    vercel_ai_anthropic: ["vercel-ai-anthropic", "VERCEL_AI_ANTHROPIC"],
+    "vercel-ai-anthropic": ["vercel-ai-anthropic", "VERCEL_AI_ANTHROPIC"],
     cloudflare_ai_chat: ["cloudflare-ai-chat", "CLOUDFLARE", true],
     "cloudflare-ai-chat": ["cloudflare-ai-chat", "CLOUDFLARE", true],
     cloudflare_workers_ai: ["cloudflare-ai-chat", "CLOUDFLARE", true],
@@ -4023,16 +4054,30 @@ function selectedDirectoryPathFromPicker(picker) {
   const seen = typeof WeakSet !== "undefined" ? new WeakSet() : null;
   return firstDirectoryPath(
     seen,
-    picker?.file,
-    picker?.files,
-    picker?.fileURL,
-    picker?.file?.path,
-    picker?.domFileOrDirectoryPath,
-    picker?.fileURL?.file,
-    picker?.fileURL?.filePath,
-    picker?.fileURL?.spec,
-    picker?.fileURL?.displaySpec,
-    picker?.fileURL?.asciiSpec
+    ...safeObjectValues(picker, [
+      "file",
+      "files",
+      "fileURL",
+      "domFileOrDirectoryPath",
+      "selectedDirectory",
+      "targetFile",
+      "target",
+      "directory"
+    ]),
+    ...safeObjectValues(safeObjectValue(picker, "file"), [
+      "path",
+      "filePath",
+      "nativePath",
+      "persistentDescriptor"
+    ]),
+    ...safeObjectValues(safeObjectValue(picker, "fileURL"), [
+      "file",
+      "filePath",
+      "path",
+      "spec",
+      "displaySpec",
+      "asciiSpec"
+    ])
   );
 }
 
@@ -4058,26 +4103,31 @@ function directoryPathFromPickerValue(value, seen, depth = 0) {
   if (enumerated) return enumerated;
   return firstDirectoryPath(
     seen,
-    value.path,
-    value.filePath,
-    value.nativePath,
-    value.domFileOrDirectoryPath,
-    value.mozFullPath,
-    value.fullPath,
-    value.displayPath,
-    value.persistentDescriptor,
-    value.url,
-    value.URL,
-    value.href,
-    value.uri,
-    value.asciiSpec,
-    value.target,
-    value.file,
-    value.files,
-    value.directory,
-    value.fileURL,
-    value.spec,
-    value.displaySpec
+    ...safeObjectValues(value, [
+      "path",
+      "filePath",
+      "nativePath",
+      "domFileOrDirectoryPath",
+      "mozFullPath",
+      "fullPath",
+      "displayPath",
+      "persistentDescriptor",
+      "url",
+      "URL",
+      "href",
+      "uri",
+      "asciiSpec",
+      "targetFile",
+      "target",
+      "file",
+      "files",
+      "directory",
+      "selectedDirectory",
+      "folder",
+      "fileURL",
+      "spec",
+      "displaySpec"
+    ])
   );
 }
 
@@ -4086,7 +4136,11 @@ function filePathFromQueryInterface(value) {
     if (typeof value.QueryInterface !== "function") return "";
     const nsIFile = typeof Ci !== "undefined" ? Ci.nsIFile : undefined;
     const file = nsIFile ? value.QueryInterface(nsIFile) : null;
-    const filePath = pathFromPickerString(file?.path || file?.persistentDescriptor || "");
+    const filePath = pathFromPickerString(firstPathLikeValue(
+      safeObjectValue(file, "path"),
+      safeObjectValue(file, "persistentDescriptor"),
+      safeObjectValue(file, "nativePath")
+    ));
     if (filePath) return filePath;
   } catch (_err) {
     // Try nsIFileURL below.
@@ -4095,10 +4149,44 @@ function filePathFromQueryInterface(value) {
     if (typeof value.QueryInterface !== "function") return "";
     const nsIFileURL = typeof Ci !== "undefined" ? Ci.nsIFileURL : undefined;
     const fileURL = nsIFileURL ? value.QueryInterface(nsIFileURL) : null;
-    return pathFromPickerString(fileURL?.file?.path || fileURL?.filePath || fileURL?.path || fileURL?.spec || fileURL?.asciiSpec || "");
+    return pathFromPickerString(firstPathLikeValue(
+      safeObjectValue(safeObjectValue(fileURL, "file"), "path"),
+      safeObjectValue(fileURL, "filePath"),
+      safeObjectValue(fileURL, "path"),
+      safeObjectValue(fileURL, "spec"),
+      safeObjectValue(fileURL, "displaySpec"),
+      safeObjectValue(fileURL, "asciiSpec")
+    ));
   } catch (_err) {
     return "";
   }
+}
+
+function safeObjectValue(value, key) {
+  if (!value || typeof value !== "object") return undefined;
+  try {
+    return value[key];
+  } catch (_err) {
+    return undefined;
+  }
+}
+
+function safeObjectValues(value, keys) {
+  if (!value || typeof value !== "object") return [];
+  const values = [];
+  for (const key of keys || []) {
+    const next = safeObjectValue(value, key);
+    if (typeof next !== "undefined" && next !== null && next !== "") values.push(next);
+  }
+  return values;
+}
+
+function firstPathLikeValue(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value;
+    if (value && typeof value !== "string") return value;
+  }
+  return "";
 }
 
 function firstDirectoryPathFromEnumerable(value, seen, depth) {
@@ -4129,7 +4217,7 @@ function firstDirectoryPathFromEnumerable(value, seen, depth) {
 }
 
 function pathFromPickerString(value) {
-  const text = String(value || "").trim();
+  const text = stripPickerPathQuotes(String(value || "").trim());
   if (!text) return "";
   if (!/^file:/i.test(text)) return normalizePickerPathString(text);
   const rawWindowsPath = pathFromNonstandardWindowsFileURL(text);
@@ -4141,8 +4229,9 @@ function pathFromPickerString(value) {
     const pathname = safeDecodePickerPath(url.pathname || "");
     const slashPath = pathname.replace(/\\/g, "/");
     if (host && host.toLowerCase() !== "localhost") {
-      if (/^[A-Za-z]$/.test(host)) {
-        return normalizePickerPathString(`${host}:${slashPath.startsWith("/") ? slashPath : `/${slashPath}`}`);
+      const driveHost = host.match(/^([A-Za-z])[:|]?$/);
+      if (driveHost) {
+        return normalizePickerPathString(`${driveHost[1]}:${slashPath.startsWith("/") ? slashPath : `/${slashPath}`}`);
       }
       return normalizePickerPathString(`//${host}${slashPath.startsWith("/") ? slashPath : `/${slashPath}`}`);
     }
@@ -4163,7 +4252,7 @@ function pathFromNonstandardWindowsFileURL(value) {
 }
 
 function normalizePickerPathString(value) {
-  const text = safeDecodePickerPath(value).trim().replace(/\0/g, "");
+  const text = stripPickerPathQuotes(safeDecodePickerPath(value).trim().replace(/\0/g, ""));
   if (/^\/+\\\\\?\\UNC\\/i.test(text)) return `\\\\${text.replace(/^\/+\\\\\?\\UNC\\/i, "")}`;
   if (/^\/+\\\\\?\\[A-Za-z]:\\/i.test(text)) return text.replace(/^\/+\\\\\?\\/i, "");
   if (/^\/+\\\\[^\\]+\\[^\\]+/.test(text)) return text.replace(/^\/+/, "");
@@ -4173,6 +4262,8 @@ function normalizePickerPathString(value) {
   if (/^\\\\\?\\UNC\\/i.test(text)) return `\\\\${text.slice(8)}`;
   if (/^\\\\\?\\[A-Za-z]:\\/i.test(text)) return text.slice(4);
   if (/^\\\\[^\\]+\\[^\\]+/.test(text)) return text;
+  if (/^\/{2,}[A-Za-z]:[\\/]/.test(text)) return text.replace(/^\/+/, "").replace(/\//g, "\\");
+  if (/^\/{2,}[A-Za-z]\|[\\/]/.test(text)) return `${text.replace(/^\/+/, "")[0]}:${text.replace(/^\/+/, "").slice(2)}`.replace(/\//g, "\\");
   if (/^\/\/\/+[^/\\]+[\\/][^/\\]+/.test(text)) return text.replace(/^\/+/, "//").replace(/\//g, "\\");
   if (/^\/\/[^/\\]+[\\/][^/\\]+/.test(text)) return text.replace(/\//g, "\\");
   if (/^localhost[\\/]/i.test(text)) return normalizePickerPathString(text.replace(/^localhost[\\/]+/i, "/"));
@@ -4182,6 +4273,18 @@ function normalizePickerPathString(value) {
   if (/^[\\/][A-Za-z]:[\\/]/.test(text)) return text.slice(1).replace(/\//g, "\\");
   if (/^[A-Za-z]\|[\\/]/.test(text)) return `${text[0]}:${text.slice(2)}`.replace(/\//g, "\\");
   if (/^[\\/][A-Za-z]\|[\\/]/.test(text)) return `${text[1]}:${text.slice(3)}`.replace(/\//g, "\\");
+  return text;
+}
+
+function stripPickerPathQuotes(value) {
+  let text = String(value || "").trim();
+  for (let i = 0; i < 2 && text.length >= 2; i += 1) {
+    const first = text[0];
+    const last = text[text.length - 1];
+    if ((first === "\"" && last === "\"") || (first === "'" && last === "'")) {
+      text = text.slice(1, -1).trim();
+    }
+  }
   return text;
 }
 

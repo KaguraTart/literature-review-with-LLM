@@ -251,6 +251,22 @@ describe("bootstrap provider helpers", () => {
       protocol: "openai_responses",
       capabilities: { pdfBase64: true, streaming: true }
     });
+    expect(helpers.settingsProviderDefaults("vercel_ai_chat")).toMatchObject({
+      protocol: "openai_chat",
+      baseURL: "https://ai-gateway.vercel.sh/v1",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true, modelList: true }
+    });
+    expect(helpers.settingsProviderDefaults("vercel_ai_responses")).toMatchObject({
+      protocol: "openai_responses",
+      baseURL: "https://ai-gateway.vercel.sh/v1",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true, modelList: true }
+    });
+    expect(helpers.settingsProviderDefaults("vercel_ai_anthropic")).toMatchObject({
+      protocol: "anthropic_messages",
+      baseURL: "https://ai-gateway.vercel.sh",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true, modelList: true },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    });
     expect(helpers.settingsProviderDefaults("cloudflare_ai_chat")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
@@ -321,6 +337,19 @@ describe("bootstrap provider helpers", () => {
       protocol: "openai_responses",
       baseURL: "https://resource.openai.azure.com/openai/v1"
     })).toBe("azure_openai");
+    expect(helpers.settingsProviderFromProfile({
+      id: "vercel-ai-gateway",
+      protocol: "openai_chat",
+      baseURL: "https://ai-gateway.vercel.sh/v1"
+    })).toBe("vercel_ai_chat");
+    expect(helpers.settingsProviderFromProfile({
+      protocol: "openai_responses",
+      baseURL: "https://ai-gateway.vercel.sh/v1/responses"
+    })).toBe("vercel_ai_responses");
+    expect(helpers.settingsProviderFromProfile({
+      protocol: "anthropic_messages",
+      baseURL: "https://ai-gateway.vercel.sh/v1/messages"
+    })).toBe("vercel_ai_anthropic");
     expect(helpers.settingsProviderFromProfile({
       id: "cloudflare-workers-ai",
       protocol: "openai_chat",
