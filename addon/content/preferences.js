@@ -108,16 +108,12 @@ var ZoteroMarkdownSummaryPrefs = {
     const defaults = providerDefaults(provider);
     const activeProfileId = document.getElementById("zms-activeProfileId");
     const baseURL = document.getElementById("zms-baseURL");
+    const apiKey = document.getElementById("zms-apiKey");
     const model = document.getElementById("zms-model");
-    if (activeProfileId && (!activeProfileId.value || isKnownProviderId(activeProfileId.value))) {
-      activeProfileId.value = defaults.id;
-    }
-    if (baseURL && (!baseURL.value || isKnownProviderBaseURL(baseURL.value))) {
-      baseURL.value = defaults.baseURL;
-    }
-    if (model && (!model.value || isKnownProviderDefaultModel(model.value))) {
-      model.value = defaults.model;
-    }
+    if (activeProfileId) activeProfileId.value = defaults.id;
+    if (baseURL) baseURL.value = defaults.baseURL;
+    if (apiKey) apiKey.value = "";
+    if (model) model.value = defaults.model;
     document.getElementById("zms-profileName").value = defaults.name;
     document.getElementById("zms-profileProtocol").value = defaults.protocol;
     document.getElementById("zms-profileEndpointMode").value = defaults.endpointMode;

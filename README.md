@@ -79,7 +79,7 @@ Open `Tools -> Literature Review with LLM Settings`.
 Important fields:
 
 - `默认接口档案`: choose the active provider profile.
-- `Provider`: built-in presets include MiniMax, OpenAI, OpenAI Compatible Chat, OpenAI Compatible Responses, Anthropic, Anthropic-compatible, Gemini OpenAI-compatible, Azure OpenAI, Vercel AI Gateway Chat, Vercel AI Gateway Responses, Vercel AI Gateway Anthropic, Cloudflare AI OpenAI Chat, Cloudflare AI Responses, Cloudflare AI Anthropic, GitHub Models, Hugging Face, DeepInfra, Fireworks AI, Cerebras, NVIDIA NIM, SambaNova, OpenRouter, DeepSeek, DashScope, SiliconFlow, Ollama, LM Studio, Local Agents, and others.
+- `Provider`: built-in presets include MiniMax, OpenAI, OpenAI Compatible Chat, OpenAI Compatible Responses, Anthropic, Anthropic-compatible, Gemini OpenAI-compatible, Azure OpenAI, Vercel AI Gateway Chat, Vercel AI Gateway Responses, Vercel AI Gateway Anthropic, Cloudflare AI OpenAI Chat, Cloudflare AI Responses, Cloudflare AI Anthropic, GitHub Models, Hugging Face, DeepInfra, Fireworks AI, Cerebras, NVIDIA NIM, SambaNova, OpenRouter, DeepSeek, DashScope, SiliconFlow, Ollama, LM Studio, Local Agents, and others. Switching this preset replaces the Base URL, protocol, capability flags, and recommended model, and clears the old API key so credentials are not reused across providers.
 - `Base URL`: provider endpoint root, for example `https://api.openai.com/v1` or `http://127.0.0.1:11434/v1`.
 - Base URLs may include query parameters required by a gateway or Azure-style route, for example `?api-version=preview`; the plugin appends `/chat/completions`, `/responses`, `/messages`, or `/models` before the query string.
 - `API Key`: provider API key. Local providers such as Ollama may not require one.

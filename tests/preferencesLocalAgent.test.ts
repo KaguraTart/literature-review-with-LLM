@@ -2848,19 +2848,21 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model-select").value).toBe("claude-sonnet-4-20250514");
   });
 
-  it("keeps a custom model name when switching provider presets", () => {
+  it("applies provider presets over custom profile fields and clears stale API keys", () => {
     const { controller, elements } = loadPreferencesController();
     elements.get("zms-provider").value = "anthropic";
     elements.get("zms-activeProfileId").value = "custom-router";
     elements.get("zms-baseURL").value = "https://router.example/v1";
+    elements.get("zms-apiKey").value = "old-router-secret";
     elements.get("zms-model").value = "private-deployment";
 
     controller.applyProviderPreset();
 
-    expect(elements.get("zms-activeProfileId").value).toBe("custom-router");
-    expect(elements.get("zms-baseURL").value).toBe("https://router.example/v1");
-    expect(elements.get("zms-model").value).toBe("private-deployment");
-    expect(elements.get("zms-model-select").value).toBe("private-deployment");
+    expect(elements.get("zms-activeProfileId").value).toBe("anthropic");
+    expect(elements.get("zms-baseURL").value).toBe("https://api.anthropic.com");
+    expect(elements.get("zms-apiKey").value).toBe("");
+    expect(elements.get("zms-model").value).toBe("claude-sonnet-4-20250514");
+    expect(elements.get("zms-model-select").value).toBe("claude-sonnet-4-20250514");
   });
 
   it("shows local-agent timeout fields in seconds without treating timeoutSeconds as milliseconds", () => {
