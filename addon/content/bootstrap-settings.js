@@ -113,6 +113,15 @@ function settingsProviderDefaults(provider) {
   if (id === "huggingface" || id === "hugging_face" || id === "hf") {
     return { ...common, protocol: "openai_chat", baseURL: "https://router.huggingface.co/v1", capabilities: imageCapabilities };
   }
+  if (id === "cloudflare_ai_chat" || id === "cloudflare-ai-chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") {
+    return { ...common, protocol: "openai_chat", baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1", capabilities: { ...commonCapabilities, modelList: false } };
+  }
+  if (id === "cloudflare_ai_responses" || id === "cloudflare-ai-responses") {
+    return { ...common, protocol: "openai_responses", baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1", capabilities: { ...commonCapabilities, modelList: false } };
+  }
+  if (id === "cloudflare_ai_anthropic" || id === "cloudflare-ai-anthropic") {
+    return { ...common, protocol: "anthropic_messages", baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false } };
+  }
   if (id === "deepinfra" || id === "deep_infra") {
     return { ...common, protocol: "openai_chat", baseURL: "https://api.deepinfra.com/v1/openai", capabilities: imageCapabilities };
   }
@@ -165,8 +174,11 @@ function settingsProviderDefaults(provider) {
 function settingsProviderFromProfile(profile) {
   if (profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent) return "local-agents";
   const id = String(profile?.id || "").trim();
-  if (["minimax", "openai", "openai-responses-compatible", "openai_responses_compatible", "anthropic", "anthropic-compatible", "anthropic_compatible", "openai-compatible", "openai_compatible", "gemini", "azure-openai", "azure_openai", "github-models", "github_models", "huggingface", "hugging_face", "hf", "deepinfra", "deep_infra", "fireworks", "cerebras", "nvidia-nim", "nvidia_nim", "sambanova", "sambanova-responses", "sambanova_responses", "sambanova-anthropic", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "moonshot", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "zai-anthropic", "zai_anthropic", "z_ai_anthropic", "z-ai-anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "glm", "bigmodel", "volcengine", "ark", "doubao", "qianfan", "baidu", "hunyuan", "tencent", "ollama", "lm-studio", "lm_studio"].includes(id)) {
+  if (["minimax", "openai", "openai-responses-compatible", "openai_responses_compatible", "anthropic", "anthropic-compatible", "anthropic_compatible", "openai-compatible", "openai_compatible", "gemini", "azure-openai", "azure_openai", "cloudflare-ai-chat", "cloudflare_ai_chat", "cloudflare-workers-ai", "cloudflare_workers_ai", "cloudflare-ai-responses", "cloudflare_ai_responses", "cloudflare-ai-anthropic", "cloudflare_ai_anthropic", "github-models", "github_models", "huggingface", "hugging_face", "hf", "deepinfra", "deep_infra", "fireworks", "cerebras", "nvidia-nim", "nvidia_nim", "sambanova", "sambanova-responses", "sambanova_responses", "sambanova-anthropic", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "moonshot", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "zai-anthropic", "zai_anthropic", "z_ai_anthropic", "z-ai-anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "glm", "bigmodel", "volcengine", "ark", "doubao", "qianfan", "baidu", "hunyuan", "tencent", "ollama", "lm-studio", "lm_studio"].includes(id)) {
     if (id === "azure-openai") return "azure_openai";
+    if (id === "cloudflare-ai-chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") return "cloudflare_ai_chat";
+    if (id === "cloudflare-ai-responses") return "cloudflare_ai_responses";
+    if (id === "cloudflare-ai-anthropic") return "cloudflare_ai_anthropic";
     if (id === "github-models") return "github_models";
     if (id === "hugging_face" || id === "hf") return "huggingface";
     if (id === "deep_infra") return "deepinfra";
@@ -188,6 +200,11 @@ function settingsProviderFromProfile(profile) {
   if (baseURL === "https://api.minimaxi.com/v1") return "minimax";
   if (baseURL === "https://generativelanguage.googleapis.com/v1beta/openai") return "gemini";
   if (/^https:\/\/[^/]+\.openai\.azure\.com\/openai\/v1$/i.test(baseURL) || /^https:\/\/[^/]+\.services\.ai\.azure\.com\/openai\/v1$/i.test(baseURL)) return "azure_openai";
+  if (/^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[^/]+\/ai\/v1(?:\/(?:chat\/completions|responses|messages))?$/i.test(baseURL)) {
+    if (profile?.protocol === "openai_responses") return "cloudflare_ai_responses";
+    if (profile?.protocol === "anthropic_messages") return "cloudflare_ai_anthropic";
+    return "cloudflare_ai_chat";
+  }
   if (baseURL === "https://router.huggingface.co/v1" || baseURL === "https://router.huggingface.co/v1/chat/completions") return "huggingface";
   if (baseURL === "https://api.deepinfra.com/v1/openai" || baseURL === "https://api.deepinfra.com/v1/openai/chat/completions") return "deepinfra";
   if (baseURL === "https://api.x.ai/v1") return "xai";

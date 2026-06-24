@@ -513,11 +513,11 @@ var ZoteroMarkdownSummaryWorkbench = {
       if (options.status !== false) this.setStatus(this.t("outputDirMissing"));
       return false;
     }
-    this.state.outputDir = nextOutputDir;
-    setPref("outputDir", nextOutputDir);
     try {
       await ensureDirectory(nextOutputDir);
       await ensureSkillTemplates(nextOutputDir);
+      this.state.outputDir = nextOutputDir;
+      setPref("outputDir", nextOutputDir);
       if (this.state.item) {
         await ensureDirectory(this.sessionDir());
         await this.renderSkills();
@@ -2287,7 +2287,7 @@ function hydrateProfile(profile) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = workbenchProviderDefaults(provider);
     return {
       id: defaults.id,
@@ -2336,6 +2336,9 @@ function providerProfileCatalogKey(profile) {
   if (id === "openai_responses_compatible") return "openai-responses-compatible";
   if (id === "anthropic_compatible") return "anthropic-compatible";
   if (id === "azure_openai") return "azure-openai";
+  if (id === "cloudflare_ai_chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") return "cloudflare-ai-chat";
+  if (id === "cloudflare_ai_responses") return "cloudflare-ai-responses";
+  if (id === "cloudflare_ai_anthropic") return "cloudflare-ai-anthropic";
   if (id === "github_models") return "github-models";
   if (id === "hugging_face" || id === "hf") return "huggingface";
   if (id === "deep_infra") return "deepinfra";
@@ -2437,6 +2440,15 @@ function workbenchProviderDefaults(provider) {
   if (id === "azure_openai" || id === "azure-openai") {
     return { id: "azure-openai", name: "Azure OpenAI", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1", model: "", capabilities: { ...imageCapabilities, pdfBase64: true }, customHeaders: {}, bodyExtra: {} };
   }
+  if (id === "cloudflare_ai_chat" || id === "cloudflare-ai-chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") {
+    return { id: "cloudflare-ai-chat", name: "Cloudflare AI OpenAI Chat", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+  }
+  if (id === "cloudflare_ai_responses" || id === "cloudflare-ai-responses") {
+    return { id: "cloudflare-ai-responses", name: "Cloudflare AI Responses", protocol: "openai_responses", endpointMode: "base_url", baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: {} };
+  }
+  if (id === "cloudflare_ai_anthropic" || id === "cloudflare-ai-anthropic") {
+    return { id: "cloudflare-ai-anthropic", name: "Cloudflare AI Anthropic", protocol: "anthropic_messages", endpointMode: "base_url", baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1", model: "", capabilities: { ...commonCapabilities, modelList: false }, bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false } };
+  }
   if (id === "github_models" || id === "github-models") {
     return { id: "github-models", name: "GitHub Models", protocol: "openai_chat", endpointMode: "base_url", baseURL: "https://models.github.ai/inference", model: "", capabilities: { ...commonCapabilities, modelList: false }, customHeaders: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }, bodyExtra: {} };
   }
@@ -2529,6 +2541,9 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   const id = String(profile?.id || fallbackProvider || "").trim();
   if (id === "moonshot") return "kimi";
   if (id === "github-models" || id === "github_models") return "github_models";
+  if (id === "cloudflare-ai-chat" || id === "cloudflare_ai_chat" || id === "cloudflare-workers-ai" || id === "cloudflare_workers_ai") return "cloudflare_ai_chat";
+  if (id === "cloudflare-ai-responses" || id === "cloudflare_ai_responses") return "cloudflare_ai_responses";
+  if (id === "cloudflare-ai-anthropic" || id === "cloudflare_ai_anthropic") return "cloudflare_ai_anthropic";
   if (id === "huggingface" || id === "hugging_face" || id === "hf") return "huggingface";
   if (id === "deepinfra" || id === "deep_infra") return "deepinfra";
   if (id === "nvidia-nim" || id === "nvidia_nim") return "nvidia_nim";
@@ -2537,7 +2552,7 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   if (id === "zai-anthropic" || id === "zai_anthropic" || id === "z_ai_anthropic" || id === "z-ai-anthropic") return "zai_anthropic";
   if (id === "anthropic-compatible" || id === "anthropic_compatible") return "anthropic_compatible";
   if (id === "openai-responses-compatible" || id === "openai_responses_compatible") return "openai_responses_compatible";
-  if (["deepinfra", "fireworks", "cerebras", "sambanova", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "gemini"].includes(id)) return id;
+  if (["cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "deepinfra", "fireworks", "cerebras", "sambanova", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek-anthropic", "deepseek_anthropic", "openrouter", "dashscope", "qwen", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "gemini"].includes(id)) return id;
   if (id === "glm" || id === "bigmodel") return "zhipu";
   if (id === "ark" || id === "doubao") return "volcengine";
   if (id === "baidu") return "qianfan";
@@ -2549,6 +2564,11 @@ function workbenchProviderFromProfile(profile, fallbackProvider) {
   if (baseURL === "https://api.minimaxi.com/v1") return "minimax";
   if (baseURL === "https://generativelanguage.googleapis.com/v1beta/openai") return "gemini";
   if (/^https:\/\/[^/]+\.openai\.azure\.com\/openai\/v1$/i.test(baseURL) || /^https:\/\/[^/]+\.services\.ai\.azure\.com\/openai\/v1$/i.test(baseURL)) return "azure_openai";
+  if (/^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[^/]+\/ai\/v1(?:\/(?:chat\/completions|responses|messages))?$/i.test(baseURL)) {
+    if (profile?.protocol === "openai_responses") return "cloudflare_ai_responses";
+    if (profile?.protocol === "anthropic_messages") return "cloudflare_ai_anthropic";
+    return "cloudflare_ai_chat";
+  }
   if (baseURL === "https://models.github.ai/inference" || baseURL === "https://models.github.ai/inference/chat/completions") return "github_models";
   if (baseURL === "https://router.huggingface.co/v1" || baseURL === "https://router.huggingface.co/v1/chat/completions") return "huggingface";
   if (baseURL === "https://api.deepinfra.com/v1/openai" || baseURL === "https://api.deepinfra.com/v1/openai/chat/completions") return "deepinfra";
@@ -3149,6 +3169,14 @@ function providerLiveVerifyCaseForWorkbench(profile, provider = workbenchProvide
     gemini: ["gemini", "GEMINI"],
     azure_openai: ["azure-openai", "AZURE_OPENAI", true],
     "azure-openai": ["azure-openai", "AZURE_OPENAI", true],
+    cloudflare_ai_chat: ["cloudflare-ai-chat", "CLOUDFLARE", true],
+    "cloudflare-ai-chat": ["cloudflare-ai-chat", "CLOUDFLARE", true],
+    cloudflare_workers_ai: ["cloudflare-ai-chat", "CLOUDFLARE", true],
+    "cloudflare-workers-ai": ["cloudflare-ai-chat", "CLOUDFLARE", true],
+    cloudflare_ai_responses: ["cloudflare-ai-responses", "CLOUDFLARE_RESPONSES", true],
+    "cloudflare-ai-responses": ["cloudflare-ai-responses", "CLOUDFLARE_RESPONSES", true],
+    cloudflare_ai_anthropic: ["cloudflare-ai-anthropic", "CLOUDFLARE_ANTHROPIC", true],
+    "cloudflare-ai-anthropic": ["cloudflare-ai-anthropic", "CLOUDFLARE_ANTHROPIC", true],
     github_models: ["github-models", "GITHUB_MODELS"],
     "github-models": ["github-models", "GITHUB_MODELS"],
     huggingface: ["huggingface", "HUGGINGFACE"],
@@ -4094,6 +4122,8 @@ function pathFromPickerString(value) {
   const text = String(value || "").trim();
   if (!text) return "";
   if (!/^file:/i.test(text)) return normalizePickerPathString(text);
+  const rawWindowsPath = pathFromNonstandardWindowsFileURL(text);
+  if (rawWindowsPath) return normalizePickerPathString(rawWindowsPath);
   try {
     const url = new URL(text);
     if (url.protocol !== "file:") return normalizePickerPathString(text);
@@ -4112,8 +4142,23 @@ function pathFromPickerString(value) {
   }
 }
 
+function pathFromNonstandardWindowsFileURL(value) {
+  const text = String(value || "").trim();
+  const longPathMatch = text.match(/^file:\/+\?[/\\](.+)$/i) || text.match(/^file:\/+localhost\/\?[/\\](.+)$/i);
+  if (longPathMatch?.[1]) {
+    const rawPath = longPathMatch[1];
+    return /^UNC[/\\]/i.test(rawPath) ? `//?/${rawPath}` : rawPath;
+  }
+  return "";
+}
+
 function normalizePickerPathString(value) {
   const text = safeDecodePickerPath(value).trim().replace(/\0/g, "");
+  if (/^\/+\\\\\?\\UNC\\/i.test(text)) return `\\\\${text.replace(/^\/+\\\\\?\\UNC\\/i, "")}`;
+  if (/^\/+\\\\\?\\[A-Za-z]:\\/i.test(text)) return text.replace(/^\/+\\\\\?\\/i, "");
+  if (/^\/+\\\\[^\\]+\\[^\\]+/.test(text)) return text.replace(/^\/+/, "");
+  if (/^\/\/\?\/UNC\//i.test(text)) return `\\\\${text.replace(/^\/\/\?\/UNC\//i, "").replace(/\//g, "\\")}`;
+  if (/^\/\/\?\/[A-Za-z]:\//i.test(text)) return text.replace(/^\/\/\?\//i, "").replace(/\//g, "\\");
   if (/^\\\\\?\\UNC\\/i.test(text)) return `\\\\${text.slice(8)}`;
   if (/^\\\\\?\\[A-Za-z]:\\/i.test(text)) return text.slice(4);
   if (/^\\\\[^\\]+\\[^\\]+/.test(text)) return text;
@@ -14565,7 +14610,7 @@ function truncateErrorText(text, limit = 1200) {
 function redact(value) {
   return String(value)
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-    .replace(/\b(?:sk|ak|xai|gsk|pplx|ms|rk|hf|deepinfra)[-_][A-Za-z0-9._-]+/gi, "[redacted]")
+    .replace(/\b(?:sk|ak|xai|gsk|pplx|ms|rk|hf|deepinfra|cloudflare|cf)[-_][A-Za-z0-9._-]+/gi, "[redacted]")
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, "[redacted]")
     .slice(0, 800);
 }

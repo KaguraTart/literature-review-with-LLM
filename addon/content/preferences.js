@@ -162,14 +162,14 @@ var ZoteroMarkdownSummaryPrefs = {
     if (!element) return false;
     const outputDir = resolvedOutputDir(element.value);
     element.value = outputDir;
-    if (!this.save({ updateProfile: false, statusKey: "" })) return false;
-    if (element.dataset) element.dataset.zmsLastSaved = outputDir;
     if (!outputDir) {
       this.setStatus(this.t("outputDirMissing"));
       return false;
     }
     try {
       await ensureDirectory(outputDir);
+      Zotero.Prefs.set(`${this.prefix}.outputDir`, outputDir, true);
+      if (element.dataset) element.dataset.zmsLastSaved = outputDir;
       await this.refreshSkillMenu();
       this.setStatus(`${this.t("outputDirSaved")}: ${outputDir}`);
       return true;
@@ -1035,6 +1035,8 @@ function pathFromPickerString(value) {
   const text = String(value || "").trim();
   if (!text) return "";
   if (!/^file:/i.test(text)) return normalizePickerPathString(text);
+  const rawWindowsPath = pathFromNonstandardWindowsFileURL(text);
+  if (rawWindowsPath) return normalizePickerPathString(rawWindowsPath);
   try {
     const url = new URL(text);
     if (url.protocol !== "file:") return normalizePickerPathString(text);
@@ -1053,8 +1055,23 @@ function pathFromPickerString(value) {
   }
 }
 
+function pathFromNonstandardWindowsFileURL(value) {
+  const text = String(value || "").trim();
+  const longPathMatch = text.match(/^file:\/+\?[/\\](.+)$/i) || text.match(/^file:\/+localhost\/\?[/\\](.+)$/i);
+  if (longPathMatch?.[1]) {
+    const rawPath = longPathMatch[1];
+    return /^UNC[/\\]/i.test(rawPath) ? `//?/${rawPath}` : rawPath;
+  }
+  return "";
+}
+
 function normalizePickerPathString(value) {
   const text = safeDecodePickerPath(value).trim().replace(/\0/g, "");
+  if (/^\/+\\\\\?\\UNC\\/i.test(text)) return `\\\\${text.replace(/^\/+\\\\\?\\UNC\\/i, "")}`;
+  if (/^\/+\\\\\?\\[A-Za-z]:\\/i.test(text)) return text.replace(/^\/+\\\\\?\\/i, "");
+  if (/^\/+\\\\[^\\]+\\[^\\]+/.test(text)) return text.replace(/^\/+/, "");
+  if (/^\/\/\?\/UNC\//i.test(text)) return `\\\\${text.replace(/^\/\/\?\/UNC\//i, "").replace(/\//g, "\\")}`;
+  if (/^\/\/\?\/[A-Za-z]:\//i.test(text)) return text.replace(/^\/\/\?\//i, "").replace(/\//g, "\\");
   if (/^\\\\\?\\UNC\\/i.test(text)) return `\\\\${text.slice(8)}`;
   if (/^\\\\\?\\[A-Za-z]:\\/i.test(text)) return text.slice(4);
   if (/^\\\\[^\\]+\\[^\\]+/.test(text)) return text;
@@ -1502,6 +1519,15 @@ function providerLiveVerifyCase(profile, provider = providerFromProfile(profile)
   }
   if (provider === "azure_openai") {
     return { include: "azure-openai", apiKeyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_MODEL", baseURLEnv: "AZURE_OPENAI_BASE_URL", includeBaseURL: true, apiKeyOptional };
+  }
+  if (provider === "cloudflare_ai_chat") {
+    return { include: "cloudflare-ai-chat", apiKeyEnv: "CLOUDFLARE_API_KEY", modelEnv: "CLOUDFLARE_MODEL", baseURLEnv: "CLOUDFLARE_BASE_URL", includeBaseURL: true, apiKeyOptional };
+  }
+  if (provider === "cloudflare_ai_responses") {
+    return { include: "cloudflare-ai-responses", apiKeyEnv: "CLOUDFLARE_RESPONSES_API_KEY", modelEnv: "CLOUDFLARE_RESPONSES_MODEL", baseURLEnv: "CLOUDFLARE_RESPONSES_BASE_URL", includeBaseURL: true, apiKeyOptional };
+  }
+  if (provider === "cloudflare_ai_anthropic") {
+    return { include: "cloudflare-ai-anthropic", apiKeyEnv: "CLOUDFLARE_ANTHROPIC_API_KEY", modelEnv: "CLOUDFLARE_ANTHROPIC_MODEL", baseURLEnv: "CLOUDFLARE_ANTHROPIC_BASE_URL", includeBaseURL: true, apiKeyOptional };
   }
   if (provider === "github_models") {
     return { include: "github-models", apiKeyEnv: "GITHUB_MODELS_API_KEY", modelEnv: "GITHUB_MODELS_MODEL", baseURLEnv: "GITHUB_MODELS_BASE_URL", includeBaseURL: includeNamedBaseURL, apiKeyOptional };
@@ -2483,7 +2509,7 @@ function truncateErrorText(text, limit = 1200) {
 function redact(value) {
   return String(value)
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-    .replace(/\b(?:sk|ak|xai|gsk|pplx|ms|rk|hf|deepinfra)[-_][A-Za-z0-9._-]+/gi, "[redacted]")
+    .replace(/\b(?:sk|ak|xai|gsk|pplx|ms|rk|hf|deepinfra|cloudflare|cf)[-_][A-Za-z0-9._-]+/gi, "[redacted]")
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, "[redacted]")
     .slice(0, 800);
 }
@@ -3707,6 +3733,45 @@ function providerDefaults(provider) {
       bodyExtra: {}
     };
   }
+  if (id === "cloudflare_ai_chat" || id === "cloudflare-ai-chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") {
+    return {
+      id: "cloudflare-ai-chat",
+      name: "Cloudflare AI OpenAI Chat",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      fullURL: "",
+      model: "",
+      capabilities: { ...commonCapabilities, pdfBase64: false, modelList: false },
+      bodyExtra: {}
+    };
+  }
+  if (id === "cloudflare_ai_responses" || id === "cloudflare-ai-responses") {
+    return {
+      id: "cloudflare-ai-responses",
+      name: "Cloudflare AI Responses",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      fullURL: "",
+      model: "",
+      capabilities: { ...commonCapabilities, pdfBase64: false, modelList: false },
+      bodyExtra: {}
+    };
+  }
+  if (id === "cloudflare_ai_anthropic" || id === "cloudflare-ai-anthropic") {
+    return {
+      id: "cloudflare-ai-anthropic",
+      name: "Cloudflare AI Anthropic",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      fullURL: "",
+      model: "",
+      capabilities: { ...commonCapabilities, pdfBase64: false, modelList: false },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    };
+  }
   if (id === "github_models" || id === "github-models") {
     return {
       id: "github-models",
@@ -4112,7 +4177,7 @@ function providerDefaults(provider) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
     const defaults = providerDefaults(provider);
     return {
       id: defaults.id,
@@ -4161,6 +4226,9 @@ function providerProfileCatalogKey(profile) {
   if (id === "openai_responses_compatible") return "openai-responses-compatible";
   if (id === "anthropic_compatible") return "anthropic-compatible";
   if (id === "azure_openai") return "azure-openai";
+  if (id === "cloudflare_ai_chat" || id === "cloudflare_workers_ai" || id === "cloudflare-workers-ai") return "cloudflare-ai-chat";
+  if (id === "cloudflare_ai_responses") return "cloudflare-ai-responses";
+  if (id === "cloudflare_ai_anthropic") return "cloudflare-ai-anthropic";
   if (id === "github_models") return "github-models";
   if (id === "hugging_face" || id === "hf") return "huggingface";
   if (id === "deep_infra") return "deepinfra";
@@ -4192,6 +4260,14 @@ function isKnownProviderId(value) {
     "gemini",
     "azure-openai",
     "azure_openai",
+    "cloudflare-ai-chat",
+    "cloudflare_ai_chat",
+    "cloudflare-workers-ai",
+    "cloudflare_workers_ai",
+    "cloudflare-ai-responses",
+    "cloudflare_ai_responses",
+    "cloudflare-ai-anthropic",
+    "cloudflare_ai_anthropic",
     "github-models",
     "github_models",
     "huggingface",
@@ -4254,6 +4330,7 @@ function isKnownProviderBaseURL(value) {
     "https://api.anthropic.com/v1",
     "https://generativelanguage.googleapis.com/v1beta/openai",
     "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1",
+    "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
     "https://models.github.ai/inference",
     "https://router.huggingface.co/v1",
     "https://api.deepinfra.com/v1/openai",
@@ -4416,6 +4493,9 @@ function providerFromProfile(profile) {
   if (id === "minimax") return "minimax";
   if (id === "gemini") return "gemini";
   if (id === "azure-openai" || id === "azure_openai") return "azure_openai";
+  if (id === "cloudflare-ai-chat" || id === "cloudflare_ai_chat" || id === "cloudflare-workers-ai" || id === "cloudflare_workers_ai") return "cloudflare_ai_chat";
+  if (id === "cloudflare-ai-responses" || id === "cloudflare_ai_responses") return "cloudflare_ai_responses";
+  if (id === "cloudflare-ai-anthropic" || id === "cloudflare_ai_anthropic") return "cloudflare_ai_anthropic";
   if (id === "github-models" || id === "github_models") return "github_models";
   if (id === "huggingface" || id === "hugging_face" || id === "hf") return "huggingface";
   if (id === "deepinfra" || id === "deep_infra") return "deepinfra";
@@ -4442,6 +4522,11 @@ function providerFromProfile(profile) {
   if (baseURL === "https://api.minimaxi.com/v1") return "minimax";
   if (baseURL === "https://generativelanguage.googleapis.com/v1beta/openai") return "gemini";
   if (/^https:\/\/[^/]+\.openai\.azure\.com\/openai\/v1$/i.test(baseURL) || /^https:\/\/[^/]+\.services\.ai\.azure\.com\/openai\/v1$/i.test(baseURL)) return "azure_openai";
+  if (/^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[^/]+\/ai\/v1(?:\/(?:chat\/completions|responses|messages))?$/i.test(baseURL)) {
+    if (profile?.protocol === "openai_responses") return "cloudflare_ai_responses";
+    if (profile?.protocol === "anthropic_messages") return "cloudflare_ai_anthropic";
+    return "cloudflare_ai_chat";
+  }
   if (baseURL === "https://models.github.ai/inference" || baseURL === "https://models.github.ai/inference/chat/completions") return "github_models";
   if (baseURL === "https://router.huggingface.co/v1" || baseURL === "https://router.huggingface.co/v1/chat/completions") return "huggingface";
   if (baseURL === "https://api.deepinfra.com/v1/openai" || baseURL === "https://api.deepinfra.com/v1/openai/chat/completions") return "deepinfra";

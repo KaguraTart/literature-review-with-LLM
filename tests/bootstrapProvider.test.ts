@@ -251,6 +251,22 @@ describe("bootstrap provider helpers", () => {
       protocol: "openai_responses",
       capabilities: { pdfBase64: true, streaming: true }
     });
+    expect(helpers.settingsProviderDefaults("cloudflare_ai_chat")).toMatchObject({
+      protocol: "openai_chat",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      capabilities: { pdfBase64: false, imageBase64: false, streaming: true, modelList: false }
+    });
+    expect(helpers.settingsProviderDefaults("cloudflare_ai_responses")).toMatchObject({
+      protocol: "openai_responses",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      capabilities: { pdfBase64: false, imageBase64: false, streaming: true, modelList: false }
+    });
+    expect(helpers.settingsProviderDefaults("cloudflare_ai_anthropic")).toMatchObject({
+      protocol: "anthropic_messages",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      capabilities: { pdfBase64: false, imageBase64: false, streaming: true, modelList: false },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    });
     expect(helpers.settingsProviderDefaults("xai")).toMatchObject({
       protocol: "openai_chat",
       capabilities: { pdfBase64: false, streaming: true }
@@ -305,6 +321,19 @@ describe("bootstrap provider helpers", () => {
       protocol: "openai_responses",
       baseURL: "https://resource.openai.azure.com/openai/v1"
     })).toBe("azure_openai");
+    expect(helpers.settingsProviderFromProfile({
+      id: "cloudflare-workers-ai",
+      protocol: "openai_chat",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1"
+    })).toBe("cloudflare_ai_chat");
+    expect(helpers.settingsProviderFromProfile({
+      protocol: "openai_responses",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1/responses"
+    })).toBe("cloudflare_ai_responses");
+    expect(helpers.settingsProviderFromProfile({
+      protocol: "anthropic_messages",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1/messages"
+    })).toBe("cloudflare_ai_anthropic");
     expect(helpers.settingsProviderFromProfile({
       id: "moonshot",
       protocol: "openai_chat",

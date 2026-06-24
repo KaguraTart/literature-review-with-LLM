@@ -646,6 +646,9 @@ describe("workbench writeback helpers", () => {
       "openai-responses-compatible",
       "gemini",
       "azure-openai",
+      "cloudflare-ai-chat",
+      "cloudflare-ai-responses",
+      "cloudflare-ai-anthropic",
       "github-models",
       "huggingface",
       "deepinfra",
@@ -3058,6 +3061,31 @@ describe("workbench writeback helpers", () => {
     expect(dom.elements.get("zms-status").textContent).toContain("outputDirSaved");
   });
 
+  it("does not persist a changed workbench output directory when creation fails", async () => {
+    const attemptedDirectories: string[] = [];
+    const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      exists: async () => false,
+      makeDirectory: async (path: string) => {
+        attemptedDirectories.push(path);
+        throw new Error("cannot create output directory");
+      }
+    }, prefValues);
+    const dom = fakeDocument({
+      "zms-workbench-output-dir": "/tmp/bad out"
+    });
+    (loaded as any).document = dom;
+    loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir = "/tmp/out";
+    loaded.ZoteroMarkdownSummaryWorkbench.t = (key: string) => key;
+
+    await expect((loaded.ZoteroMarkdownSummaryWorkbench as any).saveOutputDir()).resolves.toBe(false);
+
+    expect(prefValues.outputDir).toBe("/tmp/out");
+    expect(loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir).toBe("/tmp/out");
+    expect(attemptedDirectories).toContain("/tmp/bad out");
+    expect(dom.elements.get("zms-status").textContent).toContain("outputDirCreateFailed");
+  });
+
   it("chooses the workbench output directory with the native folder picker", async () => {
     const filePickerConstants = { modeGetFolder: 2, returnOK: 0, returnReplace: 2 };
     const filePickerCalls: any[] = [];
@@ -3263,6 +3291,31 @@ describe("workbench writeback helpers", () => {
     [
       "over-slashed UNC file URL",
       { spec: "file://///server/share/Review%20Output" },
+      "\\\\server\\share\\Review Output"
+    ],
+    [
+      "encoded Windows long-path file URL",
+      { spec: "file:///%5C%5C%3F%5CC%3A%5CUsers%5Ctart%5CZotero%5CReview%20Output" },
+      "C:\\Users\\tart\\Zotero\\Review Output"
+    ],
+    [
+      "encoded Windows long-path UNC file URL",
+      { spec: "file:///%5C%5C%3F%5CUNC%5Cserver%5Cshare%5CReview%20Output" },
+      "\\\\server\\share\\Review Output"
+    ],
+    [
+      "slash-question drive file URL",
+      { spec: "file://?/C:/Users/tart/Zotero/Review%20Output" },
+      "C:\\Users\\tart\\Zotero\\Review Output"
+    ],
+    [
+      "slash-question UNC file URL",
+      { spec: "file:////?/UNC/server/share/Review%20Output" },
+      "\\\\server\\share\\Review Output"
+    ],
+    [
+      "encoded backslash UNC file URL",
+      { spec: "file:///%5C%5Cserver%5Cshare%5CReview%20Output" },
       "\\\\server\\share\\Review Output"
     ]
   ])("normalizes Windows %s from the workbench folder picker", async (_name, fileURL, expected) => {

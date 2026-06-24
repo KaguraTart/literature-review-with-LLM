@@ -58,6 +58,7 @@ function loadPreferencesController(options: {
   filePickerOpenThrowsWithWindow?: boolean;
   filePickerReturn?: number;
   filePickerExistingPaths?: string[];
+  makeDirectoryThrows?: boolean;
 } = {}) {
   const code = readFileSync(resolve(process.cwd(), "addon/content/preferences.js"), "utf8");
   const elements = new Map<string, any>();
@@ -249,6 +250,7 @@ function loadPreferencesController(options: {
       exists: async (path: string) => path === "/tmp/out/skills",
       getChildren: async (path: string) => path === "/tmp/out/skills" ? [...skillFiles] : [],
       makeDirectory: async (path: string) => {
+        if (options.makeDirectoryThrows) throw new Error("cannot create output directory");
         madeDirectories.push(path);
       },
       writeUTF8: async (path: string) => {
@@ -1401,6 +1403,25 @@ describe("preferences local-agent config helpers", () => {
       capabilities: { streaming: true, pdfBase64: false, modelList: true },
       bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     });
+    expect(helpers.providerDefaults("cloudflare_ai_chat")).toMatchObject({
+      id: "cloudflare-ai-chat",
+      protocol: "openai_chat",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      capabilities: { streaming: true, pdfBase64: false, imageBase64: false, modelList: false }
+    });
+    expect(helpers.providerDefaults("cloudflare_ai_responses")).toMatchObject({
+      id: "cloudflare-ai-responses",
+      protocol: "openai_responses",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      capabilities: { streaming: true, pdfBase64: false, imageBase64: false, modelList: false }
+    });
+    expect(helpers.providerDefaults("cloudflare_ai_anthropic")).toMatchObject({
+      id: "cloudflare-ai-anthropic",
+      protocol: "anthropic_messages",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      capabilities: { streaming: true, pdfBase64: false, imageBase64: false, modelList: false },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
+    });
     expect(helpers.providerDefaults("github_models")).toMatchObject({
       id: "github-models",
       protocol: "openai_chat",
@@ -1586,6 +1607,9 @@ describe("preferences local-agent config helpers", () => {
       "anthropic-compatible",
       "gemini",
       "azure-openai",
+      "cloudflare-ai-chat",
+      "cloudflare-ai-responses",
+      "cloudflare-ai-anthropic",
       "github-models",
       "huggingface",
       "deepinfra",
@@ -1655,6 +1679,25 @@ describe("preferences local-agent config helpers", () => {
       endpointMode: "base_url",
       baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1",
       customHeaders: {}
+    });
+    expect(profiles.find((profile) => profile.id === "cloudflare-ai-chat")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      capabilities: { imageBase64: false, modelList: false }
+    });
+    expect(profiles.find((profile) => profile.id === "cloudflare-ai-responses")).toMatchObject({
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      capabilities: { imageBase64: false, modelList: false }
+    });
+    expect(profiles.find((profile) => profile.id === "cloudflare-ai-anthropic")).toMatchObject({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      capabilities: { imageBase64: false, modelList: false },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     });
     expect(profiles.find((profile) => profile.id === "github-models")).toMatchObject({
       protocol: "openai_chat",
@@ -1843,6 +1886,9 @@ describe("preferences local-agent config helpers", () => {
     expect(profiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([
       "gemini",
       "azure-openai",
+      "cloudflare-ai-chat",
+      "cloudflare-ai-responses",
+      "cloudflare-ai-anthropic",
       "github-models",
       "huggingface",
       "deepinfra",
@@ -1965,6 +2011,24 @@ describe("preferences local-agent config helpers", () => {
       baseURL: "https://api.deepinfra.com/v1/openai",
       bodyExtra: {}
     })).toBe("deepinfra");
+    expect(helpers.providerFromProfile({
+      id: "cloudflare_workers_ai",
+      protocol: "openai_chat",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1",
+      bodyExtra: {}
+    })).toBe("cloudflare_ai_chat");
+    expect(helpers.providerFromProfile({
+      id: "custom-cloudflare-responses",
+      protocol: "openai_responses",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1/responses",
+      bodyExtra: {}
+    })).toBe("cloudflare_ai_responses");
+    expect(helpers.providerFromProfile({
+      id: "custom-cloudflare-anthropic",
+      protocol: "anthropic_messages",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1/messages",
+      bodyExtra: {}
+    })).toBe("cloudflare_ai_anthropic");
   });
 
   it("keeps local-agent skill reset templates specific to their tools", () => {
@@ -2245,6 +2309,44 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).not.toContain("deepinfra_test-secret");
   });
 
+  it("uses named live-check variables for Cloudflare AI setup guides", () => {
+    const helpers = loadPreferencesHelpers();
+    const chatGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("cloudflare_ai_chat"),
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1",
+      apiKey: "cloudflare_test-secret",
+      model: "@cf/meta/llama-3.1-8b-instruct"
+    }, "en-US");
+    const responsesGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("cloudflare_ai_responses"),
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1",
+      apiKey: "cf_responses-test-secret",
+      model: "@cf/meta/llama-3.1-8b-instruct"
+    }, "en-US");
+    const anthropicGuide = helpers.providerSetupGuide({
+      ...helpers.providerDefaults("cloudflare_ai_anthropic"),
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1",
+      apiKey: "cf_anthropic-test-secret",
+      model: "claude-3-5-sonnet-20241022"
+    }, "en-US");
+
+    expect(chatGuide).toContain("CLOUDFLARE_API_KEY=...");
+    expect(chatGuide).toContain("CLOUDFLARE_MODEL=@cf/meta/llama-3.1-8b-instruct");
+    expect(chatGuide).toContain("CLOUDFLARE_BASE_URL=https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1");
+    expect(chatGuide).toContain("--include cloudflare-ai-chat");
+    expect(chatGuide).not.toContain("cloudflare_test-secret");
+    expect(responsesGuide).toContain("CLOUDFLARE_RESPONSES_API_KEY=...");
+    expect(responsesGuide).toContain("CLOUDFLARE_RESPONSES_MODEL=@cf/meta/llama-3.1-8b-instruct");
+    expect(responsesGuide).toContain("CLOUDFLARE_RESPONSES_BASE_URL=https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1");
+    expect(responsesGuide).toContain("--include cloudflare-ai-responses");
+    expect(responsesGuide).not.toContain("cf_responses-test-secret");
+    expect(anthropicGuide).toContain("CLOUDFLARE_ANTHROPIC_API_KEY=...");
+    expect(anthropicGuide).toContain("CLOUDFLARE_ANTHROPIC_MODEL=claude-3-5-sonnet-20241022");
+    expect(anthropicGuide).toContain("CLOUDFLARE_ANTHROPIC_BASE_URL=https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1");
+    expect(anthropicGuide).toContain("--include cloudflare-ai-anthropic");
+    expect(anthropicGuide).not.toContain("cf_anthropic-test-secret");
+  });
+
   it("includes edited Base URL for named provider live-check commands", () => {
     const helpers = loadPreferencesHelpers();
     const guide = helpers.providerSetupGuide({
@@ -2404,6 +2506,19 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toContain("Output directory saved");
   });
 
+  it("does not persist a changed output directory when creation fails", async () => {
+    const { controller, elements, prefValues, madeDirectories } = loadPreferencesController({
+      makeDirectoryThrows: true
+    });
+    elements.get("zms-outputDir").value = "/tmp/bad out";
+
+    await expect(controller.saveOutputDir()).resolves.toBe(false);
+
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.outputDir")).toBeUndefined();
+    expect(madeDirectories).not.toContain("/tmp/bad out");
+    expect(elements.get("zms-status").value).toContain("Output directory failed");
+  });
+
   it("localizes output directory button labels and tooltips", () => {
     const { controller, elements } = loadPreferencesController();
 
@@ -2525,6 +2640,46 @@ describe("preferences local-agent config helpers", () => {
         filePickerFile: { path: "\\\\?\\C:\\Users\\tart\\Documents\\Review Output" }
       },
       "C:\\Users\\tart\\Documents\\Review Output"
+    ],
+    [
+      "encoded Windows long-path file URL",
+      {
+        filePickerFile: { path: "" },
+        filePickerFileURL: { spec: "file:///%5C%5C%3F%5CC%3A%5CUsers%5Ctart%5CDocuments%5CReview%20Output" }
+      },
+      "C:\\Users\\tart\\Documents\\Review Output"
+    ],
+    [
+      "encoded Windows long-path UNC file URL",
+      {
+        filePickerFile: { path: "" },
+        filePickerFileURL: { spec: "file:///%5C%5C%3F%5CUNC%5Cserver%5Cshare%5CReview%20Output" }
+      },
+      "\\\\server\\share\\Review Output"
+    ],
+    [
+      "slash-question drive file URL",
+      {
+        filePickerFile: { path: "" },
+        filePickerFileURL: { spec: "file://?/C:/Users/tart/Documents/Review%20Output" }
+      },
+      "C:\\Users\\tart\\Documents\\Review Output"
+    ],
+    [
+      "slash-question UNC file URL",
+      {
+        filePickerFile: { path: "" },
+        filePickerFileURL: { spec: "file:////?/UNC/server/share/Review%20Output" }
+      },
+      "\\\\server\\share\\Review Output"
+    ],
+    [
+      "encoded backslash UNC file URL",
+      {
+        filePickerFile: { path: "" },
+        filePickerFileURL: { spec: "file:///%5C%5Cserver%5Cshare%5CReview%20Output" }
+      },
+      "\\\\server\\share\\Review Output"
     ],
     [
       "picker.files enumerator fallback",
@@ -2687,6 +2842,9 @@ describe("preferences local-agent config helpers", () => {
       "anthropic-compatible",
       "gemini",
       "azure-openai",
+      "cloudflare-ai-chat",
+      "cloudflare-ai-responses",
+      "cloudflare-ai-anthropic",
       "github-models",
       "huggingface",
       "deepinfra",
@@ -2729,6 +2887,9 @@ describe("preferences local-agent config helpers", () => {
       "anthropic-compatible",
       "gemini",
       "azure-openai",
+      "cloudflare-ai-chat",
+      "cloudflare-ai-responses",
+      "cloudflare-ai-anthropic",
       "github-models",
       "huggingface",
       "deepinfra",

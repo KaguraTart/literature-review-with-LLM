@@ -27,6 +27,9 @@ describe("default provider profiles", () => {
       "anthropic-compatible",
       "gemini",
       "azure-openai",
+      "cloudflare-ai-chat",
+      "cloudflare-ai-responses",
+      "cloudflare-ai-anthropic",
       "github-models",
       "huggingface",
       "deepinfra",
@@ -103,6 +106,25 @@ describe("default provider profiles", () => {
       baseURL: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1",
       customHeaders: {},
       capabilities: { pdfBase64: true, streaming: true, modelList: true }
+    });
+    expect(profiles.find((profile: any) => profile.id === "cloudflare-ai-chat")).toMatchObject({
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      capabilities: { pdfBase64: false, imageBase64: false, streaming: true, modelList: false }
+    });
+    expect(profiles.find((profile: any) => profile.id === "cloudflare-ai-responses")).toMatchObject({
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      capabilities: { pdfBase64: false, imageBase64: false, streaming: true, modelList: false }
+    });
+    expect(profiles.find((profile: any) => profile.id === "cloudflare-ai-anthropic")).toMatchObject({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1",
+      capabilities: { pdfBase64: false, imageBase64: false, streaming: true, modelList: false },
+      bodyExtra: { authHeader: "authorization", anthropicDirectBrowserAccess: false }
     });
     expect(profiles.find((profile: any) => profile.id === "github-models")).toMatchObject({
       protocol: "openai_chat",

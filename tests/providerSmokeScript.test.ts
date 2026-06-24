@@ -12,6 +12,9 @@ const NAMED_LIVE_SPECS = [
   { id: "minimax", envPrefix: "MINIMAX", protocol: "openai_chat", basePath: "/minimax/v1", model: "MiniMax-M2.7-highspeed", secret: "live-minimax-secret" },
   { id: "gemini", envPrefix: "GEMINI", protocol: "openai_chat", basePath: "/gemini/v1beta/openai", model: "gemini-2.5-flash", secret: "live-gemini-secret" },
   { id: "azure-openai", envPrefix: "AZURE_OPENAI", protocol: "openai_responses", basePath: "/azure/openai/v1", model: "azure-gpt-4.1", secret: "live-azure-secret" },
+  { id: "cloudflare-ai-chat", envPrefix: "CLOUDFLARE", protocol: "openai_chat", basePath: "/cloudflare/accounts/test/ai/v1", model: "@cf/meta/llama-3.1-8b-instruct", secret: "live-cloudflare-secret" },
+  { id: "cloudflare-ai-responses", envPrefix: "CLOUDFLARE_RESPONSES", protocol: "openai_responses", basePath: "/cloudflare-responses/accounts/test/ai/v1", model: "@cf/meta/llama-3.1-8b-instruct", secret: "live-cloudflare-responses-secret" },
+  { id: "cloudflare-ai-anthropic", envPrefix: "CLOUDFLARE_ANTHROPIC", protocol: "anthropic_messages", basePath: "/cloudflare-anthropic/accounts/test/ai/v1", model: "claude-3-5-sonnet-20241022", secret: "live-cloudflare-anthropic-secret" },
   { id: "github-models", envPrefix: "GITHUB_MODELS", protocol: "openai_chat", basePath: "/inference", model: "github/model", secret: "live-github-secret" },
   { id: "huggingface", envPrefix: "HUGGINGFACE", protocol: "openai_chat", basePath: "/huggingface/v1", model: "Qwen/Qwen2.5-VL-7B-Instruct", secret: "live-huggingface-secret" },
   { id: "deepinfra", envPrefix: "DEEPINFRA", protocol: "openai_chat", basePath: "/deepinfra/v1/openai", model: "meta-llama/Meta-Llama-3.1-8B-Instruct", secret: "live-deepinfra-secret" },
@@ -45,9 +48,9 @@ const BASIC_LIVE_CASES = BASIC_LIVE_CASE_IDS.join(",");
 const NAMED_LIVE_CASES = NAMED_LIVE_CASE_IDS.join(",");
 const ALL_LIVE_CASE_IDS = [...BASIC_LIVE_CASE_IDS, ...NAMED_LIVE_CASE_IDS];
 const CORE_LIVE_CASE_IDS = ["openai", "openai-compatible", "openai-responses-compatible", "anthropic", "anthropic-compatible"];
-const OPENAI_CHAT_LIVE_CASE_IDS = ["openai-compatible", ...NAMED_LIVE_CASE_IDS.filter((id) => !["azure-openai", "sambanova-responses", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"].includes(id))];
-const OPENAI_RESPONSES_LIVE_CASE_IDS = ["openai", "openai-responses-compatible", "azure-openai", "sambanova-responses"];
-const ANTHROPIC_MESSAGES_LIVE_CASE_IDS = ["anthropic", "anthropic-compatible", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"];
+const OPENAI_CHAT_LIVE_CASE_IDS = ["openai-compatible", ...NAMED_LIVE_CASE_IDS.filter((id) => !["azure-openai", "cloudflare-ai-responses", "cloudflare-ai-anthropic", "sambanova-responses", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"].includes(id))];
+const OPENAI_RESPONSES_LIVE_CASE_IDS = ["openai", "openai-responses-compatible", "azure-openai", "cloudflare-ai-responses", "sambanova-responses"];
+const ANTHROPIC_MESSAGES_LIVE_CASE_IDS = ["anthropic", "anthropic-compatible", "cloudflare-ai-anthropic", "sambanova-anthropic", "deepseek-anthropic", "zai-anthropic"];
 const MAINSTREAM_LIVE_CASE_IDS = ALL_LIVE_CASE_IDS;
 
 describe("provider smoke verifier", () => {
@@ -1082,6 +1085,36 @@ describe("provider smoke verifier", () => {
       endpoint: "https://api.deepinfra.com/v1/openai/chat/completions",
       modelsEndpoint: "https://api.deepinfra.com/v1/openai/models"
     });
+    expect(report.results.find((result: any) => result.id === "cloudflare-ai-chat")).toMatchObject({
+      ok: true,
+      protocol: "openai_chat",
+      endpoint: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1/chat/completions",
+      modelsEndpoint: "",
+      inputChecks: expect.arrayContaining([
+        expect.objectContaining({ mode: "image", supported: false, rejected: true }),
+        expect.objectContaining({ mode: "pdf", supported: false, rejected: true })
+      ])
+    });
+    expect(report.results.find((result: any) => result.id === "cloudflare-ai-responses")).toMatchObject({
+      ok: true,
+      protocol: "openai_responses",
+      endpoint: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1/responses",
+      modelsEndpoint: "",
+      inputChecks: expect.arrayContaining([
+        expect.objectContaining({ mode: "image", supported: false, rejected: true }),
+        expect.objectContaining({ mode: "pdf", supported: false, rejected: true })
+      ])
+    });
+    expect(report.results.find((result: any) => result.id === "cloudflare-ai-anthropic")).toMatchObject({
+      ok: true,
+      protocol: "anthropic_messages",
+      endpoint: "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1/messages",
+      modelsEndpoint: "",
+      inputChecks: expect.arrayContaining([
+        expect.objectContaining({ mode: "image", supported: false, rejected: true }),
+        expect.objectContaining({ mode: "pdf", supported: false, rejected: true })
+      ])
+    });
     expect(report.results.find((result: any) => result.id === "openai")).toMatchObject({
       ok: true,
       protocol: "openai_responses",
@@ -1793,6 +1826,7 @@ describe("provider smoke verifier", () => {
     const deduped = await runLive(["--list", "--include", "core,openai,anthropic-messages,core", "--json"], scrubProviderEnv());
     expect(deduped.cases.map((entry: any) => entry.id)).toEqual([
       ...CORE_LIVE_CASE_IDS,
+      "cloudflare-ai-anthropic",
       "sambanova-anthropic",
       "deepseek-anthropic",
       "zai-anthropic"
@@ -2497,6 +2531,7 @@ function namedProviderEnv(baseURL: string) {
 
 function namedLiveRequestPath(entry: { id: string; protocol: string; basePath: string }) {
   if (entry.protocol === "openai_responses") return `${entry.basePath}/responses`;
+  if (entry.id === "cloudflare-ai-anthropic") return `${entry.basePath}/messages`;
   if (entry.protocol === "anthropic_messages") return `${entry.basePath}/v1/messages`;
   if (["github-models", "perplexity", "deepseek"].includes(entry.id)) {
     return `${entry.basePath}/v1/chat/completions`;

@@ -1708,13 +1708,15 @@ describe("provider adapters", () => {
       "data: {\"choices\":[{\"delta\":{\"content\":\" second\"}}]}"
     ].join("\n"))).toBe("first second");
     expect(redact("Authorization: Bearer sk-test-secret")).toContain("[redacted]");
-    const redacted = redact("Groq gsk_test-secret xAI xai-test-secret Perplexity pplx-test-secret MiniMax ms-test-secret Hugging Face hf_test-secret DeepInfra deepinfra-test-secret Gemini AIzaSyA1234567890abcdefghijklmnop");
+    const redacted = redact("Groq gsk_test-secret xAI xai-test-secret Perplexity pplx-test-secret MiniMax ms-test-secret Hugging Face hf_test-secret DeepInfra deepinfra-test-secret Cloudflare cloudflare-test-secret CF cf-test-secret Gemini AIzaSyA1234567890abcdefghijklmnop");
     expect(redacted).not.toContain("gsk_test-secret");
     expect(redacted).not.toContain("xai-test-secret");
     expect(redacted).not.toContain("pplx-test-secret");
     expect(redacted).not.toContain("ms-test-secret");
     expect(redacted).not.toContain("hf_test-secret");
     expect(redacted).not.toContain("deepinfra-test-secret");
+    expect(redacted).not.toContain("cloudflare-test-secret");
+    expect(redacted).not.toContain("cf-test-secret");
     expect(redacted).not.toContain("AIzaSyA1234567890abcdefghijklmnop");
   });
 

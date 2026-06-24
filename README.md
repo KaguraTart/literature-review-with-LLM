@@ -12,7 +12,7 @@ Zotero literature review and Markdown summary plugin. It helps turn a selected Z
 
 - **Paper-first chat inside Zotero**: open a compact workbench from the selected item and keep the conversation anchored to the current paper.
 - **Markdown-native reading notes**: generate summaries as local Markdown files, link them back to Zotero, copy raw Markdown answers, export evidence-labeled paper reading logs, proposal notes and journal/report outlines with prompt-pack-specific writing checklists, plus formal review drafts, and write selected answers back with a preview step.
-- **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, GitHub Models, Hugging Face, DeepInfra, Fireworks AI, Cerebras, NVIDIA NIM, SambaNova, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page with an in-app setup guide and live-check command template.
+- **Provider-flexible setup**: use MiniMax, DeepSeek, OpenAI-compatible Chat providers, OpenAI Responses-compatible providers, Anthropic / Anthropic-compatible providers, Gemini OpenAI-compatible endpoints, Azure OpenAI, Cloudflare AI, GitHub Models, Hugging Face, DeepInfra, Fireworks AI, Cerebras, NVIDIA NIM, SambaNova, OpenRouter, DashScope, SiliconFlow, Ollama, LM Studio, and other profiles from one settings page with an in-app setup guide and live-check command template.
 - **Provider diagnostics**: OpenAI-compatible, OpenAI Responses, Anthropic, and wrapped router responses are normalized for text, stream errors, model lists, and token usage metadata in saved sessions; the workbench can export a redacted provider diagnostics Markdown report with endpoint, auth, model-list, live-check, and text/image/PDF request-body previews.
 - **Multi-paper comparison and literature matrix**: when multiple Zotero items are selected, the first item becomes the focal paper and the rest become comparison context; the workbench can export an evidence-labeled Markdown literature matrix with a comparison table, evidence coverage map, pairwise contrasts, and a gap ledger, and the built-in `Literature Matrix` skill can continue the analysis with an LLM.
 - **Collection synthesis workspace**: collection batch runs write `papers.json`, paper-note indexes, method matrices, research-gap matrices, heuristic topic clusters, synthesis-claims matrices, synthesis-conflict ledgers, synthesis roadmaps, research-question cards, idea lists, a manual review draft scaffold, a formal review report scaffold, plus a global `collections/index.json` and cross-collection synthesis map with theme-bridge, recurring-gap, and priority boards.
@@ -79,7 +79,7 @@ Open `Tools -> Literature Review with LLM Settings`.
 Important fields:
 
 - `默认接口档案`: choose the active provider profile.
-- `Provider`: built-in presets include MiniMax, OpenAI, OpenAI Compatible Chat, OpenAI Compatible Responses, Anthropic, Anthropic-compatible, Gemini OpenAI-compatible, Azure OpenAI, GitHub Models, Hugging Face, DeepInfra, Fireworks AI, Cerebras, NVIDIA NIM, SambaNova, OpenRouter, DeepSeek, DashScope, SiliconFlow, Ollama, LM Studio, Local Agents, and others.
+- `Provider`: built-in presets include MiniMax, OpenAI, OpenAI Compatible Chat, OpenAI Compatible Responses, Anthropic, Anthropic-compatible, Gemini OpenAI-compatible, Azure OpenAI, Cloudflare AI OpenAI Chat, Cloudflare AI Responses, Cloudflare AI Anthropic, GitHub Models, Hugging Face, DeepInfra, Fireworks AI, Cerebras, NVIDIA NIM, SambaNova, OpenRouter, DeepSeek, DashScope, SiliconFlow, Ollama, LM Studio, Local Agents, and others.
 - `Base URL`: provider endpoint root, for example `https://api.openai.com/v1` or `http://127.0.0.1:11434/v1`.
 - Base URLs may include query parameters required by a gateway or Azure-style route, for example `?api-version=preview`; the plugin appends `/chat/completions`, `/responses`, `/messages`, or `/models` before the query string.
 - `API Key`: provider API key. Local providers such as Ollama may not require one.
@@ -100,6 +100,7 @@ Provider notes:
 - Anthropic profiles use the messages endpoint. Use `Anthropic` for the official API key header, and `Anthropic Compatible Messages` for routers that expose Anthropic-style `/v1/messages` with bearer auth.
 - Anthropic-compatible requests also retry without optional body fields such as `stream`, `metadata`, `thinking`, `top_p`, `top_k`, `stop_sequences`, `tools`, or `tool_choice` when a router explicitly rejects them. If a router rejects the `anthropic-version` header, the settings test, workbench, and direct summary path retry once without that header; you can also set `bodyExtra.omitAnthropicVersion` to `true`.
 - Gemini is currently configured through the OpenAI-compatible endpoint style.
+- Cloudflare AI presets use `https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1`; replace `YOUR_ACCOUNT_ID` with your Cloudflare account ID and use a Cloudflare API token as the API key. Three presets are available: OpenAI Chat, OpenAI Responses, and Anthropic-compatible Messages. Model list and raw image/PDF input are disabled by default because support depends on the selected Workers AI or routed model.
 - GitHub Models uses `https://models.github.ai/inference` without an added `/v1` segment and includes the required GitHub API headers; use a PAT with Models access as the API key.
 - Hugging Face uses the `https://router.huggingface.co/v1` OpenAI-compatible Chat Completions router; use a Hugging Face access token as the API key. The preset declares image input by default, but actual image understanding depends on the selected model.
 - DeepInfra uses `https://api.deepinfra.com/v1/openai` for OpenAI-compatible Chat Completions; use a DeepInfra API key. The preset declares image input because DeepInfra vision/OCR models accept OpenAI-style image content; actual image understanding depends on the selected model.
@@ -267,6 +268,9 @@ Named provider live checks use provider-specific environment variables:
 MINIMAX_API_KEY=... MINIMAX_MODEL=... npm run verify:provider:live -- --include minimax
 GEMINI_API_KEY=... GEMINI_MODEL=... npm run verify:provider:live -- --include gemini
 AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=... AZURE_OPENAI_BASE_URL=... npm run verify:provider:live -- --include azure-openai
+CLOUDFLARE_API_KEY=... CLOUDFLARE_MODEL=... CLOUDFLARE_BASE_URL=https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1 npm run verify:provider:live -- --include cloudflare-ai-chat
+CLOUDFLARE_RESPONSES_API_KEY=... CLOUDFLARE_RESPONSES_MODEL=... CLOUDFLARE_RESPONSES_BASE_URL=https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1 npm run verify:provider:live -- --include cloudflare-ai-responses
+CLOUDFLARE_ANTHROPIC_API_KEY=... CLOUDFLARE_ANTHROPIC_MODEL=... CLOUDFLARE_ANTHROPIC_BASE_URL=https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1 npm run verify:provider:live -- --include cloudflare-ai-anthropic
 GITHUB_MODELS_API_KEY=... GITHUB_MODELS_MODEL=... npm run verify:provider:live -- --include github-models
 HUGGINGFACE_API_KEY=... HUGGINGFACE_MODEL=... npm run verify:provider:live -- --include huggingface
 DEEPINFRA_API_KEY=... DEEPINFRA_MODEL=... npm run verify:provider:live -- --include deepinfra
@@ -286,7 +290,7 @@ OLLAMA_MODEL=llama3.1 OLLAMA_BASE_URL=http://localhost:11434/v1 npm run verify:p
 LM_STUDIO_MODEL=local-model LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1 npm run verify:provider:live -- --include lm-studio
 ```
 
-The same naming pattern is available for `XAI_*`, `TOGETHER_*`, `KIMI_*`, `PERPLEXITY_*`, `DEEPSEEK_ANTHROPIC_*`, `ZAI_ANTHROPIC_*`, `ZHIPU_*`, `VOLCENGINE_*`, `QIANFAN_*`, `HUNYUAN_*`, `HUGGINGFACE_*`, and `DEEPINFRA_*`. For remote named providers, add the matching `*_BASE_URL` only when you override the built-in endpoint or use a proxy. For local providers such as Ollama and LM Studio, `*_BASE_URL` is explicit in live checks so running all live checks without env config does not accidentally call a local port; API keys are optional unless your local server requires one.
+The same naming pattern is available for `XAI_*`, `TOGETHER_*`, `KIMI_*`, `PERPLEXITY_*`, `DEEPSEEK_ANTHROPIC_*`, `ZAI_ANTHROPIC_*`, `ZHIPU_*`, `VOLCENGINE_*`, `QIANFAN_*`, `HUNYUAN_*`, `HUGGINGFACE_*`, `DEEPINFRA_*`, `CLOUDFLARE_*`, `CLOUDFLARE_RESPONSES_*`, and `CLOUDFLARE_ANTHROPIC_*`. For remote named providers, add the matching `*_BASE_URL` only when you override the built-in endpoint or use a proxy. For local providers such as Ollama and LM Studio, `*_BASE_URL` is explicit in live checks so running all live checks without env config does not accidentally call a local port; API keys are optional unless your local server requires one.
 
 Run `npm run verify:provider:live -- --list --json` to print every live-check case with its protocol, profile id, and environment variable names.
 
