@@ -111,6 +111,23 @@
   margin-bottom: 10px;
 }
 
+.zms-output-dir-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.zms-output-dir-row input,
+.zms-output-dir-row button {
+  margin-bottom: 0;
+}
+
+.zms-output-dir-row button {
+  white-space: nowrap;
+}
+
 .zms-checkbox-row {
   display: flex !important;
   gap: 7px;
@@ -1203,6 +1220,10 @@ button:disabled {
 }
 
 @media (max-width: 560px) {
+  .zms-output-dir-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   #zms-workbench[data-embedded="true"] .zms-sidebar {
     width: calc(100% - 20px);
   }

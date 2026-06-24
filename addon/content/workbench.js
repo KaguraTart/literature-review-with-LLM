@@ -171,6 +171,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     this.bindActions();
     this.loadSettings();
     this.applyLanguage();
+    this.renderOutputDirSettings();
     this.setStatus(this.t("loading"));
     try {
       this.state.launchPayload = launchPayload();
@@ -250,6 +251,8 @@ var ZoteroMarkdownSummaryWorkbench = {
       "zms-settings-toggle": () => this.toggleSettings(),
       "zms-settings-close": () => this.toggleSettings(false),
       "zms-close-workbench": () => this.closeWorkbench(),
+      "zms-workbench-choose-output-dir": () => this.chooseOutputDir(),
+      "zms-workbench-save-output-dir": () => this.saveOutputDir(),
       "zms-save-profile-settings": () => this.saveProfileSettings(),
       "zms-test-profile-settings": () => this.testProfileSettings(),
       "zms-export-provider-diagnostics": () => this.exportProviderDiagnostics(),
@@ -492,6 +495,49 @@ var ZoteroMarkdownSummaryWorkbench = {
       || null;
   },
 
+  renderOutputDirSettings() {
+    setInputValue("zms-workbench-output-dir", this.state.outputDir || resolvedOutputDir(pref("outputDir")));
+  },
+
+  async saveOutputDir(options = {}) {
+    const element = document.getElementById("zms-workbench-output-dir");
+    const nextOutputDir = resolvedOutputDir(element?.value || this.state.outputDir || pref("outputDir"));
+    if (element) element.value = nextOutputDir;
+    if (!nextOutputDir) {
+      if (options.status !== false) this.setStatus(this.t("outputDirMissing"));
+      return false;
+    }
+    this.state.outputDir = nextOutputDir;
+    setPref("outputDir", nextOutputDir);
+    try {
+      await ensureDirectory(nextOutputDir);
+      await ensureSkillTemplates(nextOutputDir);
+      if (this.state.item) {
+        await ensureDirectory(this.sessionDir());
+        await this.renderSkills();
+        await this.renderSessions();
+      }
+      if (options.status !== false) this.setStatus(`${this.t("outputDirSaved")}: ${nextOutputDir}`);
+      return true;
+    } catch (err) {
+      if (options.status !== false) this.setStatus(`${this.t("outputDirCreateFailed")}: ${safeError(err)}`);
+      return false;
+    }
+  },
+
+  async chooseOutputDir() {
+    const element = document.getElementById("zms-workbench-output-dir");
+    try {
+      const selected = await chooseOutputDirectory(element?.value || this.state.outputDir, this.t("chooseOutputDirTitle"));
+      if (!selected) return false;
+      if (element) element.value = selected;
+      return this.saveOutputDir();
+    } catch (err) {
+      this.setStatus(`${this.t("outputDirChooseFailed")}: ${safeError(err)}`);
+      return false;
+    }
+  },
+
   applyLanguage() {
     document.title = this.t("title");
     setText("zms-workbench-title", this.t("title"));
@@ -503,6 +549,9 @@ var ZoteroMarkdownSummaryWorkbench = {
     setButtonLabel("zms-stop", "■", this.t("stop"));
     setText("zms-chat-paper-title", this.t("title"));
     setText("zms-quick-settings-heading", this.t("quickSettings"));
+    setText("zms-workbench-output-dir-label", this.t("outputDir"));
+    setButtonLabel("zms-workbench-choose-output-dir", this.t("chooseOutputDir"), this.t("chooseOutputDirTitle"));
+    setButtonLabel("zms-workbench-save-output-dir", this.t("saveOutputDir"), this.t("saveOutputDir"));
     setText("zms-save-profile-settings", this.t("save"));
     setText("zms-test-profile-settings", this.t("saveAndTest"));
     setText("zms-export-provider-diagnostics", this.t("exportProviderDiagnostics"));
@@ -3720,6 +3769,54 @@ function resolvedOutputDir(value) {
   return defaultOutputDir();
 }
 
+async function chooseOutputDirectory(currentPath, title) {
+  const cc = typeof Cc !== "undefined" ? Cc : undefined;
+  const ci = typeof Ci !== "undefined" ? Ci : undefined;
+  const nsIFilePicker = ci?.nsIFilePicker;
+  const pickerFactory = cc?.["@mozilla.org/filepicker;1"];
+  if (!pickerFactory || !nsIFilePicker) {
+    throw new Error("Folder picker is not available in this Zotero runtime");
+  }
+  const picker = pickerFactory.createInstance(nsIFilePicker);
+  picker.init(window, title || "Choose output folder", nsIFilePicker.modeGetFolder);
+  const displayDirectory = fileForDirectoryPicker(currentPath);
+  if (displayDirectory) picker.displayDirectory = displayDirectory;
+  const result = await openDirectoryPicker(picker);
+  const accepted = result === nsIFilePicker.returnOK || result === nsIFilePicker.returnReplace;
+  if (!accepted) return "";
+  return String(picker.file?.path || "").trim();
+}
+
+function fileForDirectoryPicker(path) {
+  const raw = String(path || "").trim();
+  if (!raw) return null;
+  try {
+    const cc = typeof Cc !== "undefined" ? Cc : undefined;
+    const ci = typeof Ci !== "undefined" ? Ci : undefined;
+    const fileFactory = cc?.["@mozilla.org/file/local;1"];
+    if (!fileFactory) return null;
+    const file = fileFactory.createInstance(ci?.nsIFile);
+    file.initWithPath(raw);
+    if (typeof file.exists === "function" && !file.exists()) {
+      return file.parent || null;
+    }
+    if (typeof file.isDirectory === "function" && !file.isDirectory()) {
+      return file.parent || null;
+    }
+    return file;
+  } catch (_err) {
+    return null;
+  }
+}
+
+async function openDirectoryPicker(picker) {
+  if (typeof picker.open === "function") {
+    return new Promise((resolve) => picker.open(resolve));
+  }
+  if (typeof picker.show === "function") return picker.show();
+  throw new Error("Folder picker cannot be opened");
+}
+
 function shouldPersistResolvedOutputDir(value) {
   const raw = String(value || "").trim();
   return !raw || isLegacyPackagedOutputDir(raw);
@@ -5946,8 +6043,9 @@ function visualExtractionReportData(payload, options = {}) {
   const evidenceLabels = visualExtractionEvidenceLabels(answer);
   const images = Array.isArray(user?.images) ? user.images : [];
   const chartDataDrafts = visualExtractionChartDataDrafts(answer, tables, images);
-  const pixelDataDrafts = visualExtractionPixelDataDrafts(answer, tables, images);
-  const calibrationAnchors = visualExtractionCalibrationAnchors(answer, tables, pixelDataDrafts, images);
+  const rawPixelDataDrafts = visualExtractionPixelDataDrafts(answer, tables, images);
+  const calibrationAnchors = visualExtractionCalibrationAnchors(answer, tables, rawPixelDataDrafts, images);
+  const pixelDataDrafts = visualExtractionApplyAxisCalibration(rawPixelDataDrafts, calibrationAnchors);
   const chartQualityReview = visualExtractionChartQualityReview(chartDataDrafts, pixelDataDrafts, {
     evidenceLabels,
     images,
@@ -6386,7 +6484,10 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
         ["pixelY", point.pixelY === null || point.pixelY === undefined ? "" : point.pixelY],
         ["axisX", point.axisX || ""],
         ["axisY", point.axisY || ""],
+        ["axisXCalibrated", point.axisXCalibrated ? "true" : ""],
+        ["axisYCalibrated", point.axisYCalibrated ? "true" : ""],
         ["confidence", point.confidence || ""],
+        ["calibrationBasis", point.calibrationBasis || ""],
         ["basis", point.basis || ""]
       ]) {
         if (value === "") continue;
@@ -6724,6 +6825,120 @@ function visualExtractionCalibrationAnchorsFromTable(table, images = []) {
   }).filter((anchor) => anchor.axis && anchor.pixel !== null && anchor.value);
 }
 
+function visualExtractionApplyAxisCalibration(pixelDataDrafts = [], calibrationAnchors = []) {
+  const xScale = visualExtractionAxisCalibrationScale(calibrationAnchors, "X");
+  const yScale = visualExtractionAxisCalibrationScale(calibrationAnchors, "Y");
+  if (!xScale && !yScale) return pixelDataDrafts;
+  return (pixelDataDrafts || []).map((draft) => ({
+    ...draft,
+    points: (draft.points || []).map((point) => visualExtractionApplyAxisCalibrationToPoint(point, { X: xScale, Y: yScale }))
+  }));
+}
+
+function visualExtractionApplyAxisCalibrationToPoint(point, scales) {
+  const next = { ...(point || {}) };
+  const basisParts = [];
+  const evidenceLabels = [...(next.evidenceLabels || [])];
+  if (!mdText(next.axisX || "") && next.pixelX !== null && next.pixelX !== undefined && scales.X) {
+    const value = visualExtractionAxisValueFromPixel(scales.X, next.pixelX);
+    if (value !== null) {
+      next.axisX = visualExtractionFormatCalibratedAxisValue(value, scales.X.unit);
+      next.axisXCalibrated = true;
+      basisParts.push(visualExtractionCalibrationBasis(scales.X));
+      evidenceLabels.push(...(scales.X.evidenceLabels || []));
+    }
+  }
+  if (!mdText(next.axisY || "") && next.pixelY !== null && next.pixelY !== undefined && scales.Y) {
+    const value = visualExtractionAxisValueFromPixel(scales.Y, next.pixelY);
+    if (value !== null) {
+      next.axisY = visualExtractionFormatCalibratedAxisValue(value, scales.Y.unit);
+      next.axisYCalibrated = true;
+      basisParts.push(visualExtractionCalibrationBasis(scales.Y));
+      evidenceLabels.push(...(scales.Y.evidenceLabels || []));
+    }
+  }
+  if (basisParts.length) {
+    next.calibrationBasis = Array.from(new Set(basisParts)).join("; ");
+    next.basis = visualExtractionMergeBasis(next.basis, next.calibrationBasis);
+    next.evidenceLabels = Array.from(new Set(evidenceLabels));
+  }
+  return next;
+}
+
+function visualExtractionAxisCalibrationScale(calibrationAnchors = [], axisName) {
+  const axis = visualExtractionAxisName(axisName);
+  const anchors = (calibrationAnchors || []).map((anchor) => ({
+    ...anchor,
+    axis: visualExtractionAxisName(anchor?.axis),
+    pixel: Number(anchor?.pixel),
+    numericValue: visualExtractionNumber(anchor?.value)
+  })).filter((anchor) =>
+    anchor.axis === axis
+    && Number.isFinite(anchor.pixel)
+    && anchor.numericValue !== null
+    && Number.isFinite(anchor.numericValue)
+  );
+  if (anchors.length < 2) return null;
+  let selected = null;
+  for (let left = 0; left < anchors.length; left += 1) {
+    for (let right = left + 1; right < anchors.length; right += 1) {
+      const pixelSpan = Math.abs(anchors[right].pixel - anchors[left].pixel);
+      const valueSpan = Math.abs(anchors[right].numericValue - anchors[left].numericValue);
+      if (!pixelSpan || !valueSpan) continue;
+      if (!selected || pixelSpan > selected.pixelSpan) {
+        selected = {
+          left: anchors[left],
+          right: anchors[right],
+          pixelSpan
+        };
+      }
+    }
+  }
+  if (!selected) return null;
+  const unit = mdText(selected.left.unit || selected.right.unit || "");
+  return {
+    axis,
+    pixelA: selected.left.pixel,
+    valueA: selected.left.numericValue,
+    pixelB: selected.right.pixel,
+    valueB: selected.right.numericValue,
+    unit,
+    evidenceLabels: Array.from(new Set([...(selected.left.evidenceLabels || []), ...(selected.right.evidenceLabels || [])]))
+  };
+}
+
+function visualExtractionAxisValueFromPixel(scale, pixel) {
+  const numericPixel = Number(pixel);
+  const pixelSpan = Number(scale?.pixelB) - Number(scale?.pixelA);
+  const valueSpan = Number(scale?.valueB) - Number(scale?.valueA);
+  if (!Number.isFinite(numericPixel) || !Number.isFinite(pixelSpan) || !Number.isFinite(valueSpan) || pixelSpan === 0) {
+    return null;
+  }
+  return Number(scale.valueA) + ((numericPixel - Number(scale.pixelA)) * valueSpan / pixelSpan);
+}
+
+function visualExtractionFormatCalibratedAxisValue(value, unit = "") {
+  if (!Number.isFinite(Number(value))) return "";
+  const normalized = Math.abs(Number(value)) >= 1000000 || (Math.abs(Number(value)) > 0 && Math.abs(Number(value)) < 0.0001)
+    ? Number(Number(value).toPrecision(6))
+    : Number(Number(value).toFixed(6));
+  const text = String(Object.is(normalized, -0) ? 0 : normalized);
+  const suffix = mdText(unit);
+  return suffix ? `${text} ${suffix}` : text;
+}
+
+function visualExtractionCalibrationBasis(scale) {
+  if (!scale) return "";
+  const left = visualExtractionFormatCalibratedAxisValue(scale.valueA, scale.unit);
+  const right = visualExtractionFormatCalibratedAxisValue(scale.valueB, scale.unit);
+  return `linear ${scale.axis} calibration: ${scale.pixelA}px=${left}, ${scale.pixelB}px=${right}`;
+}
+
+function visualExtractionMergeBasis(existing, addition) {
+  const parts = [existing, addition].map(mdText).filter(Boolean);
+  return Array.from(new Set(parts)).join(" · ");
+}
+
 function visualExtractionAxisName(value) {
   const text = mdText(value);
   if (/^(x|x[-_\s]?axis|axis\s*x)$/i.test(text) || /横轴|橫軸|横坐标|橫座標|水平/.test(text)) return "X";
@@ -6734,6 +6949,7 @@ function visualExtractionAxisName(value) {
 function visualExtractionNumericTextPoints(text) {
   return String(text || "").split(/\r?\n/)
     .map((line) => mdText(line.replace(/^[-*]\s*/, "")))
+    .filter((line) => !visualExtractionLooksLikeMarkdownTableLine(line))
     .filter((line) => visualExtractionLooksLikeDataLine(line))
     .map((line) => {
       const number = visualExtractionNumber(line);
@@ -6751,6 +6967,13 @@ function visualExtractionNumericTextPoints(text) {
       };
     })
     .filter((point) => point.yNumber !== null);
+}
+
+function visualExtractionLooksLikeMarkdownTableLine(line) {
+  const text = String(line || "").trim();
+  if (!text) return false;
+  if (/^\|.*\|$/.test(text)) return true;
+  return /^:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+$/.test(text);
 }
 
 function visualExtractionLooksLikeDataLine(line) {

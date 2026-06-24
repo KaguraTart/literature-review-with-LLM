@@ -3005,6 +3005,92 @@ describe("workbench writeback helpers", () => {
     expect(loaded.resolvedOutputDir("/tmp/custom")).toBe("/tmp/custom");
   });
 
+  it("saves the workbench output directory to shared preferences", async () => {
+    const madeDirectories: string[] = [];
+    const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      exists: async () => false,
+      makeDirectory: async (path: string) => {
+        madeDirectories.push(path);
+      }
+    }, prefValues);
+    const dom = fakeDocument({
+      "zms-workbench-output-dir": "/tmp/workbench output"
+    });
+    (loaded as any).document = dom;
+    loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir = "/tmp/out";
+    loaded.ZoteroMarkdownSummaryWorkbench.t = (key: string) => key;
+
+    await expect((loaded.ZoteroMarkdownSummaryWorkbench as any).saveOutputDir()).resolves.toBe(true);
+
+    expect(prefValues.outputDir).toBe("/tmp/workbench output");
+    expect(loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir).toBe("/tmp/workbench output");
+    expect(madeDirectories).toContain("/tmp/workbench output");
+    expect(dom.elements.get("zms-status").textContent).toContain("outputDirSaved");
+  });
+
+  it("chooses the workbench output directory with the native folder picker", async () => {
+    const filePickerConstants = { modeGetFolder: 2, returnOK: 0, returnReplace: 2 };
+    const filePickerCalls: any[] = [];
+    const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      exists: async () => true
+    }, prefValues);
+    (loaded as any).Cc = {
+      "@mozilla.org/filepicker;1": {
+        createInstance: () => {
+          const picker: any = {
+            file: { path: "/tmp/picked output" },
+            init: (_parent: any, title: string, mode: number) => filePickerCalls.push({ title, mode }),
+            open: (callback: (result: number) => void) => callback(filePickerConstants.returnOK)
+          };
+          Object.defineProperty(picker, "displayDirectory", {
+            set(value: any) {
+              const last = filePickerCalls[filePickerCalls.length - 1];
+              if (last) last.displayDirectory = value?.path || "";
+            }
+          });
+          return picker;
+        }
+      },
+      "@mozilla.org/file/local;1": {
+        createInstance: () => ({
+          path: "",
+          parent: null as any,
+          initWithPath(path: string) {
+            this.path = path;
+            this.parent = { path: path.replace(/[\\/][^\\/]*$/, "") || path, exists: () => true, isDirectory: () => true };
+          },
+          exists: () => true,
+          isDirectory: () => true
+        })
+      }
+    };
+    (loaded as any).Ci = {
+      nsIFilePicker: filePickerConstants,
+      nsIFile: function nsIFile() {}
+    };
+    const dom = fakeDocument({
+      "zms-workbench-output-dir": "/tmp/current output"
+    });
+    (loaded as any).document = dom;
+    loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir = "/tmp/out";
+    loaded.ZoteroMarkdownSummaryWorkbench.t = (key: string) => ({
+      chooseOutputDirTitle: "Choose output folder",
+      outputDirSaved: "Output directory saved"
+    }[key] || key);
+
+    await expect((loaded.ZoteroMarkdownSummaryWorkbench as any).chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      displayDirectory: "/tmp/current output"
+    });
+    expect(dom.elements.get("zms-workbench-output-dir").value).toBe("/tmp/picked output");
+    expect(prefValues.outputDir).toBe("/tmp/picked output");
+  });
+
   it("falls back to the built-in skill template when the configured output directory is unreadable", async () => {
     const loaded = loadWorkbenchHelpers(new Map(), {
       exists: async (path: string) => {
@@ -4967,6 +5053,80 @@ describe("workbench writeback helpers", () => {
     });
     expect(files.get(csvPath)).toContain("chart:1,1,source,dense-point-table,[image],assistant-dense,curve.png");
     expect(files.get(csvPath)).toContain("chart:1,3,yNumber,10,[image],assistant-dense,curve.png");
+  });
+
+  it("infers missing axis values from calibration anchors in pixel drafts", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "CAL",
+      getCollections: () => [10]
+    };
+    workbench.state.contextSourceHash = "sourcehash";
+    workbench.state.context = {
+      metadata: { title: "Calibrated Chart Paper" }
+    };
+    workbench.state.messages = [
+      {
+        id: "user-calibration",
+        role: "user",
+        content: "Extract chart points from the figure",
+        images: [{ name: "chart.png", mimeType: "image/png", size: 88 }]
+      },
+      {
+        id: "assistant-calibration",
+        role: "assistant",
+        profileName: "MiniMax",
+        content: [
+          "## Pixel / Coordinate Data Draft",
+          "| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| baseline | p1 | 250 | 250 |  |  | low | [image] |",
+          "",
+          "## Axis Calibration Anchors",
+          "| Axis | Pixel | Value | Unit | Source | Confidence |",
+          "| --- | --- | --- | --- | --- | --- |",
+          "| X | 50 | 0 | s | [image] | medium |",
+          "| X | 450 | 10 | s | [image] | medium |",
+          "| Y | 400 | 0 | ms | [image] | medium |",
+          "| Y | 100 | 30 | ms | [image] | medium |"
+        ].join("\n")
+      }
+    ];
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportVisualExtractionReport();
+
+    const reportPath = "/tmp/out/collections/COL/writing/visual-extraction-CAL.md";
+    const report = files.get(reportPath) || "";
+    expect(report).toContain("| baseline | p1 | 250 | 250 | 5 s | 15 ms | low | [image] · linear X calibration: 50px=0 s, 450px=10 s; linear Y calibration: 400px=0 ms, 100px=30 ms | [image] |");
+    expect(report).toContain("| axis-calibration | pass | calibration anchors present: X 2, Y 2 |");
+    expect(report).toContain("| calibration-quality | pass | spans: X 400 px, Y 300 px; numeric anchors: 4/4; monotonic axes: X, Y |");
+
+    const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-CAL.json";
+    const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-CAL.csv";
+    const parsed = JSON.parse(files.get(jsonPath) || "{}");
+    expect(parsed.pixelDataDrafts[0].points[0]).toMatchObject({
+      series: "baseline",
+      point: "p1",
+      pixelX: 250,
+      pixelY: 250,
+      axisX: "5 s",
+      axisY: "15 ms",
+      axisXCalibrated: true,
+      axisYCalibrated: true,
+      calibrationBasis: "linear X calibration: 50px=0 s, 450px=10 s; linear Y calibration: 400px=0 ms, 100px=30 ms"
+    });
+    expect(files.get(csvPath)).toContain("pixel:1,1,axisX,5 s,[image],assistant-calibration,chart.png");
+    expect(files.get(csvPath)).toContain("pixel:1,1,axisY,15 ms,[image],assistant-calibration,chart.png");
+    expect(files.get(csvPath)).toContain("pixel:1,1,axisXCalibrated,true,[image],assistant-calibration,chart.png");
+    expect(files.get(csvPath)).toContain("pixel:1,1,calibrationBasis,\"linear X calibration: 50px=0 s, 450px=10 s; linear Y calibration: 400px=0 ms, 100px=30 ms\",[image],assistant-calibration,chart.png");
   });
 
   it("flags low-quality axis calibration anchors in visual extraction reports", () => {
