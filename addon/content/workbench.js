@@ -6005,7 +6005,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
   const chartReviewActions = Array.isArray(data?.chartReviewActions)
     ? data.chartReviewActions
     : visualExtractionChartReviewActions(chartQualityReview, labels);
-  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors);
+  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors, chartReviewActions);
   const imageInventory = images.length
     ? [
       `| ${labels.imageName} | ${labels.imageType} | ${labels.imageSize} | ${labels.localOcr} |`,
@@ -6116,7 +6116,8 @@ function renderVisualExtractionReportCsv(data) {
     data?.tables || [],
     data?.chartDataDrafts || [],
     data?.pixelDataDrafts || [],
-    data?.calibrationAnchors || []
+    data?.calibrationAnchors || [],
+    data?.chartReviewActions || []
   );
   const header = ["tableIndex", "rowIndex", "column", "value", "evidenceLabels", "sourceAssistantMessageId", "imageNames"];
   const imageNames = (data?.images || []).map((image) => image.name).filter(Boolean).join("; ");
@@ -6308,7 +6309,7 @@ function visualExtractionDataRow(columns, cells) {
   return row;
 }
 
-function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataDrafts = [], calibrationAnchors = []) {
+function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataDrafts = [], calibrationAnchors = [], chartReviewActions = []) {
   const rows = [];
   for (const table of tables || []) {
     for (const [rowIndex, row] of (table.rows || []).entries()) {
@@ -6394,6 +6395,31 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       ["unit", anchor.unit || ""],
       ["confidence", anchor.confidence || ""],
       ["basis", anchor.basis || ""]
+    ]) {
+      if (value === "") continue;
+      rows.push({ ...base, column, value: mdText(value) });
+    }
+  }
+  for (const [actionIndex, action] of (chartReviewActions || []).entries()) {
+    const queueId = action.queueId || `review-${actionIndex + 1}`;
+    const base = {
+      tableIndex: `review-action:${queueId}`,
+      rowIndex: actionIndex + 1,
+      evidenceLabels: []
+    };
+    for (const [column, value] of [
+      ["queueId", queueId],
+      ["actionId", action.actionId || ""],
+      ["priority", action.priority || ""],
+      ["reviewState", action.reviewState || ""],
+      ["relatedCheck", action.checkId || ""],
+      ["checkStatus", action.status || ""],
+      ["nextStep", action.nextStep || ""],
+      ["doneCriteria", action.doneCriteria || ""],
+      ["reviewer", action.reviewer || ""],
+      ["due", action.due || ""],
+      ["notes", action.notes || ""],
+      ["detail", action.detail || ""]
     ]) {
       if (value === "") continue;
       rows.push({ ...base, column, value: mdText(value) });
@@ -7070,7 +7096,15 @@ function visualExtractionChartReviewActions(review, labels) {
     .filter((check) => check?.status && check.status !== "pass")
     .map((check) => visualExtractionChartReviewActionForCheck(check, labels))
     .filter(Boolean)
-    .sort((left, right) => (priorities[left.priority] ?? 9) - (priorities[right.priority] ?? 9));
+    .sort((left, right) => (priorities[left.priority] ?? 9) - (priorities[right.priority] ?? 9))
+    .map((action, index) => ({
+      queueId: `review-${index + 1}`,
+      reviewState: "todo",
+      reviewer: "",
+      due: "",
+      notes: "",
+      ...action
+    }));
 }
 
 function visualExtractionChartReviewActionForCheck(check, labels) {
@@ -7088,14 +7122,16 @@ function visualExtractionChartReviewActionForCheck(check, labels) {
     return {
       ...base,
       actionId: "reconstruct-chart-data",
-      nextStep: labels.reviewActionReconstructChartData
+      nextStep: labels.reviewActionReconstructChartData,
+      doneCriteria: labels.reviewDoneReconstructChartData
     };
   }
   if (id === "pixel-coordinates") {
     return {
       ...base,
       actionId: "add-pixel-coordinate-table",
-      nextStep: labels.reviewActionAddPixelCoordinates
+      nextStep: labels.reviewActionAddPixelCoordinates,
+      doneCriteria: labels.reviewDoneAddPixelCoordinates
     };
   }
   if (id === "axis-calibration") {
@@ -7103,7 +7139,8 @@ function visualExtractionChartReviewActionForCheck(check, labels) {
       ...base,
       actionId: "add-axis-calibration-anchors",
       priority: "high",
-      nextStep: labels.reviewActionAddAxisCalibration
+      nextStep: labels.reviewActionAddAxisCalibration,
+      doneCriteria: labels.reviewDoneAddAxisCalibration
     };
   }
   if (id === "calibration-quality") {
@@ -7111,7 +7148,8 @@ function visualExtractionChartReviewActionForCheck(check, labels) {
       ...base,
       actionId: "verify-calibration-quality",
       priority: severe ? "high" : "medium",
-      nextStep: labels.reviewActionVerifyCalibrationQuality
+      nextStep: labels.reviewActionVerifyCalibrationQuality,
+      doneCriteria: labels.reviewDoneVerifyCalibrationQuality
     };
   }
   if (id === "confidence") {
@@ -7119,7 +7157,8 @@ function visualExtractionChartReviewActionForCheck(check, labels) {
       ...base,
       actionId: "confirm-low-confidence-readings",
       priority: "medium",
-      nextStep: labels.reviewActionConfirmConfidence
+      nextStep: labels.reviewActionConfirmConfidence,
+      doneCriteria: labels.reviewDoneConfirmConfidence
     };
   }
   if (id === "image-evidence") {
@@ -7127,7 +7166,8 @@ function visualExtractionChartReviewActionForCheck(check, labels) {
       ...base,
       actionId: "separate-visual-evidence",
       priority: "medium",
-      nextStep: labels.reviewActionSeparateImageEvidence
+      nextStep: labels.reviewActionSeparateImageEvidence,
+      doneCriteria: labels.reviewDoneSeparateImageEvidence
     };
   }
   if (id === "point-count") {
@@ -7135,25 +7175,32 @@ function visualExtractionChartReviewActionForCheck(check, labels) {
       ...base,
       actionId: "request-denser-point-table",
       priority: severe ? "high" : "medium",
-      nextStep: labels.reviewActionRequestMorePoints
+      nextStep: labels.reviewActionRequestMorePoints,
+      doneCriteria: labels.reviewDoneRequestMorePoints
     };
   }
   return {
     ...base,
     actionId: "manual-review",
-    nextStep: labels.reviewActionManualReview
+    nextStep: labels.reviewActionManualReview,
+    doneCriteria: labels.reviewDoneManualReview
   };
 }
 
 function visualExtractionChartReviewActionsMarkdown(actions, labels) {
   return [
-    `| ${labels.priority} | ${labels.action} | ${labels.relatedCheck} | ${labels.nextStep} | ${labels.detail} |`,
-    "| --- | --- | --- | --- | --- |",
+    `| ${labels.priority} | ${labels.reviewState} | ${labels.action} | ${labels.relatedCheck} | ${labels.nextStep} | ${labels.doneCriteria} | ${labels.reviewer} | ${labels.due} | ${labels.notes} | ${labels.detail} |`,
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ...(actions || []).map((action) => [
       markdownTableCell(action.priority || ""),
+      markdownTableCell(action.reviewState || "todo"),
       markdownTableCell(action.actionId || ""),
       markdownTableCell(`${action.checkId || ""}${action.status ? ` (${action.status})` : ""}`),
       markdownTableCell(action.nextStep || ""),
+      markdownTableCell(action.doneCriteria || ""),
+      markdownTableCell(action.reviewer || ""),
+      markdownTableCell(action.due || ""),
+      markdownTableCell(action.notes || ""),
       markdownTableCell(action.detail || "")
     ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
   ].join("\n");
@@ -7245,9 +7292,14 @@ function visualExtractionReportLabels(outputLanguage) {
       detail: "细节",
       recommendations: "复核建议",
       priority: "优先级",
+      reviewState: "复核状态",
       action: "任务",
       relatedCheck: "关联检查",
       nextStep: "下一步",
+      doneCriteria: "完成条件",
+      reviewer: "复核人",
+      due: "期限",
+      notes: "备注",
       noChartReviewActions: "当前质量审阅未生成强制复核任务；正式使用前仍建议回到原图抽查。",
       noQualityIssues: "未发现结构化质量风险；正式使用前仍建议回到原图核对。",
       recommendationAxisCalibration: "补充至少两个清晰坐标轴刻度/数值锚点，并对照原图核对 Pixel X/Y 到 Axis X/Y 的映射。",
@@ -7263,6 +7315,14 @@ function visualExtractionReportLabels(outputLanguage) {
       reviewActionSeparateImageEvidence: "重新提问时要求直接视觉观察都用 [image] 标注，推断内容单独列出。",
       reviewActionRequestMorePoints: "放大原图或重新提问，要求输出更密集但仍可复核的点表。",
       reviewActionManualReview: "回到原图和 PDF 上下文进行人工复核。",
+      reviewDoneReconstructChartData: "已得到含单位、图例/系列和证据标签的可复核数据表。",
+      reviewDoneAddPixelCoordinates: "已为关键点补齐 Pixel X、Pixel Y、Axis X、Axis Y 和置信度。",
+      reviewDoneAddAxisCalibration: "每个坐标轴至少有两个清晰刻度锚点，并已重新导出报告。",
+      reviewDoneVerifyCalibrationQuality: "锚点跨度、单调性、重复值和单位已人工核对，可说明是否能量化使用。",
+      reviewDoneConfirmConfidence: "低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。",
+      reviewDoneSeparateImageEvidence: "直接视觉观察、文本上下文推断和低置信判断已分开标注。",
+      reviewDoneRequestMorePoints: "已补充更密集且仍可复核的点表，或记录无法可靠抽取的原因。",
+      reviewDoneManualReview: "已回到原图和 PDF 上下文复核，并填写处理结论。",
       structuredData: "机器可读数据",
       row: "行",
       column: "字段",
@@ -7346,9 +7406,14 @@ function visualExtractionReportLabels(outputLanguage) {
     detail: "Detail",
     recommendations: "Review Recommendations",
     priority: "Priority",
+    reviewState: "Review state",
     action: "Action",
     relatedCheck: "Related check",
     nextStep: "Next step",
+    doneCriteria: "Done criteria",
+    reviewer: "Reviewer",
+    due: "Due",
+    notes: "Notes",
     noChartReviewActions: "No required review action was generated by the quality review; still spot-check the original figure before final use.",
     noQualityIssues: "No structured quality risk was detected; still verify against the original figure before final use.",
     recommendationAxisCalibration: "Add at least two visible axis tick/value anchors and verify Pixel X/Y to Axis X/Y mapping against the original chart.",
@@ -7364,6 +7429,14 @@ function visualExtractionReportLabels(outputLanguage) {
     reviewActionSeparateImageEvidence: "Ask again with direct visual observations marked as [image] and inferred context separated.",
     reviewActionRequestMorePoints: "Zoom the figure or ask again for a denser but still reviewable point table.",
     reviewActionManualReview: "Review the original figure and PDF context manually.",
+    reviewDoneReconstructChartData: "A reviewable data table with units, legend or series labels, and evidence labels is available.",
+    reviewDoneAddPixelCoordinates: "Key points include Pixel X, Pixel Y, Axis X, Axis Y, and confidence.",
+    reviewDoneAddAxisCalibration: "Each axis has at least two visible tick anchors, and the report has been exported again.",
+    reviewDoneVerifyCalibrationQuality: "Anchor span, monotonicity, duplicate values, and units have been manually checked with a reuse decision.",
+    reviewDoneConfirmConfidence: "Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable.",
+    reviewDoneSeparateImageEvidence: "Direct visual observations, text-context inference, and low-confidence judgments are separated.",
+    reviewDoneRequestMorePoints: "A denser but still reviewable point table is added, or the extraction limit is recorded.",
+    reviewDoneManualReview: "The original figure and PDF context have been reviewed, with the outcome recorded.",
     structuredData: "Machine-Readable Data",
     row: "Row",
     column: "Column",
