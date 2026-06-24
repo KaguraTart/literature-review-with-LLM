@@ -768,6 +768,11 @@ var ZoteroMarkdownSummaryPrefs = {
       select.addEventListener("change", () => this.selectModelFromDropdown());
       if (select.dataset) select.dataset.zmsModelSelectBound = "1";
     }
+    const vendorSelect = document.getElementById("zms-model-vendor-select");
+    if (vendorSelect && vendorSelect.dataset?.zmsModelVendorBound !== "1") {
+      vendorSelect.addEventListener("change", () => this.renderModelOptionsFromCache());
+      if (vendorSelect.dataset) vendorSelect.dataset.zmsModelVendorBound = "1";
+    }
     const model = document.getElementById("zms-model");
     if (!model || model.dataset?.zmsModelPickerBound === "1") return;
     const sync = () => syncModelSelectFromInput();
@@ -775,6 +780,10 @@ var ZoteroMarkdownSummaryPrefs = {
     model.addEventListener("change", sync);
     if (model.dataset) model.dataset.zmsModelPickerBound = "1";
     syncModelSelectFromInput();
+  },
+
+  renderModelOptionsFromCache() {
+    renderModelOptions(modelOptionsFromOptionsElement("zms-model-options"));
   },
 
   selectModelFromDropdown() {
@@ -909,6 +918,8 @@ function prefFallbackMessage(key, lang) {
     baseURL: zh ? "接口地址" : "Base URL",
     apiKey: zh ? "API 密钥" : "API Key",
     model: zh ? "模型" : "Model",
+    modelVendorFilter: zh ? "模型系列" : "Model family",
+    allModelVendors: zh ? "全部模型系列" : "All model families",
     modelSelectPlaceholder: zh ? "选择厂商推荐模型" : "Choose provider model",
     modelSelectCustom: zh ? "自定义模型..." : "Custom model...",
     modelPickerHelp: zh
@@ -1174,6 +1185,12 @@ function applyPreferenceTextLabels(lang) {
   for (const [id, text] of Object.entries(labels)) {
     setTextLikeLabel(id, text);
   }
+  const modelVendor = document.getElementById("zms-model-vendor-select");
+  if (modelVendor) {
+    const label = zh ? "模型系列" : "Model family";
+    modelVendor.setAttribute?.("aria-label", label);
+    modelVendor.setAttribute?.("title", label);
+  }
 }
 
 function setTextLikeLabel(id, text) {
@@ -1349,7 +1366,9 @@ function directoryPickerParentCandidates(useWindowParent = true) {
     try { addWindow(window.top); } catch (_err) {}
     try { addWindow(window.parent); } catch (_err) {}
   }
+  for (const win of zoteroDirectoryPickerWindowCandidates()) addWindow(win);
   try { addWindow(Services?.wm?.getMostRecentWindow?.("navigator:browser")); } catch (_err) {}
+  try { addWindow(Services?.wm?.getMostRecentWindow?.("zotero:pref")); } catch (_err) {}
   try { addWindow(Services?.wm?.getMostRecentWindow?.(null)); } catch (_err) {}
   add(null);
   return candidates;
@@ -1366,9 +1385,24 @@ function directoryPickerWindowCandidates() {
     try { add(window.top); } catch (_err) {}
     try { add(window.parent); } catch (_err) {}
   }
+  for (const win of zoteroDirectoryPickerWindowCandidates()) add(win);
   try { add(Services?.wm?.getMostRecentWindow?.("navigator:browser")); } catch (_err) {}
+  try { add(Services?.wm?.getMostRecentWindow?.("zotero:pref")); } catch (_err) {}
   try { add(Services?.wm?.getMostRecentWindow?.(null)); } catch (_err) {}
   add(null);
+  return candidates;
+}
+
+function zoteroDirectoryPickerWindowCandidates() {
+  const candidates = [];
+  const add = (value) => {
+    if (!value || candidates.includes(value)) return;
+    candidates.push(value);
+  };
+  const zotero = typeof Zotero !== "undefined" ? Zotero : null;
+  try { add(zotero?.getMainWindow?.()); } catch (_err) {}
+  try { add(zotero?.getActiveZoteroPane?.()?.document?.defaultView); } catch (_err) {}
+  try { add(zotero?.getActiveZoteroPane?.()?.window); } catch (_err) {}
   return candidates;
 }
 
@@ -3529,13 +3563,17 @@ function unclosedThinkAnswer(value) {
 function renderModelOptions(modelOptions) {
   const list = document.getElementById("zms-model-options");
   const select = document.getElementById("zms-model-select");
+  const vendorSelect = document.getElementById("zms-model-vendor-select");
   const entries = normalizeModelOptions(modelOptions);
+  const translate = (key) => prefFallbackMessage(key, resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale()));
+  renderModelVendorFilter(vendorSelect, entries, translate);
+  const visibleEntries = filterModelOptionsByVendor(entries, selectedModelVendor(vendorSelect));
   clearOptionsElement(list);
   if (select) {
     clearOptionsElement(select);
     const placeholder = document.createElement("option");
     placeholder.value = "";
-    placeholder.textContent = providerModelSelectPlaceholderForPreferences(entries);
+    placeholder.textContent = providerModelSelectPlaceholderForPreferences(visibleEntries.length ? visibleEntries : entries);
     select.appendChild(placeholder);
   }
   for (const entry of entries) {
@@ -3545,13 +3583,16 @@ function renderModelOptions(modelOptions) {
       option.label = entry.label;
       option.setAttribute?.("label", entry.label);
     }
+    option.setAttribute?.("data-source", entry.source || "");
+    option.setAttribute?.("data-vendor", entry.vendor || inferredModelVendor(entry) || "");
+    option.setAttribute?.("data-features", normalizeModelFeatureList(entry.features).join(" "));
     if (list) list.appendChild(option);
   }
   if (select) {
     appendGroupedModelSelectOptions(
       select,
-      entries,
-      (key) => prefFallbackMessage(key, resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale()))
+      visibleEntries,
+      translate
     );
   }
   if (select) {
@@ -3559,7 +3600,7 @@ function renderModelOptions(modelOptions) {
     custom.value = "__custom";
     custom.textContent = prefFallbackMessage("modelSelectCustom", resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale()));
     select.appendChild(custom);
-    syncModelSelectFromInput(entries);
+    syncModelSelectFromInput(visibleEntries);
   }
 }
 
@@ -3567,6 +3608,67 @@ function clearOptionsElement(element) {
   if (!element) return;
   element.textContent = "";
   if (Array.isArray(element.children)) element.children = [];
+}
+
+function modelOptionsFromOptionsElement(id) {
+  return Array.from(document.getElementById(id)?.children || [])
+    .map((option) => ({
+      id: String(option.value || "").trim(),
+      label: String(option.label || optionAttribute(option, "label") || option.value || "").trim(),
+      source: String(optionAttribute(option, "data-source") || option.dataset?.source || "").trim(),
+      vendor: String(optionAttribute(option, "data-vendor") || option.dataset?.vendor || "").trim(),
+      features: String(optionAttribute(option, "data-features") || option.dataset?.features || "").split(/\s+/).filter(Boolean)
+    }))
+    .filter((entry) => entry.id);
+}
+
+function optionAttribute(option, name) {
+  return option?.getAttribute?.(name)
+    || option?.attributes?.[name]
+    || option?.[name]
+    || "";
+}
+
+function renderModelVendorFilter(select, entries, translate = (key) => key) {
+  if (!select) return [];
+  const vendors = modelVendorNames(entries);
+  const previous = String(select.value || "");
+  clearOptionsElement(select);
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = translate("allModelVendors") || "All model families";
+  select.appendChild(all);
+  for (const vendor of vendors) {
+    const option = document.createElement("option");
+    option.value = vendor;
+    option.textContent = vendor;
+    select.appendChild(option);
+  }
+  select.value = vendors.includes(previous) ? previous : "";
+  select.disabled = vendors.length <= 1;
+  select.setAttribute?.("aria-label", translate("modelVendorFilter") || "Model family");
+  select.setAttribute?.("title", translate("modelVendorFilter") || "Model family");
+  return vendors;
+}
+
+function modelVendorNames(entries) {
+  const names = [];
+  for (const entry of normalizeModelOptions(entries)) {
+    const vendor = entry.vendor || inferredModelVendor(entry);
+    if (vendor && !names.includes(vendor)) names.push(vendor);
+  }
+  return names;
+}
+
+function selectedModelVendor(select) {
+  return String(select?.value || "").trim();
+}
+
+function filterModelOptionsByVendor(entries, vendor) {
+  const selected = String(vendor || "").trim();
+  const normalized = normalizeModelOptions(entries);
+  if (!selected) return normalized;
+  return normalized.filter((entry) => (entry.vendor || inferredModelVendor(entry)) === selected);
 }
 
 function syncModelSelectFromInput(modelOptions) {

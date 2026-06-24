@@ -1823,7 +1823,10 @@ describe("provider smoke verifier", () => {
       status: "conflict",
       ready: false,
       missing: [],
-      conflicts: [expect.stringContaining("image input is enabled")]
+      conflicts: [expect.stringContaining("image input is enabled")],
+      commands: {
+        imageWithEnvFile: "npm run verify:provider:image:live -- --include deepseek --provider-env-file .env.local"
+      }
     });
 
     const pdfReport = await runLive(["--doctor", "--include", "anthropic-compatible", "--json"], scrubProviderEnv({
@@ -1838,7 +1841,10 @@ describe("provider smoke verifier", () => {
     });
     expect(pdfReport.cases[0]).toMatchObject({
       status: "conflict",
-      conflicts: [expect.stringContaining("raw PDF input is enabled")]
+      conflicts: [expect.stringContaining("raw PDF input is enabled")],
+      commands: {
+        pdfWithEnvFile: "npm run verify:provider:pdf:live -- --include anthropic-compatible --provider-env-file .env.local"
+      }
     });
 
     const { stdout } = await execFileAsync(process.execPath, [
@@ -1857,6 +1863,7 @@ describe("provider smoke verifier", () => {
     expect(stdout).toContain("conflict: 1");
     expect(stdout).toContain("deepseek: conflict");
     expect(stdout).toContain("conflicts: Model deepseek-chat appears text-only");
+    expect(stdout).toContain("image: npm run verify:provider:image:live -- --include deepseek --provider-env-file .env.local");
   });
 
   it("treats 0.0.0.0 live provider doctor endpoints as local without API credentials", async () => {

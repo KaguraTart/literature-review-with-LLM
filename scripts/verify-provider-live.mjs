@@ -954,7 +954,7 @@ function providerLiveDoctorCase(entry, options, env) {
         bodyExtraEnv: entry.bodyExtraEnv,
         capabilitiesEnv: capabilitiesEnvForCase(entry)
       },
-      commands: doctorCommandsForCase(entry)
+      commands: doctorCommandsForCase(entry, capabilities)
     };
   } catch (error) {
     return {
@@ -1034,16 +1034,16 @@ function doctorAuthStatus(entry, env, customHeaders, endpoint) {
   return "missing";
 }
 
-function doctorCommandsForCase(entry) {
+function doctorCommandsForCase(entry, capabilities = null) {
   return {
     generation: `npm run verify:provider:live -- --include ${entry.id}`,
     generationWithEnvFile: `npm run verify:provider:live -- --include ${entry.id} --provider-env-file .env.local`,
     modelList: entry.modelList === false ? "" : `npm run verify:provider:models:live -- --include ${entry.id}`,
     modelListWithEnvFile: entry.modelList === false ? "" : `npm run verify:provider:models:live -- --include ${entry.id} --provider-env-file .env.local`,
-    image: caseSupportsImageInput(entry) ? `npm run verify:provider:image:live -- --include ${entry.id}` : "",
-    imageWithEnvFile: caseSupportsImageInput(entry) ? `npm run verify:provider:image:live -- --include ${entry.id} --provider-env-file .env.local` : "",
-    pdf: caseSupportsPdfInput(entry) ? `npm run verify:provider:pdf:live -- --include ${entry.id}` : "",
-    pdfWithEnvFile: caseSupportsPdfInput(entry) ? `npm run verify:provider:pdf:live -- --include ${entry.id} --provider-env-file .env.local` : "",
+    image: caseSupportsImageInput(entry, capabilities) ? `npm run verify:provider:image:live -- --include ${entry.id}` : "",
+    imageWithEnvFile: caseSupportsImageInput(entry, capabilities) ? `npm run verify:provider:image:live -- --include ${entry.id} --provider-env-file .env.local` : "",
+    pdf: caseSupportsPdfInput(entry, capabilities) ? `npm run verify:provider:pdf:live -- --include ${entry.id}` : "",
+    pdfWithEnvFile: caseSupportsPdfInput(entry, capabilities) ? `npm run verify:provider:pdf:live -- --include ${entry.id} --provider-env-file .env.local` : "",
     envTemplate: `npm run verify:provider:live -- --env-template --include ${entry.id}`,
     dotenvTemplate: `npm run verify:provider:live -- --env-template --dotenv-template --include ${entry.id} > .env.local`
   };

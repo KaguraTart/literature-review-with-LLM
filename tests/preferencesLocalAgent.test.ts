@@ -65,6 +65,7 @@ function loadPreferencesController(options: {
   filePickerExistingPaths?: string[];
   filePickerExtraProps?: Record<string, any>;
   filePickerWindowBrowsingContext?: boolean;
+  zoteroMainWindowBrowsingContext?: boolean;
   filePickerUseZoteroWrapper?: boolean;
   noZmsMessage?: boolean;
   makeDirectoryThrows?: boolean;
@@ -92,6 +93,8 @@ function loadPreferencesController(options: {
     modelListUnavailable: "Model list unavailable",
     modelRecommendationsLoaded: "Recommended models loaded",
     modelListFailedUsingRecommendations: "Online model list failed; kept recommendations",
+    modelVendorFilter: "Model family",
+    allModelVendors: "All model families",
     modelFeatureImage: "image",
     modelFeaturePdf: "PDF",
     modelFeatureReasoning: "reasoning",
@@ -205,6 +208,7 @@ function loadPreferencesController(options: {
   createElement("zms-status", { localName: "label" });
   createElement("zms-choose-outputDir-button", { localName: "button" });
   createElement("zms-save-outputDir-button", { localName: "button" });
+  createElement("zms-model-vendor-select", { localName: "select" });
   createElement("zms-model-select", { localName: "select" });
   createElement("zms-model-options", { localName: "datalist" });
   createElement("zms-model-help", { localName: "label" });
@@ -354,6 +358,9 @@ function loadPreferencesController(options: {
       DataDirectory: {
         dir: "/tmp/zotero-data"
       },
+      getMainWindow: options.zoteroMainWindowBrowsingContext
+        ? () => ({ browsingContext: { zmsKind: "browsingContext" } })
+        : undefined,
       Prefs: {
         get: (key: string) => prefValues.get(key),
         set: (key: string, value: any) => {
@@ -3040,6 +3047,42 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toBe("Recommended models loaded: 6");
   });
 
+  it("filters settings model recommendations by model family", async () => {
+    const { controller, elements } = loadPreferencesController();
+    elements.get("zms-provider").value = "litellm_proxy_chat";
+    elements.get("zms-activeProfileId").value = "litellm-proxy-chat";
+    elements.get("zms-profileName").value = "LiteLLM Proxy Chat";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "http://localhost:4000";
+    elements.get("zms-apiKey").value = "";
+    elements.get("zms-model").value = "";
+
+    await controller.loadModels();
+
+    expect(selectOptionValues(elements.get("zms-model-vendor-select"))).toEqual([
+      "",
+      "OpenAI",
+      "Anthropic",
+      "Google Gemini",
+      "DeepSeek",
+      "xAI",
+      "Ollama"
+    ]);
+    elements.get("zms-model-vendor-select").value = "Anthropic";
+    controller.renderModelOptionsFromCache();
+
+    const modelValues = selectOptionValues(elements.get("zms-model-select"));
+    expect(modelValues).toContain("anthropic/claude-sonnet-4-6");
+    expect(modelValues).not.toContain("openai/gpt-4o-mini");
+    expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual(["Anthropic · Recommended"]);
+    expect(elements.get("zms-model-select").value).toBe("__custom");
+
+    elements.get("zms-model-select").value = "anthropic/claude-sonnet-4-6";
+    controller.selectModelFromDropdown();
+    expect(elements.get("zms-model").value).toBe("anthropic/claude-sonnet-4-6");
+    expect(elements.get("zms-model").hidden).toBe(true);
+  });
+
   it("updates the model field from the recommended model dropdown", () => {
     const { controller, elements } = loadPreferencesController();
     elements.get("zms-provider").value = "deepseek";
@@ -3312,6 +3355,25 @@ describe("preferences local-agent config helpers", () => {
       filePickerFileURL: { spec: "file:///Users/tart/Zotero/Literature%20Review%20with%20LLM" },
       filePickerWindowBrowsingContext: true,
       filePickerInitThrowsWithWindow: true
+    });
+
+    await expect(controller.chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      parent: "browsingContext",
+      displayDirectory: "/tmp/out"
+    });
+    expect(elements.get("zms-outputDir").value).toBe("/Users/tart/Zotero/Literature Review with LLM");
+  });
+
+  it("falls back to the Zotero main window browsing context for the native folder picker", async () => {
+    const { controller, elements, filePickerCalls } = loadPreferencesController({
+      filePickerFile: { path: "" },
+      filePickerFileURL: { spec: "file:///Users/tart/Zotero/Literature%20Review%20with%20LLM" },
+      filePickerInitThrowsWithWindow: true,
+      zoteroMainWindowBrowsingContext: true
     });
 
     await expect(controller.chooseOutputDir()).resolves.toBe(true);

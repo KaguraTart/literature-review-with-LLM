@@ -2791,6 +2791,8 @@ describe("workbench writeback helpers", () => {
       modelRecommendationsLoaded: "Recommended models loaded",
       modelSelectPlaceholder: "Choose a recommended model",
       modelSelectCustom: "Custom model...",
+      modelVendorFilter: "Model family",
+      allModelVendors: "All model families",
       recommendedModels: "Recommended",
       modelFeatureImage: "image",
       modelFeaturePdf: "PDF",
@@ -2891,6 +2893,77 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-profile-model").value).toBe("openai/gpt-4o-mini");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
     expect(dom.elements.get("zms-chat-status").textContent).toContain("Online model list failed; kept recommendations");
+  });
+
+  it("filters workbench model recommendations by model family", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-profile-name": "LiteLLM Proxy Chat",
+      "zms-profile-base-url": "http://localhost:4000",
+      "zms-profile-api-key": "",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    loaded.fetch = async () => {
+      throw new Error("network should not be called without credentials");
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelRecommendationsLoaded: "Recommended models loaded",
+      modelSelectPlaceholder: "Choose a recommended model",
+      modelSelectCustom: "Custom model...",
+      modelVendorFilter: "Model family",
+      allModelVendors: "All model families",
+      recommendedModels: "Recommended",
+      modelFeatureImage: "image",
+      modelFeaturePdf: "PDF",
+      modelFeatureReasoning: "reasoning",
+      modelFeatureFast: "fast",
+      modelFeatureLocal: "local",
+      modelListFailedUsingRecommendations: "Online model list failed; kept recommendations",
+      apiKeyMissing: "API key missing"
+    }[key] || key);
+    const profile = {
+      id: "litellm-proxy-chat",
+      name: "LiteLLM Proxy Chat",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "http://localhost:4000",
+      apiKey: "",
+      model: "",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    await workbench.loadModelsForWorkbench();
+
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-vendor-select"))).toEqual([
+      "",
+      "OpenAI",
+      "Anthropic",
+      "Google Gemini",
+      "DeepSeek",
+      "xAI",
+      "Ollama"
+    ]);
+    dom.getElementById("zms-profile-model-vendor-select").value = "Anthropic";
+    workbench.renderWorkbenchModelOptionsFromCache();
+
+    const modelSelect = dom.getElementById("zms-profile-model-select");
+    const values = selectOptionValues(modelSelect);
+    expect(values).toContain("anthropic/claude-sonnet-4-6");
+    expect(values).not.toContain("openai/gpt-4o-mini");
+    expect(selectGroupLabels(modelSelect)).toEqual(["Anthropic · Recommended"]);
+    expect(modelSelect.value).toBe("__custom");
+
+    modelSelect.value = "anthropic/claude-sonnet-4-6";
+    workbench.selectWorkbenchModelFromDropdown();
+    expect(dom.getElementById("zms-profile-model").value).toBe("anthropic/claude-sonnet-4-6");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
   });
 
   it("keeps recommended workbench models when the online model list fails", async () => {
@@ -3966,6 +4039,81 @@ describe("workbench writeback helpers", () => {
     });
     expect(dom.elements.get("zms-workbench-output-dir").value).toBe("/tmp/picked output");
     expect(prefValues.outputDir).toBe("/tmp/picked output");
+  });
+
+  it("falls back to the Zotero main window browsing context for the workbench folder picker", async () => {
+    const filePickerConstants = { modeGetFolder: 2, returnOK: 0, returnReplace: 2 };
+    const filePickerCalls: any[] = [];
+    const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
+    const loaded = loadWorkbenchHelpers(new Map(), {
+      exists: async () => true
+    }, prefValues);
+    (loaded as any).Zotero.getMainWindow = () => ({ browsingContext: { zmsKind: "browsingContext" } });
+    (loaded as any).window.Zotero.getMainWindow = (loaded as any).Zotero.getMainWindow;
+    (loaded as any).Cc = {
+      "@mozilla.org/filepicker;1": {
+        createInstance: () => {
+          const picker: any = {
+            file: { path: "" },
+            fileURL: { spec: "file:///Users/tart/Zotero/Literature%20Review%20with%20LLM" },
+            init: (parent: any, title: string, mode: number) => {
+              if (parent && parent.zmsKind !== "browsingContext") {
+                throw new Error("window parent unsupported");
+              }
+              filePickerCalls.push({ title, mode, parent: parent?.zmsKind || null });
+            },
+            open: (callback: (result: number) => void) => callback(filePickerConstants.returnOK)
+          };
+          Object.defineProperty(picker, "displayDirectory", {
+            set(value: any) {
+              const last = filePickerCalls[filePickerCalls.length - 1];
+              if (last) last.displayDirectory = value?.path || "";
+            }
+          });
+          return picker;
+        }
+      },
+      "@mozilla.org/file/local;1": {
+        createInstance: () => ({
+          path: "",
+          initWithPath(path: string) {
+            this.path = path;
+          },
+          get parent() {
+            const parentPath = this.path.replace(/[\\/][^\\/]*$/, "") || this.path;
+            return parentPath && parentPath !== this.path
+              ? { path: parentPath, parent: null, exists: () => true, isDirectory: () => true }
+              : null;
+          },
+          exists: () => true,
+          isDirectory: () => true
+        })
+      }
+    };
+    (loaded as any).Ci = {
+      nsIFilePicker: filePickerConstants,
+      nsIFile: function nsIFile() {}
+    };
+    const dom = fakeDocument({
+      "zms-workbench-output-dir": "/tmp/current output"
+    });
+    (loaded as any).document = dom;
+    loaded.ZoteroMarkdownSummaryWorkbench.state.outputDir = "/tmp/out";
+    loaded.ZoteroMarkdownSummaryWorkbench.t = (key: string) => ({
+      chooseOutputDirTitle: "Choose output folder",
+      outputDirSaved: "Output directory saved"
+    }[key] || key);
+
+    await expect((loaded.ZoteroMarkdownSummaryWorkbench as any).chooseOutputDir()).resolves.toBe(true);
+
+    expect(filePickerCalls[0]).toMatchObject({
+      title: "Choose output folder",
+      mode: 2,
+      parent: "browsingContext",
+      displayDirectory: "/tmp/current output"
+    });
+    expect(dom.elements.get("zms-workbench-output-dir").value).toBe("/Users/tart/Zotero/Literature Review with LLM");
+    expect(prefValues.outputDir).toBe("/Users/tart/Zotero/Literature Review with LLM");
   });
 
   it("still opens the workbench folder picker when the display directory is rejected", async () => {

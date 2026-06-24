@@ -85,6 +85,11 @@ hbox.zms-row {
   min-width: min(100%, 14em);
 }
 
+.zms-model-vendor-select {
+  flex: 1 1 11em;
+  min-width: min(100%, 10em);
+}
+
 .zms-model-custom {
   flex: 1 1 12em;
   min-width: min(100%, 12em);
@@ -99,6 +104,37 @@ hbox.zms-row {
   min-width: 7em;
 }
 
+@media (max-width: 760px) {
+  .zms-form {
+    width: 100%;
+  }
+
+  .zms-label {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .zms-field,
+  .zms-row menulist,
+  .zms-model-select,
+  .zms-model-vendor-select,
+  .zms-model-custom,
+  #zms-outputDir.zms-outputDir-field {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .zms-model-row > button,
+  .zms-outputDir-button {
+    flex: 1 1 auto;
+  }
+
+  .zms-small-note {
+    margin-left: 0;
+  }
+}
+
 .zms-small-note {
   display: block;
   width: 100%;
@@ -107,6 +143,12 @@ hbox.zms-row {
   color: #5f6b7a;
   line-height: 1.45;
   white-space: normal;
+}
+
+@media (max-width: 760px) {
+  .zms-small-note {
+    margin-left: 0;
+  }
 }
 
 .zms-json {

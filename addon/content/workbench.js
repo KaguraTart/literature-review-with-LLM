@@ -285,6 +285,11 @@ var ZoteroMarkdownSummaryWorkbench = {
       modelSelect.addEventListener("change", () => this.selectWorkbenchModelFromDropdown());
       if (modelSelect.dataset) modelSelect.dataset.zmsModelPickerBound = "1";
     }
+    const modelVendorSelect = document.getElementById("zms-profile-model-vendor-select");
+    if (modelVendorSelect && modelVendorSelect.dataset?.zmsModelVendorBound !== "1") {
+      modelVendorSelect.addEventListener("change", () => this.renderWorkbenchModelOptionsFromCache());
+      if (modelVendorSelect.dataset) modelVendorSelect.dataset.zmsModelVendorBound = "1";
+    }
     const modelInput = document.getElementById("zms-profile-model");
     if (modelInput && modelInput.dataset?.zmsModelPickerBound !== "1") {
       const sync = () => this.syncWorkbenchModelSelect();
@@ -587,6 +592,11 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-profile-base-url-label", this.t("baseURL"));
     setText("zms-profile-api-key-label", this.t("apiKey"));
     setText("zms-profile-model-label", this.t("model"));
+    const modelVendorSelect = document.getElementById("zms-profile-model-vendor-select");
+    if (modelVendorSelect) {
+      modelVendorSelect.setAttribute("aria-label", this.t("modelVendorFilter"));
+      modelVendorSelect.setAttribute("title", this.t("modelVendorFilter"));
+    }
     setText("zms-profile-image-text", this.t("imageInput"));
     setText("zms-profile-pdf-text", this.t("pdfInput"));
     setText("zms-local-ocr-text", this.t("localOcr"));
@@ -979,13 +989,16 @@ var ZoteroMarkdownSummaryWorkbench = {
   renderWorkbenchModelOptions(modelOptions) {
     const list = document.getElementById("zms-workbench-model-options");
     const select = document.getElementById("zms-profile-model-select");
+    const vendorSelect = document.getElementById("zms-profile-model-vendor-select");
     const entries = normalizeModelOptions(modelOptions);
+    renderModelVendorFilter(vendorSelect, entries, (key) => this.t(key));
+    const visibleEntries = filterModelOptionsByVendor(entries, selectedModelVendor(vendorSelect));
     clearOptionsElement(list);
     if (select) {
       clearOptionsElement(select);
       const placeholder = document.createElement("option");
       placeholder.value = "";
-      placeholder.textContent = workbenchModelSelectPlaceholder(this.state.profile, entries, this.state.uiLanguage, (key) => this.t(key));
+      placeholder.textContent = workbenchModelSelectPlaceholder(this.state.profile, visibleEntries.length ? visibleEntries : entries, this.state.uiLanguage, (key) => this.t(key));
       select.appendChild(placeholder);
     }
     for (const entry of entries) {
@@ -994,18 +1007,25 @@ var ZoteroMarkdownSummaryWorkbench = {
       if (entry.label && entry.label !== entry.id) {
         option.setAttribute?.("label", entry.label);
       }
+      option.setAttribute?.("data-source", entry.source || "");
+      option.setAttribute?.("data-vendor", entry.vendor || inferredModelVendor(entry) || "");
+      option.setAttribute?.("data-features", normalizeModelFeatureList(entry.features).join(" "));
       if (list) list.appendChild(option);
     }
     if (select) {
-      appendGroupedModelSelectOptions(select, entries, (key) => this.t(key));
+      appendGroupedModelSelectOptions(select, visibleEntries, (key) => this.t(key));
     }
     if (select) {
       const custom = document.createElement("option");
       custom.value = "__custom";
       custom.textContent = this.t("modelSelectCustom");
       select.appendChild(custom);
-      this.syncWorkbenchModelSelect(entries);
+      this.syncWorkbenchModelSelect(visibleEntries);
     }
+  },
+
+  renderWorkbenchModelOptionsFromCache() {
+    this.renderWorkbenchModelOptions(modelOptionsFromOptionsElement("zms-workbench-model-options"));
   },
 
   renderWorkbenchModelRecommendations(options = {}) {
@@ -4656,7 +4676,9 @@ function directoryPickerParentCandidates(useWindowParent = true) {
     try { addWindow(window.top); } catch (_err) {}
     try { addWindow(window.parent); } catch (_err) {}
   }
+  for (const win of zoteroDirectoryPickerWindowCandidates()) addWindow(win);
   try { addWindow(Services?.wm?.getMostRecentWindow?.("navigator:browser")); } catch (_err) {}
+  try { addWindow(Services?.wm?.getMostRecentWindow?.("zotero:pref")); } catch (_err) {}
   try { addWindow(Services?.wm?.getMostRecentWindow?.(null)); } catch (_err) {}
   add(null);
   return candidates;
@@ -4673,9 +4695,24 @@ function directoryPickerWindowCandidates() {
     try { add(window.top); } catch (_err) {}
     try { add(window.parent); } catch (_err) {}
   }
+  for (const win of zoteroDirectoryPickerWindowCandidates()) add(win);
   try { add(Services?.wm?.getMostRecentWindow?.("navigator:browser")); } catch (_err) {}
+  try { add(Services?.wm?.getMostRecentWindow?.("zotero:pref")); } catch (_err) {}
   try { add(Services?.wm?.getMostRecentWindow?.(null)); } catch (_err) {}
   add(null);
+  return candidates;
+}
+
+function zoteroDirectoryPickerWindowCandidates() {
+  const candidates = [];
+  const add = (value) => {
+    if (!value || candidates.includes(value)) return;
+    candidates.push(value);
+  };
+  const zotero = typeof Zotero !== "undefined" ? Zotero : null;
+  try { add(zotero?.getMainWindow?.()); } catch (_err) {}
+  try { add(zotero?.getActiveZoteroPane?.()?.document?.defaultView); } catch (_err) {}
+  try { add(zotero?.getActiveZoteroPane?.()?.window); } catch (_err) {}
   return candidates;
 }
 
@@ -5561,6 +5598,67 @@ function clearOptionsElement(element) {
   if (!element) return;
   element.textContent = "";
   if (Array.isArray(element.children)) element.children = [];
+}
+
+function modelOptionsFromOptionsElement(id) {
+  return Array.from(document.getElementById(id)?.children || [])
+    .map((option) => ({
+      id: String(option.value || "").trim(),
+      label: String(option.label || optionAttribute(option, "label") || option.value || "").trim(),
+      source: String(optionAttribute(option, "data-source") || option.dataset?.source || "").trim(),
+      vendor: String(optionAttribute(option, "data-vendor") || option.dataset?.vendor || "").trim(),
+      features: String(optionAttribute(option, "data-features") || option.dataset?.features || "").split(/\s+/).filter(Boolean)
+    }))
+    .filter((entry) => entry.id);
+}
+
+function optionAttribute(option, name) {
+  return option?.getAttribute?.(name)
+    || option?.attributes?.[name]
+    || option?.[name]
+    || "";
+}
+
+function renderModelVendorFilter(select, entries, translate = (key) => key) {
+  if (!select) return [];
+  const vendors = modelVendorNames(entries);
+  const previous = String(select.value || "");
+  clearOptionsElement(select);
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = translate("allModelVendors") || "All model families";
+  select.appendChild(all);
+  for (const vendor of vendors) {
+    const option = document.createElement("option");
+    option.value = vendor;
+    option.textContent = vendor;
+    select.appendChild(option);
+  }
+  select.value = vendors.includes(previous) ? previous : "";
+  select.disabled = vendors.length <= 1;
+  select.setAttribute?.("aria-label", translate("modelVendorFilter") || "Model family");
+  select.setAttribute?.("title", translate("modelVendorFilter") || "Model family");
+  return vendors;
+}
+
+function modelVendorNames(entries) {
+  const names = [];
+  for (const entry of normalizeModelOptions(entries)) {
+    const vendor = entry.vendor || inferredModelVendor(entry);
+    if (vendor && !names.includes(vendor)) names.push(vendor);
+  }
+  return names;
+}
+
+function selectedModelVendor(select) {
+  return String(select?.value || "").trim();
+}
+
+function filterModelOptionsByVendor(entries, vendor) {
+  const selected = String(vendor || "").trim();
+  const normalized = normalizeModelOptions(entries);
+  if (!selected) return normalized;
+  return normalized.filter((entry) => (entry.vendor || inferredModelVendor(entry)) === selected);
 }
 
 function mergeModelOptions(primary, secondary) {
