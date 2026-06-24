@@ -411,6 +411,12 @@ describe("provider adapters", () => {
       JSON.stringify({ error: { message: "stream_options, temperature, n, response_format, and max_completion_tokens are unsupported" } })
     );
     expect(fields).toEqual(["stream_options", "temperature", "n", "response_format", "max_completion_tokens"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      400,
+      "Unsupported parameters: streamOptions, responseFormat, maxCompletionTokens"
+    )).toEqual(["stream_options", "response_format", "max_completion_tokens"]);
     const detailedFields = providerCompatibilityFallbackFields(
       "openai_chat",
       body,
@@ -447,6 +453,7 @@ describe("provider adapters", () => {
       max_tokens: 1024
     };
     expect(providerCompatibilityFallbackFields("openai_chat", legacyTokenBody, 400, "Unknown field: max_tokens")).toEqual(["max_tokens"]);
+    expect(providerCompatibilityFallbackFields("openai_chat", legacyTokenBody, 400, "Unknown field: maxTokens")).toEqual(["max_tokens"]);
     expect(omitProviderRequestBodyFields(legacyTokenBody, ["max_tokens"])).toEqual({
       model: "router-model",
       messages: [],

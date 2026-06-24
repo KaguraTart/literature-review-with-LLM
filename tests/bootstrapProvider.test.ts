@@ -1614,7 +1614,7 @@ describe("bootstrap provider helpers", () => {
       __responses: [
         {
           __status: 400,
-          error: { message: "response_format and max_completion_tokens are not supported" }
+          error: { message: "responseFormat and maxCompletionTokens are not supported" }
         },
         {
           choices: [{ message: { content: "fallback summary" } }]

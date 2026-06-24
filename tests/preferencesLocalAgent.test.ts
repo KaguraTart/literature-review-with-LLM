@@ -2686,7 +2686,7 @@ describe("preferences local-agent config helpers", () => {
           __fetchOk: false,
           __fetchStatus: 400,
           __fetchBody: {
-            error: { message: "Unsupported parameter: max_completion_tokens" }
+            error: { message: "Unsupported parameter: maxCompletionTokens" }
           }
         },
         {

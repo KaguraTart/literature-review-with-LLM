@@ -7855,7 +7855,7 @@ describe("workbench writeback helpers", () => {
           text: async () => JSON.stringify({
             error: {
               code: "unsupported_parameter",
-              message: "response_format and max_completion_tokens are not supported"
+	              message: "responseFormat and maxCompletionTokens are not supported"
             }
           })
         };
@@ -7916,10 +7916,10 @@ describe("workbench writeback helpers", () => {
             error: {
               code: "unsupported_parameter",
               message: "Unsupported request parameter",
-              param: "response_format"
+	              param: "responseFormat"
             },
             details: {
-              parameters: ["body.max_completion_tokens"]
+	              parameters: ["body.maxCompletionTokens"]
             }
           })
         };

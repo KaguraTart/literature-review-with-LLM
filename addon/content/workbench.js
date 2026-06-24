@@ -9323,7 +9323,7 @@ function providerUnsupportedOptionalFields(protocol, body, text, usedFallback = 
   const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
   const detail = String(text || "").toLowerCase();
   const fields = providerStructuredUnsupportedFields(body, text, protocol);
-  if (body?.stream_options !== undefined && /stream_options|stream options|stream option/.test(detail)) {
+  if (body?.stream_options !== undefined && (/stream_options|stream options|stream option/.test(detail) || providerDetailMentionsCanonicalField(detail, "stream_options"))) {
     fields.push("stream_options");
   }
   if (body?.stream !== undefined && /\bstream\b|streaming/.test(detail)) {
@@ -9336,19 +9336,19 @@ function providerUnsupportedOptionalFields(protocol, body, text, usedFallback = 
   if (body?.n !== undefined && /(?:^|[^a-z0-9_])n(?:[^a-z0-9_]|$)|number of completions|multiple completions/.test(detail)) {
     fields.push("n");
   }
-  if (body?.response_format !== undefined && /response_format|response format/.test(detail)) {
+  if (body?.response_format !== undefined && (/response_format|response format/.test(detail) || providerDetailMentionsCanonicalField(detail, "response_format"))) {
     fields.push("response_format");
   }
-  if (body?.max_completion_tokens !== undefined && /max_completion_tokens|max completion tokens|max completion token/.test(detail)) {
+  if (body?.max_completion_tokens !== undefined && (/max_completion_tokens|max completion tokens|max completion token/.test(detail) || providerDetailMentionsCanonicalField(detail, "max_completion_tokens"))) {
     fields.push("max_completion_tokens");
   }
-  if (body?.max_tokens !== undefined && /max_tokens|max tokens|max token/.test(detail)) {
+  if (body?.max_tokens !== undefined && (/max_tokens|max tokens|max token/.test(detail) || providerDetailMentionsCanonicalField(detail, "max_tokens"))) {
     fields.push("max_tokens");
   }
   if (body?.text !== undefined && /text\.format|text format|text\.verbosity|text verbosity|(?:^|[^a-z0-9_])text(?:[^a-z0-9_]|$)|json mode|json_schema|json schema/.test(detail)) {
     fields.push("text");
   }
-  if (body?.max_output_tokens !== undefined && /max_output_tokens|max output tokens|max output token/.test(detail)) {
+  if (body?.max_output_tokens !== undefined && (/max_output_tokens|max output tokens|max output token/.test(detail) || providerDetailMentionsCanonicalField(detail, "max_output_tokens"))) {
     fields.push("max_output_tokens");
   }
   if (body?.instructions !== undefined && /(?:^|[^a-z0-9_])instructions?(?:[^a-z0-9_]|$)|system instructions?|developer instructions?|system prompt/.test(detail)) {
@@ -9369,43 +9369,43 @@ function providerUnsupportedOptionalFields(protocol, body, text, usedFallback = 
   if (body?.thinking !== undefined && /thinking|reasoning/.test(detail)) {
     fields.push("thinking");
   }
-  if (body?.top_p !== undefined && /top_p|top p/.test(detail)) {
+  if (body?.top_p !== undefined && (/top_p|top p/.test(detail) || providerDetailMentionsCanonicalField(detail, "top_p"))) {
     fields.push("top_p");
   }
-  if (body?.presence_penalty !== undefined && /presence_penalty|presence penalty/.test(detail)) {
+  if (body?.presence_penalty !== undefined && (/presence_penalty|presence penalty/.test(detail) || providerDetailMentionsCanonicalField(detail, "presence_penalty"))) {
     fields.push("presence_penalty");
   }
-  if (body?.frequency_penalty !== undefined && /frequency_penalty|frequency penalty/.test(detail)) {
+  if (body?.frequency_penalty !== undefined && (/frequency_penalty|frequency penalty/.test(detail) || providerDetailMentionsCanonicalField(detail, "frequency_penalty"))) {
     fields.push("frequency_penalty");
   }
   if (body?.seed !== undefined && /(?:^|[^a-z0-9_])seed(?:[^a-z0-9_]|$)/.test(detail)) {
     fields.push("seed");
   }
-  if (body?.top_logprobs !== undefined && /top_logprobs|top logprobs/.test(detail)) {
+  if (body?.top_logprobs !== undefined && (/top_logprobs|top logprobs/.test(detail) || providerDetailMentionsCanonicalField(detail, "top_logprobs"))) {
     fields.push("top_logprobs");
   }
   if (body?.logprobs !== undefined && /(?:^|[^a-z0-9_])logprobs(?:[^a-z0-9_]|$)/.test(detail)) {
     fields.push("logprobs");
   }
-  if (body?.parallel_tool_calls !== undefined && /parallel_tool_calls|parallel tool calls|parallel tool call/.test(detail)) {
+  if (body?.parallel_tool_calls !== undefined && (/parallel_tool_calls|parallel tool calls|parallel tool call/.test(detail) || providerDetailMentionsCanonicalField(detail, "parallel_tool_calls"))) {
     fields.push("parallel_tool_calls");
   }
-  if (body?.reasoning_effort !== undefined && /reasoning_effort|reasoning effort/.test(detail)) {
+  if (body?.reasoning_effort !== undefined && (/reasoning_effort|reasoning effort/.test(detail) || providerDetailMentionsCanonicalField(detail, "reasoning_effort"))) {
     fields.push("reasoning_effort");
   }
   if (body?.stop !== undefined && /(?:^|[^a-z0-9_])stop(?:[^a-z0-9_]|$)|stop sequence|stop sequences/.test(detail)) {
     fields.push("stop");
   }
-  if (body?.top_k !== undefined && /top_k|top k/.test(detail)) {
+  if (body?.top_k !== undefined && (/top_k|top k/.test(detail) || providerDetailMentionsCanonicalField(detail, "top_k"))) {
     fields.push("top_k");
   }
-  if (body?.stop_sequences !== undefined && /stop_sequences|stop sequences|stop sequence/.test(detail)) {
+  if (body?.stop_sequences !== undefined && (/stop_sequences|stop sequences|stop sequence/.test(detail) || providerDetailMentionsCanonicalField(detail, "stop_sequences"))) {
     fields.push("stop_sequences");
   }
   if (body?.tools !== undefined && /(?:^|[^a-z0-9_])tools?(?:[^a-z0-9_]|$)/.test(detail)) {
     fields.push("tools");
   }
-  if (body?.tool_choice !== undefined && /tool_choice|tool choice/.test(detail)) {
+  if (body?.tool_choice !== undefined && (/tool_choice|tool choice/.test(detail) || providerDetailMentionsCanonicalField(detail, "tool_choice"))) {
     fields.push("tool_choice");
   }
   fields.push(...providerUnsupportedOptionalBodyFields(body, detail));
@@ -9479,7 +9479,7 @@ const PROVIDER_OPTIONAL_BODY_FIELD_PATTERNS = [
 
 function providerUnsupportedOptionalBodyFields(body, detail) {
   return PROVIDER_OPTIONAL_BODY_FIELD_PATTERNS
-    .filter(([field, pattern]) => body?.[field] !== undefined && pattern.test(detail))
+    .filter(([field, pattern]) => body?.[field] !== undefined && (pattern.test(detail) || providerDetailMentionsCanonicalField(detail, field)))
     .map(([field]) => field);
 }
 
@@ -9586,17 +9586,64 @@ function normalizeProviderFieldHint(value) {
     .replace(/^\$\.?/, "")
     .replace(/^(?:body|request|payload|params?|parameters?|input)\./i, "")
     .replace(/\[[^\]]+\]/g, "");
-  if (/\bfile_data\b/.test(normalized)) return "input_file.file_data";
-  if (/\bfile_url\b/.test(normalized)) return "input_file.file_url";
-  if (/input(?:\.\d+|\[\d+\])?\.content.*input_image|inputcontent.*inputimage|(?:^|[^a-z0-9_])input_image(?:[^a-z0-9_]|$)|(?:^|[^a-z0-9_])inputimage(?:[^a-z0-9_]|$)/.test(normalized)) return "input.content.input_image";
-  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl|(?:^|[^a-z0-9_])image_url(?:[^a-z0-9_]|$)|(?:^|[^a-z0-9_])imageurl(?:[^a-z0-9_]|$)/.test(normalized)) return "image_url.url";
-  if (/messages?(?:\.\d+|\[\d+\])?\.content.*(?:image|image\/|png|jpe?g|webp)|messages?content.*(?:image|image\/|png|jpe?g|webp)|(?:^|[^a-z0-9_])image(?:[^a-z0-9_]|$)/.test(normalized)) return "messages.content.image";
-  if (/messages?(?:\.\d+|\[\d+\])?\.content.*(?:document|source|media_type|mediatype|base64|application\/pdf)|messages?content.*(?:document|source|media_type|mediatype|base64|applicationpdf)|(?:^|[^a-z0-9_])document(?:[^a-z0-9_]|$)/.test(normalized)) return "messages.content.document";
-  if (/messages?(?:\.\d+|\[\d+\])?\.content|messages?content/.test(normalized)) return "messages.content";
-  if (/messages?(?:\.\d+|\[\d+\])?\.role|messages?role/.test(normalized)) return "messages.role.system";
+  const normalizedLower = normalized.toLowerCase();
+  if (/\bfile_data\b/.test(normalizedLower)) return "input_file.file_data";
+  if (/\bfile_url\b/.test(normalizedLower)) return "input_file.file_url";
+  if (/input(?:\.\d+|\[\d+\])?\.content.*input_image|inputcontent.*inputimage|(?:^|[^a-z0-9_])input_image(?:[^a-z0-9_]|$)|(?:^|[^a-z0-9_])inputimage(?:[^a-z0-9_]|$)/.test(normalizedLower)) return "input.content.input_image";
+  if (/image_url\.url|image_url_url|imageurl\.url|imageurlurl|(?:^|[^a-z0-9_])image_url(?:[^a-z0-9_]|$)|(?:^|[^a-z0-9_])imageurl(?:[^a-z0-9_]|$)/.test(normalizedLower)) return "image_url.url";
+  if (/messages?(?:\.\d+|\[\d+\])?\.content.*(?:image|image\/|png|jpe?g|webp)|messages?content.*(?:image|image\/|png|jpe?g|webp)|(?:^|[^a-z0-9_])image(?:[^a-z0-9_]|$)/.test(normalizedLower)) return "messages.content.image";
+  if (/messages?(?:\.\d+|\[\d+\])?\.content.*(?:document|source|media_type|mediatype|base64|application\/pdf)|messages?content.*(?:document|source|media_type|mediatype|base64|applicationpdf)|(?:^|[^a-z0-9_])document(?:[^a-z0-9_]|$)/.test(normalizedLower)) return "messages.content.document";
+  if (/messages?(?:\.\d+|\[\d+\])?\.content|messages?content/.test(normalizedLower)) return "messages.content";
+  if (/messages?(?:\.\d+|\[\d+\])?\.role|messages?role/.test(normalizedLower)) return "messages.role.system";
+  const canonical = canonicalProviderFieldHint(normalized);
+  if (canonical) return canonical;
   return normalized
     .split(".")[0]
     .trim();
+}
+
+function providerDetailMentionsCanonicalField(detail, field) {
+  const canonical = canonicalProviderFieldHint(field) || field;
+  const compactDetail = normalizeProviderFieldWords(detail).replace(/\s+/g, "");
+  const compactField = normalizeProviderFieldWords(canonical).replace(/\s+/g, "");
+  return Boolean(compactField && compactDetail.includes(compactField));
+}
+
+function canonicalProviderFieldHint(value) {
+  const compact = normalizeProviderFieldWords(value).replace(/\s+/g, "");
+  const aliases = {
+    streamoptions: "stream_options",
+    responseformat: "response_format",
+    maxcompletiontokens: "max_completion_tokens",
+    maxtokens: "max_tokens",
+    maxoutputtokens: "max_output_tokens",
+    topp: "top_p",
+    presencepenalty: "presence_penalty",
+    frequencypenalty: "frequency_penalty",
+    toplogprobs: "top_logprobs",
+    paralleltoolcalls: "parallel_tool_calls",
+    reasoningeffort: "reasoning_effort",
+    topk: "top_k",
+    stopsequences: "stop_sequences",
+    toolchoice: "tool_choice",
+    responsemodalities: "response_modalities",
+    servicetier: "service_tier",
+    logitbias: "logit_bias",
+    websearchoptions: "web_search_options",
+    searchoptions: "search_options",
+    safetysettings: "safety_settings",
+    generationconfig: "generation_config",
+    thinkingconfig: "thinking_config",
+    responsemimetype: "response_mime_type",
+    responseschema: "response_schema",
+    extrabody: "extra_body",
+    filedata: "input_file.file_data",
+    fileurl: "input_file.file_url",
+    imageurlurl: "image_url.url",
+    imageurl: "image_url.url",
+    inputimage: "input.content.input_image"
+  };
+  return aliases[compact] || "";
 }
 
 function providerFallbackFieldPresent(body, field) {
