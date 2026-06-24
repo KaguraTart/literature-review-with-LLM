@@ -4893,6 +4893,82 @@ describe("workbench writeback helpers", () => {
     expect(dom.elements.get("zms-status").textContent).toContain(`visualReportDone: ${reportPath}`);
   });
 
+  it("marks dense point tables as dense chart-data drafts in visual extraction exports", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "DENSE",
+      getCollections: () => [10]
+    };
+    workbench.state.contextSourceHash = "sourcehash";
+    workbench.state.context = {
+      metadata: { title: "Dense Chart Paper" }
+    };
+    workbench.state.messages = [
+      {
+        id: "user-dense",
+        role: "user",
+        content: "Extract dense point data",
+        images: [{ name: "curve.png", mimeType: "image/png", size: 99 }]
+      },
+      {
+        id: "assistant-dense",
+        role: "assistant",
+        profileName: "MiniMax",
+        content: [
+          "## Dense Point Data Draft",
+          "| Series | Point | Axis X | Axis Y | Unit | Confidence | Source | Notes |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| baseline | p1 | 0.1 | 12 | ms | low | [image] | visible point |",
+          "| baseline | p2 | 0.2 | 14 | ms | low | [image] | visible point |",
+          "| proposed | p1 | 0.1 | 10 | ms | low | [image] | visible point |",
+          "",
+          "## Axis Calibration Anchors",
+          "| Axis | Pixel | Value | Unit | Source | Confidence |",
+          "| --- | --- | --- | --- | --- | --- |",
+          "| X | 50 | 0 | s | [image] | medium |",
+          "| X | 450 | 1 | s | [image] | medium |",
+          "| Y | 400 | 0 | ms | [image] | medium |",
+          "| Y | 100 | 30 | ms | [image] | medium |"
+        ].join("\n")
+      }
+    ];
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportVisualExtractionReport();
+
+    const reportPath = "/tmp/out/collections/COL/writing/visual-extraction-DENSE.md";
+    const report = files.get(reportPath) || "";
+    expect(report).toContain("densePointDraftCount: 1");
+    expect(report).toContain("densePointCount: 3");
+    expect(report).toContain("| 1 | dense-point-table | Axis X | Axis Y | Series | 3 | needs-review | [image] |");
+    expect(report).toContain("| baseline | 0.1 | 12 | ms | low | [image] · visible point | [image] |");
+    expect(report).toContain("| point-count | pass | points parsed: 3 |");
+    const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-DENSE.json";
+    const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-DENSE.csv";
+    const parsed = JSON.parse(files.get(jsonPath) || "{}");
+    expect(parsed.chartDataDrafts[0]).toMatchObject({
+      source: "dense-point-table",
+      densePointTable: true,
+      heading: "Dense Point Data Draft",
+      xAxis: "Axis X",
+      yAxis: "Axis Y",
+      points: [
+        { series: "baseline", x: "0.1", y: "12", yNumber: 12, unit: "ms" },
+        { series: "baseline", x: "0.2", y: "14", yNumber: 14, unit: "ms" },
+        { series: "proposed", x: "0.1", y: "10", yNumber: 10, unit: "ms" }
+      ]
+    });
+    expect(files.get(csvPath)).toContain("chart:1,1,source,dense-point-table,[image],assistant-dense,curve.png");
+    expect(files.get(csvPath)).toContain("chart:1,3,yNumber,10,[image],assistant-dense,curve.png");
+  });
+
   it("flags low-quality axis calibration anchors in visual extraction reports", () => {
     const loaded = loadWorkbenchHelpers();
     const item = {

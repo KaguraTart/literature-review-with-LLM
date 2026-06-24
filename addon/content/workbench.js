@@ -6028,6 +6028,8 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `imageCount: ${images.length}`,
     `reconstructedTableCount: ${tables.length}`,
     `chartDataDraftCount: ${chartDataDrafts.length}`,
+    `densePointDraftCount: ${visualExtractionDensePointDraftCount(chartDataDrafts)}`,
+    `densePointCount: ${visualExtractionDensePointCount(chartDataDrafts)}`,
     `pixelDataDraftCount: ${pixelDataDrafts.length}`,
     `calibrationAnchorCount: ${calibrationAnchors.length}`,
     `chartQualityStatus: ${yamlScalar(chartQualityReview.status || "")}`,
@@ -6227,25 +6229,37 @@ function visualExtractionLocalOcrSummary(localOcr, labels) {
 }
 
 function visualExtractionTables(answer) {
-  const tables = [];
+  return visualExtractionTableBlocks(answer).map((block) => block.markdown);
+}
+
+function visualExtractionTableBlocks(answer) {
+  const blocks = [];
   const lines = String(answer || "").split(/\r?\n/);
+  let heading = "";
   for (let index = 0; index < lines.length; index += 1) {
+    const headingMatch = String(lines[index] || "").match(/^##+\s+(.+?)\s*$/);
+    if (headingMatch) {
+      heading = mdText(headingMatch[1]);
+      continue;
+    }
     if (!/^\s*\|.*\|\s*$/.test(lines[index] || "")) continue;
     const start = index;
     while (index < lines.length && /^\s*\|.*\|\s*$/.test(lines[index] || "")) index += 1;
     const block = lines.slice(start, index).join("\n").trim();
-    if (/\|\s*:?-{3,}:?\s*\|/.test(block)) tables.push(block);
+    if (/\|\s*:?-{3,}:?\s*\|/.test(block)) blocks.push({ markdown: block, heading });
   }
-  return tables.slice(0, 8);
+  return blocks.slice(0, 10);
 }
 
 function visualExtractionParsedTables(answer) {
-  return visualExtractionTables(answer)
-    .map((markdown, index) => ({
+  return visualExtractionTableBlocks(answer)
+    .map((block, index) => ({
       tableIndex: index + 1,
-      markdown,
-      ...parseVisualExtractionMarkdownTable(markdown),
-      evidenceLabels: visualExtractionEvidenceLabels(markdown)
+      markdown: block.markdown,
+      heading: mdText(block.heading || ""),
+      isDensePointTable: visualExtractionDensePointHeading(block.heading),
+      ...parseVisualExtractionMarkdownTable(block.markdown),
+      evidenceLabels: visualExtractionEvidenceLabels(`${block.heading || ""}\n${block.markdown}`)
     }))
     .filter((table) => table.columns.length || table.rows.length);
 }
@@ -6484,9 +6498,12 @@ function visualExtractionChartDraftFromTable(table) {
     };
   }).filter((point) => point.x && point.y);
   if (!points.length) return null;
+  const densePointTable = visualExtractionDensePointTable(table);
   return {
-    source: "reconstructed-table",
+    source: densePointTable ? "dense-point-table" : "reconstructed-table",
     tableIndex: table.tableIndex,
+    heading: table.heading || "",
+    densePointTable,
     xAxis: xColumn,
     yAxis: yColumn,
     seriesColumn: seriesColumn || "",
@@ -6494,6 +6511,32 @@ function visualExtractionChartDraftFromTable(table) {
     evidenceLabels: table.evidenceLabels || [],
     points: points.slice(0, 200)
   };
+}
+
+function visualExtractionDensePointTable(table) {
+  if (table?.isDensePointTable) return true;
+  const heading = mdText(table?.heading || "");
+  if (visualExtractionDensePointHeading(heading)) return true;
+  const columns = (table?.columns || []).join(" ");
+  return /(?:dense|densified|sampled|digitized|高密度|密集|采样|採樣|点位|點位)/i.test(columns)
+    && /(?:axis\s*x|axis\s*y|x\s*value|y\s*value|横轴|纵轴|點|点|point)/i.test(columns);
+}
+
+function visualExtractionDensePointHeading(heading) {
+  const text = mdText(heading || "");
+  if (!text) return false;
+  return /(?:dense|densified|sampled|digitized|密集|高密度|采样|採樣|数字化|點位|点位)/i.test(text)
+    && /(?:point|data|table|chart|图表|圖表|数据|資料|点|點)/i.test(text);
+}
+
+function visualExtractionDensePointDraftCount(drafts = []) {
+  return (drafts || []).filter((draft) => draft?.densePointTable || draft?.source === "dense-point-table").length;
+}
+
+function visualExtractionDensePointCount(drafts = []) {
+  return (drafts || [])
+    .filter((draft) => draft?.densePointTable || draft?.source === "dense-point-table")
+    .reduce((sum, draft) => sum + ((draft?.points || []).length), 0);
 }
 
 function visualExtractionChartDraftFromLocalOcr(image) {
@@ -7646,12 +7689,100 @@ function builtInSkillTemplate(skillId, outputLanguage) {
 
 function figureTableTemplate(common, outputLanguage) {
   if (outputLanguage === "zh-CN") {
-    return `${common}\n\n请结构化解析论文中的截图、图表、表格、公式截图或实验结果。优先结合图片附件、PDF/摘要上下文和用户问题；若没有图片附件，则只从文本上下文中抽取。输出 Markdown，并固定使用以下章节：\n\n## 对象识别\n- 类型：图、表、流程图、公式截图、实验结果、消融结果或其他。\n- 所属位置：如果能判断，写 Figure/Table 编号、标题、页码或上下文证据。\n- 研究作用：这张图/表在论文中承担的问题、方法、实验或结论角色。\n\n## 视觉 OCR 文本\n- 逐项转录能看清的标题、坐标轴、图例、表头、指标、数据集、模型名、公式符号和关键数值。\n- 看不清的内容写 [illegible]；可能识别错的内容标注 低置信度。\n- 保留原始单位、大小写、缩写和符号，不要自动改写。\n\n## 表格/数据重建\n- 如果图片中有表格或可读数值，用 Markdown 表格重建：字段至少包括 项目、数值/文本、单位、来源、置信度、备注。\n- 如果是折线图、柱状图或散点图，只重建能可靠读出的点或区间，并写明坐标轴、图例和读数依据。\n- 如果无法可靠重建，明确写“无法可靠重建”，不要补不存在的数据。\n\n## 像素/坐标数据草稿\n- 若图中有折线、柱状或散点，请在可见范围内给出可复核的 Markdown 表格，字段包括 Series、Point、Pixel X、Pixel Y、Axis X、Axis Y、Confidence、Source、Notes。\n- Pixel X/Y 是图像中的估计像素位置；Axis X/Y 是按坐标轴读出的数据值。读不准时留空或标低置信度。\n- 只输出能从图像直接观察或明确估计的点，不要为了凑完整曲线而补点。\n\n## 坐标轴校准锚点\n- 如果图表有 X/Y 坐标轴，请给出用于校准的可见刻度锚点表，字段包括 Axis、Pixel、Value、Unit、Source、Confidence、Notes。\n- 每个坐标轴至少输出两个清晰锚点；如果看不清刻度，明确写无法可靠校准。\n\n## 结论与证据映射\n- 解释图/表想证明什么，以及它如何支持或限制论文主张。\n- 每条解释都标注证据来源：[image]、[metadata]、[abstract] 或 [chunk:<id>]。\n- 区分图片直接观察、文本上下文推断和低置信度判断。\n\n## 综述/复现可复用信息\n- 给出适合写进文献综述、实验对比、方法复现或后续问题的要点。\n- 明确可比较指标、实验条件、baseline、公平性风险和需要补查的原文位置。\n\n## 不确定性与复核清单\n- 列出模糊、遮挡、缺少上下文、模型无法可靠识别、需要人工放大或回到 PDF 原图核对的部分。\n\n不要编造看不清的数字；不要把文本上下文推断伪装成图片观察。`;
+    return `${common}\n\n${[
+      "请结构化解析论文中的截图、图表、表格、公式截图或实验结果。优先结合图片附件、PDF/摘要上下文和用户问题；若没有图片附件，则只从文本上下文中抽取。输出 Markdown，并固定使用以下章节：",
+      "",
+      "## 对象识别",
+      "- 类型：图、表、流程图、公式截图、实验结果、消融结果或其他。",
+      "- 所属位置：如果能判断，写 Figure/Table 编号、标题、页码或上下文证据。",
+      "- 研究作用：这张图/表在论文中承担的问题、方法、实验或结论角色。",
+      "",
+      "## 视觉 OCR 文本",
+      "- 逐项转录能看清的标题、坐标轴、图例、表头、指标、数据集、模型名、公式符号和关键数值。",
+      "- 看不清的内容写 [illegible]；可能识别错的内容标注低置信度。",
+      "- 保留原始单位、大小写、缩写和符号，不要自动改写。",
+      "",
+      "## 表格/数据重建",
+      "- 如果图片中有表格或可读数值，用 Markdown 表格重建：字段至少包括 项目、数值/文本、单位、来源、置信度、备注。",
+      "- 如果是折线图、柱状图或散点图，只重建能可靠读出的点或区间，并写明坐标轴、图例和读数依据。",
+      "- 如果无法可靠重建，明确写“无法可靠重建”，不要补不存在的数据。",
+      "",
+      "## 密集点位数据草稿",
+      "- 若折线图、柱状图或散点图有多个可读点，请补充更密集但仍可复核的 Markdown 表格，字段包括 Series、Point、Axis X、Axis Y、Unit、Confidence、Source、Notes。",
+      "- 只列出能从原图直接观察、读数或明确估计的点；不能读出的区间写无法可靠抽取，不要插值补全。",
+      "",
+      "## 像素/坐标数据草稿",
+      "- 若图中有折线、柱状或散点，请在可见范围内给出可复核的 Markdown 表格，字段包括 Series、Point、Pixel X、Pixel Y、Axis X、Axis Y、Confidence、Source、Notes。",
+      "- Pixel X/Y 是图像中的估计像素位置；Axis X/Y 是按坐标轴读出的数据值。读不准时留空或标低置信度。",
+      "- 只输出能从图像直接观察或明确估计的点，不要为了凑完整曲线而补点。",
+      "",
+      "## 坐标轴校准锚点",
+      "- 如果图表有 X/Y 坐标轴，请给出用于校准的可见刻度锚点表，字段包括 Axis、Pixel、Value、Unit、Source、Confidence、Notes。",
+      "- 每个坐标轴至少输出两个清晰锚点；如果看不清刻度，明确写无法可靠校准。",
+      "",
+      "## 结论与证据映射",
+      "- 解释图/表想证明什么，以及它如何支持或限制论文主张。",
+      "- 每条解释都标注证据来源：[image]、[metadata]、[abstract] 或 [chunk:<id>]。",
+      "- 区分图片直接观察、文本上下文推断和低置信度判断。",
+      "",
+      "## 综述/复现可复用信息",
+      "- 给出适合写进文献综述、实验对比、方法复现或后续问题的要点。",
+      "- 明确可比较指标、实验条件、baseline、公平性风险和需要补查的原文位置。",
+      "",
+      "## 不确定性与复核清单",
+      "- 列出模糊、遮挡、缺少上下文、模型无法可靠识别、需要人工放大或回到 PDF 原图核对的部分。",
+      "",
+      "不要编造看不清的数字；不要把文本上下文推断伪装成图片观察。"
+    ].join("\n")}`;
   }
   if (outputLanguage === "ja-JP") {
-    return `${common}\n\n論文中のスクリーンショット、図、表、数式画像、実験結果を構造化して解析してください。画像添付、PDF/要約コンテキスト、ユーザー質問を優先し、画像がない場合はテキスト根拠だけで抽出してください。Markdown で次の章を固定して使ってください: 対象識別、視覚 OCR テキスト、表/データ再構成、ピクセル/座標データ下書き、座標軸キャリブレーションアンカー、結論と根拠マッピング、レビュー/再現に使える情報、不確実性と確認リスト。読めない数値は [illegible] とし、推測しないでください。表や数値は、項目、値/テキスト、単位、出典、信頼度、備考を持つ Markdown 表として再構成してください。グラフでは可能な場合だけ Series、Point、Pixel X、Pixel Y、Axis X、Axis Y、Confidence、Source、Notes を持つ表を追加し、X/Y 軸ごとに少なくとも 2 つの Axis、Pixel、Value、Unit、Source、Confidence アンカーを追加してください。各解釈には [image]、[metadata]、[abstract]、[chunk:<id>] の根拠を付け、画像観察、テキスト推論、低信頼判断を区別してください。`;
+    return `${common}\n\n論文中のスクリーンショット、図、表、数式画像、実験結果を構造化して解析してください。画像添付、PDF/要約コンテキスト、ユーザー質問を優先し、画像がない場合はテキスト根拠だけで抽出してください。Markdown で次の章を固定して使ってください: 対象識別、視覚 OCR テキスト、表/データ再構成、密集ポイントデータ下書き、ピクセル/座標データ下書き、座標軸キャリブレーションアンカー、結論と根拠マッピング、レビュー/再現に使える情報、不確実性と確認リスト。読めない数値は [illegible] とし、推測しないでください。表や数値は、項目、値/テキスト、単位、出典、信頼度、備考を持つ Markdown 表として再構成してください。グラフでは読める場合だけ Series、Point、Axis X、Axis Y、Unit、Confidence、Source、Notes を持つ密集ポイント表を追加し、可能な場合だけ Series、Point、Pixel X、Pixel Y、Axis X、Axis Y、Confidence、Source、Notes を持つ表を追加してください。X/Y 軸ごとに少なくとも 2 つの Axis、Pixel、Value、Unit、Source、Confidence アンカーを追加してください。各解釈には [image]、[metadata]、[abstract]、[chunk:<id>] の根拠を付け、画像観察、テキスト推論、低信頼判断を区別してください。`;
   }
-  return `${common}\n\nExtract structured information from screenshots, figures, tables, formula captures, or experimental-result panels. Prefer attached images plus the provided paper/PDF context and the user question; if no image is attached, extract only from the text context. Use Markdown with these exact sections:\n\n## Object Identification\n- Type: figure, table, flow chart, formula capture, experiment result, ablation result, or other.\n- Location: Figure/Table number, title, page, or contextual evidence when available.\n- Research role: problem, method, experiment, or conclusion role in the paper.\n\n## Visual OCR Text\n- Transcribe readable titles, axes, legends, headers, metrics, datasets, model names, formula symbols, and key numbers.\n- Write [illegible] for unreadable content and mark uncertain recognition as low-confidence.\n- Preserve original units, capitalization, abbreviations, and symbols.\n\n## Reconstructed Data Table\n- For tables or readable numbers, reconstruct a Markdown table with at least: Item, Value/Text, Unit, Source, Confidence, Notes.\n- For line/bar/scatter charts, reconstruct only reliably readable points or ranges, and state the axis, legend, and reading basis.\n- If reconstruction is unreliable, say so explicitly instead of filling missing values.\n\n## Pixel / Coordinate Data Draft\n- For visible line, bar, or scatter charts, add a reviewable Markdown table when possible with: Series, Point, Pixel X, Pixel Y, Axis X, Axis Y, Confidence, Source, Notes.\n- Pixel X/Y are estimated image coordinates; Axis X/Y are values read from the chart scale. Leave fields blank or mark low-confidence when unsure.\n- Include only directly visible or explicitly estimated points; do not fabricate a complete series.\n\n## Axis Calibration Anchors\n- For charts with X/Y axes, add a visible tick-anchor table with: Axis, Pixel, Value, Unit, Source, Confidence, Notes.\n- Provide at least two clear anchors per axis when readable; if the ticks are unreadable, state that calibration is unreliable.\n\n## Interpretation And Evidence Map\n- Explain what the visual tries to prove and how it supports or limits the paper's claims.\n- Mark every interpretation with [image], [metadata], [abstract], or [chunk:<id>].\n- Separate direct visual observation, text-context inference, and low-confidence judgment.\n\n## Reusable Review Or Reproduction Notes\n- Extract points useful for a literature review, experiment comparison, method reproduction, or follow-up question.\n- Call out comparable metrics, experimental conditions, baselines, fairness risks, and original-PDF locations to verify.\n\n## Uncertainty And Review Checklist\n- List blur, occlusion, missing context, unreliable recognition, and items that need manual zooming or checking against the original PDF.\n\nDo not invent unreadable numbers, and do not present text-context inference as direct image observation.`;
+  return `${common}\n\n${[
+    "Extract structured information from screenshots, figures, tables, formula captures, or experimental-result panels. Prefer attached images plus the provided paper/PDF context and the user question; if no image is attached, extract only from the text context. Use Markdown with these exact sections:",
+    "",
+    "## Object Identification",
+    "- Type: figure, table, flow chart, formula capture, experiment result, ablation result, or other.",
+    "- Location: Figure/Table number, title, page, or contextual evidence when available.",
+    "- Research role: problem, method, experiment, or conclusion role in the paper.",
+    "",
+    "## Visual OCR Text",
+    "- Transcribe readable titles, axes, legends, headers, metrics, datasets, model names, formula symbols, and key numbers.",
+    "- Write [illegible] for unreadable content and mark uncertain recognition as low-confidence.",
+    "- Preserve original units, capitalization, abbreviations, and symbols.",
+    "",
+    "## Reconstructed Data Table",
+    "- For tables or readable numbers, reconstruct a Markdown table with at least: Item, Value/Text, Unit, Source, Confidence, Notes.",
+    "- For line/bar/scatter charts, reconstruct only reliably readable points or ranges, and state the axis, legend, and reading basis.",
+    "- If reconstruction is unreliable, say so explicitly instead of filling missing values.",
+    "",
+    "## Dense Point Data Draft",
+    "- For line, bar, or scatter charts with multiple readable points, add a denser but still reviewable Markdown table with: Series, Point, Axis X, Axis Y, Unit, Confidence, Source, Notes.",
+    "- Include only points directly visible, read from the chart, or explicitly estimated from the visual. If a region cannot be read, say so instead of interpolating missing values.",
+    "",
+    "## Pixel / Coordinate Data Draft",
+    "- For visible line, bar, or scatter charts, add a reviewable Markdown table when possible with: Series, Point, Pixel X, Pixel Y, Axis X, Axis Y, Confidence, Source, Notes.",
+    "- Pixel X/Y are estimated image coordinates; Axis X/Y are values read from the chart scale. Leave fields blank or mark low-confidence when unsure.",
+    "- Include only directly visible or explicitly estimated points; do not fabricate a complete series.",
+    "",
+    "## Axis Calibration Anchors",
+    "- For charts with X/Y axes, add a visible tick-anchor table with: Axis, Pixel, Value, Unit, Source, Confidence, Notes.",
+    "- Provide at least two clear anchors per axis when readable; if the ticks are unreadable, state that calibration is unreliable.",
+    "",
+    "## Interpretation And Evidence Map",
+    "- Explain what the visual tries to prove and how it supports or limits the paper's claims.",
+    "- Mark every interpretation with [image], [metadata], [abstract], or [chunk:<id>].",
+    "- Separate direct visual observation, text-context inference, and low-confidence judgment.",
+    "",
+    "## Reusable Review Or Reproduction Notes",
+    "- Extract points useful for a literature review, experiment comparison, method reproduction, or follow-up question.",
+    "- Call out comparable metrics, experimental conditions, baselines, fairness risks, and original-PDF locations to verify.",
+    "",
+    "## Uncertainty And Review Checklist",
+    "- List blur, occlusion, missing context, unreliable recognition, and items that need manual zooming or checking against the original PDF.",
+    "",
+    "Do not invent unreadable numbers, and do not present text-context inference as direct image observation."
+  ].join("\n")}`;
 }
 
 function literatureMatrixTemplate(common, outputLanguage) {
