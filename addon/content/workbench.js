@@ -770,6 +770,8 @@ var ZoteroMarkdownSummaryWorkbench = {
       ...this.state.profiles.filter((profile) => profile?.id !== next.id)
     ]).map(hydrateProfile);
     this.renderProfiles();
+    this.renderProfileEditor();
+    this.renderProfileTrigger();
     this.setStatus(this.t("providerPresetApplied"));
     return next;
   },
@@ -1010,11 +1012,13 @@ var ZoteroMarkdownSummaryWorkbench = {
     const value = String(modelInput.value || "").trim();
     if (!value) {
       select.value = "";
+      setWorkbenchCustomModelInputVisible(modelInput, false);
       return;
     }
     const entries = modelOptions || Array.from(document.getElementById("zms-workbench-model-options")?.children || [])
       .map((option) => ({ id: String(option.value || ""), label: String(option.label || option.value || "") }));
     select.value = entries.some((entry) => entry.id === value) ? value : "__custom";
+    setWorkbenchCustomModelInputVisible(modelInput, select.value === "__custom");
   },
 
   selectWorkbenchModelFromDropdown() {
@@ -1024,8 +1028,10 @@ var ZoteroMarkdownSummaryWorkbench = {
     const selected = String(select.value || "");
     if (selected && selected !== "__custom") {
       modelInput.value = selected;
+      setWorkbenchCustomModelInputVisible(modelInput, false);
       return;
     }
+    setWorkbenchCustomModelInputVisible(modelInput, true);
     modelInput.focus?.();
   },
 
@@ -5357,6 +5363,12 @@ function recommendedModelOptionsForWorkbenchProfile(profile) {
 
 function recommendedModelOptionsForWorkbenchProvider(provider) {
   return zmsRecommendedModelOptionsForProvider(provider);
+}
+
+function setWorkbenchCustomModelInputVisible(modelInput, visible) {
+  if (!modelInput) return;
+  modelInput.hidden = !visible;
+  modelInput.setAttribute?.("aria-hidden", visible ? "false" : "true");
 }
 
 function focusElement(element) {

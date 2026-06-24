@@ -2714,6 +2714,7 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value)).toContain("deepseek-chat");
     expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
     expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-chat");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 2");
   });
 
@@ -2753,6 +2754,7 @@ describe("workbench writeback helpers", () => {
     expect(providerSelect.children.map((option: any) => option.value)).toContain("anthropic");
     expect(providerSelect.children.map((option: any) => option.textContent)).toContain("DeepSeek 聊天接口");
     expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
     expect(dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value)).toContain("deepseek-reasoner");
   });
 
@@ -2856,6 +2858,53 @@ describe("workbench writeback helpers", () => {
     workbench.selectWorkbenchModelFromDropdown();
 
     expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-reasoner");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
+  });
+
+  it("shows the workbench custom model field only for custom model values", () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-profile-name": "OpenAI",
+      "zms-profile-base-url": "https://api.openai.com/v1",
+      "zms-profile-api-key": "sk-test",
+      "zms-profile-model": "private-deployment"
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelSelectPlaceholder: "Choose provider model",
+      modelSelectCustom: "Custom model..."
+    }[key] || key);
+    workbench.state.profile = {
+      id: "openai",
+      name: "OpenAI",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test",
+      model: "private-deployment",
+      capabilities: { text: true, imageBase64: true, pdfBase64: true, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+
+    workbench.renderWorkbenchModelRecommendations();
+
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("private-deployment");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
+
+    dom.getElementById("zms-profile-model-select").value = "__custom";
+    workbench.selectWorkbenchModelFromDropdown();
+
+    expect(dom.getElementById("zms-profile-model").value).toBe("private-deployment");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(false);
+
+    dom.getElementById("zms-profile-model-select").value = "gpt-4.1";
+    workbench.selectWorkbenchModelFromDropdown();
+
+    expect(dom.getElementById("zms-profile-model").value).toBe("gpt-4.1");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
   });
 
   it("keeps custom auth headers when building workbench provider headers", () => {

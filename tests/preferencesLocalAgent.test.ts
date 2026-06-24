@@ -2819,6 +2819,7 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model-select").children.map((option: any) => option.value)).toContain("deepseek-chat");
     expect(elements.get("zms-model").value).toBe("deepseek-chat");
     expect(elements.get("zms-model-select").value).toBe("deepseek-chat");
+    expect(elements.get("zms-model").hidden).toBe(true);
     expect(elements.get("zms-status").value).toBe("Recommended models loaded: 2");
   });
 
@@ -2835,6 +2836,28 @@ describe("preferences local-agent config helpers", () => {
     controller.selectModelFromDropdown();
 
     expect(elements.get("zms-model").value).toBe("deepseek-reasoner");
+    expect(elements.get("zms-model").hidden).toBe(true);
+  });
+
+  it("shows the settings custom model field only when custom mode is selected", () => {
+    const { controller, elements } = loadPreferencesController({ initialModel: "private-deployment" });
+
+    controller.refreshModelRecommendations();
+
+    expect(elements.get("zms-model-select").value).toBe("private-deployment");
+    expect(elements.get("zms-model").hidden).toBe(true);
+
+    elements.get("zms-model-select").value = "__custom";
+    controller.selectModelFromDropdown();
+
+    expect(elements.get("zms-model").value).toBe("private-deployment");
+    expect(elements.get("zms-model").hidden).toBe(false);
+
+    elements.get("zms-model-select").value = "gpt-4.1";
+    controller.selectModelFromDropdown();
+
+    expect(elements.get("zms-model").value).toBe("gpt-4.1");
+    expect(elements.get("zms-model").hidden).toBe(true);
   });
 
   it("replaces a previous provider recommendation when switching provider presets", () => {

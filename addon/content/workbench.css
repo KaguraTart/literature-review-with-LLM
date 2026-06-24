@@ -154,6 +154,10 @@
   margin-bottom: 0;
 }
 
+.zms-profile-model-row input[hidden] {
+  display: none !important;
+}
+
 .zms-profile-model-row button {
   flex: 0 1 auto;
   margin-bottom: 0;

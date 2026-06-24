@@ -90,6 +90,10 @@ hbox.zms-row {
   min-width: min(100%, 12em);
 }
 
+.zms-model-custom[hidden] {
+  display: none !important;
+}
+
 .zms-model-row > button {
   flex: 0 1 auto;
   min-width: 7em;

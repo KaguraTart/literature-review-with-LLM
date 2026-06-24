@@ -759,10 +759,12 @@ var ZoteroMarkdownSummaryPrefs = {
     const selected = String(select.value || "");
     if (selected && selected !== "__custom") {
       model.value = selected;
+      setCustomModelInputVisible(model, false);
       this.refreshProfileStatus();
       this.refreshProviderGuide();
       return;
     }
+    setCustomModelInputVisible(model, true);
     model.focus?.();
   },
 
@@ -882,7 +884,7 @@ function prefFallbackMessage(key, lang) {
     baseURL: zh ? "接口地址" : "Base URL",
     apiKey: "API Key",
     model: zh ? "模型" : "Model",
-    modelSelectPlaceholder: zh ? "选择模型" : "Choose a model",
+    modelSelectPlaceholder: zh ? "选择厂商推荐模型" : "Choose provider model",
     modelSelectCustom: zh ? "自定义模型..." : "Custom model...",
     providerEnv: zh ? "粘贴环境变量配置" : "Paste env config",
     providerGuide: zh ? "配置指南" : "Setup guide",
@@ -3354,15 +3356,24 @@ function syncModelSelectFromInput(modelOptions) {
   const value = String(model.value || "").trim();
   if (!value) {
     select.value = "";
+    setCustomModelInputVisible(model, false);
     return;
   }
   const entries = modelOptions || Array.from(document.getElementById("zms-model-options")?.children || [])
     .map((option) => ({ id: String(option.value || ""), label: String(option.label || option.value || "") }));
   if (entries.some((entry) => entry.id === value)) {
     select.value = value;
+    setCustomModelInputVisible(model, false);
     return;
   }
   select.value = "__custom";
+  setCustomModelInputVisible(model, true);
+}
+
+function setCustomModelInputVisible(model, visible) {
+  if (!model) return;
+  model.hidden = !visible;
+  model.setAttribute?.("aria-hidden", visible ? "false" : "true");
 }
 
 function mergeModelOptions(primary, secondary) {
