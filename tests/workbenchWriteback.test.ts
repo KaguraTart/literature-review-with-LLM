@@ -2712,6 +2712,112 @@ describe("workbench writeback helpers", () => {
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 2");
   });
 
+  it("renders a localized provider preset dropdown in the workbench settings panel", () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-profile-name": "DeepSeek",
+      "zms-profile-base-url": "https://api.deepseek.com",
+      "zms-profile-api-key": "",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelSelectPlaceholder: "选择推荐模型",
+      modelSelectCustom: "自定义模型..."
+    }[key] || key);
+    workbench.state.uiLanguage = "zh-CN";
+    workbench.state.profile = {
+      id: "deepseek",
+      name: "DeepSeek",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepseek.com",
+      apiKey: "",
+      model: "",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+
+    workbench.renderProfileEditor();
+
+    const providerSelect = dom.getElementById("zms-workbench-provider");
+    expect(providerSelect.value).toBe("deepseek");
+    expect(providerSelect.children.map((option: any) => option.value)).toContain("anthropic");
+    expect(providerSelect.children.map((option: any) => option.textContent)).toContain("DeepSeek 聊天接口");
+    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
+    expect(dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value)).toContain("deepseek-reasoner");
+  });
+
+  it("applies a workbench provider preset without reusing the previous provider API key", () => {
+    const prefs: Record<string, any> = {};
+    const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument({
+      "zms-profile-name": "DeepSeek",
+      "zms-profile-base-url": "https://api.deepseek.com",
+      "zms-profile-api-key": "deepseek-secret",
+      "zms-profile-model": "deepseek-chat"
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelSelectPlaceholder: "Choose a recommended model",
+      modelSelectCustom: "Custom model...",
+      providerPresetApplied: "Provider preset applied",
+      saved: "Saved"
+    }[key] || key);
+    const profile = {
+      id: "deepseek",
+      name: "DeepSeek",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepseek.com",
+      apiKey: "deepseek-secret",
+      model: "deepseek-chat",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    const next = workbench.applyWorkbenchProviderPreset("anthropic");
+
+    expect(next).toMatchObject({
+      id: "anthropic",
+      name: "Anthropic",
+      protocol: "anthropic_messages",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "",
+      model: "claude-sonnet-4-20250514"
+    });
+    expect(dom.getElementById("zms-profile-name").value).toBe("Anthropic");
+    expect(dom.getElementById("zms-profile-base-url").value).toBe("https://api.anthropic.com");
+    expect(dom.getElementById("zms-profile-api-key").value).toBe("");
+    expect(dom.getElementById("zms-profile-model").value).toBe("claude-sonnet-4-20250514");
+    expect(dom.getElementById("zms-workbench-provider").value).toBe("anthropic");
+    expect(dom.getElementById("zms-profile-model-select").children.map((option: any) => option.value)).toContain("claude-3-5-haiku-latest");
+
+    const saved = workbench.saveProfileSettings();
+
+    expect(saved.apiKey).toBe("");
+    expect(prefs.provider).toBe("anthropic");
+    expect(prefs.apiKey).toBe("");
+    expect(prefs.baseURL).toBe("https://api.anthropic.com");
+    expect(prefs.model).toBe("claude-sonnet-4-20250514");
+    const profiles = JSON.parse(prefs.profilesJson);
+    expect(profiles[0]).toMatchObject({
+      id: "anthropic",
+      apiKey: "",
+      model: "claude-sonnet-4-20250514",
+      isDefault: true
+    });
+    expect(profiles.some((item: any) => item.id === "deepseek")).toBe(true);
+  });
+
   it("updates the workbench model field from the recommended model dropdown", () => {
     const loaded: any = loadWorkbenchHelpers();
     const dom = fakeDocument({

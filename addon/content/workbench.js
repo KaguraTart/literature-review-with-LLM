@@ -593,7 +593,8 @@ var ZoteroMarkdownSummaryWorkbench = {
     if (localOcrInput) localOcrInput.setAttribute("title", this.t("localOcrTitle"));
     setText("zms-prompt-pack-label", this.t("promptPack"));
     setText("zms-paper-heading", this.t("paper"));
-    setText("zms-profile-label", this.t("provider"));
+    setText("zms-profile-label", this.t("profile"));
+    setText("zms-workbench-provider-label", this.t("modelProvider"));
     setText("zms-skill-label", this.t("skill"));
     setText("zms-sessions-heading", this.t("sessions"));
     setText("zms-candidates-heading", this.t("candidates"));
@@ -704,6 +705,7 @@ var ZoteroMarkdownSummaryWorkbench = {
 
   renderProfileEditor() {
     const profile = this.state.profile || {};
+    this.renderWorkbenchProviderOptions();
     setInputValue("zms-profile-name", profile.name || profile.id || "");
     setInputValue("zms-profile-base-url", profile.baseURL || "");
     setInputValue("zms-profile-api-key", profile.apiKey || "");
@@ -722,6 +724,54 @@ var ZoteroMarkdownSummaryWorkbench = {
     setInputValue("zms-local-ocr-endpoint", this.state.localOcrEndpoint || "http://127.0.0.1:3333/mcp");
     setInputValue("zms-local-ocr-tool", this.state.localOcrTool || "ocr_image");
     setInputValue("zms-local-ocr-language", this.state.localOcrLanguage || "eng");
+  },
+
+  renderWorkbenchProviderOptions() {
+    const select = document.getElementById("zms-workbench-provider");
+    if (!select) return;
+    const currentProvider = workbenchProviderPresetFromProfile(this.state.profile, pref("provider"));
+    const labels = workbenchProviderMenuLabels(this.state.uiLanguage);
+    clearOptionsElement(select);
+    for (const provider of workbenchProviderPresetIds()) {
+      const defaults = workbenchProviderDefaults(provider);
+      const option = document.createElement("option");
+      option.value = provider;
+      option.textContent = labels[provider] || defaults.name || provider;
+      option.selected = provider === currentProvider;
+      select.appendChild(option);
+    }
+    select.value = currentProvider;
+    select.onchange = () => this.applyWorkbenchProviderPreset(select.value);
+  },
+
+  applyWorkbenchProviderPreset(provider) {
+    const providerId = workbenchProviderPresetValue(provider);
+    const current = this.profileFromSettingsPanel() || this.state.profile || {};
+    const previousProvider = workbenchProviderPresetFromProfile(current, pref("provider"));
+    const defaults = workbenchProviderDefaults(providerId);
+    const sameProvider = previousProvider === providerId;
+    const next = hydrateProfile({
+      id: defaults.id,
+      name: defaults.name,
+      protocol: defaults.protocol,
+      endpointMode: defaults.endpointMode,
+      baseURL: defaults.baseURL || "",
+      fullURL: defaults.fullURL || "",
+      apiKey: sameProvider ? String(current.apiKey || "").trim() : "",
+      model: defaults.model || recommendedModelOptionsForWorkbenchProvider(providerId)[0]?.id || "",
+      capabilities: { ...(defaults.capabilities || {}) },
+      customHeaders: { ...(defaults.customHeaders || {}) },
+      bodyExtra: { ...(defaults.bodyExtra || {}) },
+      isDefault: true
+    });
+    this.state.profile = next;
+    this.state.profiles = normalizeDefaultProfileSelection([
+      next,
+      ...this.state.profiles.filter((profile) => profile?.id !== next.id)
+    ]).map(hydrateProfile);
+    this.renderProfiles();
+    this.setStatus(this.t("providerPresetApplied"));
+    return next;
   },
 
   applyProviderEnvFromText() {
@@ -2387,7 +2437,7 @@ function hydrateProfile(profile) {
 }
 
 function defaultProviderProfiles() {
-  return ["minimax", "openai", "openai_compatible", "openai_responses_compatible", "anthropic", "anthropic_compatible", "gemini", "azure_openai", "vercel_ai_chat", "vercel_ai_responses", "vercel_ai_anthropic", "cloudflare_ai_chat", "cloudflare_ai_responses", "cloudflare_ai_anthropic", "github_models", "huggingface", "deepinfra", "fireworks", "cerebras", "nvidia_nim", "sambanova", "sambanova_responses", "sambanova_anthropic", "xai", "groq", "mistral", "together", "kimi", "perplexity", "deepseek", "deepseek_anthropic", "zai_anthropic", "openrouter", "dashscope", "siliconflow", "zhipu", "volcengine", "qianfan", "hunyuan", "ollama", "lm_studio", "local_agents"].map((provider, index) => {
+  return workbenchProviderPresetIds().map((provider, index) => {
     const defaults = workbenchProviderDefaults(provider);
     return {
       id: defaults.id,
@@ -2404,6 +2454,110 @@ function defaultProviderProfiles() {
       isDefault: index === 0
     };
   });
+}
+
+function workbenchProviderPresetIds() {
+  return [
+    "minimax",
+    "openai",
+    "openai_compatible",
+    "openai_responses_compatible",
+    "anthropic",
+    "anthropic_compatible",
+    "gemini",
+    "azure_openai",
+    "vercel_ai_chat",
+    "vercel_ai_responses",
+    "vercel_ai_anthropic",
+    "cloudflare_ai_chat",
+    "cloudflare_ai_responses",
+    "cloudflare_ai_anthropic",
+    "github_models",
+    "huggingface",
+    "deepinfra",
+    "fireworks",
+    "cerebras",
+    "nvidia_nim",
+    "sambanova",
+    "sambanova_responses",
+    "sambanova_anthropic",
+    "xai",
+    "groq",
+    "mistral",
+    "together",
+    "kimi",
+    "perplexity",
+    "deepseek",
+    "deepseek_anthropic",
+    "zai_anthropic",
+    "openrouter",
+    "dashscope",
+    "siliconflow",
+    "zhipu",
+    "volcengine",
+    "qianfan",
+    "hunyuan",
+    "ollama",
+    "lm_studio",
+    "local_agents"
+  ];
+}
+
+function workbenchProviderPresetValue(provider) {
+  const key = String(provider || "").trim().replace(/-/g, "_");
+  return workbenchProviderPresetIds().includes(key) ? key : "openai_compatible";
+}
+
+function workbenchProviderPresetFromProfile(profile, fallbackProvider) {
+  return workbenchProviderPresetValue(workbenchProviderFromProfile(profile, fallbackProvider));
+}
+
+function workbenchProviderMenuLabels(language) {
+  const zh = String(language || "").toLowerCase().startsWith("zh");
+  return {
+    minimax: zh ? "MiniMax OpenAI 兼容" : "MiniMax OpenAI Compatible",
+    openai: zh ? "OpenAI 原生" : "OpenAI Native",
+    openai_compatible: zh ? "OpenAI 兼容接口" : "OpenAI Compatible Chat",
+    openai_responses_compatible: zh ? "OpenAI Responses 兼容接口" : "OpenAI Responses Compatible",
+    anthropic: zh ? "Anthropic 原生" : "Anthropic Native",
+    anthropic_compatible: zh ? "Anthropic 兼容接口" : "Anthropic Compatible",
+    gemini: zh ? "Gemini OpenAI 兼容" : "Gemini OpenAI Compatible",
+    azure_openai: "Azure OpenAI",
+    vercel_ai_chat: zh ? "Vercel AI Gateway 聊天接口" : "Vercel AI Gateway Chat",
+    vercel_ai_responses: zh ? "Vercel AI Gateway Responses 接口" : "Vercel AI Gateway Responses",
+    vercel_ai_anthropic: zh ? "Vercel AI Gateway Anthropic 接口" : "Vercel AI Gateway Anthropic",
+    cloudflare_ai_chat: zh ? "Cloudflare AI 聊天接口" : "Cloudflare AI Chat",
+    cloudflare_ai_responses: zh ? "Cloudflare AI Responses 接口" : "Cloudflare AI Responses",
+    cloudflare_ai_anthropic: zh ? "Cloudflare AI Anthropic 接口" : "Cloudflare AI Anthropic",
+    github_models: "GitHub Models",
+    huggingface: "Hugging Face",
+    deepinfra: "DeepInfra",
+    fireworks: "Fireworks AI",
+    cerebras: "Cerebras",
+    nvidia_nim: "NVIDIA NIM",
+    sambanova: zh ? "SambaNova 聊天接口" : "SambaNova Chat",
+    sambanova_responses: zh ? "SambaNova Responses 接口" : "SambaNova Responses",
+    sambanova_anthropic: zh ? "SambaNova Anthropic 接口" : "SambaNova Anthropic",
+    xai: "xAI",
+    groq: "Groq",
+    mistral: "Mistral",
+    together: "Together AI",
+    kimi: "Kimi / Moonshot",
+    perplexity: "Perplexity Sonar",
+    deepseek: zh ? "DeepSeek 聊天接口" : "DeepSeek Chat",
+    deepseek_anthropic: zh ? "DeepSeek Anthropic 接口" : "DeepSeek Anthropic",
+    zai_anthropic: zh ? "Z.AI Anthropic 接口" : "Z.AI Anthropic",
+    openrouter: "OpenRouter",
+    dashscope: "Qwen / DashScope",
+    siliconflow: "SiliconFlow",
+    zhipu: zh ? "智谱 / GLM" : "Zhipu / GLM",
+    volcengine: zh ? "火山方舟 / Doubao" : "Volcengine Ark / Doubao",
+    qianfan: zh ? "百度千帆" : "Baidu Qianfan",
+    hunyuan: zh ? "腾讯混元" : "Tencent Hunyuan",
+    ollama: zh ? "Ollama 本地接口" : "Ollama Local",
+    lm_studio: zh ? "LM Studio 本地接口" : "LM Studio Local",
+    local_agents: zh ? "本地代理工具" : "Local Agents"
+  };
 }
 
 function mergeDefaultProviderProfiles(profiles) {
