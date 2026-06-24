@@ -1985,6 +1985,11 @@ var ZoteroMarkdownSummaryWorkbench = {
       if (this.state.item) {
         const ownerItem = sessionOwnerItem(this.state.item) || this.state.item;
         await linkOrCreateChatAttachment(ownerItem, scopeKey, mdPath, this.state.sessionId);
+        await updateSessionIndexForItem(this.state.item, this.state.outputDir, {
+          sessionId: this.state.sessionId,
+          path,
+          markdownPath: mdPath
+        });
       }
       await this.renderSessions();
       if (!options.quiet) this.setStatus(this.t("saved"));
@@ -12304,6 +12309,10 @@ function sessionDirForKey(outputDir, key) {
   return PathUtils.join(outputDir || "", "sessions", sanitizeFilename(key || "unknown"));
 }
 
+function sessionIndexPath(outputDir) {
+  return PathUtils.join(outputDir || "", "sessions", "session-index.json");
+}
+
 function sessionDirForItem(outputDir, item) {
   return sessionDirForKey(outputDir, sessionScopeKey(item));
 }
@@ -12316,6 +12325,81 @@ function sessionMarkdownPath(outputDir, item, sessionId) {
   const safeKey = sessionScopeKey(item);
   const safeId = sanitizeFilename(sessionId || newSessionId());
   return PathUtils.join(outputDir || "", "sessions", safeKey, `${safeId}.md`);
+}
+
+async function readSessionIndex(outputDir) {
+  if (!outputDir) return { version: 1, items: {} };
+  const parsed = safeParseJSON(await readTextIfExists(sessionIndexPath(outputDir)));
+  const items = parsed?.items && typeof parsed.items === "object" && !Array.isArray(parsed.items)
+    ? parsed.items
+    : {};
+  return {
+    version: 1,
+    updatedAt: parsed?.updatedAt || "",
+    items
+  };
+}
+
+async function writeSessionIndex(outputDir, index) {
+  if (!outputDir) return;
+  const next = {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    items: index?.items && typeof index.items === "object" && !Array.isArray(index.items) ? index.items : {}
+  };
+  await writeTextAtomic(sessionIndexPath(outputDir), JSON.stringify(next, null, 2));
+}
+
+async function updateSessionIndexForItem(item, outputDir, entry) {
+  if (!item?.key || !outputDir || !entry?.sessionId) return;
+  const index = await readSessionIndex(outputDir);
+  const scopeKey = sessionScopeKey(item);
+  const sourceItemKey = item?.key || "";
+  const record = {
+    itemKey: scopeKey,
+    sourceItemKey,
+    sessionId: normalizeSessionId(entry.sessionId),
+    path: String(entry.path || ""),
+    markdownPath: String(entry.markdownPath || ""),
+    updatedAt: new Date().toISOString()
+  };
+  for (const key of sessionIdentityKeys(item)) {
+    index.items[key] = { ...record, lookupKey: key };
+  }
+  await writeSessionIndex(outputDir, index);
+}
+
+async function indexedSessionForItem(item, outputDir) {
+  const paths = await indexedSessionPathsForItem(item, outputDir);
+  return paths[0] ? sessionFileDescriptor(paths[0]) : null;
+}
+
+async function indexedSessionPathsForItem(item, outputDir) {
+  if (!item?.key || !outputDir) return [];
+  const index = await readSessionIndex(outputDir);
+  const paths = [];
+  const seen = new Set();
+  for (const key of sessionIdentityKeys(item)) {
+    const record = index.items?.[key];
+    if (!record) continue;
+    const candidates = [
+      String(record.path || ""),
+      String(record.markdownPath || "")
+    ].filter(Boolean);
+    if (record.sessionId) {
+      candidates.push(PathUtils.join(sessionDirForKey(outputDir, key), sessionFilenameFor(record.sessionId)));
+      candidates.push(PathUtils.join(sessionDirForKey(outputDir, key), `${sanitizeFilename(record.sessionId)}.md`));
+    }
+    for (const path of candidates) {
+      if (!sessionIdFromPath(path) || seen.has(path)) continue;
+      seen.add(path);
+      if (await pathExists(path)) {
+        paths.push(path);
+        break;
+      }
+    }
+  }
+  return paths;
 }
 
 function providerDiagnosticsMarkdownPath(outputDir, profile) {
@@ -12377,6 +12461,8 @@ function messagesFromSessionMarkdown(markdown) {
 
 async function latestSessionForItem(item, outputDir) {
   if (!item?.key) return null;
+  const indexed = outputDir ? await indexedSessionForItem(item, outputDir) : null;
+  if (indexed) return indexed;
   const files = outputDir ? await sessionFilesForItem(item, outputDir) : [];
   if (files.length) return sessionFileDescriptor(files[files.length - 1]);
   return latestLinkedChatSessionForItem(item);
@@ -12402,6 +12488,11 @@ async function sessionFilesForItem(item, outputDir) {
       // Keep listing other legacy/current session directories.
     }
     }
+  }
+  for (const path of await indexedSessionPathsForItem(item, outputDir)) {
+    if (seen.has(path)) continue;
+    seen.add(path);
+    files.push(path);
   }
   for (const path of await linkedChatSessionPathsForItem(item)) {
     if (seen.has(path)) continue;

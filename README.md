@@ -195,6 +195,7 @@ The workbench is designed as a compact paper chat surface:
 - Message area: rendered Markdown answers with raw Markdown copy support.
 - Composer: ask questions about the selected paper.
 - Image attachments: paste screenshots, drop images, or select local image files; requests are sent in the active provider protocol's image format. Image-only sends are converted into a default analysis request. When `Local OCR` is enabled, the local bridge can add editable OCR metadata to the saved session and visual extraction report. Recent figure/table extraction answers can be exported from the Sessions and Files panel as Markdown with machine-readable JSON/CSV table sidecars.
+- Sessions: chats are saved per paper, mirrored as linked Markdown attachments, and restored from a local last-active session index when the same paper is opened again.
 - Settings drawer: model, consultation mode, paper metadata, redacted provider diagnostics export, session tools, reading-log/review-draft export, and candidate-paper utilities.
 
 Typical questions:

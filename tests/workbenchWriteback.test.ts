@@ -4322,6 +4322,44 @@ describe("workbench writeback helpers", () => {
     ]);
   });
 
+  it("prioritizes the per-paper last active session index over newer session ids", async () => {
+    const files = new Map([
+      ["/tmp/zms/sessions/session-index.json", JSON.stringify({
+        version: 1,
+        items: {
+          ITEM: {
+            itemKey: "ITEM",
+            sourceItemKey: "ITEM",
+            sessionId: "chat-100",
+            path: "/tmp/zms/sessions/ITEM/chat-100.jsonl",
+            markdownPath: "/tmp/zms/sessions/ITEM/chat-100.md",
+            updatedAt: "2026-06-24T12:00:00.000Z"
+          }
+        }
+      })],
+      ["/tmp/zms/sessions/ITEM", ""],
+      ["/tmp/zms/sessions/ITEM/chat-100.jsonl", "{\"role\":\"user\",\"content\":\"continued old chat\"}\n"],
+      ["/tmp/zms/sessions/ITEM/chat-999.jsonl", "{\"role\":\"user\",\"content\":\"newer id but not last active\"}\n"]
+    ]);
+    const loaded = loadWorkbenchHelpers(files, {
+      getChildren: async (dir: string) => {
+        if (dir === "/tmp/zms/sessions/ITEM") {
+          return [
+            "/tmp/zms/sessions/ITEM/chat-100.jsonl",
+            "/tmp/zms/sessions/ITEM/chat-999.jsonl"
+          ];
+        }
+        return [];
+      }
+    });
+
+    await expect(loaded.latestSessionForItem({ key: "ITEM" }, "/tmp/zms")).resolves.toMatchObject({
+      path: "/tmp/zms/sessions/ITEM/chat-100.jsonl",
+      sessionId: "chat-100",
+      source: "jsonl"
+    });
+  });
+
   it("recovers chat history from linked Markdown session attachments when JSONL is unavailable", async () => {
     const files = new Map([
       [
@@ -7530,6 +7568,21 @@ describe("workbench writeback helpers", () => {
       parentItemID: 7,
       contentType: "text/markdown",
       title: "Markdown Chat - PARENT chat-attachment.md"
+    });
+    const index = JSON.parse(files.get("/tmp/out/sessions/session-index.json") || "{}");
+    expect(index.items.PARENT).toMatchObject({
+      itemKey: "PARENT",
+      sourceItemKey: "ATTACH",
+      sessionId: "chat-attachment",
+      path: jsonlPath,
+      markdownPath
+    });
+    expect(index.items.ATTACH).toMatchObject({
+      itemKey: "PARENT",
+      sourceItemKey: "ATTACH",
+      sessionId: "chat-attachment",
+      path: jsonlPath,
+      markdownPath
     });
   });
 
