@@ -233,6 +233,8 @@ function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, dept
     const nestedDelta = extractMessageContent(data.delta.content);
     if (nestedDelta) return nestedDelta;
   }
+  const deltaContent = extractMessageContent(data?.delta);
+  if (deltaContent) return deltaContent;
   const directContent = extractMessageContent(data?.content);
   if (directContent) return directContent;
   const candidateContent = extractMessageContent(data?.candidates);

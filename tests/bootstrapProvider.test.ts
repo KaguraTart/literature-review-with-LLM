@@ -3724,6 +3724,7 @@ describe("bootstrap provider helpers", () => {
   it("extracts Responses stream deltas used by the legacy bootstrap path", () => {
     const { helpers } = loadBootstrapProviderHelpers();
     expect(helpers.extractOpenAIStreamText({ type: "response.output_text.delta", delta: "streamed" })).toBe("streamed");
+    expect(helpers.extractOpenAIStreamText({ type: "response.output_text.delta", delta: { text: "object streamed" } })).toBe("object streamed");
     expect(helpers.extractOpenAIStreamText({ type: "response.refusal.delta", delta: "responses refusal" })).toBe("responses refusal");
     expect(helpers.extractOpenAIStreamText({ type: "response.output_text.done", text: "done text" })).toBe("done text");
     expect(helpers.extractOpenAIStreamText({ type: "response.refusal.done", refusal: "done refusal" })).toBe("done refusal");
@@ -3734,6 +3735,7 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.extractOpenAIStreamText({ type: "response.output_item.done", item: { content: [{ type: "refusal", refusal: "snapshot refusal" }] } })).toBe("snapshot refusal");
     expect(helpers.extractOpenAIStreamText({ type: "response.completed", response: { output_text: "snapshot response" } })).toBe("snapshot response");
     expect(helpers.extractOpenAIStreamText({ response: { text: "snapshot response text" } })).toBe("snapshot response text");
+    expect(helpers.extractOpenAIStreamText({ delta: { output_text: "router delta output" } })).toBe("router delta output");
     expect(helpers.extractOpenAIStreamText({ text: { value: "router stream text" } })).toBe("router stream text");
     expect(helpers.extractOpenAIStreamText({ delta: { content: [{ text: "nested" }] } })).toBe("nested");
     expect(helpers.extractOpenAIStreamText({ choices: [{ delta: { reasoning_content: "hidden" } }] })).toBe("");

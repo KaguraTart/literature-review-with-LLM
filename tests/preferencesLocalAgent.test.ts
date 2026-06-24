@@ -2988,13 +2988,15 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.extractProviderConnectionText("openai_responses", [
       "data: {\"type\":\"response.output_text.delta\",\"delta\":\"stream \"}",
       "",
+      "data: {\"type\":\"response.output_text.delta\",\"delta\":{\"text\":\"object \"}}",
       "data: {\"type\":\"response.output_text.delta\",\"delta\":\"responses\"}",
       "data: [DONE]"
-    ].join("\n"))).toBe("stream responses");
+    ].join("\n"))).toBe("stream object responses");
     expect(helpers.extractProviderConnectionText("openai_responses", [
       "data: {\"type\":\"response.output_text.done\",\"text\":\"done responses\"}",
+      "data: {\"delta\":{\"output_text\":\" router delta\"}}",
       "data: [DONE]"
-    ].join("\n"))).toBe("done responses");
+    ].join("\n"))).toBe("done responses router delta");
     expect(helpers.extractProviderConnectionText("anthropic_messages", [
       "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"stream \"}}",
       "",

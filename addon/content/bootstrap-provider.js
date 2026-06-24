@@ -399,6 +399,8 @@ function extractOpenAIStreamText(chunk, depth = 0) {
     const nestedDelta = extractOpenAIMessageContent(chunk.delta.content);
     if (nestedDelta) return nestedDelta;
   }
+  const deltaText = extractOpenAIMessageContent(chunk?.delta);
+  if (deltaText) return deltaText;
   const directContent = extractOpenAIMessageContent(chunk.content);
   if (directContent) return directContent;
   const candidateContent = extractOpenAIMessageContent(chunk.candidates);

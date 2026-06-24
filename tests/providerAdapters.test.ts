@@ -1632,6 +1632,7 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"message\":{\"content\":null}},{\"message\":{\"refusal\":\"second refusal\"}}]}")).toBe("second refusal");
     expect(parseStreamChunk("openai_responses", "data: {\"output\":[{\"content\":[{\"text\":\"ok\"}]}]}")).toBe("ok");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_text.delta\",\"delta\":\"streamed\"}")).toBe("streamed");
+    expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_text.delta\",\"delta\":{\"text\":\"object streamed\"}}")).toBe("object streamed");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.refusal.delta\",\"delta\":\"responses refusal\"}")).toBe("responses refusal");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_text.done\",\"text\":\"done text\"}")).toBe("done text");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.refusal.done\",\"refusal\":\"done refusal\"}")).toBe("done refusal");
@@ -1643,6 +1644,7 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_item.done\",\"item\":{\"content\":[{\"type\":\"refusal\",\"refusal\":\"snapshot refusal\"}]}}")).toBe("snapshot refusal");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.completed\",\"response\":{\"output\":[{\"content\":[{\"type\":\"output_text\",\"text\":\"snapshot response\"}]}]}}")).toBe("snapshot response");
     expect(parseStreamChunk("openai_responses", "data: {\"response\":{\"text\":\"snapshot response text\"}}")).toBe("snapshot response text");
+    expect(parseStreamChunk("openai_chat", "data: {\"delta\":{\"output_text\":\"router delta output\"}}")).toBe("router delta output");
     expect(parseStreamChunk("openai_chat", "data: {\"text\":{\"value\":\"router stream text\"}}")).toBe("router stream text");
     expect(parseStreamChunk("openai_chat", "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"candidate stream\"}]}}]}")).toBe("candidate stream");
     expect(parseStreamChunk("openai_chat", "data: {\"candidates\":[{\"content\":{\"parts\":[{\"type\":\"thinking\",\"text\":\"hidden\"},{\"text\":\" visible candidate\"}]}}]}")).toBe(" visible candidate");

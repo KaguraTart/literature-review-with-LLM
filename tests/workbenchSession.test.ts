@@ -383,6 +383,9 @@ describe("workbench session helpers", () => {
       result: { type: "response.output_text.delta", delta: "wrapped responses" }
     })).toBe("wrapped responses");
     expect(helpers.streamTextFromData("openai_responses", {
+      type: "response.output_text.delta", delta: { text: "object streamed" }
+    })).toBe("object streamed");
+    expect(helpers.streamTextFromData("openai_responses", {
       body: { type: "response.output_text.delta", delta: "wrapped body" }
     })).toBe("wrapped body");
     expect(helpers.streamTextFromData("openai_chat", {
@@ -406,6 +409,9 @@ describe("workbench session helpers", () => {
     expect(helpers.streamTextFromData("openai_responses", {
       item: { content: [{ type: "refusal", refusal: "snapshot refusal" }] }
     })).toBe("snapshot refusal");
+    expect(helpers.streamTextFromData("openai_chat", {
+      delta: { output_text: "router delta output" }
+    })).toBe("router delta output");
     expect(helpers.streamTextFromData("anthropic_messages", {
       payload: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped anthropic" } }
     })).toBe("wrapped anthropic");

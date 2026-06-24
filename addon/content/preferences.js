@@ -1909,7 +1909,12 @@ function streamPayloadsFromText(text) {
 }
 
 function pushStreamPayload(payloads, buffer) {
-  const payload = buffer.join("\n").trim();
+  const lines = (buffer || []).map((line) => String(line || "").trim()).filter(Boolean);
+  const payload = lines.join("\n").trim();
+  if (lines.length > 1 && !safeParseJSON(payload)) {
+    payloads.push(...lines);
+    return;
+  }
   if (payload) payloads.push(payload);
 }
 
@@ -2148,6 +2153,8 @@ function openAIEventDeltaText(data) {
   if (type === "response.completed") return modelTextFromValue(data?.response);
   if (typeof data?.delta?.text === "string") return data.delta.text;
   if (typeof data?.delta?.content === "string") return data.delta.content;
+  const deltaText = modelTextFromValue(data?.delta);
+  if (deltaText) return deltaText;
   return "";
 }
 

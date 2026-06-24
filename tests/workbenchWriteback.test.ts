@@ -2838,20 +2838,22 @@ describe("workbench writeback helpers", () => {
       body: streamFromText([
         "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"hidden reasoning\"}",
         "data: {\"data\":{\"type\":\"response.reasoning_text.delta\",\"delta\":\"wrapped hidden\"}}",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":{\"text\":\"object \"}}",
         "data: {\"type\":\"response.output_text.delta\",\"delta\":\"visible\"}"
       ].join("\n"))
     };
     const deltas: string[] = [];
     const text = await helpers.readStream(response, "openai_responses", (delta) => deltas.push(delta));
 
-    expect(text).toBe("visible");
-    expect(deltas).toEqual(["visible"]);
+    expect(text).toBe("object visible");
+    expect(deltas).toEqual(["object ", "visible"]);
   });
 
   it("extracts compatible chat stream text without leaking reasoning tokens", async () => {
     const response = {
       body: streamFromText([
         "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hidden\"}}]}",
+        "data: {\"delta\":{\"output_text\":\"router \"}}",
         "data: {\"choices\":[{\"delta\":{\"content\":[{\"type\":\"reasoning\",\"text\":\"hidden\"},{\"type\":\"text\",\"text\":\"visible\"}]}}]}",
         "data: {\"choices\":[{\"message\":{\"content\":[{\"type\":\"output_text\",\"text\":\" tail\"}]}}]}"
       ].join("\n"))
@@ -2859,8 +2861,8 @@ describe("workbench writeback helpers", () => {
     const deltas: string[] = [];
     const text = await helpers.readStream(response, "openai_chat", (delta) => deltas.push(delta));
 
-    expect(text).toBe("visible tail");
-    expect(deltas).toEqual(["visible", " tail"]);
+    expect(text).toBe("router visible tail");
+    expect(deltas).toEqual(["router ", "visible", " tail"]);
   });
 
   it("extracts candidate-part stream text used by Gemini-style compatible routes", async () => {

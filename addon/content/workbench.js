@@ -10013,6 +10013,8 @@ function streamTextFromData(protocol, data, depth = 0) {
     const nestedDelta = modelTextFromValue(data.delta.content);
     if (nestedDelta) return nestedDelta;
   }
+  const deltaText = modelTextFromValue(data?.delta);
+  if (deltaText) return deltaText;
   const directContent = modelTextFromValue(data?.content);
   if (directContent) return directContent;
   const candidateContent = modelTextFromValue(data?.candidates);
