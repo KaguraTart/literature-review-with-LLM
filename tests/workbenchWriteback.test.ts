@@ -4738,6 +4738,7 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("| 3 | local-ocr | OCR line | recognized numeric value | image | 1 | needs-review | [image], [metadata] |");
     expect(report).toContain("pixelDataDraftCount: 1");
     expect(report).toContain("calibrationAnchorCount: 4");
+    expect(report).toContain("chartReviewActionCount: 1");
     expect(report).toContain("## Pixel / Coordinate Data Drafts");
     expect(report).toContain("| 1 | pixel-coordinate-table | figure.png | 1 | needs-review | [image] |");
     expect(report).toContain("| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] | [image] |");
@@ -4749,6 +4750,8 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("| calibration-quality | pass | spans: X 340 px, Y 240 px; numeric anchors: 4/4; monotonic axes: X, Y |");
     expect(report).toContain("| confidence | warning | high 0, medium 0, low 3, needs-review 1 |");
     expect(report).toContain("Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.");
+    expect(report).toContain("## Chart Review Action Queue");
+    expect(report).toContain("| medium | confirm-low-confidence-readings | confidence (warning) | Manually confirm low-confidence readings, units, and legends; treat them as draft values until then. | high 0, medium 0, low 3, needs-review 1 |");
     expect(report).toContain("## Machine-Readable Data");
     expect(report).toContain("| 1 | 1 | Value | 12 ms | not labeled |");
     expect(report).toContain("| chart:1 | 1 | yNumber | 12 | [image] |");
@@ -4806,6 +4809,7 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("## 像素/坐标数据草稿");
     expect(files.get(reportPath)).toContain("| 1 | pixel-coordinate-table | chart.png | 1 | needs-review | [image] |");
     expect(files.get(reportPath)).toContain("calibrationAnchorCount: 4");
+    expect(files.get(reportPath)).toContain("chartReviewActionCount: 1");
     expect(files.get(reportPath)).toContain("## 坐标轴校准锚点");
     expect(files.get(reportPath)).toContain("| 1 | axis-calibration-table | X | 80 | 0 | s | medium | [image] |");
     expect(files.get(reportPath)).toContain("## 图表数据质量审阅");
@@ -4813,6 +4817,8 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("| axis-calibration | pass | calibration anchors present: X 2, Y 2 |");
     expect(files.get(reportPath)).toContain("| calibration-quality | pass | spans: X 340 px, Y 240 px; numeric anchors: 4/4; monotonic axes: X, Y |");
     expect(files.get(reportPath)).toContain("在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。");
+    expect(files.get(reportPath)).toContain("## 图表人工复核任务");
+    expect(files.get(reportPath)).toContain("| medium | confirm-low-confidence-readings | confidence (warning) | 人工确认低置信读数、单位和图例；确认前只作为草稿使用。 | high 0, medium 0, low 2, needs-review 1 |");
     expect(files.get(reportPath)).toContain("## 机器可读数据");
     expect(files.get(reportPath)).toContain("| 1 | 1 | 指标 | delay | 未标注 |");
     const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.json";
@@ -4861,6 +4867,14 @@ describe("workbench writeback helpers", () => {
       issueCount: 1,
       recommendations: [{ id: "confidence" }]
     });
+    expect(parsed.chartReviewActions).toMatchObject([
+      {
+        actionId: "confirm-low-confidence-readings",
+        priority: "medium",
+        checkId: "confidence",
+        status: "warning"
+      }
+    ]);
     expect(files.get(csvPath)).toContain("tableIndex,rowIndex,column,value,evidenceLabels,sourceAssistantMessageId,imageNames");
     expect(files.get(csvPath)).toContain("1,1,指标,delay,,assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("1,1,数值,12 ms,,assistant-visual,chart.png");
@@ -4922,6 +4936,8 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("small pixel span on X: 12 px");
     expect(report).toContain("non-monotonic anchors on Y");
     expect(report).toContain("Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, and units");
+    expect(report).toContain("chartReviewActionCount: 4");
+    expect(report).toContain("| high | verify-calibration-quality | calibration-quality (fail) | Recheck anchor span, monotonicity, duplicate values, and units against the original chart before quantitative use.");
   });
 
   it("renders a formal review draft with evidence-backed writing sections", () => {

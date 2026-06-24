@@ -5953,6 +5953,7 @@ function visualExtractionReportData(payload, options = {}) {
     images,
     calibrationAnchors
   });
+  const chartReviewActions = visualExtractionChartReviewActions(chartQualityReview, labels);
   return {
     templateVersion: "visual-extraction-report-v2",
     generatedAt,
@@ -5981,6 +5982,7 @@ function visualExtractionReportData(payload, options = {}) {
     pixelDataDrafts,
     calibrationAnchors,
     chartQualityReview,
+    chartReviewActions,
     evidenceLabels,
     originalAnswer: answer || "",
     labels
@@ -6000,6 +6002,9 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     images,
     calibrationAnchors
   });
+  const chartReviewActions = Array.isArray(data?.chartReviewActions)
+    ? data.chartReviewActions
+    : visualExtractionChartReviewActions(chartQualityReview, labels);
   const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors);
   const imageInventory = images.length
     ? [
@@ -6027,6 +6032,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `calibrationAnchorCount: ${calibrationAnchors.length}`,
     `chartQualityStatus: ${yamlScalar(chartQualityReview.status || "")}`,
     `chartQualityIssueCount: ${Number(chartQualityReview.issueCount) || 0}`,
+    `chartReviewActionCount: ${chartReviewActions.length}`,
     `reconstructedDataRowCount: ${reconstructedRows.length}`,
     "---",
     "",
@@ -6067,6 +6073,10 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `## ${labels.chartQualityReview}`,
     "",
     visualExtractionChartQualityReviewMarkdown(chartQualityReview, labels),
+    "",
+    `## ${labels.chartReviewActions}`,
+    "",
+    chartReviewActions.length ? visualExtractionChartReviewActionsMarkdown(chartReviewActions, labels) : `- ${labels.noChartReviewActions}`,
     "",
     `## ${labels.structuredData}`,
     "",
@@ -7053,6 +7063,102 @@ function visualExtractionQualityRecommendationText(item, labels) {
   return item?.text || id || labels.unknown;
 }
 
+function visualExtractionChartReviewActions(review, labels) {
+  const checks = Array.isArray(review?.checks) ? review.checks : [];
+  const priorities = { high: 0, medium: 1, low: 2 };
+  return checks
+    .filter((check) => check?.status && check.status !== "pass")
+    .map((check) => visualExtractionChartReviewActionForCheck(check, labels))
+    .filter(Boolean)
+    .sort((left, right) => (priorities[left.priority] ?? 9) - (priorities[right.priority] ?? 9));
+}
+
+function visualExtractionChartReviewActionForCheck(check, labels) {
+  const id = mdText(check?.id || "");
+  const status = mdText(check?.status || "");
+  const detail = mdText(check?.detail || "");
+  const severe = status === "fail";
+  const base = {
+    checkId: id,
+    status,
+    detail,
+    priority: severe ? "high" : "medium"
+  };
+  if (id === "chart-data") {
+    return {
+      ...base,
+      actionId: "reconstruct-chart-data",
+      nextStep: labels.reviewActionReconstructChartData
+    };
+  }
+  if (id === "pixel-coordinates") {
+    return {
+      ...base,
+      actionId: "add-pixel-coordinate-table",
+      nextStep: labels.reviewActionAddPixelCoordinates
+    };
+  }
+  if (id === "axis-calibration") {
+    return {
+      ...base,
+      actionId: "add-axis-calibration-anchors",
+      priority: "high",
+      nextStep: labels.reviewActionAddAxisCalibration
+    };
+  }
+  if (id === "calibration-quality") {
+    return {
+      ...base,
+      actionId: "verify-calibration-quality",
+      priority: severe ? "high" : "medium",
+      nextStep: labels.reviewActionVerifyCalibrationQuality
+    };
+  }
+  if (id === "confidence") {
+    return {
+      ...base,
+      actionId: "confirm-low-confidence-readings",
+      priority: "medium",
+      nextStep: labels.reviewActionConfirmConfidence
+    };
+  }
+  if (id === "image-evidence") {
+    return {
+      ...base,
+      actionId: "separate-visual-evidence",
+      priority: "medium",
+      nextStep: labels.reviewActionSeparateImageEvidence
+    };
+  }
+  if (id === "point-count") {
+    return {
+      ...base,
+      actionId: "request-denser-point-table",
+      priority: severe ? "high" : "medium",
+      nextStep: labels.reviewActionRequestMorePoints
+    };
+  }
+  return {
+    ...base,
+    actionId: "manual-review",
+    nextStep: labels.reviewActionManualReview
+  };
+}
+
+function visualExtractionChartReviewActionsMarkdown(actions, labels) {
+  return [
+    `| ${labels.priority} | ${labels.action} | ${labels.relatedCheck} | ${labels.nextStep} | ${labels.detail} |`,
+    "| --- | --- | --- | --- | --- |",
+    ...(actions || []).map((action) => [
+      markdownTableCell(action.priority || ""),
+      markdownTableCell(action.actionId || ""),
+      markdownTableCell(`${action.checkId || ""}${action.status ? ` (${action.status})` : ""}`),
+      markdownTableCell(action.nextStep || ""),
+      markdownTableCell(action.detail || "")
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
 function visualExtractionStructuredDataTable(rows, labels) {
   return [
     `| ${labels.table} | ${labels.row} | ${labels.column} | ${labels.value} | ${labels.evidenceLabels} |`,
@@ -7132,17 +7238,31 @@ function visualExtractionReportLabels(outputLanguage) {
       noPixelDataDrafts: "未能从回答中抽取像素/坐标数据草稿；需要使用多模态模型重新输出 Pixel X、Pixel Y、轴值和置信度。",
       noCalibrationAnchors: "未检测到坐标轴校准锚点表；如需后续量化复用，请让模型补充 Axis、Pixel、Value、Unit、Source 和 Confidence。",
       chartQualityReview: "图表数据质量审阅",
+      chartReviewActions: "图表人工复核任务",
       qualityStatus: "质量状态",
       qualityScore: "质量分",
       qualityCheck: "检查项",
       detail: "细节",
       recommendations: "复核建议",
+      priority: "优先级",
+      action: "任务",
+      relatedCheck: "关联检查",
+      nextStep: "下一步",
+      noChartReviewActions: "当前质量审阅未生成强制复核任务；正式使用前仍建议回到原图抽查。",
       noQualityIssues: "未发现结构化质量风险；正式使用前仍建议回到原图核对。",
       recommendationAxisCalibration: "补充至少两个清晰坐标轴刻度/数值锚点，并对照原图核对 Pixel X/Y 到 Axis X/Y 的映射。",
       recommendationCalibrationQuality: "重新核对校准锚点的像素跨度、单调性、重复刻度和数值单位；跨度太小或非单调时不要用于量化比较。",
       recommendationConfidence: "在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。",
       recommendationImageEvidence: "重新提问时要求模型用 [image] 标注直接视觉观察，并把文本上下文推断分开。",
       recommendationPointCount: "放大原图或要求模型输出更密集的点表后，再用于跨论文实验对比。",
+      reviewActionReconstructChartData: "重新要求模型输出可复核的重建数据表，或人工从原图读取最少关键点。",
+      reviewActionAddPixelCoordinates: "要求模型补充 Pixel X、Pixel Y、Axis X、Axis Y 表，并标注低置信点。",
+      reviewActionAddAxisCalibration: "补充每个坐标轴至少两个清晰刻度锚点，再重新导出报告。",
+      reviewActionVerifyCalibrationQuality: "回到原图核对锚点跨度、单调性、重复值和单位，异常时不要用于量化比较。",
+      reviewActionConfirmConfidence: "人工确认低置信读数、单位和图例；确认前只作为草稿使用。",
+      reviewActionSeparateImageEvidence: "重新提问时要求直接视觉观察都用 [image] 标注，推断内容单独列出。",
+      reviewActionRequestMorePoints: "放大原图或重新提问，要求输出更密集但仍可复核的点表。",
+      reviewActionManualReview: "回到原图和 PDF 上下文进行人工复核。",
       structuredData: "机器可读数据",
       row: "行",
       column: "字段",
@@ -7219,17 +7339,31 @@ function visualExtractionReportLabels(outputLanguage) {
     noPixelDataDrafts: "No pixel / coordinate data draft could be extracted; ask a multimodal model to return Pixel X, Pixel Y, axis values, and confidence.",
     noCalibrationAnchors: "No axis calibration anchor table was detected. For reusable quantitative exports, ask for Axis, Pixel, Value, Unit, Source, and Confidence.",
     chartQualityReview: "Chart Data Quality Review",
+    chartReviewActions: "Chart Review Action Queue",
     qualityStatus: "Quality status",
     qualityScore: "Quality score",
     qualityCheck: "Check",
     detail: "Detail",
     recommendations: "Review Recommendations",
+    priority: "Priority",
+    action: "Action",
+    relatedCheck: "Related check",
+    nextStep: "Next step",
+    noChartReviewActions: "No required review action was generated by the quality review; still spot-check the original figure before final use.",
     noQualityIssues: "No structured quality risk was detected; still verify against the original figure before final use.",
     recommendationAxisCalibration: "Add at least two visible axis tick/value anchors and verify Pixel X/Y to Axis X/Y mapping against the original chart.",
     recommendationCalibrationQuality: "Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, and units; do not use small-span or non-monotonic anchors for quantitative comparison.",
     recommendationConfidence: "Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.",
     recommendationImageEvidence: "Ask the model to mark direct visual observations with [image] and keep text-context inferences separate.",
     recommendationPointCount: "Zoom the original figure or request a denser point table before using the data for cross-paper comparison.",
+    reviewActionReconstructChartData: "Ask for a reviewable reconstructed data table again, or manually read the minimum key points from the original figure.",
+    reviewActionAddPixelCoordinates: "Ask for a Pixel X, Pixel Y, Axis X, Axis Y table and mark low-confidence points explicitly.",
+    reviewActionAddAxisCalibration: "Add at least two visible tick anchors per axis, then export the report again.",
+    reviewActionVerifyCalibrationQuality: "Recheck anchor span, monotonicity, duplicate values, and units against the original chart before quantitative use.",
+    reviewActionConfirmConfidence: "Manually confirm low-confidence readings, units, and legends; treat them as draft values until then.",
+    reviewActionSeparateImageEvidence: "Ask again with direct visual observations marked as [image] and inferred context separated.",
+    reviewActionRequestMorePoints: "Zoom the figure or ask again for a denser but still reviewable point table.",
+    reviewActionManualReview: "Review the original figure and PDF context manually.",
     structuredData: "Machine-Readable Data",
     row: "Row",
     column: "Column",
