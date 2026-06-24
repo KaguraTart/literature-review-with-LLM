@@ -469,6 +469,31 @@ describe("provider adapters", () => {
       body,
       400,
       JSON.stringify({
+        error: {
+          code: "unsupported_parameter",
+          message: "Unsupported request parameter",
+          param: { name: "streamOptions" }
+        }
+      })
+    )).toEqual(["stream_options"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      400,
+      JSON.stringify({
+        errors: [
+          {
+            source: { pointer: "/data/attributes/response_format" },
+            detail: "Unsupported request attribute"
+          }
+        ]
+      })
+    )).toEqual(["response_format"]);
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      body,
+      400,
+      JSON.stringify({
         errors: [
           {
             instancePath: "",

@@ -751,18 +751,20 @@ var ZoteroMarkdownSummaryWorkbench = {
     const previousProvider = workbenchProviderPresetFromProfile(current, pref("provider"));
     const defaults = workbenchProviderDefaults(providerId);
     const sameProvider = previousProvider === providerId;
+    const storedProfile = sameProvider ? current : storedWorkbenchProfileForProviderPreset(providerId, this.state.profiles);
+    const sourceProfile = storedProfile || {};
     const next = hydrateProfile({
       id: defaults.id,
-      name: defaults.name,
+      name: sourceProfile.name || defaults.name,
       protocol: defaults.protocol,
       endpointMode: defaults.endpointMode,
-      baseURL: defaults.baseURL || "",
-      fullURL: defaults.fullURL || "",
-      apiKey: sameProvider ? String(current.apiKey || "").trim() : "",
-      model: defaults.model || recommendedModelOptionsForWorkbenchProvider(providerId)[0]?.id || "",
+      baseURL: sourceProfile.baseURL || defaults.baseURL || "",
+      fullURL: sourceProfile.fullURL || defaults.fullURL || "",
+      apiKey: storedProfile ? String(sourceProfile.apiKey || "").trim() : "",
+      model: sourceProfile.model || defaults.model || recommendedModelOptionsForWorkbenchProvider(providerId)[0]?.id || "",
       capabilities: { ...(defaults.capabilities || {}) },
-      customHeaders: { ...(defaults.customHeaders || {}) },
-      bodyExtra: { ...(defaults.bodyExtra || {}) },
+      customHeaders: { ...(defaults.customHeaders || {}), ...(sourceProfile.customHeaders || {}) },
+      bodyExtra: { ...(defaults.bodyExtra || {}), ...(sourceProfile.bodyExtra || {}) },
       isDefault: true
     });
     this.state.profile = next;
@@ -2890,6 +2892,16 @@ function recommendedDefaultModelForWorkbenchProvider(provider, defaults = {}) {
   return recommendedModelOptionsForWorkbenchProvider(key)[0]?.id || "";
 }
 
+function storedWorkbenchProfileForProviderPreset(provider, profiles) {
+  const providerValue = workbenchProviderPresetValue(provider);
+  const defaults = workbenchProviderDefaults(providerValue);
+  const defaultId = normalizeProfileId(defaults.id);
+  return (profiles || []).find((profile) => {
+    const profileId = normalizeProfileId(profile?.id);
+    return profileId === defaultId || workbenchProviderFromProfile(profile, "") === providerValue;
+  }) || null;
+}
+
 function workbenchProviderFromProfile(profile, fallbackProvider) {
   if (profile?.bodyExtra?.localAgent || profile?.bodyExtra?.agent || profile?.bodyExtra?.subagent) return "local_agents";
   const id = String(profile?.id || fallbackProvider || "").trim();
@@ -3217,7 +3229,7 @@ function providerDiagnosticsLabels(outputLanguage) {
       modelListLiveCheck: "模型列表 live 检查",
       statusSnapshot: "当前状态快照",
       troubleshooting: "排查清单",
-      checkModel: "确认模型名称真实存在，必要时先点击“加载模型列表”。",
+      checkModel: "确认模型名称真实存在，必要时先点击“刷新模型”。",
       checkEndpoint: "确认 Base URL 不重复包含 /chat/completions、/responses、/messages 或 /models。",
       checkAuth: "确认 API key 或自定义认证 header 属于当前厂商。",
       checkCapabilities: "图片/PDF/流式开关要和模型能力一致。",
@@ -3289,7 +3301,7 @@ function providerDiagnosticsLabels(outputLanguage) {
     modelListLiveCheck: "Model-list Live Check",
     statusSnapshot: "Current Status Snapshot",
     troubleshooting: "Troubleshooting Checklist",
-    checkModel: "Confirm the model name exists. Use Load model list first when available.",
+    checkModel: "Confirm the model name exists. Use Refresh models first when available.",
     checkEndpoint: "Confirm the Base URL does not duplicate /chat/completions, /responses, /messages, or /models.",
     checkAuth: "Confirm the API key or custom authentication header belongs to the selected provider.",
     checkCapabilities: "Keep image/PDF/streaming toggles aligned with the model's real capabilities.",
@@ -10725,7 +10737,21 @@ function collectProviderFieldHintValue(value, hints) {
     const path = providerFieldHintArrayPath(value);
     if (path) hints.push(path);
     for (const item of value) collectProviderFieldHintValue(item, hints);
+    return;
   }
+  if (value && typeof value === "object") {
+    const direct = providerFieldHintObjectValue(value);
+    if (direct) hints.push(direct);
+    collectProviderFieldHints(value, hints);
+  }
+}
+
+function providerFieldHintObjectValue(value) {
+  for (const key of ["name", "field", "path", "pointer", "property", "param", "parameter", "argument", "key"]) {
+    const entry = value?.[key];
+    if (typeof entry === "string" && entry.trim()) return entry.trim();
+  }
+  return "";
 }
 
 function providerFieldHintArrayPath(value) {
@@ -10754,7 +10780,7 @@ function normalizeProviderFieldHint(value) {
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/^\$\.?/, "")
     .replace(/^\./, "")
-    .replace(/^(?:body|request|payload|params?|parameters?|input)\./i, "")
+    .replace(/^(?:(?:body|request|payload|params?|parameters?|input|data|attributes|json|root)\.)+/i, "")
     .replace(/\[[^\]]+\]/g, "");
   const normalizedLower = normalized.toLowerCase();
   if (/\bfile_data\b/.test(normalizedLower)) return "input_file.file_data";

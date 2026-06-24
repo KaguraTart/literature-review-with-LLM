@@ -2882,7 +2882,7 @@ describe("workbench writeback helpers", () => {
     const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
     workbench.t = (key: string) => ({
       modelPickerHelp: "先选择模型厂商，再从下拉框选择推荐模型",
-      loadModels: "加载模型列表",
+      loadModels: "刷新模型",
       placeholder: "向当前论文提问",
       placeholderHint: "Enter 换行",
       candidateSearchPlaceholder: "输入检索式"
@@ -2891,8 +2891,8 @@ describe("workbench writeback helpers", () => {
     workbench.applyLanguage();
 
     expect(dom.getElementById("zms-workbench-model-help").textContent).toContain("先选择模型厂商");
-    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("加载模型列表");
-    expect(dom.getElementById("zms-load-models-workbench").title).toBe("加载模型列表");
+    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("刷新模型");
+    expect(dom.getElementById("zms-load-models-workbench").title).toBe("刷新模型");
   });
 
   it("applies a workbench provider preset without reusing the previous provider API key", () => {
@@ -2960,6 +2960,64 @@ describe("workbench writeback helpers", () => {
       isDefault: true
     });
     expect(profiles.some((item: any) => item.id === "deepseek")).toBe(true);
+  });
+
+  it("restores the saved workbench model and API key for the selected provider", () => {
+    const prefs: Record<string, any> = {};
+    const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument({
+      "zms-profile-name": "DeepSeek",
+      "zms-profile-base-url": "https://api.deepseek.com",
+      "zms-profile-api-key": "deepseek-secret",
+      "zms-profile-model": "deepseek-chat"
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelSelectPlaceholder: "Choose a recommended model",
+      modelSelectCustom: "Custom model...",
+      providerPresetApplied: "Provider preset applied"
+    }[key] || key);
+    const deepseek = {
+      id: "deepseek",
+      name: "DeepSeek",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepseek.com",
+      apiKey: "deepseek-secret",
+      model: "deepseek-chat",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    const anthropic = {
+      id: "anthropic",
+      name: "Anthropic",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "anthropic-secret",
+      model: "claude-haiku-4-5",
+      capabilities: { text: true, imageBase64: true, pdfBase64: true, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: false
+    };
+    workbench.state.profile = deepseek;
+    workbench.state.profiles = [deepseek, anthropic];
+
+    const next = workbench.applyWorkbenchProviderPreset("anthropic");
+
+    expect(next).toMatchObject({
+      id: "anthropic",
+      apiKey: "anthropic-secret",
+      model: "claude-haiku-4-5"
+    });
+    expect(dom.getElementById("zms-profile-api-key").value).toBe("anthropic-secret");
+    expect(dom.getElementById("zms-profile-model").value).toBe("claude-haiku-4-5");
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("claude-haiku-4-5");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("claude-sonnet-4-6");
   });
 
   it("updates the workbench model field from the recommended model dropdown", () => {

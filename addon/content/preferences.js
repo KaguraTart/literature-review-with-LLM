@@ -106,20 +106,23 @@ var ZoteroMarkdownSummaryPrefs = {
   applyProviderPreset() {
     const provider = document.getElementById("zms-provider").value || "minimax";
     const defaults = providerDefaults(provider);
+    const storedProfile = storedProfileForProviderPreset(provider, readProfilesFromEditor());
+    const nextProfile = storedProfile ? hydrateProfile({ ...defaults, ...storedProfile, id: defaults.id, name: storedProfile.name || defaults.name }) : defaults;
     const activeProfileId = document.getElementById("zms-activeProfileId");
     const baseURL = document.getElementById("zms-baseURL");
     const apiKey = document.getElementById("zms-apiKey");
     const model = document.getElementById("zms-model");
-    if (activeProfileId) activeProfileId.value = defaults.id;
-    if (baseURL) baseURL.value = defaults.baseURL;
-    if (apiKey) apiKey.value = "";
-    if (model) model.value = defaults.model;
-    document.getElementById("zms-profileName").value = defaults.name;
-    document.getElementById("zms-profileProtocol").value = defaults.protocol;
-    document.getElementById("zms-profileEndpointMode").value = defaults.endpointMode;
-    document.getElementById("zms-profileFullURL").value = defaults.fullURL;
-    document.getElementById("zms-profileBodyExtra").value = JSON.stringify(defaults.bodyExtra || {}, null, 2);
-    this.setCapabilityValues(defaults.capabilities);
+    if (activeProfileId) activeProfileId.value = nextProfile.id || defaults.id;
+    if (baseURL) baseURL.value = nextProfile.baseURL || defaults.baseURL || "";
+    if (apiKey) apiKey.value = nextProfile.apiKey || "";
+    if (model) model.value = nextProfile.model || defaults.model || "";
+    document.getElementById("zms-profileName").value = nextProfile.name || defaults.name;
+    document.getElementById("zms-profileProtocol").value = nextProfile.protocol || defaults.protocol;
+    document.getElementById("zms-profileEndpointMode").value = nextProfile.endpointMode || defaults.endpointMode;
+    document.getElementById("zms-profileFullURL").value = nextProfile.fullURL || defaults.fullURL || "";
+    document.getElementById("zms-profileBodyExtra").value = JSON.stringify(nextProfile.bodyExtra || defaults.bodyExtra || {}, null, 2);
+    document.getElementById("zms-profileCustomHeaders").value = JSON.stringify(nextProfile.customHeaders || defaults.customHeaders || {}, null, 2);
+    this.setCapabilityValues(nextProfile.capabilities || defaults.capabilities);
     this.refreshModelRecommendations({ selectDefault: true });
     this.refreshProfileStatus();
     this.refreshProviderGuide();
@@ -895,8 +898,8 @@ function prefFallbackMessage(key, lang) {
     modelSelectPlaceholder: zh ? "选择厂商推荐模型" : "Choose provider model",
     modelSelectCustom: zh ? "自定义模型..." : "Custom model...",
     modelPickerHelp: zh
-      ? "先选择模型厂商，模型下拉框会按来源显示常用模型；点击“加载模型列表”会先加载推荐模型，有 API Key 时再追加在线模型；私有部署可选自定义模型。"
-      : "Choose a model provider first. The model list is grouped by source; Load model list shows recommendations first, and adds online models when an API key is available. Use Custom model for private deployments.",
+      ? "先选择模型厂商，再从下拉框选择模型；“刷新模型”会显示推荐模型，有 API Key 时追加在线模型，私有部署再选自定义模型。"
+      : "Choose a provider first, then pick a model from the dropdown. Refresh models shows recommendations first and adds online models when an API key is available; use Custom model for private deployments.",
     onlineModels: zh ? "在线模型" : "Online",
     recommendedModels: zh ? "推荐模型" : "Recommended",
     providerEnv: zh ? "粘贴环境变量配置" : "Paste env config",
@@ -940,7 +943,7 @@ function prefFallbackMessage(key, lang) {
     test: zh ? "测试连接" : "Test connection",
     saveAndTest: zh ? "保存并测试" : "Save and Test",
     testing: zh ? "正在测试连接" : "Testing connection",
-    loadModels: zh ? "加载模型列表" : "Load model list",
+    loadModels: zh ? "刷新模型" : "Refresh models",
     loadProfile: zh ? "加载档案" : "Load profile",
     saveProfile: zh ? "保存档案" : "Save profile",
     deleteProfile: zh ? "删除档案" : "Delete profile",
@@ -954,7 +957,7 @@ function prefFallbackMessage(key, lang) {
     modelListUnavailable: zh ? "当前档案不支持在线模型列表，已显示推荐模型" : "This profile cannot fetch an online model list; recommended models are shown",
     modelListLoaded: zh ? "已加载在线模型" : "Models loaded",
     modelListEmpty: zh ? "未返回在线模型，已保留推荐模型" : "No online models returned; kept recommendations",
-    modelListLoading: zh ? "正在加载模型列表" : "Loading model list",
+    modelListLoading: zh ? "正在刷新模型列表" : "Refreshing model list",
     modelRecommendationsLoaded: zh ? "已加载推荐模型" : "Recommended models loaded",
     modelListFailedUsingRecommendations: zh ? "在线模型列表加载失败，已保留推荐模型" : "Online model list failed; kept recommendations",
     testOk: zh ? "连接成功" : "Connection succeeded",
@@ -1132,8 +1135,8 @@ function applyPreferenceTextLabels(lang) {
     "zms-cap-toolUse-label": zh ? "工具调用" : "Tool use",
     "zms-cap-modelList-label": zh ? "在线模型列表" : "Model list",
     "zms-model-help": zh
-      ? "先选择模型厂商，模型下拉框会按来源显示常用模型；点击“加载模型列表”会先加载推荐模型，有 API Key 时再追加在线模型；私有部署可选自定义模型。"
-      : "Choose a model provider first. The model list is grouped by source; Load model list shows recommendations first, and adds online models when an API key is available. Use Custom model for private deployments.",
+      ? "先选择模型厂商，再从下拉框选择模型；“刷新模型”会显示推荐模型，有 API Key 时追加在线模型，私有部署再选自定义模型。"
+      : "Choose a provider first, then pick a model from the dropdown. Refresh models shows recommendations first and adds online models when an API key is available; use Custom model for private deployments.",
     "zms-local-agent-note-1": zh
       ? "按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"
       : "Configure endpoint/tool/timeout/payloadMode by skill id. Empty objects are allowed. ask-all/check fall back to ask-gemini / ask-claude / ask-opencode when no separate mapping is set; ask-gemini-claude can call only Gemini and Claude.",
@@ -1964,7 +1967,7 @@ function providerSetupGuide(profile, language = "en-US") {
       `基础地址：${profile.baseURL || defaults.baseURL || "未填写"}`,
       `请求地址：${endpoint || "未配置"}`,
       `鉴权：${auth}`,
-      `模型：${profile.model || "请选择模型，或点击“加载模型列表”后选择"}`,
+      `模型：${profile.model || "请选择模型，或点击“刷新模型”后选择"}`,
       `能力：${capabilities || "文本"}`,
       `模型列表：${modelList || "当前档案不支持自动加载模型列表"}`,
       `保存后测试：点击“测试连接”；失败信息会隐藏完整 API Key。`,
@@ -1986,7 +1989,7 @@ function providerSetupGuide(profile, language = "en-US") {
     `Base URL: ${profile.baseURL || defaults.baseURL || "not set"}`,
     `Request endpoint: ${endpoint || "not configured"}`,
     `Auth: ${auth}`,
-    `Model: ${profile.model || "choose a model, or use Load model list"}`,
+    `Model: ${profile.model || "choose a model, or use Refresh models"}`,
     `Capabilities: ${capabilities || "text"}`,
     `Model list: ${modelList || "not available for this profile"}`,
     "After saving: click Test connection. Failure messages hide full API keys.",
@@ -3995,7 +3998,21 @@ function collectProviderFieldHintValue(value, hints) {
     const path = providerFieldHintArrayPath(value);
     if (path) hints.push(path);
     for (const item of value) collectProviderFieldHintValue(item, hints);
+    return;
   }
+  if (value && typeof value === "object") {
+    const direct = providerFieldHintObjectValue(value);
+    if (direct) hints.push(direct);
+    collectProviderFieldHints(value, hints);
+  }
+}
+
+function providerFieldHintObjectValue(value) {
+  for (const key of ["name", "field", "path", "pointer", "property", "param", "parameter", "argument", "key"]) {
+    const entry = value?.[key];
+    if (typeof entry === "string" && entry.trim()) return entry.trim();
+  }
+  return "";
 }
 
 function providerFieldHintArrayPath(value) {
@@ -4024,7 +4041,7 @@ function normalizeProviderFieldHint(value) {
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/^\$\.?/, "")
     .replace(/^\./, "")
-    .replace(/^(?:body|request|payload|params?|parameters?|input)\./i, "")
+    .replace(/^(?:(?:body|request|payload|params?|parameters?|input|data|attributes|json|root)\.)+/i, "")
     .replace(/\[[^\]]+\]/g, "");
   const normalizedLower = normalized.toLowerCase();
   if (/\bfile_data\b/.test(normalizedLower)) return "input_file.file_data";
@@ -5626,6 +5643,26 @@ function jsonObjectFromTextarea(id, controller) {
   }
   controller.setStatus(controller.t("jsonInvalid"));
   return null;
+}
+
+function readProfilesFromEditor() {
+  try {
+    const parsed = JSON.parse(document.getElementById("zms-profilesJson")?.value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_err) {
+    return [];
+  }
+}
+
+function storedProfileForProviderPreset(provider, profiles) {
+  const providerId = String(provider || "").trim();
+  const defaults = providerDefaults(providerId);
+  const defaultId = normalizeProfileId(defaults.id);
+  const providerValue = providerFromProfile(defaults);
+  return (profiles || []).find((profile) => {
+    const profileId = normalizeProfileId(profile?.id);
+    return profileId === defaultId || providerFromProfile(profile) === providerValue;
+  }) || null;
 }
 
 function providerFromProtocol(protocol) {

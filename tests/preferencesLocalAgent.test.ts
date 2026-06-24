@@ -2836,8 +2836,8 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-provider-label").value).toBe("模型厂商");
     expect(elements.get("zms-baseURL-label").value).toBe("接口地址");
     expect(elements.get("zms-model-label").value).toBe("模型");
-    expect(elements.get("zms-model-help").value).toContain("模型下拉框会按来源显示常用模型");
-    expect(elements.get("zms-load-models-button").label).toBe("加载模型列表");
+    expect(elements.get("zms-model-help").value).toContain("刷新模型");
+    expect(elements.get("zms-load-models-button").label).toBe("刷新模型");
     expect(elements.get("zms-test-button").label).toBe("保存并测试");
     expect(elements.get("zms-profileEndpointMode-label").value).toBe("接口模式");
     expect(elements.get("zms-outputDir-label").value).toBe("输出目录");
@@ -2934,6 +2934,50 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-apiKey").value).toBe("");
     expect(elements.get("zms-model").value).toBe("claude-sonnet-4-6");
     expect(elements.get("zms-model-select").value).toBe("claude-sonnet-4-6");
+  });
+
+  it("restores the saved provider model and API key when switching back to that provider", () => {
+    const { controller, elements } = loadPreferencesController();
+    elements.get("zms-profilesJson").value = JSON.stringify([
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        protocol: "openai_chat",
+        endpointMode: "base_url",
+        baseURL: "https://api.deepseek.com",
+        apiKey: "deepseek-secret",
+        model: "deepseek-chat",
+        capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+        customHeaders: {},
+        bodyExtra: {},
+        isDefault: true
+      },
+      {
+        id: "anthropic",
+        name: "Anthropic",
+        protocol: "anthropic_messages",
+        endpointMode: "base_url",
+        baseURL: "https://api.anthropic.com",
+        apiKey: "anthropic-secret",
+        model: "claude-haiku-4-5",
+        capabilities: { text: true, imageBase64: true, pdfBase64: true, streaming: true, modelList: true },
+        customHeaders: { "x-route": "anthropic" },
+        bodyExtra: {},
+        isDefault: false
+      }
+    ]);
+    elements.get("zms-provider").value = "anthropic";
+    elements.get("zms-activeProfileId").value = "deepseek";
+    elements.get("zms-apiKey").value = "deepseek-secret";
+    elements.get("zms-model").value = "deepseek-chat";
+
+    controller.applyProviderPreset();
+
+    expect(elements.get("zms-activeProfileId").value).toBe("anthropic");
+    expect(elements.get("zms-apiKey").value).toBe("anthropic-secret");
+    expect(elements.get("zms-model").value).toBe("claude-haiku-4-5");
+    expect(elements.get("zms-model-select").value).toBe("claude-haiku-4-5");
+    expect(elements.get("zms-profileCustomHeaders").value).toContain("x-route");
   });
 
   it("shows local-agent timeout fields in seconds without treating timeoutSeconds as milliseconds", () => {

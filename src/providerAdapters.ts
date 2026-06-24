@@ -1606,7 +1606,21 @@ function collectProviderFieldHintValue(value: unknown, hints: string[]): void {
     const path = providerFieldHintArrayPath(value);
     if (path) hints.push(path);
     for (const item of value) collectProviderFieldHintValue(item, hints);
+    return;
   }
+  if (value && typeof value === "object") {
+    const direct = providerFieldHintObjectValue(value as Record<string, unknown>);
+    if (direct) hints.push(direct);
+    collectProviderFieldHints(value, hints);
+  }
+}
+
+function providerFieldHintObjectValue(value: Record<string, unknown>): string {
+  for (const key of ["name", "field", "path", "pointer", "property", "param", "parameter", "argument", "key"]) {
+    const entry = value?.[key];
+    if (typeof entry === "string" && entry.trim()) return entry.trim();
+  }
+  return "";
 }
 
 function providerFieldHintArrayPath(value: unknown[]): string {
@@ -1635,7 +1649,7 @@ function normalizeProviderFieldHint(value: string): string {
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/^\$\.?/, "")
     .replace(/^\./, "")
-    .replace(/^(?:body|request|payload|params?|parameters?|input)\./i, "")
+    .replace(/^(?:(?:body|request|payload|params?|parameters?|input|data|attributes|json|root)\.)+/i, "")
     .replace(/\[[^\]]+\]/g, "");
   const normalizedLower = normalized.toLowerCase();
   if (/\bfile_data\b/.test(normalizedLower)) return "input_file.file_data";
