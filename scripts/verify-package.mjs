@@ -163,11 +163,16 @@ const preferencesJs = unzipText("content/preferences.js");
 const workbenchXhtml = unzipText("content/workbench.xhtml");
 const workbenchJs = unzipText("content/workbench.js");
 const workbenchCss = unzipText("content/workbench.css");
+const readerXhtml = unzipText("content/reader.xhtml");
 const readerJs = unzipText("content/reader.js");
 const messagesJs = unzipText("content/messages.js");
 const manifestJson = unzipText("manifest.json");
 const packageMeta = JSON.parse(packageJson);
 const manifest = JSON.parse(manifestJson);
+
+assertXmlTagBalance(preferencesXhtml, "content/preferences.xhtml");
+assertXmlTagBalance(workbenchXhtml, "content/workbench.xhtml");
+assertXmlTagBalance(readerXhtml, "content/reader.xhtml");
 
 if (manifest.name !== "Literature Review with LLM") {
   fail(`Unexpected manifest name: ${manifest.name}`);
@@ -796,6 +801,36 @@ console.log(`Package verification passed: ${xpiPath}`);
 
 function unzipText(entry) {
   return execFileSync("unzip", ["-p", xpiPath, entry], { encoding: "utf8" });
+}
+
+function assertXmlTagBalance(source, label) {
+  const stack = [];
+  const tagPattern = /<\/?([A-Za-z][\w:.-]*)(?:\s[^<>]*)?>/g;
+  let match;
+  while ((match = tagPattern.exec(source))) {
+    const raw = match[0];
+    const name = match[1];
+    if (raw.startsWith("</")) {
+      const open = stack.pop();
+      if (!open || open.name !== name) {
+        const expected = open ? `</${open.name}>` : "no closing tag";
+        fail(`${label} has mismatched tag at line ${lineNumberAt(source, match.index)}: expected ${expected}, found </${name}>`);
+      }
+      continue;
+    }
+    if (raw.endsWith("/>")) continue;
+    stack.push({ name, line: lineNumberAt(source, match.index) });
+  }
+  const open = stack.pop();
+  if (open) fail(`${label} has unclosed tag <${open.name}> opened at line ${open.line}`);
+}
+
+function lineNumberAt(source, index) {
+  let line = 1;
+  for (let offset = 0; offset < index; offset += 1) {
+    if (source.charCodeAt(offset) === 10) line += 1;
+  }
+  return line;
 }
 
 function fail(message) {
