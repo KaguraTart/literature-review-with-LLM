@@ -13,16 +13,24 @@ function registerSidenavButtons() {
 }
 
 function registerToolbarButton(win) {
-  if (!win?.document || win.document.getElementById(TOOLBAR_BUTTON_ID)) return;
+  if (!win?.document) return;
   installWorkbenchSelectionWatcher(win);
+  installWorkbenchButtonWatcher(win);
+  if (ensureToolbarButton(win)) return;
   const doc = win.document;
-  const toolbar = findToolbar(doc);
-  if (!toolbar) {
+  if (!findToolbar(doc)) {
     win.setTimeout?.(() => registerToolbarButton(win), 1000);
-    return;
   }
+}
+
+function ensureToolbarButton(win) {
+  const doc = win?.document;
+  if (!doc || doc.getElementById(TOOLBAR_BUTTON_ID)) return false;
+  const toolbar = findToolbar(doc);
+  if (!toolbar) return false;
   const button = createToolbarButton(doc, toolbar);
   toolbar.appendChild(button);
+  return true;
 }
 
 function createToolbarButton(doc, toolbar) {
@@ -70,7 +78,8 @@ function createToolbarButton(doc, toolbar) {
   const button = createXULElement(doc, "toolbarbutton");
   button.id = TOOLBAR_BUTTON_ID;
   button.setAttribute("type", "menu-button");
-  button.setAttribute("class", "toolbarbutton-1");
+  button.setAttribute("class", "zotero-tb-button toolbarbutton-1");
+  button.setAttribute("tabindex", "-1");
   button.setAttribute("label", label);
   button.setAttribute("aria-label", label);
   button.setAttribute("title", label);
@@ -102,8 +111,19 @@ function createToolbarButton(doc, toolbar) {
 
 function unregisterToolbarButtons(documentOrWindow) {
   if (documentOrWindow?.document) {
+    removeWorkbenchButtonWatcher(documentOrWindow);
     removeWorkbenchSelectionWatcher(documentOrWindow);
     const doc = documentOrWindow.document;
+    doc?.getElementById(TOOLBAR_BUTTON_ID)?.remove();
+    doc?.getElementById(SIDENAV_BUTTON_ID)?.remove();
+    closeEmbeddedWorkbench(doc);
+    return;
+  }
+  if (documentOrWindow?.getElementById) {
+    const doc = documentOrWindow;
+    const win = doc.defaultView || doc.ownerGlobal;
+    removeWorkbenchButtonWatcher(win);
+    removeWorkbenchSelectionWatcher(win || doc);
     doc?.getElementById(TOOLBAR_BUTTON_ID)?.remove();
     doc?.getElementById(SIDENAV_BUTTON_ID)?.remove();
     closeEmbeddedWorkbench(doc);
@@ -112,6 +132,7 @@ function unregisterToolbarButtons(documentOrWindow) {
   const enumerator = Services.wm.getEnumerator("navigator:browser");
   while (enumerator.hasMoreElements()) {
     const win = enumerator.getNext();
+    removeWorkbenchButtonWatcher(win);
     removeWorkbenchSelectionWatcher(win);
     const doc = win.document;
     doc?.getElementById(TOOLBAR_BUTTON_ID)?.remove();
@@ -122,33 +143,54 @@ function unregisterToolbarButtons(documentOrWindow) {
 
 function registerSidenavButton(win) {
   const doc = win?.document;
-  if (!doc || doc.getElementById(SIDENAV_BUTTON_ID)) return;
+  if (!doc) return;
   installWorkbenchSelectionWatcher(win);
-  const sidenav = findContextSidenav(doc);
-  if (!sidenav) {
+  installWorkbenchButtonWatcher(win);
+  if (ensureSidenavButton(win)) return;
+  if (!findContextSidenav(doc)) {
     win.setTimeout?.(() => registerSidenavButton(win), 1000);
-    return;
   }
-  const button = createSidenavButton(doc, sidenav);
-  sidenav.appendChild(button);
+}
+
+function ensureSidenavButton(win) {
+  const doc = win?.document;
+  if (!doc || doc.getElementById(SIDENAV_BUTTON_ID)) return false;
+  const sidenav = findContextSidenav(doc);
+  if (!sidenav) return false;
+  appendSidenavButton(doc, sidenav);
+  return true;
 }
 
 function findContextSidenav(doc) {
   const candidates = [
     "zotero-context-pane-sidenav",
     "zotero-context-pane-side-nav",
-    "zotero-context-sidenav"
+    "zotero-context-sidenav",
+    "zotero-view-item-sidenav"
   ];
   for (const id of candidates) {
     const element = doc.getElementById(id);
     if (element) return element;
   }
-  return doc.querySelector?.('[id$="context-pane-sidenav"], [id$="context-sidenav"]');
+  return doc.querySelector?.('[id$="context-pane-sidenav"], [id$="context-sidenav"], [id$="view-item-sidenav"], .zotero-view-item-sidenav');
+}
+
+function appendSidenavButton(doc, sidenav) {
+  const host = sidenavButtonInsertionHost(sidenav);
+  const button = createSidenavButton(doc, host);
+  host.appendChild(button);
+}
+
+function sidenavButtonInsertionHost(sidenav) {
+  return sidenav?._buttonContainer || sidenav?.querySelector?.(".inherit-flex") || sidenav;
 }
 
 function createSidenavButton(doc, host) {
   const label = t("openWorkbench");
   const imageURL = `chrome://${CHROME_NAME}/content/logo.svg`;
+  if (elementHasClass(host, "inherit-flex")) {
+    return createItemPaneSidenavButton(doc, label, imageURL);
+  }
   const isHTMLHost = host.namespaceURI === HTML_NS;
   if (isHTMLHost) {
     const button = doc.createElementNS(HTML_NS, "button");
@@ -179,9 +221,65 @@ function createSidenavButton(doc, host) {
   return button;
 }
 
+function createItemPaneSidenavButton(doc, label, imageURL) {
+  const wrapper = doc.createElementNS(HTML_NS, "div");
+  wrapper.setAttribute("class", "pin-wrapper zms-sidenav-open-wrapper");
+  wrapper.setAttribute("style", "display:flex;align-items:center;justify-content:center;");
+
+  const button = doc.createElementNS(HTML_NS, "button");
+  button.id = SIDENAV_BUTTON_ID;
+  button.type = "button";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("role", "button");
+  button.setAttribute("tabindex", "0");
+  button.setAttribute("class", "btn zms-sidenav-open-button");
+  button.setAttribute("style", [
+    "width:28px",
+    "height:28px",
+    "min-width:28px",
+    "min-height:28px",
+    "margin:0",
+    "padding:4px",
+    "border:0",
+    "border-radius:6px",
+    "background:transparent",
+    "display:flex",
+    "align-items:center",
+    "justify-content:center",
+    "cursor:default"
+  ].join("; "));
+
+  const image = doc.createElementNS(HTML_NS, "img");
+  image.src = imageURL;
+  image.alt = "";
+  image.setAttribute("style", "width:20px;height:20px;display:block;pointer-events:none;");
+  button.appendChild(image);
+  button.addEventListener("click", (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    openWorkbenchForContext();
+  });
+  button.addEventListener("keydown", (event) => {
+    if (!["Enter", " "].includes(event?.key)) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    openWorkbenchForContext();
+  });
+  wrapper.appendChild(button);
+  return wrapper;
+}
+
+function elementHasClass(element, className) {
+  if (!element) return false;
+  if (element.classList?.contains?.(className)) return true;
+  return String(element.getAttribute?.("class") || "").split(/\s+/).includes(className);
+}
+
 function findToolbar(doc) {
   const candidates = [
     "zotero-items-toolbar",
+    "zotero-toolbar-item-tree",
     "zotero-toolbar",
     "zotero-collections-toolbar",
     "zotero-item-pane-toolbar"
@@ -190,7 +288,7 @@ function findToolbar(doc) {
     const element = doc.getElementById(id);
     if (element) return element;
   }
-  return doc.querySelector?.("toolbar");
+  return doc.querySelector?.("#zotero-toolbar-item-tree #zotero-items-toolbar, #zotero-toolbar-item-tree, [id$='items-toolbar'], toolbar");
 }
 
 function toolbarMenuItem(doc, label, onCommand) {
@@ -556,6 +654,61 @@ function removeWorkbenchSelectionWatcher(windowOrDocument) {
   if (!win?.__zmsWorkbenchSelectionWatcher) return;
   win.clearInterval?.(win.__zmsWorkbenchSelectionWatcher);
   delete win.__zmsWorkbenchSelectionWatcher;
+}
+
+function installWorkbenchButtonWatcher(win) {
+  if (!win?.document || win.__zmsWorkbenchButtonWatcher) return;
+  const refresh = () => {
+    try {
+      ensureWorkbenchButtons(win);
+    } catch (err) {
+      Zotero.debug(`[Markdown Summary] Failed to refresh toolbar buttons: ${safeError(err)}`);
+    }
+  };
+  const state = {
+    interval: win.setInterval?.(refresh, 1500),
+    observer: null
+  };
+  const MutationObserverCtor = typeof win.MutationObserver === "function"
+    ? win.MutationObserver
+    : (typeof MutationObserver === "function" ? MutationObserver : null);
+  if (MutationObserverCtor && win.document.documentElement) {
+    let scheduled = false;
+    state.observer = new MutationObserverCtor(() => {
+      if (scheduled) return;
+      scheduled = true;
+      const run = () => {
+        scheduled = false;
+        refresh();
+      };
+      if (typeof win.setTimeout === "function") {
+        win.setTimeout(run, 120);
+      } else {
+        run();
+      }
+    });
+    state.observer.observe(win.document.documentElement, { childList: true, subtree: true });
+  }
+  win.__zmsWorkbenchButtonWatcher = state;
+  refresh();
+}
+
+function removeWorkbenchButtonWatcher(windowOrDocument) {
+  const win = windowOrDocument?.document ? windowOrDocument : windowOrDocument?.defaultView || windowOrDocument?.ownerGlobal;
+  const state = win?.__zmsWorkbenchButtonWatcher;
+  if (!state) return;
+  if (state.interval !== undefined && state.interval !== null) {
+    win.clearInterval?.(state.interval);
+  }
+  state.observer?.disconnect?.();
+  delete win.__zmsWorkbenchButtonWatcher;
+}
+
+function ensureWorkbenchButtons(win) {
+  return {
+    toolbar: ensureToolbarButton(win),
+    sidenav: ensureSidenavButton(win)
+  };
 }
 
 function refreshEmbeddedWorkbenchForSelection(win) {

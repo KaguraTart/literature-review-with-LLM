@@ -342,6 +342,65 @@ describe("bootstrap UI runtime wiring", () => {
     expect(frame?.getAttribute("src")).toContain("workbench.xhtml?");
   });
 
+  it("registers the side button inside Zotero 9 item-pane sidenav button groups", () => {
+    const doc = new FakeDocument();
+    const sidenav = doc.createElementNS(HTML_NS, "item-pane-sidenav");
+    sidenav.id = "zotero-view-item-sidenav";
+    const group = doc.createElementNS(HTML_NS, "div");
+    group.setAttribute("class", "inherit-flex highlight-notes-inactive");
+    sidenav.appendChild(group);
+    const host = doc.createElementNS(HTML_NS, "section");
+    host.id = "zotero-context-pane";
+    doc.documentElement.append(sidenav, host);
+    const { helpers } = loadBootstrapUi(doc);
+
+    helpers.registerSidenavButton({ document: doc, setTimeout: (callback: () => void) => callback() });
+
+    const button = doc.getElementById("zotero-markdown-summary-sidenav-button");
+    expect(button).toBeTruthy();
+    expect(button?.parentNode?.parentNode).toBe(group);
+    expect(button?.getAttribute("class")).toContain("zms-sidenav-open-button");
+    expect(button?.getAttribute("role")).toBe("button");
+
+    const event = {
+      defaultPrevented: false,
+      propagationStopped: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+      stopPropagation() {
+        this.propagationStopped = true;
+      }
+    };
+    button?.eventListeners.get("click")?.[0]?.(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
+    expect(doc.getElementById("zotero-markdown-summary-workbench-panel")).toBeTruthy();
+  });
+
+  it("can restore toolbar and sidenav buttons after Zotero removes them during a pane rebuild", () => {
+    const doc = new FakeDocument();
+    const toolbar = doc.createXULElement("toolbar");
+    toolbar.id = "zotero-items-toolbar";
+    const sidenav = doc.createElementNS(HTML_NS, "item-pane-sidenav");
+    sidenav.id = "zotero-view-item-sidenav";
+    const group = doc.createElementNS(HTML_NS, "div");
+    group.setAttribute("class", "inherit-flex");
+    sidenav.appendChild(group);
+    doc.documentElement.append(toolbar, sidenav);
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+    doc.getElementById("zotero-markdown-summary-toolbar-button")?.remove();
+    doc.getElementById("zotero-markdown-summary-sidenav-button")?.parentNode?.remove();
+
+    helpers.ensureWorkbenchButtons(win);
+
+    expect(doc.getElementById("zotero-markdown-summary-toolbar-button")?.parentNode).toBe(toolbar);
+    expect(doc.getElementById("zotero-markdown-summary-sidenav-button")?.parentNode?.parentNode).toBe(group);
+  });
+
   it("opens an embedded workbench panel with item launch parameters", () => {
     const doc = new FakeDocument();
     const host = doc.createXULElement("vbox");
