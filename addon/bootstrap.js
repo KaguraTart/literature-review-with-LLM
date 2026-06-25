@@ -920,7 +920,12 @@ function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = 
     removeFromArray(omitFields, "input.content.input_image");
   }
   if (fields.includes("messages.content")) {
-    nextExtra.anthropicTextContentFormat = "blocks";
+    if (openAIChatHasArrayContent(body)) {
+      nextExtra.openAIChatTextContentFormat = "string";
+      if (openAIChatHasImagePart(body)) nextExtra.omitOpenAIChatImage = true;
+    } else {
+      nextExtra.anthropicTextContentFormat = "blocks";
+    }
     removeFromArray(omitFields, "messages.content");
   }
   if (fields.includes("messages.content.document")) {

@@ -768,9 +768,31 @@ describe("provider adapters", () => {
       "image input is not supported by this model"
     )).toEqual(["messages.content.image_url"]);
     const textOnlyChatImageBody = omitProviderRequestBodyFields(stringImageBody, ["messages.content.image_url"]);
-    expect(((textOnlyChatImageBody.messages as any[])[0].content as any[])).toEqual([
-      { type: "text", text: "Describe this image." }
-    ]);
+    expect((textOnlyChatImageBody.messages as any[])[0].content).toBe("Describe this image.");
+    const chatTextBlockBody = {
+      model: "router-model",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Describe this image." },
+            { type: "text", text: "CONTEXT:\npaper text" }
+          ]
+        }
+      ]
+    };
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      chatTextBlockBody,
+      422,
+      JSON.stringify({
+        detail: [
+          { type: "string_type", loc: ["body", "messages", 0, "content"], msg: "Input should be a valid string" }
+        ]
+      })
+    )).toEqual(["messages.content"]);
+    expect((omitProviderRequestBodyFields(chatTextBlockBody, ["messages.content"]).messages as any[])[0].content)
+      .toBe("Describe this image.\n\nCONTEXT:\npaper text");
     const responsesBody = {
       model: "responses-model",
       input: [],
@@ -1395,6 +1417,7 @@ describe("provider adapters", () => {
           pdfInputFileField: "file_url",
           omitAnthropicDocument: true,
           imageURLFormat: "string",
+          openAIChatTextContentFormat: "string",
           anthropicTextContentFormat: "blocks",
           omitFields: ["temperature", "n", "max_tokens"]
         }
@@ -1412,6 +1435,7 @@ describe("provider adapters", () => {
     expect(body).not.toHaveProperty("anthropicDirectBrowserAccess");
     expect(body).not.toHaveProperty("omitAnthropicVersion");
     expect(body).not.toHaveProperty("imageURLFormat");
+    expect(body).not.toHaveProperty("openAIChatTextContentFormat");
     expect(body).not.toHaveProperty("anthropicTextContentFormat");
     expect(body).not.toHaveProperty("omitAnthropicDocument");
     expect(body).not.toHaveProperty("omitFields");
@@ -1442,6 +1466,15 @@ describe("provider adapters", () => {
       input: imageInput
     });
     expect(JSON.stringify(textOnlyChatBody.messages)).not.toContain("image_url");
+    expect((textOnlyChatBody.messages as any[]).at(-1).content).toBe("prompt\n\npaper text");
+
+    const stringContentChatBody = bodyFor({
+      ...baseRequest,
+      profile: { ...imageProfile, bodyExtra: { omitFields: ["messages.content"] } },
+      input: imageInput
+    });
+    expect(JSON.stringify(stringContentChatBody.messages)).not.toContain("image_url");
+    expect((stringContentChatBody.messages as any[]).at(-1).content).toBe("prompt\n\npaper text");
 
     const responsesBody = bodyFor({
       ...baseRequest,

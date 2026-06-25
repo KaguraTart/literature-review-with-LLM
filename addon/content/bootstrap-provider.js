@@ -648,11 +648,14 @@ function openAIChatSummaryMessages(request, profile) {
     ]
     : userText;
   const messages = [{ role: "user", content: userContent }];
+  const formattedMessages = !images.length && openAIChatTextContentFormat(profile?.bodyExtra?.openAIChatTextContentFormat ?? profile?.bodyExtra?.openAIChatTextContent) === "string"
+    ? messages.map((message) => ({ ...message, content: openAIChatMessageContentString(message.content) }))
+    : messages;
   return isTrueValue(profile?.bodyExtra?.systemFallbackToUser)
-    ? messagesWithPrependedOpenAIChatText(messages, fallbackSystemText(request.system))
+    ? messagesWithPrependedOpenAIChatText(formattedMessages, fallbackSystemText(request.system))
     : [
       { role: "system", content: request.system },
-      ...messages
+      ...formattedMessages
     ];
 }
 
@@ -677,8 +680,13 @@ function openAIChatImageURLFormat(value) {
   return normalized === "string" || normalized === "dataurl" || normalized === "urlstring" ? "string" : "object";
 }
 
+function openAIChatTextContentFormat(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]+/g, "");
+  return normalized === "string" || normalized === "plain" || normalized === "plaintext" || normalized === "text" ? "string" : "blocks";
+}
+
 function withProviderBodyDefaults(profile, body) {
-  return omitProviderBodyFields({ ...body, ...jsonModeBodyDefaults(profile), ...providerBodyExtra(profile.bodyExtra) }, profile.bodyExtra);
+  return omitProviderBodyFields({ ...body, ...jsonModeBodyDefaults(profile), ...providerBodyExtra(profile.bodyExtra) }, profile.bodyExtra, profile?.protocol || "");
 }
 
 function withOpenAIChatBodyDefaults(profile, body) {
@@ -1056,6 +1064,8 @@ function providerBodyExtra(bodyExtra) {
     omitOpenAIChatImage: _omitOpenAIChatImage,
     skipOpenAIChatImage: _skipOpenAIChatImage,
     dropOpenAIChatImage: _dropOpenAIChatImage,
+    openAIChatTextContentFormat: _openAIChatTextContentFormat,
+    openAIChatTextContent: _openAIChatTextContent,
     omitOpenAIResponsesImage: _omitOpenAIResponsesImage,
     skipOpenAIResponsesImage: _skipOpenAIResponsesImage,
     dropOpenAIResponsesImage: _dropOpenAIResponsesImage,
@@ -1086,18 +1096,18 @@ function providerBodyExtra(bodyExtra) {
   return rest;
 }
 
-function omitProviderBodyFields(body, bodyExtra) {
+function omitProviderBodyFields(body, bodyExtra, protocol = "") {
   const fields = providerBodyOmitFields(bodyExtra);
   if (!fields.size) return body;
   const next = { ...body };
   for (const field of fields) {
-    if (applyNestedProviderBodyOmitField(next, field)) continue;
+    if (applyNestedProviderBodyOmitField(next, field, protocol)) continue;
     delete next[field];
   }
   return next;
 }
 
-function applyNestedProviderBodyOmitField(body, field) {
+function applyNestedProviderBodyOmitField(body, field, protocol = "") {
   if (field === "instructions") {
     moveInstructionsIntoOpenAIResponsesInput(body);
     return true;
@@ -1139,7 +1149,11 @@ function applyNestedProviderBodyOmitField(body, field) {
     return true;
   }
   if (field === "messages.content") {
-    switchAnthropicStringMessagesToTextBlocks(body);
+    if (protocol === "openai_chat" && openAIChatHasArrayContent(body)) {
+      switchOpenAIChatArrayMessagesToString(body);
+    } else {
+      switchAnthropicStringMessagesToTextBlocks(body);
+    }
     return true;
   }
   if (field === "messages.content.document") {
@@ -1346,7 +1360,7 @@ function providerStructuredUnsupportedFields(body, text, protocol = "") {
   collectProviderFieldHints(parsed, hints);
   return hints
     .map((value) => normalizeProviderFieldHint(value))
-    .filter((field) => providerFallbackFieldSupported(body, field, protocol) && providerFallbackFieldPresent(body, field));
+    .filter((field) => providerFallbackFieldSupported(body, field, protocol) && providerFallbackFieldPresent(body, field, protocol));
 }
 
 const PROVIDER_OPTIONAL_BODY_FIELD_PATTERNS = [
@@ -1565,10 +1579,14 @@ function canonicalProviderFieldHint(value) {
   return aliases[compact] || "";
 }
 
-function providerFallbackFieldPresent(body, field) {
+function providerFallbackFieldPresent(body, field, protocol = "") {
   if (field === "text.format") return providerTextFieldPresent(body, "format");
   if (field === "text.verbosity") return providerTextFieldPresent(body, "verbosity");
-  if (field === "messages.content") return anthropicMessagesHaveStringContent(body);
+  if (field === "messages.content") {
+    if (protocol === "anthropic_messages") return anthropicMessagesHaveStringContent(body);
+    if (protocol === "openai_chat") return openAIChatHasArrayContent(body);
+    return false;
+  }
   if (field === "messages.content.image") return anthropicMessagesHaveImageBlock(body);
   if (field === "messages.content.document") return anthropicMessagesHaveDocumentBlock(body);
   if (field === "messages.role.system") return openAIChatHasSystemMessage(body);
@@ -1583,7 +1601,7 @@ function providerFallbackFieldPresent(body, field) {
 function providerFallbackFieldSupported(body, field, protocol = "") {
   if (!field) return false;
   if (field === "text.format" || field === "text.verbosity") return protocol === "openai_responses";
-  if (field === "messages.content") return protocol === "anthropic_messages";
+  if (field === "messages.content") return protocol === "anthropic_messages" || protocol === "openai_chat";
   if (field === "messages.content.image") return protocol === "anthropic_messages";
   if (field === "messages.content.document") return protocol === "anthropic_messages";
   if (field === "messages.role.system") return protocol === "openai_chat";
@@ -1800,7 +1818,11 @@ function omitProviderRequestBodyFields(body, fields, usedFallback = false) {
       continue;
     }
     if (field === "messages.content") {
-      switchAnthropicStringMessagesToTextBlocks(next);
+      if (openAIChatHasArrayContent(next)) {
+        switchOpenAIChatArrayMessagesToString(next);
+      } else {
+        switchAnthropicStringMessagesToTextBlocks(next);
+      }
       continue;
     }
     if (field === "messages.content.document") {
@@ -1879,11 +1901,38 @@ function removeOpenAIChatImageParts(body) {
   body.messages = messages.map((message) => {
     const content = Array.isArray(message?.content) ? message.content : null;
     if (!content) return message;
+    const text = openAIChatContentPartsToString(content.filter((part) => part?.type !== "image_url"));
     return {
       ...message,
-      content: content.filter((part) => part?.type !== "image_url")
+      content: text || content.filter((part) => part?.type !== "image_url")
     };
   });
+}
+
+function switchOpenAIChatArrayMessagesToString(body) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message) => Array.isArray(message?.content)
+    ? { ...message, content: openAIChatContentPartsToString(message.content) }
+    : message);
+}
+
+function openAIChatHasArrayContent(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message) => Array.isArray(message?.content));
+}
+
+function openAIChatMessageContentString(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return openAIChatContentPartsToString(content);
+  return extractOpenAIMessageContent(content);
+}
+
+function openAIChatContentPartsToString(content) {
+  return content
+    .filter((part) => part?.type !== "image_url")
+    .map((part) => extractOpenAIMessageContent(part))
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function removeOpenAIResponsesInputImages(body) {
