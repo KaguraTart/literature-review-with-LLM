@@ -532,7 +532,7 @@ var ZoteroMarkdownSummaryPrefs = {
     if (!profile) return;
     const modelInput = document.getElementById("zms-model");
     const wasModelBlank = !String(modelInput?.value || "").trim();
-    const recommended = this.refreshModelRecommendations({ selectDefault: true });
+    const recommended = this.refreshModelRecommendations({ selectDefault: true, resetVendor: true });
     if (!profileHasUsableAuth(profile)) {
       this.setStatus(recommended.length ? `${this.t("modelRecommendationsLoaded")}: ${recommended.length}` : this.t("apiKeyMissing"));
       return;
@@ -558,7 +558,7 @@ var ZoteroMarkdownSummaryPrefs = {
         tagModelOptions(modelOptions, "online"),
         tagModelOptions(recommended, "recommended")
       );
-      renderModelOptions(displayOptions);
+      renderModelOptions(displayOptions, { resetVendor: true });
       if (displayOptions.length && (wasModelBlank || !String(modelInput?.value || "").trim())) {
         if (modelInput) modelInput.value = displayOptions[0].id;
       }
@@ -566,7 +566,7 @@ var ZoteroMarkdownSummaryPrefs = {
       this.setStatus(modelOptions.length ? `${this.t("modelListLoaded")}: ${modelOptions.length}` : `${this.t("modelRecommendationsLoaded")}: ${displayOptions.length}`);
     } catch (err) {
       if (recommended.length) {
-        renderModelOptions(tagModelOptions(recommended, "recommended"));
+        renderModelOptions(tagModelOptions(recommended, "recommended"), { resetVendor: true });
         syncModelSelectFromInput(recommended);
         this.setStatus(`${this.t("modelListFailedUsingRecommendations")}: ${safeError(err)}`);
         return;
@@ -578,7 +578,7 @@ var ZoteroMarkdownSummaryPrefs = {
   refreshModelRecommendations(options = {}) {
     const profile = profileDraftFromEditor().profile;
     const recommendations = recommendedModelOptionsForProfile(profile);
-    renderModelOptions(tagModelOptions(recommendations, "recommended"));
+    renderModelOptions(tagModelOptions(recommendations, "recommended"), { resetVendor: options.resetVendor === true });
     const model = document.getElementById("zms-model");
     if (model && options.selectDefault && shouldSelectProviderDefaultModel(model.value, recommendations) && recommendations[0]?.id) {
       model.value = recommendations[0].id;
@@ -3833,7 +3833,7 @@ function renderModelOptions(modelOptions, options = {}) {
   const vendorSelect = document.getElementById("zms-model-vendor-select");
   const entries = normalizeModelOptions(modelOptions);
   const translate = (key) => prefFallbackMessage(key, resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale()));
-  renderModelVendorFilter(vendorSelect, entries, translate);
+  renderModelVendorFilter(vendorSelect, entries, translate, { reset: options.resetVendor === true });
   const visibleEntries = filterModelOptionsByVendor(entries, selectedModelVendor(vendorSelect));
   clearOptionsElement(list);
   if (select) {
@@ -3896,7 +3896,7 @@ function optionAttribute(option, name) {
     || "";
 }
 
-function renderModelVendorFilter(select, entries, translate = (key) => key) {
+function renderModelVendorFilter(select, entries, translate = (key) => key, options = {}) {
   if (!select) return [];
   const vendors = modelVendorNames(entries);
   const previous = String(select.value || "");
@@ -3911,7 +3911,7 @@ function renderModelVendorFilter(select, entries, translate = (key) => key) {
     option.textContent = vendor;
     select.appendChild(option);
   }
-  select.value = vendors.includes(previous) ? previous : "";
+  select.value = !options.reset && vendors.includes(previous) ? previous : "";
   select.disabled = vendors.length <= 1;
   select.setAttribute?.("aria-label", translate("modelVendorFilter") || "Model vendor");
   select.setAttribute?.("title", translate("modelVendorFilter") || "Model vendor");

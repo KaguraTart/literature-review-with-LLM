@@ -3146,6 +3146,37 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model").hidden).toBe(true);
   });
 
+  it("resets stale settings model vendor filters when a new provider loads recommendations", async () => {
+    const { controller, elements } = loadPreferencesController();
+    elements.get("zms-provider").value = "litellm_proxy_chat";
+    elements.get("zms-activeProfileId").value = "litellm-proxy-chat";
+    elements.get("zms-profileName").value = "LiteLLM Proxy Chat";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "http://localhost:4000";
+    elements.get("zms-apiKey").value = "";
+    elements.get("zms-model").value = "";
+
+    await controller.loadModels();
+    elements.get("zms-model-vendor-select").value = "Anthropic";
+    controller.renderModelOptionsFromCache({ selectFirstVisible: true });
+    expect(selectOptionValues(elements.get("zms-model-select"))).not.toContain("openai/gpt-4o-mini");
+
+    elements.get("zms-provider").value = "cline_api";
+    elements.get("zms-activeProfileId").value = "cline-api";
+    elements.get("zms-profileName").value = "Cline API";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "https://api.cline.bot/api/v1";
+    elements.get("zms-apiKey").value = "";
+    elements.get("zms-model").value = "";
+
+    await controller.loadModels();
+
+    expect(elements.get("zms-model-vendor-select").value).toBe("");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("anthropic/claude-sonnet-4-6");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("google/gemini-2.5-pro");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("openai/gpt-4o");
+  });
+
   it("filters settings model recommendations by model vendor", async () => {
     const { controller, elements } = loadPreferencesController();
     elements.get("zms-provider").value = "litellm_proxy_chat";

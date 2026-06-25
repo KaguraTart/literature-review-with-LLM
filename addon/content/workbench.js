@@ -938,7 +938,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     }
     const modelInput = document.getElementById("zms-profile-model");
     const wasModelBlank = !String(modelInput?.value || "").trim();
-    const recommended = this.renderWorkbenchModelRecommendations({ selectDefault: true });
+    const recommended = this.renderWorkbenchModelRecommendations({ selectDefault: true, resetVendor: true });
     if (!profileHasUsableAuth(profile) && !isLocalEndpoint(endpointForProfile(profile))) {
       this.setStatus(recommended.length ? `${this.t("modelRecommendationsLoaded")}: ${recommended.length}` : this.t("apiKeyMissing"));
       return;
@@ -965,7 +965,7 @@ var ZoteroMarkdownSummaryWorkbench = {
         tagModelOptions(options, "online"),
         tagModelOptions(recommended, "recommended")
       );
-      this.renderWorkbenchModelOptions(displayOptions);
+      this.renderWorkbenchModelOptions(displayOptions, { resetVendor: true });
       if (displayOptions.length) {
         if (wasModelBlank || !modelInput?.value?.trim()) {
           if (modelInput) modelInput.value = displayOptions[0].id;
@@ -980,7 +980,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       }
     } catch (err) {
       if (recommended.length) {
-        this.renderWorkbenchModelOptions(tagModelOptions(recommended, "recommended"));
+        this.renderWorkbenchModelOptions(tagModelOptions(recommended, "recommended"), { resetVendor: true });
         this.syncWorkbenchModelSelect(recommended);
         this.setStatus(`${this.t("modelListFailedUsingRecommendations")}: ${safeError(err)}`);
         return;
@@ -1013,7 +1013,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     const select = document.getElementById("zms-profile-model-select");
     const vendorSelect = document.getElementById("zms-profile-model-vendor-select");
     const entries = normalizeModelOptions(modelOptions);
-    renderModelVendorFilter(vendorSelect, entries, (key) => this.t(key));
+    renderModelVendorFilter(vendorSelect, entries, (key) => this.t(key), { reset: options.resetVendor === true });
     const visibleEntries = filterModelOptionsByVendor(entries, selectedModelVendor(vendorSelect));
     clearOptionsElement(list);
     if (select) {
@@ -1053,7 +1053,7 @@ var ZoteroMarkdownSummaryWorkbench = {
   renderWorkbenchModelRecommendations(options = {}) {
     const profile = this.profileFromSettingsPanel() || this.state.profile || {};
     const recommendations = recommendedModelOptionsForWorkbenchProfile(profile);
-    this.renderWorkbenchModelOptions(tagModelOptions(recommendations, "recommended"));
+    this.renderWorkbenchModelOptions(tagModelOptions(recommendations, "recommended"), { resetVendor: options.resetVendor === true });
     const modelInput = document.getElementById("zms-profile-model");
     if (modelInput && options.selectDefault && shouldSelectProviderDefaultModel(modelInput.value, recommendations) && recommendations[0]?.id) {
       modelInput.value = recommendations[0].id;
@@ -5770,7 +5770,7 @@ function optionAttribute(option, name) {
     || "";
 }
 
-function renderModelVendorFilter(select, entries, translate = (key) => key) {
+function renderModelVendorFilter(select, entries, translate = (key) => key, options = {}) {
   if (!select) return [];
   const vendors = modelVendorNames(entries);
   const previous = String(select.value || "");
@@ -5785,7 +5785,7 @@ function renderModelVendorFilter(select, entries, translate = (key) => key) {
     option.textContent = vendor;
     select.appendChild(option);
   }
-  select.value = vendors.includes(previous) ? previous : "";
+  select.value = !options.reset && vendors.includes(previous) ? previous : "";
   select.disabled = vendors.length <= 1;
   select.setAttribute?.("aria-label", translate("modelVendorFilter") || "Model vendor");
   select.setAttribute?.("title", translate("modelVendorFilter") || "Model vendor");
