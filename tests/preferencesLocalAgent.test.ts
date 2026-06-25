@@ -3020,9 +3020,13 @@ describe("preferences local-agent config helpers", () => {
     controller.applyLanguage();
 
     expect(elements.get("zms-choose-outputDir-button").label).toBe("Choose Folder...");
+    expect(elements.get("zms-choose-outputDir-button").textContent).toBe("Choose Folder...");
     expect(elements.get("zms-choose-outputDir-button").tooltiptext).toBe("Choose an output folder with the system file manager");
+    expect(elements.get("zms-choose-outputDir-button").title).toBe("Choose an output folder with the system file manager");
     expect(elements.get("zms-save-outputDir-button").label).toBe("Save");
+    expect(elements.get("zms-save-outputDir-button").textContent).toBe("Save");
     expect(elements.get("zms-save-outputDir-button").tooltiptext).toBe("Save the current output directory");
+    expect(elements.get("zms-save-outputDir-button").title).toBe("Save the current output directory");
     expect(elements.get("zms-test-button").label).toBe("Save and Test");
   });
 
@@ -3055,6 +3059,10 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-profileLocalAgentSkills-label").value).toBe("技能级配置（JSON，可选）");
     expect(elements.get("zms-outputDir-label").value).toBe("输出目录");
     expect(elements.get("zms-choose-outputDir-button").label).toBe("选择文件夹...");
+    expect(elements.get("zms-choose-outputDir-button").textContent).toBe("选择文件夹...");
+    expect(elements.get("zms-choose-outputDir-button").title).toBe("从系统文件管理器选择输出文件夹");
+    expect(elements.get("zms-save-outputDir-button").textContent).toBe("保存");
+    expect(elements.get("zms-save-outputDir-button").title).toBe("保存当前输入的输出目录");
   });
 
   it("preloads recommended provider models without requiring an API key and saves the choice", async () => {

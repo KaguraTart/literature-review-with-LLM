@@ -871,6 +871,7 @@ var ZoteroMarkdownSummaryPrefs = {
       if (element.localName === "button") {
         element.setAttribute("label", text);
         element.label = text;
+        element.textContent = text;
       } else if (element.localName === "h2") {
         element.textContent = text;
       } else {
@@ -880,7 +881,10 @@ var ZoteroMarkdownSummaryPrefs = {
     };
     const setTooltip = (id, key) => {
       const element = document.getElementById(id);
-      if (element) element.setAttribute("tooltiptext", this.t(key, lang));
+      if (!element) return;
+      const text = this.t(key, lang);
+      element.setAttribute("tooltiptext", text);
+      element.setAttribute("title", text);
     };
     setLabel("zms-title", "title");
     for (const key of [
