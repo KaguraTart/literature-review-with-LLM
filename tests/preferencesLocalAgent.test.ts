@@ -3346,6 +3346,44 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model").hidden).toBe(true);
   });
 
+  it("syncs settings image and PDF capabilities from the selected model", () => {
+    const { controller, elements, prefValues } = loadPreferencesController();
+    elements.get("zms-provider").value = "openai";
+    elements.get("zms-activeProfileId").value = "openai";
+    elements.get("zms-profileName").value = "OpenAI";
+    elements.get("zms-profileProtocol").value = "openai_responses";
+    elements.get("zms-baseURL").value = "https://api.openai.com/v1";
+    elements.get("zms-cap-imageBase64").checked = false;
+    elements.get("zms-cap-pdfBase64").checked = false;
+
+    controller.refreshModelRecommendations();
+    elements.get("zms-model-select").value = "gpt-4.1";
+    controller.selectModelFromDropdown();
+
+    expect(elements.get("zms-cap-imageBase64").checked).toBe(true);
+    expect(elements.get("zms-cap-pdfBase64").checked).toBe(true);
+    expect(controller.save()).toBe(true);
+    expect(JSON.parse(prefValues.get("extensions.zoteroMarkdownSummary.profilesJson"))[0].capabilities).toMatchObject({
+      imageBase64: true,
+      pdfBase64: true
+    });
+
+    elements.get("zms-provider").value = "deepseek";
+    elements.get("zms-activeProfileId").value = "deepseek";
+    elements.get("zms-profileName").value = "DeepSeek";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "https://api.deepseek.com";
+    elements.get("zms-cap-imageBase64").checked = true;
+    elements.get("zms-cap-pdfBase64").checked = true;
+
+    controller.refreshModelRecommendations({ resetVendor: true });
+    elements.get("zms-model-select").value = "deepseek-reasoner";
+    controller.selectModelFromDropdown();
+
+    expect(elements.get("zms-cap-imageBase64").checked).toBe(false);
+    expect(elements.get("zms-cap-pdfBase64").checked).toBe(false);
+  });
+
   it("binds settings provider and model dropdown events through script", () => {
     const { controller, elements } = loadPreferencesController();
 
