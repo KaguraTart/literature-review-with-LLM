@@ -1454,6 +1454,15 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.modelIdsFromResponse({
       payload: { modelNames: ["string-model-name", { value: "value-model" }, { slug: "slug-model" }] }
     })).toEqual(["slug-model", "string-model-name", "value-model"]);
+    expect(helpers.modelIdsFromResponse({
+      result: { supported_models: "router/model-c\nrouter/model-a, router/model-b;router/model-d" }
+    })).toEqual(["router/model-a", "router/model-b", "router/model-c", "router/model-d"]);
+    expect(helpers.modelIdsFromResponse({
+      payload: { supportedModelIds: "supported-id-b\nsupported-id-a", available_model_ids: ["ignored-when-first-list-exists"] }
+    })).toEqual(["supported-id-a", "supported-id-b"]);
+    expect(helpers.modelIdsFromResponse({
+      body: { model_catalog: "catalog-model-b;catalog-model-a" }
+    })).toEqual(["catalog-model-a", "catalog-model-b"]);
     expect(helpers.modelOptionsFromResponse({
       data: {
         "router/model-a": { display_name: "Router Model A" },
@@ -1464,6 +1473,18 @@ describe("preferences local-agent config helpers", () => {
     })).toEqual([
       { id: "router/model-a", label: "Router Model A" },
       { id: "router/model-b", label: "Router Model B" }
+    ]);
+    expect(helpers.modelOptionsFromResponse({
+      data: {
+        "router/model-c": true,
+        "router/model-disabled": false,
+        "router/model-d": { label: "Router Model D" },
+        total: 3,
+        has_more: false
+      }
+    })).toEqual([
+      { id: "router/model-c", label: "router/model-c" },
+      { id: "router/model-d", label: "Router Model D" }
     ]);
     expect(helpers.modelOptionsFromResponse({
       "root/model-a": { display_name: "Root Model A" },

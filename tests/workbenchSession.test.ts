@@ -390,7 +390,9 @@ describe("workbench session helpers", () => {
           data: {
             "router/model-a": { display_name: "Router Model A" },
             "router/model-b": "Router Model B",
-            total: 2,
+            "router/model-c": true,
+            "router/model-disabled": false,
+            total: 3,
             has_more: false
           }
         }
@@ -405,7 +407,34 @@ describe("workbench session helpers", () => {
     expect(mapped.fetchCalls).toHaveLength(1);
     expect(options).toEqual([
       { id: "router/model-a", label: "Router Model A" },
-      { id: "router/model-b", label: "Router Model B" }
+      { id: "router/model-b", label: "Router Model B" },
+      { id: "router/model-c", label: "router/model-c" }
+    ]);
+  });
+
+  it("loads delimited model-list fields in the workbench", async () => {
+    const delimited = loadWorkbenchHelpers({
+      fetchResponses: [
+        {
+          result: {
+            supported_models: "router/model-c\nrouter/model-a, router/model-b;router/model-d",
+            has_more: false
+          }
+        }
+      ]
+    });
+
+    const options = await delimited.workbenchFetchModelOptions({
+      url: "https://router.example/v1/models",
+      headers: { authorization: "Bearer sk-test-secret" }
+    });
+
+    expect(delimited.fetchCalls).toHaveLength(1);
+    expect(options).toEqual([
+      { id: "router/model-a", label: "router/model-a" },
+      { id: "router/model-b", label: "router/model-b" },
+      { id: "router/model-c", label: "router/model-c" },
+      { id: "router/model-d", label: "router/model-d" }
     ]);
   });
 
