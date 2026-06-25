@@ -379,7 +379,9 @@ function openAIChatStreamOptions(): Record<string, unknown> {
 function openaiChatMessages(request: ModelRequest): Array<Record<string, unknown>> {
   const messages = withInputText(request).map((message) => ({ role: message.role, content: message.content as unknown }));
   const images = shouldOmitOpenAIChatImage(request.profile) ? [] : inputImages(request);
-  if (!images.length) return messages;
+  if (!images.length) return openAIChatTextContentFormat(request.profile.bodyExtra?.openAIChatTextContentFormat ?? request.profile.bodyExtra?.openAIChatTextContent) === "string"
+    ? messages.map((message) => ({ ...message, content: openAIChatMessageContentString(message.content) }))
+    : messages;
   const lastUserIndex = findLastIndex(messages, (message) => message.role === "user");
   const imageParts = images.map((image) => openAIChatImagePart(image, request.profile));
   if (lastUserIndex >= 0) {
@@ -1234,6 +1236,11 @@ function openAIChatImageURLFormat(value: unknown): "object" | "string" {
   return normalized === "string" || normalized === "dataurl" || normalized === "urlstring" ? "string" : "object";
 }
 
+function openAIChatTextContentFormat(value: unknown): "blocks" | "string" {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[-_\s]+/g, "");
+  return normalized === "string" || normalized === "plain" || normalized === "plaintext" || normalized === "text" ? "string" : "blocks";
+}
+
 function formatAnthropicMessages(messages: AnthropicMessage[], profile: ProviderProfile): AnthropicMessage[] {
   if (anthropicTextContentFormat(profile.bodyExtra?.anthropicTextContentFormat ?? profile.bodyExtra?.anthropicTextContent) !== "blocks") {
     return messages;
@@ -1297,7 +1304,7 @@ function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
 }
 
 function withBodyExtra(profile: ProviderProfile, body: Record<string, unknown>): Record<string, unknown> {
-  return omitProviderBodyFields({ ...body, ...jsonModeBodyDefaults(profile), ...providerBodyExtra(profile.bodyExtra) }, profile.bodyExtra);
+  return omitProviderBodyFields({ ...body, ...jsonModeBodyDefaults(profile), ...providerBodyExtra(profile.bodyExtra) }, profile.bodyExtra, profile.protocol);
 }
 
 export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined): Record<string, unknown> {
@@ -1329,6 +1336,8 @@ export function providerBodyExtra(bodyExtra: Record<string, unknown> | undefined
     omitOpenAIChatImage: _omitOpenAIChatImage,
     skipOpenAIChatImage: _skipOpenAIChatImage,
     dropOpenAIChatImage: _dropOpenAIChatImage,
+    openAIChatTextContentFormat: _openAIChatTextContentFormat,
+    openAIChatTextContent: _openAIChatTextContent,
     omitOpenAIResponsesImage: _omitOpenAIResponsesImage,
     skipOpenAIResponsesImage: _skipOpenAIResponsesImage,
     dropOpenAIResponsesImage: _dropOpenAIResponsesImage,
@@ -1653,7 +1662,7 @@ function providerStructuredUnsupportedFields(body: Record<string, unknown>, text
   collectProviderFieldHints(parsed, hints);
   return hints
     .map((value) => normalizeProviderFieldHint(value))
-    .filter((field) => providerFallbackFieldSupported(body, field, protocol) && providerFallbackFieldPresent(body, field));
+    .filter((field) => providerFallbackFieldSupported(body, field, protocol) && providerFallbackFieldPresent(body, field, protocol));
 }
 
 function collectProviderFieldHints(value: unknown, hints: string[]): void {
@@ -1801,10 +1810,14 @@ function canonicalProviderFieldHint(value: string): string {
   return aliases[compact] || "";
 }
 
-function providerFallbackFieldPresent(body: Record<string, unknown>, field: string): boolean {
+function providerFallbackFieldPresent(body: Record<string, unknown>, field: string, protocol = ""): boolean {
   if (field === "text.format") return providerTextFieldPresent(body, "format");
   if (field === "text.verbosity") return providerTextFieldPresent(body, "verbosity");
-  if (field === "messages.content") return anthropicMessagesHaveStringContent(body);
+  if (field === "messages.content") {
+    if (protocol === "anthropic_messages") return anthropicMessagesHaveStringContent(body);
+    if (protocol === "openai_chat") return openAIChatHasArrayContent(body);
+    return false;
+  }
   if (field === "messages.content.image") return anthropicMessagesHaveImageBlock(body);
   if (field === "messages.content.document") return anthropicMessagesHaveDocumentBlock(body);
   if (field === "messages.role.system") return openAIChatHasSystemMessage(body);
@@ -1819,7 +1832,7 @@ function providerFallbackFieldPresent(body: Record<string, unknown>, field: stri
 function providerFallbackFieldSupported(body: Record<string, unknown>, field: string, protocol = ""): boolean {
   if (!field) return false;
   if (field === "text.format" || field === "text.verbosity") return protocol === "openai_responses";
-  if (field === "messages.content") return protocol === "anthropic_messages";
+  if (field === "messages.content") return protocol === "anthropic_messages" || protocol === "openai_chat";
   if (field === "messages.content.image") return protocol === "anthropic_messages";
   if (field === "messages.content.document") return protocol === "anthropic_messages";
   if (field === "messages.role.system") return protocol === "openai_chat";
@@ -2036,7 +2049,11 @@ export function omitProviderRequestBodyFields(body: Record<string, unknown>, fie
       continue;
     }
     if (field === "messages.content") {
-      switchAnthropicStringMessagesToTextBlocks(next);
+      if (openAIChatHasArrayContent(next)) {
+        switchOpenAIChatArrayMessagesToString(next);
+      } else {
+        switchAnthropicStringMessagesToTextBlocks(next);
+      }
       continue;
     }
     if (field === "messages.content.image") {
@@ -2089,11 +2106,38 @@ function removeOpenAIChatImageParts(body: Record<string, unknown>): void {
   body.messages = messages.map((message: any) => {
     const content = Array.isArray(message?.content) ? message.content : null;
     if (!content) return message;
+    const text = openAIChatContentPartsToString(content.filter((part: any) => part?.type !== "image_url"));
     return {
       ...message,
-      content: content.filter((part: any) => part?.type !== "image_url")
+      content: text || content.filter((part: any) => part?.type !== "image_url")
     };
   });
+}
+
+function switchOpenAIChatArrayMessagesToString(body: Record<string, unknown>): void {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message: any) => Array.isArray(message?.content)
+    ? { ...message, content: openAIChatContentPartsToString(message.content) }
+    : message);
+}
+
+function openAIChatHasArrayContent(body: Record<string, unknown>): boolean {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message: any) => Array.isArray(message?.content));
+}
+
+function openAIChatMessageContentString(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return openAIChatContentPartsToString(content);
+  return extractMessageContent(content);
+}
+
+function openAIChatContentPartsToString(content: unknown[]): string {
+  return content
+    .filter((part: any) => part?.type !== "image_url")
+    .map((part) => extractMessageContent(part))
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function switchOpenAIResponsesInputFileField(body: Record<string, unknown>, from: "file_data" | "file_url", to: "file_data" | "file_url"): void {
@@ -2238,18 +2282,18 @@ function clonePlainObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : { value };
 }
 
-function omitProviderBodyFields(body: Record<string, unknown>, bodyExtra: Record<string, unknown> | undefined): Record<string, unknown> {
+function omitProviderBodyFields(body: Record<string, unknown>, bodyExtra: Record<string, unknown> | undefined, protocol = ""): Record<string, unknown> {
   const fields = providerBodyOmitFields(bodyExtra);
   if (!fields.size) return body;
   const next = { ...body };
   for (const field of fields) {
-    if (applyNestedProviderBodyOmitField(next, field)) continue;
+    if (applyNestedProviderBodyOmitField(next, field, protocol)) continue;
     delete next[field];
   }
   return next;
 }
 
-function applyNestedProviderBodyOmitField(body: Record<string, unknown>, field: string): boolean {
+function applyNestedProviderBodyOmitField(body: Record<string, unknown>, field: string, protocol = ""): boolean {
   if (field === "instructions") {
     moveInstructionsIntoOpenAIResponsesInput(body);
     return true;
@@ -2291,7 +2335,11 @@ function applyNestedProviderBodyOmitField(body: Record<string, unknown>, field: 
     return true;
   }
   if (field === "messages.content") {
-    switchAnthropicStringMessagesToTextBlocks(body);
+    if (protocol === "openai_chat" && openAIChatHasArrayContent(body)) {
+      switchOpenAIChatArrayMessagesToString(body);
+    } else {
+      switchAnthropicStringMessagesToTextBlocks(body);
+    }
     return true;
   }
   if (field === "messages.content.image") {
