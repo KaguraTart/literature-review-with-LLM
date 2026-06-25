@@ -4,6 +4,8 @@ function getSettings() {
   const defaults = settingsProviderDefaults(provider);
   const fallbackBaseURL = String(pref("baseURL") || defaults.baseURL || "").trim();
   return {
+    id: profile?.id || "",
+    name: profile?.name || "",
     provider,
     protocol: profile?.protocol || defaults.protocol,
     endpointMode: profile?.endpointMode || defaults.endpointMode,
@@ -396,9 +398,61 @@ function pref(key) {
   return Zotero.Prefs.get(`${PREF_PREFIX}.${key}`, true);
 }
 
-function activeProfile() {
+function setPref(key, value) {
+  if (typeof Zotero?.Prefs?.set === "function") {
+    Zotero.Prefs.set(`${PREF_PREFIX}.${key}`, value, true);
+  }
+}
+
+function readSettingsProfiles() {
   try {
     const profiles = JSON.parse(pref("profilesJson") || "[]");
+    return Array.isArray(profiles) ? profiles : [];
+  } catch (_err) {
+    return [];
+  }
+}
+
+function persistSettingsActiveProfile(profile) {
+  const current = normalizedActiveProfile();
+  const activeProfileId = normalizeSettingsProfileId(pref("activeProfileId") || current?.id || profile?.id);
+  if (!activeProfileId) return null;
+  const nextProfile = normalizeSettingsProfile({
+    ...(current || {}),
+    ...(profile || {}),
+    id: activeProfileId,
+    isDefault: current?.isDefault !== false
+  });
+  const profiles = readSettingsProfiles();
+  let found = false;
+  const nextProfiles = profiles.map((item) => {
+    const itemId = normalizeSettingsProfileId(item?.id);
+    if (itemId !== activeProfileId) {
+      return { ...item, isDefault: item?.isDefault === true ? false : item?.isDefault };
+    }
+    found = true;
+    return {
+      ...item,
+      ...nextProfile,
+      id: activeProfileId,
+      isDefault: true
+    };
+  });
+  if (!found) {
+    nextProfiles.push({ ...nextProfile, id: activeProfileId, isDefault: true });
+  }
+  setPref("activeProfileId", activeProfileId);
+  setPref("profilesJson", JSON.stringify(nextProfiles, null, 2));
+  setPref("provider", settingsProviderFromProfile(nextProfile));
+  setPref("baseURL", nextProfile.baseURL || "");
+  setPref("apiKey", nextProfile.apiKey || "");
+  setPref("model", nextProfile.model || "");
+  return nextProfile;
+}
+
+function activeProfile() {
+  try {
+    const profiles = readSettingsProfiles();
     const activeProfileId = pref("activeProfileId");
     if (!Array.isArray(profiles)) return null;
     return profiles.find((profile) => profile.id === activeProfileId)
