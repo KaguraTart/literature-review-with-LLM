@@ -21,17 +21,63 @@ function registerToolbarButton(win) {
     win.setTimeout?.(() => registerToolbarButton(win), 1000);
     return;
   }
+  const button = createToolbarButton(doc, toolbar);
+  toolbar.appendChild(button);
+}
+
+function createToolbarButton(doc, toolbar) {
+  const label = t("openWorkbench");
+  const imageURL = `chrome://${CHROME_NAME}/content/logo.svg`;
+  if (usesHTMLChildren(toolbar)) {
+    const button = doc.createElementNS(HTML_NS, "button");
+    button.id = TOOLBAR_BUTTON_ID;
+    button.type = "button";
+    button.setAttribute("class", "zms-toolbar-button");
+    button.setAttribute("aria-label", label);
+    button.setAttribute("title", label);
+    button.setAttribute("label", label);
+    button.setAttribute("style", [
+      "width:32px",
+      "height:28px",
+      "min-width:32px",
+      "min-height:28px",
+      "margin:0 2px",
+      "padding:4px",
+      "border:0",
+      "border-radius:6px",
+      "background:transparent",
+      "display:inline-flex",
+      "align-items:center",
+      "justify-content:center",
+      "vertical-align:middle",
+      "cursor:default"
+    ].join("; "));
+
+    const image = doc.createElementNS(HTML_NS, "img");
+    image.src = imageURL;
+    image.alt = "";
+    image.setAttribute("style", "width:20px;height:20px;display:block;pointer-events:none;");
+    button.appendChild(image);
+    button.addEventListener("click", (event) => {
+      if (event?.button && event.button !== 0) return;
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      openWorkbenchForContext();
+    });
+    return button;
+  }
+
   const button = createXULElement(doc, "toolbarbutton");
   button.id = TOOLBAR_BUTTON_ID;
   button.setAttribute("type", "menu-button");
   button.setAttribute("class", "toolbarbutton-1");
-  button.setAttribute("label", t("openWorkbench"));
-  button.setAttribute("aria-label", t("openWorkbench"));
-  button.setAttribute("title", t("openWorkbench"));
-  button.setAttribute("tooltiptext", t("openWorkbench"));
-  button.setAttribute("image", `chrome://${CHROME_NAME}/content/logo.svg`);
+  button.setAttribute("label", label);
+  button.setAttribute("aria-label", label);
+  button.setAttribute("title", label);
+  button.setAttribute("tooltiptext", label);
+  button.setAttribute("image", imageURL);
   button.setAttribute("style", [
-    `list-style-image: url('chrome://${CHROME_NAME}/content/logo.svg')`,
+    `list-style-image: url('${imageURL}')`,
     "-moz-context-properties: fill",
     "fill: #ef6f98",
     "min-width: 32px",
@@ -44,14 +90,14 @@ function registerToolbarButton(win) {
   });
 
   const popup = createXULElement(doc, "menupopup");
-  popup.appendChild(toolbarMenuItem(doc, t("openWorkbench"), () => openWorkbenchForContext()));
+  popup.appendChild(toolbarMenuItem(doc, label, () => openWorkbenchForContext()));
   popup.appendChild(toolbarMenuItem(doc, t("selfCheck"), () => runSelfCheckForContext()));
   popup.appendChild(toolbarMenuItem(doc, t("openMarkdownReader"), () => openMarkdownReaderForContext()));
   popup.appendChild(toolbarMenuItem(doc, t("batchSelected"), () => batchGenerateSelected(false)));
   popup.appendChild(toolbarMenuItem(doc, t("batchAll"), () => batchGenerateCurrentList(false)));
   popup.appendChild(toolbarMenuItem(doc, t("batchAllUpdate"), () => batchGenerateCurrentList(true)));
   button.appendChild(popup);
-  toolbar.appendChild(button);
+  return button;
 }
 
 function unregisterToolbarButtons(documentOrWindow) {
