@@ -4316,6 +4316,8 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.extractOpenAIStreamText({ type: "response.refusal.done", refusal: "done refusal" })).toBe("done refusal");
     expect(helpers.extractOpenAIStreamText({ type: "response.reasoning_summary_text.delta", delta: "hidden reasoning" })).toBe("");
     expect(helpers.extractOpenAIStreamText({ data: { type: "response.reasoning_text.delta", delta: "wrapped hidden" } })).toBe("");
+    expect(helpers.extractOpenAIStreamText({ type: "response.function_call_arguments.delta", delta: "{\"query\"" })).toBe("");
+    expect(helpers.extractOpenAIStreamText({ type: "response.output_item.done", item: { type: "function_call", arguments: "{\"query\":\"paper\"}" } })).toBe("");
     expect(helpers.extractOpenAIStreamText({ type: "response.content_part.done", part: { type: "output_text", text: "snapshot part" } })).toBe("snapshot part");
     expect(helpers.extractOpenAIStreamText({ type: "response.content_part.done", part: { type: "output_text", text: { value: "snapshot value part" } } })).toBe("snapshot value part");
     expect(helpers.extractOpenAIStreamText({ type: "response.output_item.done", item: { content: [{ type: "refusal", refusal: "snapshot refusal" }] } })).toBe("snapshot refusal");
@@ -4325,6 +4327,8 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.extractOpenAIStreamText({ text: { value: "router stream text" } })).toBe("router stream text");
     expect(helpers.extractOpenAIStreamText({ delta: { content: [{ text: "nested" }] } })).toBe("nested");
     expect(helpers.extractOpenAIStreamText({ choices: [{ delta: { reasoning_content: "hidden" } }] })).toBe("");
+    expect(helpers.extractOpenAIStreamText({ choices: [{ delta: { tool_calls: [{ function: { arguments: "{\"query\"" } }] } }] })).toBe("");
+    expect(helpers.extractOpenAIStreamText({ choices: [{ delta: { function_call: { arguments: "{\"query\"" } } }] })).toBe("");
     expect(helpers.extractOpenAIStreamText({ choices: [{ delta: { refusal: "stream refusal" } }] })).toBe("stream refusal");
     expect(helpers.extractOpenAIStreamText({ choices: [{ delta: {} }, { delta: { content: "second choice" } }] })).toBe("second choice");
     expect(helpers.extractOpenAIStreamText({ choices: [{ message: { content: null } }, { message: { refusal: "second refusal" } }] })).toBe("second refusal");
@@ -4361,12 +4365,20 @@ describe("bootstrap provider helpers", () => {
       delta: { type: "thinking_delta", text: "hidden thinking" }
     })).toBe("");
     expect(helpers.extractAnthropicStreamText({
+      type: "content_block_delta",
+      delta: { type: "input_json_delta", partial_json: "{\"query\"" }
+    })).toBe("");
+    expect(helpers.extractAnthropicStreamText({
       type: "content_block_start",
       content_block: { type: "text", text: "start text" }
     })).toBe("start text");
     expect(helpers.extractAnthropicStreamText({
       type: "content_block_start",
       content_block: { type: "thinking", text: "hidden start" }
+    })).toBe("");
+    expect(helpers.extractAnthropicStreamText({
+      type: "content_block_start",
+      content_block: { type: "tool_use", name: "search", input: { query: "paper" } }
     })).toBe("");
     expect(helpers.extractAnthropicStreamText({
       message: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped message" } }

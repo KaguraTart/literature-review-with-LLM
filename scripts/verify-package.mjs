@@ -252,6 +252,7 @@ const requiredMarkers = [
   [bootstrap, "loadSharedMessages", "shared message loader"],
   [bootstrapProvider, "setHeaderIfMissing(headers", "custom auth header preservation in bootstrap provider"],
   [bootstrapProvider, "extractAnthropicStreamText", "Anthropic stream parser in bootstrap provider"],
+  [bootstrapProvider, "isNonAnswerStreamEvent", "bootstrap provider stream non-answer event guard"],
   [bootstrapProvider, "isProviderStreamSnapshot", "OpenAI Responses snapshot detector in bootstrap provider"],
   [bootstrapProvider, "extractOpenAIEventContainer", "OpenAI Responses event container parser in bootstrap provider"],
   [bootstrapProvider, "streamErrorText", "provider stream error parser in bootstrap provider"],
