@@ -25,6 +25,7 @@ const DEFAULT_CONTEXT = "Provider smoke-test context.";
 const DEFAULT_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 const DEFAULT_PDF_BASE64 = "JVBERi0xLjQKMSAwIG9iago8PD4+CmVuZG9iagp0cmFpbGVyCjw8Pj4KJSVFT0YK";
 const PROVIDER_RETRY_DELAY_MAX_MS = 10000;
+const PROVIDER_GENERATION_MAX_ATTEMPTS = 4;
 const PROVIDER_MODEL_LIST_MAX_ATTEMPTS = 4;
 
 if (isMainModule()) {
@@ -84,6 +85,7 @@ export async function runProviderSmoke(options = {}) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const usedCompatibilityFallbackFields = [];
+    const retryDelaysMs = [];
     let response;
     let responseText = "";
     let parsed = null;
@@ -94,14 +96,23 @@ export async function runProviderSmoke(options = {}) {
       responseStream = body.stream === true;
     };
     const fetchGeneration = async () => {
-      response = await fetch(endpoint, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal
-      });
-      responseText = await response.text();
-      parsed = parseResponseBody(responseText);
+      for (let attempt = 0; attempt < PROVIDER_GENERATION_MAX_ATTEMPTS; attempt += 1) {
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: controller.signal
+        });
+        responseText = await response.text();
+        parsed = parseResponseBody(responseText);
+        const retryDelayMs = providerGenerationRetryDelayMs(response, attempt);
+        if (retryDelayMs != null) {
+          retryDelaysMs.push(retryDelayMs);
+          await delay(retryDelayMs);
+          continue;
+        }
+        break;
+      }
     };
     const applyResponseFallbacks = async () => {
       while (providerSmokeResponseNeedsFallback(profile.protocol, response, body, responseText, parsed)) {
@@ -120,6 +131,7 @@ export async function runProviderSmoke(options = {}) {
         profile: profile.id,
         protocol: profile.protocol,
         endpoint,
+        retryCount: retryDelaysMs.length,
         error: providerErrorText(parsed, responseText)
       };
     }
@@ -131,6 +143,7 @@ export async function runProviderSmoke(options = {}) {
         profile: profile.id,
         protocol: profile.protocol,
         endpoint,
+        retryCount: retryDelaysMs.length,
         error: responseError
       };
     }
@@ -156,6 +169,7 @@ export async function runProviderSmoke(options = {}) {
             profile: profile.id,
             protocol: profile.protocol,
             endpoint,
+            retryCount: retryDelaysMs.length,
             error: providerErrorText(parsed, responseText)
           };
         }
@@ -167,6 +181,7 @@ export async function runProviderSmoke(options = {}) {
             profile: profile.id,
             protocol: profile.protocol,
             endpoint,
+            retryCount: retryDelaysMs.length,
             error: fallbackResponseError
           };
         }
@@ -182,6 +197,7 @@ export async function runProviderSmoke(options = {}) {
       stream: responseStream,
       inputMode: smokeInputMode(options),
       contentTypes: requestContentTypes(body),
+      retryCount: retryDelaysMs.length,
       text,
       usage
     };
@@ -1335,9 +1351,19 @@ function stringField(...values) {
   return "";
 }
 
-function providerModelListRetryableStatus(status) {
+function providerRetryableStatus(status) {
   const numericStatus = Number(status);
   return numericStatus === 429 || numericStatus >= 500;
+}
+
+function providerGenerationRetryDelayMs(response, attempt) {
+  if (!response || !providerRetryableStatus(response.status)) return null;
+  if (attempt >= PROVIDER_GENERATION_MAX_ATTEMPTS - 1) return null;
+  return providerRetryAfterMs(response.headers);
+}
+
+function providerModelListRetryableStatus(status) {
+  return providerRetryableStatus(status);
 }
 
 function providerModelListRetryDelayMs(response, attempt) {
