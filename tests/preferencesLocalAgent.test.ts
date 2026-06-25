@@ -2817,12 +2817,14 @@ describe("preferences local-agent config helpers", () => {
       apiKey: "gemini-secret",
       model: "gemini-2.5-flash"
     }, "en-US");
-    const azureGuide = helpers.providerSetupGuide({
+    const azureProfile = {
       ...helpers.providerDefaults("azure_openai"),
       baseURL: "https://example-resource.openai.azure.com/openai/v1",
       apiKey: "azure-secret",
       model: "gpt-4.1"
-    }, "en-US");
+    };
+    const azureGuide = helpers.providerSetupGuide(azureProfile, "en-US");
+    const azureGuideZh = helpers.providerSetupGuide(azureProfile, "zh-CN");
     const vercelChatGuide = helpers.providerSetupGuide({
       ...helpers.providerDefaults("vercel_ai_chat"),
       apiKey: "vercel-secret",
@@ -2862,6 +2864,10 @@ describe("preferences local-agent config helpers", () => {
     expect(azureGuide).toContain("AZURE_OPENAI_API_KEY=...");
     expect(azureGuide).toContain("AZURE_OPENAI_MODEL=gpt-4.1");
     expect(azureGuide).toContain("AZURE_OPENAI_BASE_URL=https://example-resource.openai.azure.com/openai/v1");
+    expect(azureGuide).toContain("Auth: API key is sent as the api-key header");
+    expect(azureGuide).not.toContain("Uses Bearer by default");
+    expect(azureGuideZh).toContain("鉴权：API Key 会作为 api-key header 发送");
+    expect(azureGuideZh).not.toContain("默认使用 Bearer");
     expect(azureGuide).toContain("--include azure-openai");
     expect(azureGuide).toContain("Image live check: AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=gpt-4.1 AZURE_OPENAI_BASE_URL=https://example-resource.openai.azure.com/openai/v1 npm run verify:provider:image:live -- --include azure-openai");
     expect(azureGuide).toContain("PDF live check: AZURE_OPENAI_API_KEY=... AZURE_OPENAI_MODEL=gpt-4.1 AZURE_OPENAI_BASE_URL=https://example-resource.openai.azure.com/openai/v1 npm run verify:provider:pdf:live -- --include azure-openai");
