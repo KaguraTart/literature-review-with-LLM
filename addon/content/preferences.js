@@ -501,6 +501,27 @@ var ZoteroMarkdownSummaryPrefs = {
     document.getElementById("zms-cap-modelList").checked = !!merged.modelList;
   },
 
+  persistProfileCompatibilityFallback(profile, result) {
+    const fields = normalizeProviderFallbackFieldList(result?.compatibilityFallbackFields);
+    if (!fields.length || !profile) return profile;
+    const effectiveProfile = result?.effectiveProfile && typeof result.effectiveProfile === "object"
+      ? result.effectiveProfile
+      : profile;
+    const currentId = String(profile.id || "");
+    const effectiveId = String(effectiveProfile.id || currentId);
+    if (currentId && effectiveId && currentId !== effectiveId) return profile;
+    const nextProfile = profileWithProviderCompatibilityFallback(profile, effectiveProfile, fields);
+    if (JSON.stringify(nextProfile) === JSON.stringify(profile)) return profile;
+    this.populateProfileEditor(nextProfile);
+    document.getElementById("zms-profilesJson").value = JSON.stringify(replaceActiveProfile(readProfilesFromEditor(), nextProfile), null, 2);
+    this.applyProfileToBasicFields(nextProfile);
+    this.refreshProfileOptions();
+    this.refreshProfileStatus();
+    this.refreshProviderGuide();
+    this.save({ updateProfile: false, statusKey: "" });
+    return nextProfile;
+  },
+
   async testConnection() {
     const profile = this.upsertProfileFromEditor();
     if (!profile || !this.save({ updateProfile: false, statusKey: "" })) return;
@@ -524,12 +545,14 @@ var ZoteroMarkdownSummaryPrefs = {
     try {
       this.setStatus(this.t("testing"));
       const request = connectionTestRequestForProfile(profile);
-      const { response, text } = await runProviderConnectionTest(profile, request);
+      const result = await runProviderConnectionTest(profile, request);
+      const { response, text } = result;
       if (!response.ok) {
         this.setStatus(`${this.t("testFailed")}: ${providerErrorText(response.status, text)}`);
         return;
       }
-      extractProviderConnectionText(profile.protocol, text);
+      const persistedProfile = this.persistProfileCompatibilityFallback(profile, result);
+      extractProviderConnectionText(persistedProfile?.protocol || profile.protocol, text);
       this.setStatus(this.t("testOk"));
     } catch (err) {
       this.setStatus(`${this.t("testFailed")}: ${safeError(err)}`);
@@ -2825,6 +2848,7 @@ function connectionTestRequestForProfile(profile) {
 async function runProviderConnectionTest(profile, request) {
   let body = request.body;
   let headers = request.headers;
+  let effectiveProfile = hydrateProfile(profile || {});
   const usedFallbackFields = [];
   let lastResponse = null;
   let lastText = "";
@@ -2833,14 +2857,19 @@ async function runProviderConnectionTest(profile, request) {
     const text = await response.text();
     lastResponse = response;
     lastText = text;
-    const fallbackFields = providerCompatibilityFallbackFields(profile?.protocol, body, response.status, text, usedFallbackFields);
-    if (response.ok && !fallbackFields.length) return { response, text };
-    if (!fallbackFields.length) return { response, text };
-    usedFallbackFields.push(...fallbackFields);
+    const fallbackFields = providerCompatibilityFallbackFields(effectiveProfile?.protocol, body, response.status, text, usedFallbackFields);
+    if (response.ok && !fallbackFields.length) {
+      return { response, text, compatibilityFallbackFields: normalizeProviderFallbackFieldList(usedFallbackFields), effectiveProfile };
+    }
+    if (!fallbackFields.length) {
+      return { response, text, compatibilityFallbackFields: normalizeProviderFallbackFieldList(usedFallbackFields), effectiveProfile };
+    }
+    effectiveProfile = profileWithProviderConnectionTestFallback(effectiveProfile, body, fallbackFields, usedFallbackFields);
+    usedFallbackFields.splice(0, usedFallbackFields.length, ...normalizeProviderFallbackFieldList([...usedFallbackFields, ...fallbackFields]));
     body = omitProviderRequestBodyFields(body, fallbackFields, usedFallbackFields);
     headers = providerRequestHeadersWithFallback(headers, fallbackFields);
   }
-  return { response: lastResponse, text: lastText };
+  return { response: lastResponse, text: lastText, compatibilityFallbackFields: normalizeProviderFallbackFieldList(usedFallbackFields), effectiveProfile };
 }
 
 function modelListRequestForProfile(profile) {
@@ -5213,6 +5242,139 @@ function omitProviderRequestBodyFields(body, fields, usedFallback = false) {
   return next;
 }
 
+function profileWithProviderConnectionTestFallback(profile, body, fields, usedFallback = []) {
+  const normalizedFields = normalizeProviderFallbackFieldList(fields);
+  const base = hydrateProfile({
+    ...(profile || {}),
+    bodyExtra: mergeProviderFallbackBodyExtra(profile?.bodyExtra, body, normalizedFields, usedFallback)
+  });
+  return profileWithProviderCompatibilityFallback(profile, base, normalizedFields);
+}
+
+function profileWithProviderCompatibilityFallback(currentProfile, effectiveProfile, fields) {
+  const normalizedFields = normalizeProviderFallbackFieldList(fields);
+  const base = hydrateProfile({
+    ...(currentProfile || {}),
+    ...(effectiveProfile || {}),
+    id: effectiveProfile?.id || currentProfile?.id,
+    isDefault: currentProfile?.isDefault !== false
+  });
+  const downgrades = providerCapabilityDowngradesFromFallback(base, normalizedFields);
+  if (!Object.keys(downgrades).length) return base;
+  return hydrateProfile({
+    ...base,
+    capabilities: {
+      ...(base.capabilities || {}),
+      ...downgrades
+    }
+  });
+}
+
+function providerCapabilityDowngradesFromFallback(profile, fields) {
+  const fieldSet = new Set(normalizeProviderFallbackFieldList(fields));
+  const downgrades = {};
+  if (
+    fieldSet.has("messages.content.image_url")
+    || fieldSet.has("input.content.input_image")
+    || fieldSet.has("messages.content.image")
+  ) {
+    downgrades.imageBase64 = false;
+  }
+  if (
+    fieldSet.has("messages.content.document")
+    || (fieldSet.has("input_file.file_data") && fieldSet.has("input_file.file_url"))
+    || isTrueValue(profile?.bodyExtra?.omitPdfInputFile)
+  ) {
+    downgrades.pdfBase64 = false;
+  }
+  if (fieldSet.has("stream")) {
+    downgrades.streaming = false;
+  }
+  return downgrades;
+}
+
+function normalizeProviderFallbackFieldList(fields) {
+  return Array.from(new Set((Array.isArray(fields) ? fields : [])
+    .map((field) => String(field || "").trim())
+    .filter(Boolean)));
+}
+
+function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = []) {
+  const nextExtra = { ...(bodyExtra || {}) };
+  const omitFields = [...fields];
+  const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
+  if (fields.includes("instructions") && body?.instructions !== undefined) {
+    nextExtra.instructionsFallbackToUser = true;
+  }
+  if (fields.includes("system") && body?.system !== undefined) {
+    nextExtra.systemFallbackToUser = true;
+  }
+  if (fields.includes("messages.role.system") && openAIChatHasSystemMessage(body)) {
+    nextExtra.systemFallbackToUser = true;
+    removeFromArray(omitFields, "messages.role.system");
+  }
+  if (fields.includes("max_completion_tokens") && !usedFields.has("max_tokens") && body?.max_completion_tokens !== undefined && body?.max_tokens === undefined) {
+    nextExtra.tokenLimitField = "max_tokens";
+    removeFromArray(omitFields, "max_completion_tokens");
+  }
+  if (fields.includes("max_tokens") && !usedFields.has("max_completion_tokens") && body?.max_tokens !== undefined && body?.max_completion_tokens === undefined) {
+    nextExtra.tokenLimitField = "max_completion_tokens";
+    removeFromArray(omitFields, "max_tokens");
+  }
+  if (fields.includes("input_file.file_data")) {
+    if (usedFields.has("input_file.file_url")) nextExtra.omitPdfInputFile = true;
+    else nextExtra.pdfInputFileField = "file_url";
+    removeFromArray(omitFields, "input_file.file_data");
+  }
+  if (fields.includes("input_file.file_url")) {
+    if (usedFields.has("input_file.file_data")) nextExtra.omitPdfInputFile = true;
+    else nextExtra.pdfInputFileField = "file_data";
+    removeFromArray(omitFields, "input_file.file_url");
+  }
+  if (fields.includes("image_url.url")) {
+    nextExtra.imageURLFormat = "string";
+    removeFromArray(omitFields, "image_url.url");
+  }
+  if (fields.includes("messages.content.image_url")) {
+    nextExtra.omitOpenAIChatImage = true;
+    removeFromArray(omitFields, "messages.content.image_url");
+  }
+  if (fields.includes("input.content.input_image")) {
+    nextExtra.omitOpenAIResponsesImage = true;
+    removeFromArray(omitFields, "input.content.input_image");
+  }
+  if (fields.includes("messages.content")) {
+    nextExtra.anthropicTextContentFormat = "blocks";
+    removeFromArray(omitFields, "messages.content");
+  }
+  if (fields.includes("messages.content.document")) {
+    nextExtra.omitAnthropicDocument = true;
+    removeFromArray(omitFields, "messages.content.document");
+  }
+  if (fields.includes("messages.content.image")) {
+    nextExtra.omitAnthropicImage = true;
+    removeFromArray(omitFields, "messages.content.image");
+  }
+  if (fields.includes("headers.anthropic-version")) {
+    nextExtra.omitAnthropicVersion = true;
+    removeFromArray(omitFields, "headers.anthropic-version");
+  }
+  return mergeProviderBodyOmitFields(nextExtra, omitFields);
+}
+
+function removeFromArray(values, value) {
+  let index = values.indexOf(value);
+  while (index >= 0) {
+    values.splice(index, 1);
+    index = values.indexOf(value);
+  }
+}
+
+function mergeProviderBodyOmitFields(bodyExtra, fields) {
+  const current = Array.from(providerBodyOmitFields(bodyExtra));
+  return { ...(bodyExtra || {}), omitFields: Array.from(new Set([...current, ...fields])) };
+}
+
 function removeOpenAIResponsesTextField(body, field) {
   const text = body.text;
   if (!text || typeof text !== "object" || Array.isArray(text)) return;
@@ -6597,6 +6759,15 @@ function readProfilesFromEditor() {
   } catch (_err) {
     return [];
   }
+}
+
+function replaceActiveProfile(profiles, profile) {
+  const nextProfile = hydrateProfile({ ...(profile || {}), isDefault: true });
+  const updated = (Array.isArray(profiles) ? profiles : [])
+    .filter((item) => item?.id !== nextProfile.id)
+    .map((item) => ({ ...item, isDefault: false }));
+  updated.unshift(nextProfile);
+  return updated;
 }
 
 function storedProfileForProviderPreset(provider, profiles) {

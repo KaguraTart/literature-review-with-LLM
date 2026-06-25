@@ -4732,7 +4732,7 @@ describe("preferences local-agent config helpers", () => {
   });
 
   it("retries settings connection tests after stripping unsupported Responses fields", async () => {
-    const { controller, elements, fetchCalls } = loadPreferencesController({
+    const { controller, elements, fetchCalls, prefValues } = loadPreferencesController({
       initialModel: "model-a",
       fetchResponses: [
         {
@@ -4748,6 +4748,7 @@ describe("preferences local-agent config helpers", () => {
       ]
     });
     elements.get("zms-cap-jsonMode").checked = true;
+    elements.get("zms-cap-streaming").checked = true;
     elements.get("zms-profileBodyExtra").value = JSON.stringify({
       presence_penalty: 0.2,
       frequency_penalty: 0.1,
@@ -4800,6 +4801,27 @@ describe("preferences local-agent config helpers", () => {
       { type: "input_text", text: expect.stringContaining("SYSTEM:\nYou are a provider connection test endpoint") },
       { type: "input_text", text: "ping" }
     ]);
+    const savedProfile = JSON.parse(elements.get("zms-profilesJson").value)[0];
+    expect(savedProfile.capabilities.streaming).toBe(false);
+    expect(savedProfile.bodyExtra.instructionsFallbackToUser).toBe(true);
+    expect(savedProfile.bodyExtra.omitFields).toEqual(expect.arrayContaining([
+      "max_output_tokens",
+      "stream",
+      "presence_penalty",
+      "frequency_penalty",
+      "seed",
+      "top_logprobs",
+      "logprobs",
+      "parallel_tool_calls",
+      "reasoning_effort",
+      "reasoning",
+      "verbosity",
+      "stop"
+    ]));
+    expect(elements.get("zms-cap-streaming").checked).toBe(false);
+    const savedPrefsProfile = JSON.parse(prefValues.get("extensions.zoteroMarkdownSummary.profilesJson"))[0];
+    expect(savedPrefsProfile.bodyExtra.instructionsFallbackToUser).toBe(true);
+    expect(savedPrefsProfile.capabilities.streaming).toBe(false);
     expect(elements.get("zms-status").value).toBe("Connection OK");
   });
 
@@ -4878,7 +4900,7 @@ describe("preferences local-agent config helpers", () => {
   });
 
   it("retries settings connection tests without Anthropic version headers when rejected", async () => {
-    const { controller, elements, fetchCalls } = loadPreferencesController({
+    const { controller, elements, fetchCalls, prefValues } = loadPreferencesController({
       initialModel: "claude-compatible",
       fetchResponses: [
         {
@@ -4904,6 +4926,11 @@ describe("preferences local-agent config helpers", () => {
     expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[0].init.headers).toMatchObject({ "anthropic-version": "2023-06-01" });
     expect(fetchCalls[1].init.headers).not.toHaveProperty("anthropic-version");
+    const savedProfile = JSON.parse(elements.get("zms-profilesJson").value)[0];
+    expect(savedProfile.bodyExtra.omitAnthropicVersion).toBe(true);
+    expect(JSON.parse(elements.get("zms-profileBodyExtra").value).omitAnthropicVersion).toBe(true);
+    const savedPrefsProfile = JSON.parse(prefValues.get("extensions.zoteroMarkdownSummary.profilesJson"))[0];
+    expect(savedPrefsProfile.bodyExtra.omitAnthropicVersion).toBe(true);
     expect(elements.get("zms-status").value).toBe("Connection OK");
   });
 
