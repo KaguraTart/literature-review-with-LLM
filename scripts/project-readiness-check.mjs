@@ -489,9 +489,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "collection.workspace",
-    description: "Collection workspace artifacts, cross-collection synthesis index, gap board, topic clustering, synthesis claims, conflict ledger, synthesis roadmap, review writing packs, and summary insight extraction are wired",
+    description: "Collection workspace artifacts, cross-collection synthesis index, gap board, theme merge review board, topic clustering, synthesis claims, conflict ledger, synthesis roadmap, review writing packs, and summary insight extraction are wired",
     files: ["addon/bootstrap.js"],
-    markers: ["writeCollectionWorkspace", "writeCrossCollectionSynthesisIndex", "cross-collection-synthesis", "crossCollectionGapEntries", "Cross-Collection Gap Board", "renderCrossCollectionReviewPack", "Cross-Collection Review Pack", "loadBatchSummaryInsights", "extractSummaryInsights", "renderMethodMatrix", "renderResearchGapMatrix", "renderTopicClusters", "renderSynthesisClaimsMatrix", "renderSynthesisConflictLedger", "renderSynthesisRoadmap", "renderFormalReviewReport", "renderCollectionSynthesisWritingPack", "Synthesis Writing Pack", "formal-review-report", "synthesis-claims", "synthesis-conflicts", "synthesis-roadmap", "topicClusterEntries", "synthesisClaimEntries", "synthesisConflictEntries", "synthesisRoadmapEntries"]
+    markers: ["writeCollectionWorkspace", "writeCrossCollectionSynthesisIndex", "cross-collection-synthesis", "crossCollectionGapEntries", "Cross-Collection Gap Board", "crossCollectionThemeMergeEntries", "Theme Merge Review Board", "renderCrossCollectionReviewPack", "Cross-Collection Review Pack", "loadBatchSummaryInsights", "extractSummaryInsights", "renderMethodMatrix", "renderResearchGapMatrix", "renderTopicClusters", "renderSynthesisClaimsMatrix", "renderSynthesisConflictLedger", "renderSynthesisRoadmap", "renderFormalReviewReport", "renderCollectionSynthesisWritingPack", "Synthesis Writing Pack", "formal-review-report", "synthesis-claims", "synthesis-conflicts", "synthesis-roadmap", "topicClusterEntries", "synthesisClaimEntries", "synthesisConflictEntries", "synthesisRoadmapEntries"]
   },
   {
     id: "markdown.writeback",

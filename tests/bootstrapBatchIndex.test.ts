@@ -297,6 +297,7 @@ describe("batch papers index", () => {
     });
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合综合地图");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("Collection");
+    expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("主题归并复核板");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合缺口看板");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合综述写作包");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("支持强度");
@@ -533,6 +534,13 @@ describe("batch papers index", () => {
         gapSignals: expect.arrayContaining(["No field deployment", "No deployment evidence."])
       })
     ]));
+    expect(payload.themeMergeBoard).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        themeCandidates: expect.arrayContaining(["Safety / Risk", "Transportation / Urban Airspace"]),
+        sharedSignals: expect.arrayContaining(["No deployment evidence."])
+      })
+    ]));
     expect(payload.priorityBoard).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: "recurring_gap",
@@ -543,11 +551,13 @@ describe("batch papers index", () => {
     ]));
     const synthesis = writes.get(artifacts.crossCollectionSynthesisPath) || "";
     expect(synthesis).toContain("Cross-Collection Synthesis Map");
+    expect(synthesis).toContain("Theme Merge Review Board");
     expect(synthesis).toContain("Cross-Collection Bridge Board");
     expect(synthesis).toContain("Cross-Collection Gap Board");
     expect(synthesis).toContain("Cross-Collection Priority Board");
     expect(synthesis).toContain("Cross-Collection Review Pack");
     expect(synthesis).toContain("Model Deepening Prompt");
+    expect(synthesis).toContain("Review possible theme merge");
     expect(synthesis).toContain("How should Transportation / Urban Airspace connect evidence across 2 collections");
     expect(synthesis).toContain("Recurring gap: No deployment evidence");
     expect(synthesis).toContain("Old Collection");
@@ -575,6 +585,7 @@ describe("batch papers index", () => {
     expect(writes.get(english.synthesisConflictsPath)).toContain("Support Level");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Synthesis Roadmap");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Cross-theme Evidence Map");
+    expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Theme Merge Review Board");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Bridge Board");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Priority Board");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Review Pack");
@@ -600,6 +611,7 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.synthesisConflictsPath)).toContain("支持レベル");
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("統合ロードマップ");
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("テーマ横断エビデンスマップ");
+    expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("テーマ統合確認ボード");
     expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("Collection 横断ブリッジボード");
     expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("Collection 横断優先度ボード");
     expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("Collection 横断レビュー執筆パック");

@@ -1395,6 +1395,7 @@ async function writeCrossCollectionSynthesisIndex(settings, collectionContext, r
   const labels = collectionTemplateLabels(outputLanguage);
   const gapBoard = crossCollectionGapEntries(collections, labels);
   const themeBridgeBoard = crossCollectionThemeBridgeEntries(collections, labels);
+  const themeMergeBoard = crossCollectionThemeMergeEntries(collections, labels);
   const payload = {
     templateVersion: "cross-collection-index-v1",
     generatedAt: new Date().toISOString(),
@@ -1402,7 +1403,8 @@ async function writeCrossCollectionSynthesisIndex(settings, collectionContext, r
     stats: crossCollectionStats(collections),
     gapBoard,
     themeBridgeBoard,
-    priorityBoard: crossCollectionPriorityEntries(collections, gapBoard, labels),
+    themeMergeBoard,
+    priorityBoard: crossCollectionPriorityEntries(collections, gapBoard, labels, themeMergeBoard),
     collections
   };
   await writeText(indexPath, JSON.stringify(payload, null, 2));
@@ -1523,6 +1525,10 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
     "",
     renderCrossCollectionThemeRows(collections, labels),
     "",
+    `## ${labels.crossCollectionThemeMergeBoard}`,
+    "",
+    renderCrossCollectionThemeMergeRows(indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels), labels),
+    "",
     `## ${labels.crossCollectionBridgeBoard}`,
     "",
     renderCrossCollectionBridgeRows(indexPayload?.themeBridgeBoard || crossCollectionThemeBridgeEntries(collections, labels), labels),
@@ -1533,7 +1539,7 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
     "",
     `## ${labels.crossCollectionPriorityBoard}`,
     "",
-    renderCrossCollectionPriorityRows(indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels), labels),
+    renderCrossCollectionPriorityRows(indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels, indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels)), labels),
     "",
     `## ${labels.crossCollectionReviewPack}`,
     "",
@@ -1548,7 +1554,8 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
 
 function renderCrossCollectionReviewPack(indexPayload, labels) {
   const collections = Array.isArray(indexPayload?.collections) ? indexPayload.collections : [];
-  const priorityBoard = indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels);
+  const mergeBoard = indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels);
+  const priorityBoard = indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels, mergeBoard);
   const bridgeBoard = indexPayload?.themeBridgeBoard || crossCollectionThemeBridgeEntries(collections, labels);
   const gapBoard = indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels);
   const rows = [];
@@ -1622,6 +1629,24 @@ function renderCrossCollectionBridgeRows(bridgeEntries, labels) {
     `| ${labels.clusterColumn} | ${labels.collectionColumn} | ${labels.paperColumn} | ${labels.methodSignalColumn} | ${labels.gapSignalColumn} | ${labels.roadmapQuestionColumn} | ${labels.reviewActionColumn} |`,
     "| --- | --- | --- | --- | --- | --- | --- |",
     rows.join("\n") || "|  |  |  |  |  |  |  |"
+  ].join("\n");
+}
+
+function renderCrossCollectionThemeMergeRows(mergeEntries, labels) {
+  const rows = (mergeEntries || []).slice(0, 12)
+    .map((entry) => [
+      escapeMarkdownTable(entry.scope || labels.crossCollectionMergePending),
+      escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
+      escapeMarkdownTable((entry.themeCandidates || []).join("; ") || labels.clusterOther),
+      escapeMarkdownTable((entry.sharedSignals || []).join("; ") || labels.pendingInsight),
+      escapeMarkdownTable(entry.risk || labels.crossCollectionMergeRiskPending),
+      escapeMarkdownTable(entry.reviewAction || labels.crossCollectionMergeAction(entry.scope || labels.crossCollectionMergePending))
+    ].join(" | "))
+    .map((row) => `| ${row} |`);
+  return [
+    `| ${labels.crossCollectionMergeScopeColumn} | ${labels.collectionColumn} | ${labels.crossCollectionThemeCandidatesColumn} | ${labels.crossCollectionSharedSignalsColumn} | ${labels.crossCollectionMergeRiskColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    rows.join("\n") || "|  |  |  |  |  |  |"
   ].join("\n");
 }
 
@@ -1745,8 +1770,140 @@ function crossCollectionThemeBridgeEntries(collections = [], labels = collection
     .slice(0, 20);
 }
 
-function crossCollectionPriorityEntries(collections = [], gapEntries = [], labels = collectionTemplateLabels("zh-CN")) {
+function crossCollectionThemeMergeEntries(collections = [], labels = collectionTemplateLabels("zh-CN")) {
+  const records = crossCollectionThemeRecords(collections, labels);
+  const candidates = [];
+  for (let i = 0; i < records.length; i += 1) {
+    for (let j = i + 1; j < records.length; j += 1) {
+      const left = records[i];
+      const right = records[j];
+      if (!left.collectionName || !right.collectionName || left.collectionName === right.collectionName) continue;
+      if (left.themeKey === right.themeKey) continue;
+      const sharedTokens = left.tokens.filter((token) => right.tokens.includes(token));
+      if (!crossCollectionMergeCandidateStrongEnough(sharedTokens, left, right)) continue;
+      const scope = labels.crossCollectionMergeScope(left.theme, right.theme);
+      const collections = uniqueInsightLines([left.collectionName, right.collectionName]).slice(0, 6);
+      const themeCandidates = uniqueInsightLines([left.theme, right.theme]).slice(0, 4);
+      candidates.push({
+        score: sharedTokens.length * 10 + collections.length + Math.min(left.paperCount + right.paperCount, 10),
+        scope,
+        collections,
+        themeCandidates,
+        sharedSignals: crossCollectionSharedSignals(left, right, sharedTokens, labels),
+        risk: labels.crossCollectionMergeRisk(themeCandidates.join(" / "), sharedTokens.slice(0, 4).join(", ")),
+        reviewAction: labels.crossCollectionMergeAction(scope)
+      });
+    }
+  }
+  return candidates
+    .sort((left, right) => right.score - left.score || left.scope.localeCompare(right.scope))
+    .filter(crossCollectionUniqueMergeCandidate())
+    .slice(0, 20)
+    .map(({ score: _score, ...entry }) => entry);
+}
+
+function crossCollectionThemeRecords(collections, labels) {
+  const records = [];
+  for (const collection of collections || []) {
+    const collectionName = collection?.name || collection?.key || "";
+    for (const cluster of collection?.clusters || []) {
+      const theme = cluster?.label || labels.clusterOther;
+      const signals = uniqueInsightLines([
+        theme,
+        ...(cluster?.papers || []),
+        ...(cluster?.methodSignals || []),
+        ...(cluster?.gapSignals || []),
+        ...(collection?.openGaps || []),
+        ...(collection?.candidateQueries || [])
+      ]).slice(0, 24);
+      records.push({
+        collectionName,
+        theme,
+        themeKey: normalizedCrossCollectionThemeKey(theme),
+        paperCount: Number(cluster?.paperCount || 0),
+        methodSignals: uniqueInsightLines(cluster?.methodSignals || []).slice(0, 6),
+        gapSignals: uniqueInsightLines(cluster?.gapSignals || []).slice(0, 6),
+        candidateQueries: uniqueInsightLines(collection?.candidateQueries || []).slice(0, 6),
+        signals,
+        tokens: crossCollectionMergeTokens(signals)
+      });
+    }
+  }
+  return records;
+}
+
+function crossCollectionMergeTokens(values) {
+  const stop = new Set([
+    "and", "the", "for", "with", "from", "into", "onto", "this", "that", "these", "those", "paper", "papers", "model", "models", "method", "methods", "data", "study", "studies", "evidence", "analysis", "based", "using", "needs", "review", "collection", "collections",
+    "以及", "基于", "方法", "模型", "论文", "研究", "证据", "集合", "主题", "综述",
+    "手法", "証拠", "論文", "研究", "レビュー"
+  ]);
+  const text = values.map((value) => String(value || "").toLowerCase()).join(" ");
+  const matches = text.match(/[\p{L}\p{N}]+/gu) || [];
+  return uniqueInsightLines(matches
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !stop.has(token))
+  ).slice(0, 80);
+}
+
+function crossCollectionMergeCandidateStrongEnough(sharedTokens, left, right) {
+  if (!sharedTokens.length) return false;
+  const strong = sharedTokens.filter((token) => token.length >= 5);
+  const hasMethodOverlap = crossCollectionSignalsShareToken(left.methodSignals, right.methodSignals, sharedTokens);
+  const hasGapOverlap = crossCollectionSignalsShareToken(left.gapSignals, right.gapSignals, sharedTokens);
+  const hasQueryOverlap = crossCollectionSignalsShareToken(left.candidateQueries, right.candidateQueries, sharedTokens);
+  return sharedTokens.length >= 3 || strong.length >= 2 || (sharedTokens.length >= 2 && (hasMethodOverlap || hasGapOverlap || hasQueryOverlap));
+}
+
+function crossCollectionSignalsShareToken(leftSignals = [], rightSignals = [], tokens = []) {
+  return tokens.some((token) => (
+    leftSignals.some((signal) => normalizedCrossCollectionGapKey(signal).includes(token))
+    && rightSignals.some((signal) => normalizedCrossCollectionGapKey(signal).includes(token))
+  ));
+}
+
+function crossCollectionSharedSignals(left, right, sharedTokens, labels) {
+  const tokenSet = new Set(sharedTokens);
+  const signals = uniqueInsightLines([
+    ...crossCollectionSignalsMatchingTokens(left.signals, tokenSet),
+    ...crossCollectionSignalsMatchingTokens(right.signals, tokenSet)
+  ]).slice(0, 6);
+  return signals.length ? signals : sharedTokens.slice(0, 6).map((token) => `${labels.crossCollectionSharedToken}: ${token}`);
+}
+
+function crossCollectionSignalsMatchingTokens(signals = [], tokenSet = new Set()) {
+  return uniqueInsightLines((signals || []).filter((signal) => {
+    const normalized = normalizedCrossCollectionGapKey(signal);
+    return Array.from(tokenSet).some((token) => normalized.includes(token));
+  })).slice(0, 6);
+}
+
+function crossCollectionUniqueMergeCandidate() {
+  const seen = new Set();
+  return (entry) => {
+    const key = [
+      ...(entry.collections || []).map((item) => normalizedCrossCollectionGapKey(item)).sort(),
+      ...(entry.themeCandidates || []).map((item) => normalizedCrossCollectionThemeKey(item)).sort()
+    ].join("::");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  };
+}
+
+function crossCollectionPriorityEntries(collections = [], gapEntries = [], labels = collectionTemplateLabels("zh-CN"), themeMergeEntries = []) {
   const entries = [];
+  for (const merge of themeMergeEntries || []) {
+    entries.push({
+      kind: "theme_merge_review",
+      score: 90 + (merge?.sharedSignals?.length || 0),
+      priority: labels.crossCollectionPriorityMergeThemes((merge?.themeCandidates || []).join(" / ") || merge?.scope || labels.crossCollectionMergePending),
+      reason: labels.crossCollectionPriorityMergeReason,
+      collections: merge?.collections || [],
+      evidence: merge?.sharedSignals || [],
+      nextAction: merge?.reviewAction || labels.crossCollectionMergeAction(merge?.scope || labels.crossCollectionMergePending)
+    });
+  }
   for (const gap of gapEntries || []) {
     const count = Number(gap?.collectionCount || 0);
     const evidence = uniqueInsightLines([
@@ -2632,6 +2789,7 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionSynthesisNote: "Aggregates the latest collection workspaces into one review-planning surface. Use it to compare themes across collections before writing a broader review.",
       crossCollectionInventory: "Collection Inventory",
       crossCollectionThemeMap: "Cross-Collection Theme Map",
+      crossCollectionThemeMergeBoard: "Theme Merge Review Board",
       crossCollectionBridgeBoard: "Cross-Collection Bridge Board",
       crossCollectionGapBoard: "Cross-Collection Gap Board",
       crossCollectionPriorityBoard: "Cross-Collection Priority Board",
@@ -2639,6 +2797,13 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionPriorityColumn: "Priority",
       crossCollectionReasonColumn: "Reason",
       crossCollectionScopeColumn: "Review Scope",
+      crossCollectionMergeScopeColumn: "Merge Scope",
+      crossCollectionThemeCandidatesColumn: "Theme Candidates",
+      crossCollectionSharedSignalsColumn: "Shared Signals",
+      crossCollectionMergeRiskColumn: "Merge Risk",
+      crossCollectionMergePending: "Pending theme merge review",
+      crossCollectionMergeRiskPending: "Pending merge-risk review",
+      crossCollectionSharedToken: "shared token",
       crossCollectionPriorityPending: "Pending priority review",
       crossCollectionPriorityReasonPending: "Pending reason",
       crossCollectionPriorityRecurringReason: (count) => `Gap repeats across ${count} collections`,
@@ -2648,6 +2813,8 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionPriorityGap: (count, gap) => count >= 2
         ? `Recurring gap: ${gap}`
         : `Scope check: ${gap}`,
+      crossCollectionPriorityMergeThemes: (themes) => `Review possible theme merge: ${themes}`,
+      crossCollectionPriorityMergeReason: "Different theme labels share evidence signals",
       crossCollectionPriorityWeakTheme: (theme, count) => count >= 2
         ? `Review theme gaps: ${theme}`
         : `Add support for theme: ${theme}`,
@@ -2663,7 +2830,11 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionReviewPrompt: (scope, gap) => `Compare ${scope} across collections, separate shared evidence from scope-specific evidence, and list what papers or checks are still needed for ${gap}.`,
       crossCollectionGapWritingPrompt: (gap) => `Turn the recurring gap "${gap}" into a review subsection plan with evidence needed, candidate searches, and exclusion criteria.`,
       crossCollectionReviewAction: (scope) => `Open the linked collection reports, verify ${scope}, and cite only source-backed claims.`,
+      crossCollectionMergeScope: (left, right) => `${left} <-> ${right}`,
+      crossCollectionMergeRisk: (themes, signals) => `Possible over-merge or split: ${themes}; shared signals: ${signals || "pending"}.`,
+      crossCollectionMergeAction: (scope) => `Open the source collection reports for ${scope}; decide whether to merge, split, or keep as neighboring review sections.`,
       crossCollectionNextActions: [
+        "- [ ] Use the theme merge review board to decide whether similarly signaled clusters should be merged or kept separate.",
         "- [ ] Use the bridge board to decide which recurring themes can become cross-collection review sections.",
         "- [ ] Check whether similar clusters across collections should be merged or kept as separate review scopes.",
         "- [ ] Open each collection's formal report before moving claims into a cross-collection manuscript.",
@@ -2833,6 +3004,7 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionSynthesisNote: "最新の collection workspace を横断的なレビュー計画面に集約します。より広いレビューを書く前に、collection 間のテーマを比較するために使います。",
       crossCollectionInventory: "Collection 一覧",
       crossCollectionThemeMap: "Collection 横断テーママップ",
+      crossCollectionThemeMergeBoard: "テーマ統合確認ボード",
       crossCollectionBridgeBoard: "Collection 横断ブリッジボード",
       crossCollectionGapBoard: "Collection 横断ギャップボード",
       crossCollectionPriorityBoard: "Collection 横断優先度ボード",
@@ -2840,6 +3012,13 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionPriorityColumn: "優先項目",
       crossCollectionReasonColumn: "理由",
       crossCollectionScopeColumn: "レビュー範囲",
+      crossCollectionMergeScopeColumn: "統合範囲",
+      crossCollectionThemeCandidatesColumn: "テーマ候補",
+      crossCollectionSharedSignalsColumn: "共有シグナル",
+      crossCollectionMergeRiskColumn: "統合リスク",
+      crossCollectionMergePending: "テーマ統合確認待ち",
+      crossCollectionMergeRiskPending: "統合リスク確認待ち",
+      crossCollectionSharedToken: "共有語",
       crossCollectionPriorityPending: "優先度確認待ち",
       crossCollectionPriorityReasonPending: "理由の確認待ち",
       crossCollectionPriorityRecurringReason: (count) => `${count} 件の collection に反復するギャップ`,
@@ -2849,6 +3028,8 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionPriorityGap: (count, gap) => count >= 2
         ? `反復ギャップ: ${gap}`
         : `範囲確認: ${gap}`,
+      crossCollectionPriorityMergeThemes: (themes) => `テーマ統合候補を確認: ${themes}`,
+      crossCollectionPriorityMergeReason: "異なるテーマ名が証拠シグナルを共有している",
       crossCollectionPriorityWeakTheme: (theme, count) => count >= 2
         ? `テーマギャップを確認: ${theme}`
         : `テーマの支持を追加: ${theme}`,
@@ -2864,7 +3045,11 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionReviewPrompt: (scope, gap) => `${scope} を collection 横断で比較し、共通証拠と範囲固有の証拠を分け、${gap} に必要な追加論文または確認を列挙する。`,
       crossCollectionGapWritingPrompt: (gap) => `反復ギャップ「${gap}」を、必要証拠、候補検索、除外条件を含むレビュー小節計画へ変換する。`,
       crossCollectionReviewAction: (scope) => `リンクされた collection 報告書を開き、${scope} を確認し、根拠に追跡できる主張だけを引用する。`,
+      crossCollectionMergeScope: (left, right) => `${left} <-> ${right}`,
+      crossCollectionMergeRisk: (themes, signals) => `過度な統合または分割の可能性: ${themes}。共有シグナル: ${signals || "未確認"}。`,
+      crossCollectionMergeAction: (scope) => `${scope} の元 collection 報告書を開き、統合、分割、隣接節として保持のどれにするか判断する。`,
       crossCollectionNextActions: [
+        "- [ ] テーマ統合確認ボードで、似たシグナルを持つクラスタを統合すべきか、別々に残すべきか判断する。",
         "- [ ] ブリッジボードを使い、反復テーマを横断レビュー節にできるか判断する。",
         "- [ ] Collection 間で似たクラスタを統合すべきか、別々のレビュー範囲として残すべきか確認する。",
         "- [ ] 横断的な原稿へ主張を移す前に、各 collection の正式レビュー報告書を開いて確認する。",
@@ -3033,6 +3218,7 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionSynthesisNote: "把最近生成的 collection workspace 汇总为一个跨集合综述规划入口，用于在更大范围综述写作前比较不同集合之间的主题、证据和缺口。",
     crossCollectionInventory: "集合清单",
     crossCollectionThemeMap: "跨集合主题地图",
+    crossCollectionThemeMergeBoard: "主题归并复核板",
     crossCollectionBridgeBoard: "跨集合主题桥接板",
     crossCollectionGapBoard: "跨集合缺口看板",
     crossCollectionPriorityBoard: "跨集合优先级看板",
@@ -3040,6 +3226,13 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionPriorityColumn: "优先项",
     crossCollectionReasonColumn: "原因",
     crossCollectionScopeColumn: "综述范围",
+    crossCollectionMergeScopeColumn: "归并范围",
+    crossCollectionThemeCandidatesColumn: "主题候选",
+    crossCollectionSharedSignalsColumn: "共享线索",
+    crossCollectionMergeRiskColumn: "归并风险",
+    crossCollectionMergePending: "待复核主题归并",
+    crossCollectionMergeRiskPending: "待复核归并风险",
+    crossCollectionSharedToken: "共享词",
     crossCollectionPriorityPending: "待确定优先级",
     crossCollectionPriorityReasonPending: "待补充原因",
     crossCollectionPriorityRecurringReason: (count) => `缺口在 ${count} 个集合中重复出现`,
@@ -3049,6 +3242,8 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionPriorityGap: (count, gap) => count >= 2
       ? `重复缺口：${gap}`
       : `范围核对：${gap}`,
+    crossCollectionPriorityMergeThemes: (themes) => `复核主题归并候选：${themes}`,
+    crossCollectionPriorityMergeReason: "不同主题名称共享证据线索",
     crossCollectionPriorityWeakTheme: (theme, count) => count >= 2
       ? `核对主题缺口：${theme}`
       : `补充主题支持：${theme}`,
@@ -3064,7 +3259,11 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionReviewPrompt: (scope, gap) => `跨集合比较“${scope}”，区分共性证据与单集合特有证据，并列出围绕“${gap}”仍需补充的论文或核查。`,
     crossCollectionGapWritingPrompt: (gap) => `把重复缺口“${gap}”整理成综述小节计划，列出所需证据、候选检索词和排除条件。`,
     crossCollectionReviewAction: (scope) => `打开已链接的集合报告核对“${scope}”，只引用能追溯到来源的主张。`,
+    crossCollectionMergeScope: (left, right) => `${left} <-> ${right}`,
+    crossCollectionMergeRisk: (themes, signals) => `可能存在过度合并或拆分：${themes}；共享线索：${signals || "待补充"}。`,
+    crossCollectionMergeAction: (scope) => `打开“${scope}”对应的集合报告，判断应合并、拆分，还是保留为相邻综述小节。`,
     crossCollectionNextActions: [
+      "- [ ] 使用主题归并复核板判断共享线索相近的主题是否应合并，还是保留为独立范围。",
       "- [ ] 使用主题桥接板判断重复主题是否可以升级为跨集合综述小节。",
       "- [ ] 判断不同集合中的相似主题应合并，还是保留为独立综述范围。",
       "- [ ] 把主张迁移到跨集合综述正文前，先打开各集合正式综述报告核对证据。",

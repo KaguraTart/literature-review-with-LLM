@@ -202,6 +202,8 @@ const requiredMarkers = [
   [bootstrap, "cross-collection-synthesis", "cross-collection synthesis path"],
   [bootstrap, "crossCollectionGapEntries", "cross-collection gap board entries"],
   [bootstrap, "Cross-Collection Gap Board", "cross-collection gap board heading"],
+  [bootstrap, "crossCollectionThemeMergeEntries", "cross-collection theme merge review entries"],
+  [bootstrap, "Theme Merge Review Board", "cross-collection theme merge review heading"],
   [bootstrap, "renderCrossCollectionReviewPack", "cross-collection review writing pack"],
   [bootstrap, "Cross-Collection Review Pack", "cross-collection review writing pack heading"],
   [bootstrap, "collectionWorkspaceArtifactPaths", "localized collection artifact paths"],
