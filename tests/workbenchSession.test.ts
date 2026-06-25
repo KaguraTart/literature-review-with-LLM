@@ -266,12 +266,22 @@ describe("workbench session helpers", () => {
       { key: "key-field", displayLabel: "Key Field" },
       { value: "value-field", label: "Value Field" },
       { slug: "slug-field" },
+      {
+        id: "flag-model",
+        display_name: "Flag Model",
+        supports_vision: true,
+        supports_pdf: "supported",
+        supports_reasoning: "yes",
+        low_latency: 1,
+        local_model: "enabled"
+      },
       { id: "id-only-model" },
       { name: "name-only-model" },
       "string-model"
     ])).toEqual([
       { id: "deployment-field", label: "Deployment Field" },
       { id: "engine-field", label: "Engine Field" },
+      { id: "flag-model", label: "Flag Model", features: ["image", "pdf", "reasoning", "fast", "local"] },
       { id: "id-only-model", label: "id-only-model" },
       { id: "key-field", label: "Key Field" },
       { id: "model-name-field", label: "Model Name Field" },
@@ -327,6 +337,32 @@ describe("workbench session helpers", () => {
         {
           objects: [{ id: "model-c", display_name: "Model C" }],
           links: { next: "/v1/models?page=2" }
+        },
+        {
+          results: [{ name: "model-a", label: "Model A" }]
+        }
+      ]
+    });
+
+    const options = await paged.workbenchFetchModelOptions({
+      url: "https://router.example/v1/models",
+      headers: { authorization: "Bearer sk-test-secret" }
+    });
+
+    expect(paged.fetchCalls).toHaveLength(2);
+    expect(paged.fetchCalls[1].url).toBe("https://router.example/v1/models?page=2");
+    expect(options).toEqual([
+      { id: "model-a", label: "Model A" },
+      { id: "model-c", label: "Model C" }
+    ]);
+  });
+
+  it("follows object link model-list pagination in the workbench", async () => {
+    const paged = loadWorkbenchHelpers({
+      fetchResponses: [
+        {
+          objects: [{ id: "model-c", display_name: "Model C" }],
+          links: { next: { href: "/v1/models?page=2" } }
         },
         {
           results: [{ name: "model-a", label: "Model A" }]

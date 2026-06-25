@@ -17063,7 +17063,7 @@ function workbenchModelListItemsFromResponse(data, depth = 0) {
 function workbenchNextModelListURL(currentUrl, data) {
   const envelope = workbenchModelListPaginationEnvelope(data);
   if (!envelope) return "";
-  const direct = workbenchStringField(envelope.next_page, envelope.nextPage, envelope.next, envelope.next_url, envelope.nextUrl, envelope.nextPageUrl);
+  const direct = workbenchModelListNextField(envelope.next_page, envelope.nextPage, envelope.next, envelope.next_url, envelope.nextUrl, envelope.nextPageUrl);
   if (direct) return workbenchModelListURLFromNextValue(currentUrl, direct);
   const hasMore = envelope.has_more === true || envelope.hasMore === true;
   const nextCursor = workbenchStringField(envelope.next_cursor, envelope.nextCursor);
@@ -17077,6 +17077,18 @@ function workbenchNextModelListURL(currentUrl, data) {
   ];
   for (const [param, token] of pairs) {
     if (token) return workbenchUrlWithQueryParam(currentUrl, param, token);
+  }
+  return "";
+}
+
+function workbenchModelListNextField(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const nested = workbenchStringField(value.href, value.url, value.uri, value.link, value.next, value.value);
+      if (nested) return nested;
+    }
   }
   return "";
 }
@@ -17242,7 +17254,7 @@ function workbenchModelListPaginationEnvelope(data, depth = 0) {
 }
 
 function workbenchHasModelListPaginationFields(data) {
-  return !!workbenchStringField(
+  return !!workbenchModelListNextField(
     data?.next_page,
     data?.nextPage,
     data?.next,
@@ -17429,6 +17441,7 @@ function canonicalWorkbenchModelVendorLabel(value) {
 
 function workbenchModelFeaturesFromModelListItem(item) {
   const features = [];
+  collectWorkbenchModelFeatureFlagHints(features, item);
   collectWorkbenchModelFeatureHints(features, item?.features);
   collectWorkbenchModelFeatureHints(features, item?.featureHints);
   collectWorkbenchModelFeatureHints(features, item?.traits);
@@ -17460,6 +17473,26 @@ function workbenchModelFeaturesFromModelListItem(item) {
   collectWorkbenchModelFeatureHints(features, item?.supported_parameters);
   collectWorkbenchModelFeatureHints(features, item?.supportedParameters);
   return normalizeModelFeatureList(features);
+}
+
+function collectWorkbenchModelFeatureFlagHints(features, item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return;
+  const groups = [
+    ["image", ["image", "images", "vision", "visual", "multimodal", "supports_image", "supportsImage", "supports_images", "supportsImages", "supports_vision", "supportsVision", "image_input", "imageInput", "input_image", "inputImage"]],
+    ["pdf", ["pdf", "document", "documents", "file", "files", "supports_pdf", "supportsPdf", "supports_document", "supportsDocument", "supports_documents", "supportsDocuments", "pdf_input", "pdfInput", "document_input", "documentInput"]],
+    ["reasoning", ["reasoning", "thinking", "supports_reasoning", "supportsReasoning", "supports_thinking", "supportsThinking", "reasoning_effort", "reasoningEffort"]],
+    ["fast", ["fast", "flash", "highspeed", "low_latency", "lowLatency"]],
+    ["local", ["local", "local_model", "localModel"]]
+  ];
+  for (const [feature, fields] of groups) {
+    if (fields.some((field) => workbenchModelFeatureFlagEnabled(item?.[field]))) features.push(feature);
+  }
+}
+
+function workbenchModelFeatureFlagEnabled(value) {
+  if (value === true || value === 1) return true;
+  if (typeof value !== "string") return false;
+  return /^(true|1|yes|y|on|supported|enabled)$/i.test(value.trim());
 }
 
 function collectWorkbenchModelFeatureHints(features, value, depth = 0) {
