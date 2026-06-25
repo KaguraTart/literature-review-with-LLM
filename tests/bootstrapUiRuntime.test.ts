@@ -235,10 +235,12 @@ describe("bootstrap UI runtime wiring", () => {
     expect(button?.getAttribute("label")).toBe("openWorkbench");
     expect(button?.getAttribute("aria-label")).toBe("openWorkbench");
     expect(button?.getAttribute("title")).toBe("openWorkbench");
-    expect(button?.getAttribute("image")).toBe("chrome://zotero-markdown-summary/content/logo.svg");
+    expect(button?.getAttribute("style")).toContain("background-image:url('chrome://zotero-markdown-summary/content/logo.svg')");
+    expect(button?.getAttribute("style")).toContain("max-width: 32px");
     expect(button?.getAttribute("style")).toContain("min-width: 32px");
     expect(button?.eventListeners.get("command")?.length).toBe(1);
     expect(button?.eventListeners.get("click")?.length).toBe(1);
+    expect(doc.getElementById("zotero-markdown-summary-button-style")?.textContent).toContain("background-size: 20px 20px");
     const popup = button?.children.find((child) => child.localName === "menupopup");
     expect(popup?.children.map((child) => child.getAttribute("label"))).toEqual([
       "openWorkbench",
@@ -267,8 +269,7 @@ describe("bootstrap UI runtime wiring", () => {
     expect(button?.getAttribute("aria-label")).toBe("openWorkbench");
     expect(button?.getAttribute("title")).toBe("openWorkbench");
     expect(button?.getAttribute("style")).toContain("display:inline-flex");
-    expect(button?.children[0]?.localName).toBe("img");
-    expect((button?.children[0] as any)?.src).toBe("chrome://zotero-markdown-summary/content/logo.svg");
+    expect(button?.getAttribute("style")).toContain("background-image:url('chrome://zotero-markdown-summary/content/logo.svg')");
 
     const event = {
       button: 0,
@@ -509,6 +510,53 @@ describe("bootstrap UI runtime wiring", () => {
     expect(event.defaultPrevented).toBe(true);
     expect(event.propagationStopped).toBe(true);
     expect(doc.getElementById("zotero-markdown-summary-workbench-panel")).toBeTruthy();
+  });
+
+  it("keeps the fallback button when Zotero only exposes a zero-size toolbar host", () => {
+    const doc = new FakeDocument();
+    const toolbar = doc.createXULElement("toolbar");
+    toolbar.id = "zotero-items-toolbar";
+    toolbar.rect = { width: 0, height: 0 };
+    doc.documentElement.appendChild(toolbar);
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+
+    expect(doc.getElementById("zotero-markdown-summary-toolbar-button")?.parentNode).toBe(toolbar);
+    expect(doc.getElementById("zotero-markdown-summary-fallback-button")).toBeTruthy();
+  });
+
+  it("removes the fallback button when the normal toolbar entry is visibly measurable", () => {
+    const doc = new FakeDocument();
+    const toolbar = doc.createXULElement("toolbar");
+    toolbar.id = "zotero-items-toolbar";
+    toolbar.rect = { width: 420, height: 34 };
+    doc.documentElement.appendChild(toolbar);
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+    expect(doc.getElementById("zotero-markdown-summary-fallback-button")).toBeNull();
+    expect(doc.getElementById("zotero-markdown-summary-button-style")).toBeTruthy();
+
+    doc.getElementById("zotero-markdown-summary-toolbar-button")?.remove();
+    toolbar.rect = { width: 0, height: 0 };
+    helpers.ensureWorkbenchButtons(win);
+
+    expect(doc.getElementById("zotero-markdown-summary-fallback-button")).toBeTruthy();
+  });
+
+  it("attaches the fallback button to a stable Zotero pane container when available", () => {
+    const doc = new FakeDocument();
+    const paneStack = doc.createElementNS(HTML_NS, "div");
+    paneStack.id = "zotero-pane-stack";
+    doc.documentElement.appendChild(paneStack);
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+
+    const button = doc.getElementById("zotero-markdown-summary-fallback-button");
+    expect(button).toBeTruthy();
+    expect(button?.parentNode).toBe(paneStack);
   });
 
   it("removes the fallback button after a normal side-nav entry becomes available", () => {
