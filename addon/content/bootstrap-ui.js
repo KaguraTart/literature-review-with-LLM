@@ -25,9 +25,12 @@ function registerToolbarButton(win) {
 
 function ensureToolbarButton(win) {
   const doc = win?.document;
-  if (!doc || doc.getElementById(TOOLBAR_BUTTON_ID)) return false;
+  if (!doc) return false;
   const toolbar = findToolbar(doc);
   if (!toolbar) return false;
+  const existing = doc.getElementById(TOOLBAR_BUTTON_ID);
+  if (workbenchButtonIsCurrent(existing, toolbar)) return false;
+  existing?.remove?.();
   const button = createToolbarButton(doc, toolbar);
   toolbar.appendChild(button);
   return true;
@@ -154,9 +157,13 @@ function registerSidenavButton(win) {
 
 function ensureSidenavButton(win) {
   const doc = win?.document;
-  if (!doc || doc.getElementById(SIDENAV_BUTTON_ID)) return false;
+  if (!doc) return false;
   const sidenav = findContextSidenav(doc);
   if (!sidenav) return false;
+  const host = sidenavButtonInsertionHost(sidenav);
+  const existing = doc.getElementById(SIDENAV_BUTTON_ID);
+  if (workbenchButtonIsCurrent(existing, host)) return false;
+  removeExistingSidenavButton(existing);
   appendSidenavButton(doc, sidenav);
   return true;
 }
@@ -168,11 +175,14 @@ function findContextSidenav(doc) {
     "zotero-context-sidenav",
     "zotero-view-item-sidenav"
   ];
+  const found = [];
   for (const id of candidates) {
     const element = doc.getElementById(id);
-    if (element) return element;
+    if (element) found.push(element);
   }
-  return doc.querySelector?.('[id$="context-pane-sidenav"], [id$="context-sidenav"], [id$="view-item-sidenav"], .zotero-view-item-sidenav');
+  const queried = doc.querySelector?.('[id$="context-pane-sidenav"], [id$="context-sidenav"], [id$="view-item-sidenav"], .zotero-view-item-sidenav');
+  if (queried) found.push(queried);
+  return preferredWorkbenchHost(found);
 }
 
 function appendSidenavButton(doc, sidenav) {
@@ -284,11 +294,63 @@ function findToolbar(doc) {
     "zotero-collections-toolbar",
     "zotero-item-pane-toolbar"
   ];
+  const found = [];
   for (const id of candidates) {
     const element = doc.getElementById(id);
-    if (element) return element;
+    if (element) found.push(element);
   }
-  return doc.querySelector?.("#zotero-toolbar-item-tree #zotero-items-toolbar, #zotero-toolbar-item-tree, [id$='items-toolbar'], toolbar");
+  const queried = doc.querySelector?.("#zotero-toolbar-item-tree #zotero-items-toolbar, #zotero-toolbar-item-tree, [id$='items-toolbar'], toolbar");
+  if (queried) found.push(queried);
+  return preferredWorkbenchHost(found);
+}
+
+function preferredWorkbenchHost(elements) {
+  const unique = [];
+  for (const element of elements || []) {
+    if (element && !unique.includes(element)) unique.push(element);
+  }
+  return unique.find((element) => !elementLooksHidden(element)) || unique[0] || null;
+}
+
+function workbenchButtonIsCurrent(button, host) {
+  return !!button && !!host && elementContains(host, button) && !elementLooksHidden(host) && !elementLooksHidden(button);
+}
+
+function elementContains(host, child) {
+  for (let node = child; node; node = node.parentNode) {
+    if (node === host) return true;
+  }
+  return false;
+}
+
+function removeExistingSidenavButton(button) {
+  if (!button) return;
+  const wrapper = closestSidenavButtonWrapper(button);
+  if (wrapper) {
+    wrapper.remove?.();
+    return;
+  }
+  button.remove?.();
+}
+
+function closestSidenavButtonWrapper(button) {
+  for (let node = button?.parentNode; node; node = node.parentNode) {
+    if (elementHasClass(node, "zms-sidenav-open-wrapper")) return node;
+  }
+  return null;
+}
+
+function elementLooksHidden(element) {
+  for (let node = element; node; node = node.parentNode) {
+    if (node.hidden === true) return true;
+    const hidden = String(node.getAttribute?.("hidden") || "").toLowerCase();
+    if (hidden && hidden !== "false") return true;
+    if (String(node.getAttribute?.("collapsed") || "").toLowerCase() === "true") return true;
+    if (String(node.getAttribute?.("aria-hidden") || "").toLowerCase() === "true") return true;
+    const style = String(node.getAttribute?.("style") || "").toLowerCase().replace(/\s+/g, "");
+    if (style.includes("display:none") || style.includes("visibility:hidden")) return true;
+  }
+  return false;
 }
 
 function toolbarMenuItem(doc, label, onCommand) {
