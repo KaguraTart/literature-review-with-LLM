@@ -310,14 +310,22 @@ function streamPayloads(rawRecord: string): string[] {
     .map((line) => sseFieldValue(line, "data"))
     .filter((value): value is string => value !== undefined);
   if (!dataLines.length) {
-    const line = record.trim();
-    if (!line.startsWith("data:")) return [];
-    return [line.slice(5).trim()].filter(Boolean);
+    return rawJSONStreamPayloads(record);
   }
   const joined = dataLines.join("\n").trim();
   if (!joined) return [];
   if (dataLines.length === 1 || joined === "[DONE]" || safeParseJSON(joined)) return [joined];
   return dataLines.map((line) => line.trim()).filter(Boolean);
+}
+
+function rawJSONStreamPayloads(record: string): string[] {
+  const trimmed = String(record || "").trim();
+  if (!trimmed) return [];
+  if (trimmed === "[DONE]" || safeParseJSON(trimmed)) return [trimmed];
+  return trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line === "[DONE]" || !!safeParseJSON(line));
 }
 
 function sseFieldValue(line: string, field: string): string | undefined {
