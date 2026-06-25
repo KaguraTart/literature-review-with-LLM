@@ -1465,6 +1465,17 @@ describe("preferences local-agent config helpers", () => {
       { id: "router/model-a", label: "Router Model A" },
       { id: "router/model-b", label: "Router Model B" }
     ]);
+    expect(helpers.modelOptionsFromResponse({
+      "root/model-a": { display_name: "Root Model A" },
+      "root/model-b": "Root Model B",
+      first_id: "root/model-a",
+      last_id: "root/model-b",
+      nextToken: "page-2",
+      status: "ok"
+    })).toEqual([
+      { id: "root/model-a", label: "Root Model A" },
+      { id: "root/model-b", label: "Root Model B" }
+    ]);
     expect(helpers.modelIdsFromResponse({ data: [{ id: "same" }, { id: "same" }] })).toEqual(["same"]);
     expect(helpers.modelOptionsFromResponse({
       data: [

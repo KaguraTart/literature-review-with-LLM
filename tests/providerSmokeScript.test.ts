@@ -1358,6 +1358,37 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("loads root object-map model-list responses without treating metadata as models", async () => {
+    await withMockProvider(async (baseURL) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--models",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        models: true,
+        modelCount: 2,
+        modelIds: ["root/model-a", "root/model-b"]
+      });
+      expect(report.modelOptions).toEqual([
+        { id: "root/model-a", label: "Root Model A" },
+        { id: "root/model-b", label: "Root Model B" }
+      ]);
+    }, {
+      responseBody: {
+        "root/model-a": { display_name: "Root Model A" },
+        "root/model-b": "Root Model B",
+        first_id: "root/model-a",
+        last_id: "root/model-b",
+        nextToken: "",
+        status: "ok"
+      }
+    });
+  });
+
   it("loads nested paginated model-list responses from provider-specific envelopes", async () => {
     await withMockProvider(async (baseURL, requests) => {
       const report = await runSmoke([

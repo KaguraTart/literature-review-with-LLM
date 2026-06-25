@@ -1194,7 +1194,8 @@ function nextModelListURL(currentUrl, data) {
   return "";
 }
 
-function directModelListItemsFromResponse(data) {
+function directModelListItemsFromResponse(data, options = {}) {
+  const includeRootObjectMap = options?.includeRootObjectMap !== false;
   if (Array.isArray(data)) return data;
   const fields = [
     "data",
@@ -1233,13 +1234,17 @@ function directModelListItemsFromResponse(data) {
     const items = modelListItemsFromObjectMap(data?.[field]);
     if (items.length) return items;
   }
+  if (includeRootObjectMap) {
+    const rootItems = modelListItemsFromObjectMap(data, { skipDirectCheck: true });
+    if (rootItems.length) return rootItems;
+  }
   return [];
 }
 
-function modelListItemsFromObjectMap(value) {
+function modelListItemsFromObjectMap(value, options = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];
   if (modelOptionFromItem(value).id) return [];
-  if (directModelListItemsFromResponse(value).length) return [];
+  if (!options?.skipDirectCheck && directModelListItemsFromResponse(value, { includeRootObjectMap: false }).length) return [];
   const items = [];
   for (const [key, item] of Object.entries(value)) {
     const id = String(key || "").trim();
@@ -1259,8 +1264,33 @@ function modelListItemsFromObjectMap(value) {
 function modelListMapMetadataKeys() {
   return new Set([
     "data",
+    "result",
+    "payload",
+    "response",
+    "message",
+    "body",
+    "completion",
     "items",
     "models",
+    "model",
+    "list",
+    "model_list",
+    "modelList",
+    "available_models",
+    "availableModels",
+    "model_names",
+    "modelNames",
+    "deployments",
+    "deployment_list",
+    "deploymentList",
+    "engines",
+    "engine_list",
+    "engineList",
+    "entries",
+    "records",
+    "resources",
+    "nodes",
+    "edges",
     "results",
     "objects",
     "metadata",
@@ -1273,17 +1303,41 @@ function modelListMapMetadataKeys() {
     "type",
     "total",
     "count",
+    "first_id",
+    "firstId",
+    "last_id",
+    "lastId",
     "has_more",
     "hasMore",
     "next",
     "next_url",
     "nextUrl",
+    "nextPageUrl",
     "next_page",
     "nextPage",
     "next_cursor",
     "nextCursor",
     "next_page_token",
-    "nextPageToken"
+    "nextPageToken",
+    "next_token",
+    "nextToken",
+    "cursor",
+    "after",
+    "after_id",
+    "afterId",
+    "page_token",
+    "pageToken",
+    "error",
+    "errors",
+    "message",
+    "status",
+    "status_code",
+    "statusCode",
+    "code",
+    "ok",
+    "success",
+    "detail",
+    "details"
   ]);
 }
 
