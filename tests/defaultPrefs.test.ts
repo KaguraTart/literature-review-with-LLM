@@ -257,7 +257,7 @@ describe("default provider profiles", () => {
     expect(profiles.find((profile: any) => profile.id === "deepseek")).toMatchObject({
       protocol: "openai_chat",
       baseURL: "https://api.deepseek.com",
-      model: "deepseek-v4-flash",
+      model: "deepseek-chat",
       capabilities: { pdfBase64: false, streaming: true, modelList: true }
     });
     expect(profiles.find((profile: any) => profile.id === "deepseek-anthropic")).toMatchObject({

@@ -941,12 +941,12 @@ function addReadmeUiTextChecks(checks) {
     {
       file: "README.md",
       required: [
-        { id: "refresh-online-models", marker: "`Refresh online models`" },
+        { id: "load-model-list", marker: "`Load model list`" },
         { id: "model-vendor", marker: "`Model vendor`" },
         { id: "restores-provider-credentials", marker: "switching back to a previously saved provider restores that provider's own key and model" }
       ],
       forbidden: [
-        { id: "old-load-model-list", marker: "`Load model list`" },
+        { id: "old-refresh-online-models", marker: "`Refresh online models`" },
         { id: "refresh-models", marker: "`Refresh models`" },
         { id: "clears-old-api-key", marker: "clears the old API key" }
       ]
@@ -954,12 +954,12 @@ function addReadmeUiTextChecks(checks) {
     {
       file: "README.zh-CN.md",
       required: [
-        { id: "refresh-online-models", marker: "`刷新在线模型`" },
+        { id: "load-model-list", marker: "`加载模型列表`" },
         { id: "model-vendor", marker: "`模型厂商`" },
         { id: "restores-provider-credentials", marker: "切回已保存过的厂商时会恢复该厂商自己的 key 和模型" }
       ],
       forbidden: [
-        { id: "old-load-model-list", marker: "`加载模型列表`" },
+        { id: "old-refresh-online-models", marker: "`刷新在线模型`" },
         { id: "refresh-models", marker: "`刷新模型`" },
         { id: "clears-old-api-key", marker: "清空旧 API key" }
       ]
