@@ -17054,7 +17054,8 @@ function workbenchNextModelListURL(currentUrl, data) {
   return "";
 }
 
-function workbenchDirectModelListItemsFromResponse(data) {
+function workbenchDirectModelListItemsFromResponse(data, options = {}) {
+  const includeRootObjectMap = options?.includeRootObjectMap !== false;
   if (Array.isArray(data)) return data;
   const fields = [
     "data",
@@ -17093,13 +17094,17 @@ function workbenchDirectModelListItemsFromResponse(data) {
     const items = workbenchModelListItemsFromObjectMap(data?.[field]);
     if (items.length) return items;
   }
+  if (includeRootObjectMap) {
+    const rootItems = workbenchModelListItemsFromObjectMap(data, { skipDirectCheck: true });
+    if (rootItems.length) return rootItems;
+  }
   return [];
 }
 
-function workbenchModelListItemsFromObjectMap(value) {
+function workbenchModelListItemsFromObjectMap(value, options = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];
   if (workbenchModelOptionFromItem(value).id) return [];
-  if (workbenchDirectModelListItemsFromResponse(value).length) return [];
+  if (!options?.skipDirectCheck && workbenchDirectModelListItemsFromResponse(value, { includeRootObjectMap: false }).length) return [];
   const items = [];
   for (const [key, item] of Object.entries(value)) {
     const id = String(key || "").trim();
@@ -17119,8 +17124,33 @@ function workbenchModelListItemsFromObjectMap(value) {
 function workbenchModelListMapMetadataKeys() {
   return new Set([
     "data",
+    "result",
+    "payload",
+    "response",
+    "message",
+    "body",
+    "completion",
     "items",
     "models",
+    "model",
+    "list",
+    "model_list",
+    "modelList",
+    "available_models",
+    "availableModels",
+    "model_names",
+    "modelNames",
+    "deployments",
+    "deployment_list",
+    "deploymentList",
+    "engines",
+    "engine_list",
+    "engineList",
+    "entries",
+    "records",
+    "resources",
+    "nodes",
+    "edges",
     "results",
     "objects",
     "metadata",
@@ -17133,17 +17163,41 @@ function workbenchModelListMapMetadataKeys() {
     "type",
     "total",
     "count",
+    "first_id",
+    "firstId",
+    "last_id",
+    "lastId",
     "has_more",
     "hasMore",
     "next",
     "next_url",
     "nextUrl",
+    "nextPageUrl",
     "next_page",
     "nextPage",
     "next_cursor",
     "nextCursor",
     "next_page_token",
-    "nextPageToken"
+    "nextPageToken",
+    "next_token",
+    "nextToken",
+    "cursor",
+    "after",
+    "after_id",
+    "afterId",
+    "page_token",
+    "pageToken",
+    "error",
+    "errors",
+    "message",
+    "status",
+    "status_code",
+    "statusCode",
+    "code",
+    "ok",
+    "success",
+    "detail",
+    "details"
   ]);
 }
 

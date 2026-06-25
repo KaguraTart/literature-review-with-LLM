@@ -2332,6 +2332,30 @@ describe("workbench writeback helpers", () => {
     ]);
   });
 
+  it("loads root object-map model-list responses in the workbench", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    loaded.fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        "router/model-a": { display_name: "Router Model A" },
+        "router/model-b": "Router Model B",
+        first_id: "router/model-a",
+        last_id: "router/model-b",
+        nextToken: "",
+        status: "ok"
+      })
+    });
+
+    await expect(loaded.workbenchFetchModelOptions({
+      url: "https://router.example/v1/models",
+      headers: { authorization: "Bearer sk-test-secret" }
+    })).resolves.toEqual([
+      { id: "router/model-a", label: "Router Model A" },
+      { id: "router/model-b", label: "Router Model B" }
+    ]);
+  });
+
   it("retries workbench model lists without a rejected Anthropic version header", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: Array<{ url: string; headers: Record<string, string> }> = [];
