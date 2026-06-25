@@ -16905,6 +16905,7 @@ function hashString(value) {
 }
 
 const WORKBENCH_MODEL_LIST_MAX_PAGES = 5;
+const WORKBENCH_MODEL_LIST_MAX_ATTEMPTS = 4;
 
 function workbenchStringField(...values) {
   for (const value of values) {
@@ -16943,15 +16944,23 @@ async function workbenchFetchModelOptions(request) {
     let response;
     let text = "";
     let data = null;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < WORKBENCH_MODEL_LIST_MAX_ATTEMPTS; attempt += 1) {
       response = await fetch(nextUrl, { method: "GET", headers });
       text = await response.text();
       data = safeParseJSON(text);
       const fallbackFields = providerCompatibilityFallbackFields(request.profile?.protocol, {}, response.status, text, usedFallbackFields);
-      if (!fallbackFields.length) break;
-      if (effectiveProfile) effectiveProfile = profileWithProviderModelListFallback(effectiveProfile, fallbackFields, usedFallbackFields);
-      headers = providerRequestHeadersWithFallback(headers, fallbackFields);
-      usedFallbackFields.splice(0, usedFallbackFields.length, ...normalizeProviderFallbackFieldList([...usedFallbackFields, ...fallbackFields]));
+      if (fallbackFields.length) {
+        if (effectiveProfile) effectiveProfile = profileWithProviderModelListFallback(effectiveProfile, fallbackFields, usedFallbackFields);
+        headers = providerRequestHeadersWithFallback(headers, fallbackFields);
+        usedFallbackFields.splice(0, usedFallbackFields.length, ...normalizeProviderFallbackFieldList([...usedFallbackFields, ...fallbackFields]));
+        continue;
+      }
+      const retryDelay = providerRetryAfterMs(response.headers);
+      if (!response.ok && providerModelListRetryableStatus(response.status) && retryDelay != null && attempt < WORKBENCH_MODEL_LIST_MAX_ATTEMPTS - 1) {
+        await delay(retryDelay);
+        continue;
+      }
+      break;
     }
     if (!response.ok) {
       throw new Error(providerErrorText(response.status, text));
@@ -16966,6 +16975,11 @@ async function workbenchFetchModelOptions(request) {
   request.compatibilityFallbackFields = normalizeProviderFallbackFieldList(usedFallbackFields);
   if (effectiveProfile) request.effectiveProfile = effectiveProfile;
   return workbenchModelOptionsFromItems(items);
+}
+
+function providerModelListRetryableStatus(status) {
+  const numericStatus = Number(status);
+  return numericStatus === 429 || numericStatus >= 500;
 }
 
 function workbenchModelListItemsFromResponse(data, depth = 0) {

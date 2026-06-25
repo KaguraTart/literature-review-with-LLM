@@ -2366,6 +2366,43 @@ describe("workbench writeback helpers", () => {
     expect((request as any).effectiveProfile.bodyExtra.omitAnthropicVersion).toBe(true);
   });
 
+  it("honors provider retry headers when loading workbench model lists", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; headers: Record<string, string> }> = [];
+    const delayCalls: number[] = [];
+    loaded.window.Zotero.Promise.delay = async (ms: number) => {
+      delayCalls.push(ms);
+    };
+    loaded.fetch = async (url: string, init: any) => {
+      fetchCalls.push({ url, headers: init.headers || {} });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 429,
+          headers: {
+            get: (name: string) => name.toLowerCase() === "retry-after-ms" ? "1250" : null
+          },
+          text: async () => JSON.stringify({ error: { code: "rate_limit_exceeded", message: "Try again later" } })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: [{ id: "model-after-limit", display_name: "Model After Limit" }] })
+      };
+    };
+
+    await expect(loaded.workbenchFetchModelOptions({
+      url: "https://api.openai.com/v1/models",
+      headers: { authorization: "Bearer secret" }
+    })).resolves.toEqual([
+      { id: "model-after-limit", label: "Model After Limit" }
+    ]);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[1].url).toBe("https://api.openai.com/v1/models");
+    expect(delayCalls).toEqual([1250]);
+  });
+
   it("validates remote profile credentials before sending provider requests", () => {
     const translate = (key: string) => ({ apiKeyMissing: "missing key", modelMissing: "missing model" }[key] || key);
     expect(() => helpers.assertRemoteProfileReady({ apiKey: "", model: "m" }, translate)).toThrow("missing key");

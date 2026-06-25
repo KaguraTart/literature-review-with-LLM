@@ -28,6 +28,8 @@ const REQUIRED_LOCAL_AGENT_TOOL_NAMES = [
   "extract_pdf_pages"
 ];
 const MODEL_LIST_MAX_PAGES = 5;
+const MODEL_LIST_MAX_ATTEMPTS = 4;
+const PROVIDER_RETRY_DELAY_MAX_MS = 10000;
 const ZMS_DEFAULT_OUTPUT_DIR_NAME = "Literature Review with LLM";
 
 var ZoteroMarkdownSummaryPrefs = {
@@ -3015,15 +3017,23 @@ async function fetchModelOptions(request) {
     let response;
     let text = "";
     let data = null;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < MODEL_LIST_MAX_ATTEMPTS; attempt += 1) {
       response = await fetch(nextUrl, { method: "GET", headers });
       text = await response.text();
       data = safeParseJSON(text);
       const fallbackFields = providerCompatibilityFallbackFields(request.profile?.protocol, {}, response.status, text, usedFallbackFields);
-      if (!fallbackFields.length) break;
-      if (effectiveProfile) effectiveProfile = profileWithProviderConnectionTestFallback(effectiveProfile, {}, fallbackFields, usedFallbackFields);
-      headers = providerRequestHeadersWithFallback(headers, fallbackFields);
-      usedFallbackFields.splice(0, usedFallbackFields.length, ...normalizeProviderFallbackFieldList([...usedFallbackFields, ...fallbackFields]));
+      if (fallbackFields.length) {
+        if (effectiveProfile) effectiveProfile = profileWithProviderConnectionTestFallback(effectiveProfile, {}, fallbackFields, usedFallbackFields);
+        headers = providerRequestHeadersWithFallback(headers, fallbackFields);
+        usedFallbackFields.splice(0, usedFallbackFields.length, ...normalizeProviderFallbackFieldList([...usedFallbackFields, ...fallbackFields]));
+        continue;
+      }
+      const retryDelay = providerModelListRetryDelayMs(response.headers);
+      if (!response.ok && providerModelListRetryableStatus(response.status) && retryDelay != null && attempt < MODEL_LIST_MAX_ATTEMPTS - 1) {
+        await providerModelListDelay(retryDelay);
+        continue;
+      }
+      break;
     }
     if (!response.ok) {
       throw new Error(providerErrorText(response.status, text));
@@ -3038,6 +3048,88 @@ async function fetchModelOptions(request) {
   request.compatibilityFallbackFields = normalizeProviderFallbackFieldList(usedFallbackFields);
   if (effectiveProfile) request.effectiveProfile = effectiveProfile;
   return modelOptionsFromItems(items);
+}
+
+function providerModelListRetryableStatus(status) {
+  const numericStatus = Number(status);
+  return numericStatus === 429 || numericStatus >= 500;
+}
+
+function providerModelListRetryDelayMs(headers) {
+  const retryAfter = providerRetryAfterMs(headers);
+  if (retryAfter == null) return null;
+  const headerDelay = clampProviderRetryDelayMs(retryAfter);
+  if (headerDelay != null) return headerDelay;
+  return null;
+}
+
+function providerRetryAfterMs(headers) {
+  const retryAfterMs = numericProviderHeaderMs(
+    providerHeaderValue(headers, "retry-after-ms")
+      || providerHeaderValue(headers, "x-retry-after-ms")
+  );
+  if (retryAfterMs != null) return retryAfterMs;
+
+  const retryAfter = providerHeaderValue(headers, "retry-after");
+  if (retryAfter) {
+    const numericSeconds = Number(String(retryAfter).trim());
+    if (Number.isFinite(numericSeconds) && numericSeconds >= 0) {
+      return clampProviderRetryDelayMs(numericSeconds * 1000);
+    }
+    const dateDelay = Date.parse(String(retryAfter)) - Date.now();
+    if (Number.isFinite(dateDelay) && dateDelay >= 0) {
+      return clampProviderRetryDelayMs(dateDelay);
+    }
+  }
+
+  const reset = providerHeaderValue(headers, "x-ratelimit-reset")
+    || providerHeaderValue(headers, "x-rate-limit-reset");
+  if (!reset) return null;
+  const resetText = String(reset).trim();
+  const resetNumber = Number(resetText);
+  if (Number.isFinite(resetNumber) && resetNumber > 0) {
+    const epochMs = resetNumber > 100000000000 ? resetNumber : resetNumber * 1000;
+    const delayMs = epochMs - Date.now();
+    return delayMs >= 0 ? clampProviderRetryDelayMs(delayMs) : null;
+  }
+  const resetDateDelay = Date.parse(resetText) - Date.now();
+  return Number.isFinite(resetDateDelay) && resetDateDelay >= 0 ? clampProviderRetryDelayMs(resetDateDelay) : null;
+}
+
+function numericProviderHeaderMs(value) {
+  if (value == null || value === "") return null;
+  const ms = Number(String(value).trim());
+  return Number.isFinite(ms) && ms >= 0 ? clampProviderRetryDelayMs(ms) : null;
+}
+
+function providerHeaderValue(headers, name) {
+  if (!headers || !name) return "";
+  const lower = name.toLowerCase();
+  if (typeof headers.get === "function") {
+    try {
+      return headers.get(name) || headers.get(lower) || "";
+    } catch (_err) {
+      return "";
+    }
+  }
+  if (headers instanceof Map) {
+    return headers.get(name) || headers.get(lower) || "";
+  }
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === lower) return headers[key];
+  }
+  return "";
+}
+
+function clampProviderRetryDelayMs(value) {
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return Math.min(Math.ceil(ms), PROVIDER_RETRY_DELAY_MAX_MS);
+}
+
+function providerModelListDelay(ms) {
+  const zotero = runtimeZotero();
+  return zotero?.Promise?.delay ? zotero.Promise.delay(ms) : new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function nextModelListURL(currentUrl, data) {

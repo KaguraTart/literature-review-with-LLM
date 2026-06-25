@@ -74,6 +74,7 @@ function loadPreferencesController(options: {
   const code = readFileSync(resolve(process.cwd(), "addon/content/preferences.js"), "utf8");
   const elements = new Map<string, any>();
   const fetchCalls: Array<{ url: string; init: any }> = [];
+  const delayCalls: number[] = [];
   const skillFiles = new Set(options.skillFiles || []);
   const filePickerConstants = {
     modeGetFolder: 2,
@@ -283,6 +284,9 @@ function loadPreferencesController(options: {
         status: rawPayload && typeof rawPayload === "object" && "__fetchStatus" in rawPayload
           ? rawPayload.__fetchStatus
           : options.fetchStatus ?? 200,
+        headers: rawPayload && typeof rawPayload === "object" && "__fetchHeaders" in rawPayload
+          ? rawPayload.__fetchHeaders
+          : rawPayload?.headers,
         text: async () => JSON.stringify(payload)
       };
     },
@@ -370,6 +374,11 @@ function loadPreferencesController(options: {
         set: (key: string, value: any) => {
           prefValues.set(key, value);
         }
+      },
+      Promise: {
+        delay: async (ms: number) => {
+          delayCalls.push(ms);
+        }
       }
     },
     console
@@ -413,6 +422,7 @@ function loadPreferencesController(options: {
     controller: (context as any).window.ZoteroMarkdownSummaryPrefs,
     elements,
     fetchCalls,
+    delayCalls,
     prefValues,
     madeDirectories,
     filePickerCalls
@@ -4504,6 +4514,29 @@ describe("preferences local-agent config helpers", () => {
     expect(optionValues[0]).toBe("claude-compatible");
     expect(optionValues).toContain("claude-sonnet-4-6");
     expect(optionValues).not.toContain("claude-3-5-sonnet-latest");
+    expect(elements.get("zms-status").value).toBe("Models loaded: 1");
+  });
+
+  it("honors provider retry headers when loading settings model lists", async () => {
+    const { controller, elements, fetchCalls, delayCalls } = loadPreferencesController({
+      fetchResponses: [
+        {
+          __fetchOk: false,
+          __fetchStatus: 429,
+          __fetchHeaders: { "retry-after-ms": "1250" },
+          __fetchBody: { error: { code: "rate_limit_exceeded", message: "Try again later" } }
+        },
+        { data: [{ id: "model-after-limit", display_name: "Model After Limit" }] }
+      ]
+    });
+
+    await controller.loadModels();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(delayCalls).toEqual([1250]);
+    expect(fetchCalls[1].url).toBe("https://api.openai.com/v1/models");
+    const optionValues = elements.get("zms-model-options").children.map((option: any) => option.value);
+    expect(optionValues[0]).toBe("model-after-limit");
     expect(elements.get("zms-status").value).toBe("Models loaded: 1");
   });
 
