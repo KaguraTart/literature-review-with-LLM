@@ -3453,6 +3453,84 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
   });
 
+  it("localizes workbench model vendor display labels without changing filter values", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-profile-name": "OpenRouter",
+      "zms-profile-base-url": "https://openrouter.ai/api/v1",
+      "zms-profile-api-key": "",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    loaded.fetch = async () => {
+      throw new Error("network should not be called without credentials");
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelRecommendationsLoaded: "已加载推荐模型",
+      modelSelectPlaceholder: "选择推荐模型",
+      modelSelectCustom: "自定义/私有部署模型...",
+      modelVendorFilter: "模型厂商",
+      allModelVendors: "全部模型厂商",
+      recommendedModels: "推荐模型",
+      modelFeatureImage: "图片",
+      modelFeaturePdf: "PDF",
+      modelFeatureReasoning: "推理",
+      modelFeatureFast: "快速",
+      modelFeatureLocal: "本地",
+      modelListFailedUsingRecommendations: "在线模型列表加载失败，已保留推荐模型",
+      apiKeyMissing: "请先填写 API 密钥"
+    }[key] || key);
+    const profile = {
+      id: "openrouter",
+      name: "OpenRouter",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://openrouter.ai/api/v1",
+      apiKey: "",
+      model: "",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.uiLanguage = "zh-CN";
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    await workbench.loadModelsForWorkbench();
+
+    const vendorSelect = dom.getElementById("zms-profile-model-vendor-select");
+    expect(selectOptionValues(vendorSelect)).toEqual([
+      "",
+      "OpenAI",
+      "Anthropic",
+      "Google Gemini",
+      "DeepSeek",
+      "xAI",
+      "Mistral",
+      "Qwen",
+      "MiniMax"
+    ]);
+    expect(selectOptions(vendorSelect).map((option: any) => option.textContent)).toEqual([
+      "全部模型厂商",
+      "OpenAI",
+      "Anthropic",
+      "Google Gemini",
+      "DeepSeek",
+      "xAI",
+      "Mistral",
+      "通义千问",
+      "MiniMax"
+    ]);
+
+    vendorSelect.value = "Qwen";
+    workbench.renderWorkbenchModelOptionsFromCache({ selectFirstVisible: true });
+
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("qwen/qwen-max");
+    expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual(["通义千问 · 推荐模型"]);
+  });
+
   it("keeps recommended workbench models when the online model list fails", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const dom = fakeDocument({

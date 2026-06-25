@@ -102,6 +102,83 @@
     local_agents: "Local Agents"
   };
 
+  const ZH_PROVIDER_LABELS = {
+    minimax: "MiniMax",
+    openai: "OpenAI",
+    openai_compatible: "OpenAI 兼容接口",
+    openai_responses_compatible: "OpenAI Responses 接口",
+    anthropic: "Anthropic",
+    anthropic_compatible: "Anthropic 兼容接口",
+    gemini: "Google Gemini",
+    azure_openai: "Azure OpenAI",
+    vercel_ai_chat: "Vercel AI Gateway",
+    vercel_ai_responses: "Vercel AI Gateway",
+    vercel_ai_anthropic: "Vercel AI Gateway",
+    cline_api: "Cline API",
+    litellm_proxy_chat: "LiteLLM Proxy",
+    litellm_proxy_responses: "LiteLLM Proxy",
+    litellm_proxy_anthropic: "LiteLLM Proxy",
+    cloudflare_ai_chat: "Cloudflare AI",
+    cloudflare_ai_responses: "Cloudflare AI",
+    cloudflare_ai_anthropic: "Cloudflare AI",
+    github_models: "GitHub Models",
+    huggingface: "Hugging Face",
+    deepinfra: "DeepInfra",
+    fireworks: "Fireworks AI",
+    cerebras: "Cerebras",
+    nvidia_nim: "NVIDIA NIM",
+    sambanova: "SambaNova",
+    sambanova_responses: "SambaNova",
+    sambanova_anthropic: "SambaNova",
+    xai: "xAI",
+    "x-ai": "xAI",
+    groq: "Groq",
+    mistral: "Mistral",
+    together: "Together AI",
+    kimi: "Moonshot",
+    perplexity: "Perplexity",
+    deepseek: "DeepSeek",
+    deepseek_anthropic: "DeepSeek",
+    zai_anthropic: "Z.AI",
+    openrouter: "OpenRouter",
+    dashscope: "通义千问 / DashScope",
+    siliconflow: "SiliconFlow",
+    zhipu: "智谱 GLM",
+    volcengine: "火山方舟",
+    qianfan: "百度千帆",
+    hunyuan: "腾讯混元",
+    ollama: "Ollama 本地",
+    lm_studio: "LM Studio 本地",
+    local_agents: "本地代理"
+  };
+
+  const ZH_MODEL_VENDOR_LABELS = {
+    OpenAI: "OpenAI",
+    Anthropic: "Anthropic",
+    "Google Gemini": "Google Gemini",
+    DeepSeek: "DeepSeek",
+    Qwen: "通义千问",
+    DashScope: "通义千问 / DashScope",
+    Mistral: "Mistral",
+    "Meta Llama": "Meta Llama",
+    MiniMax: "MiniMax",
+    "Z.AI": "Z.AI",
+    "Zhipu GLM": "智谱 GLM",
+    Moonshot: "Moonshot / Kimi",
+    xAI: "xAI",
+    NVIDIA: "NVIDIA",
+    Ollama: "Ollama 本地",
+    Baidu: "百度",
+    "Baidu ERNIE": "百度 ERNIE",
+    Tencent: "腾讯",
+    "Tencent Hunyuan": "腾讯混元",
+    Doubao: "豆包",
+    "Volcengine Ark": "火山方舟",
+    "Baidu Qianfan": "百度千帆",
+    "Local Agents": "本地代理",
+    "Local model": "本地模型"
+  };
+
   const MODEL_VENDOR_PREFIXES = {
     openai: "OpenAI",
     gpt: "OpenAI",
@@ -166,9 +243,26 @@
     return recommendedModelOptionsForProviderCatalog(key)[0]?.id || "";
   }
 
-  function providerLabelForModelCatalog(provider) {
+  function providerLabelForModelCatalog(provider, languageOrTranslate) {
     const key = providerModelCatalogKey(provider);
+    if (modelCatalogLanguageIsChinese(languageOrTranslate) && ZH_PROVIDER_LABELS[key]) return ZH_PROVIDER_LABELS[key];
     return PROVIDER_LABELS[key] || key.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  function localizedModelVendorLabel(vendor, languageOrTranslate) {
+    const label = String(vendor || "").trim();
+    if (!label) return "";
+    if (!modelCatalogLanguageIsChinese(languageOrTranslate)) return label;
+    return ZH_MODEL_VENDOR_LABELS[label] || label;
+  }
+
+  function modelCatalogLanguageIsChinese(languageOrTranslate) {
+    if (typeof languageOrTranslate === "function") {
+      const allVendors = languageOrTranslate("allModelVendors");
+      const fast = languageOrTranslate("modelFeatureFast");
+      return allVendors === "全部模型厂商" || fast === "快速";
+    }
+    return String(languageOrTranslate || "").toLowerCase().startsWith("zh");
   }
 
   function modelVendorForProviderCatalogEntry(provider, id, label) {
@@ -267,6 +361,7 @@
   root.zmsRecommendedModelOptionsForProvider = recommendedModelOptionsForProviderCatalog;
   root.zmsRecommendedDefaultModelForProvider = recommendedDefaultModelForProviderCatalog;
   root.zmsProviderModelCatalogLabel = providerLabelForModelCatalog;
+  root.zmsLocalizedModelVendorLabel = localizedModelVendorLabel;
   root.zmsModelVendorForProviderModel = modelVendorForProviderCatalogEntry;
   root.zmsModelFeatureHintsForProviderModel = modelFeatureHintsForProviderCatalogEntry;
   root.zmsModelLikelyTextOnlyForProviderModel = modelLikelyTextOnlyForProviderCatalogEntry;

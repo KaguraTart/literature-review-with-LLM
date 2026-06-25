@@ -5747,7 +5747,7 @@ function modelSelectGroupLabel(groupInfo, translate = (key) => key) {
   const suffix = groupInfo.source === "online"
     ? translate("onlineModels")
     : (groupInfo.source === "recommended" ? translate("recommendedModels") : translate("modelSelectCustom"));
-  return groupInfo.vendor ? `${groupInfo.vendor} · ${suffix}` : suffix;
+  return groupInfo.vendor ? `${modelVendorDisplayLabel(groupInfo.vendor, translate)} · ${suffix}` : suffix;
 }
 
 function inferredModelVendor(entry) {
@@ -5823,7 +5823,7 @@ function renderModelVendorFilter(select, entries, translate = (key) => key, opti
   for (const vendor of vendors) {
     const option = document.createElement("option");
     option.value = vendor;
-    option.textContent = vendor;
+    option.textContent = modelVendorDisplayLabel(vendor, translate);
     select.appendChild(option);
   }
   select.value = !options.reset && vendors.includes(previous) ? previous : "";
@@ -5844,6 +5844,13 @@ function modelVendorNames(entries) {
 
 function selectedModelVendor(select) {
   return String(select?.value || "").trim();
+}
+
+function modelVendorDisplayLabel(vendor, translate = (key) => key) {
+  if (typeof zmsLocalizedModelVendorLabel === "function") {
+    return zmsLocalizedModelVendorLabel(vendor, translate);
+  }
+  return String(vendor || "");
 }
 
 function filterModelOptionsByVendor(entries, vendor) {
@@ -5897,7 +5904,7 @@ function recommendedModelOptionsForWorkbenchProvider(provider) {
 
 function workbenchModelSelectPlaceholder(profile, entries, language, translate = (key) => key) {
   const provider = workbenchProviderFromProfile(profile, profile?.id || "");
-  const providerLabel = workbenchModelSelectProviderLabel(provider, entries);
+  const providerLabel = workbenchModelSelectProviderLabel(provider, entries, language);
   return providerModelSelectPlaceholder(providerLabel, language, translate);
 }
 
@@ -5908,12 +5915,13 @@ function providerModelSelectPlaceholder(providerLabel, language, translate = (ke
   return zh ? `选择 ${label} 推荐模型` : `Choose ${label} model`;
 }
 
-function workbenchModelSelectProviderLabel(provider, entries = []) {
+function workbenchModelSelectProviderLabel(provider, entries = [], language = "") {
   const key = String(provider || "").trim();
   if (key && typeof zmsProviderModelCatalogLabel === "function") {
-    return zmsProviderModelCatalogLabel(key);
+    return zmsProviderModelCatalogLabel(key, language);
   }
-  return normalizeModelOptions(entries)[0]?.vendor || key;
+  const vendor = normalizeModelOptions(entries)[0]?.vendor || "";
+  return modelVendorDisplayLabel(vendor, (messageKey) => typeof zmsMessage === "function" ? zmsMessage("workbench", messageKey, language) : messageKey) || key;
 }
 
 function setWorkbenchCustomModelInputVisible(modelInput, visible) {
