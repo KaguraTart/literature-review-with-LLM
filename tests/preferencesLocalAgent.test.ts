@@ -4477,7 +4477,7 @@ describe("preferences local-agent config helpers", () => {
   });
 
   it("retries settings model lists without a rejected Anthropic version header", async () => {
-    const { controller, elements, fetchCalls } = loadPreferencesController({
+    const { controller, elements, fetchCalls, prefValues } = loadPreferencesController({
       fetchResponses: [
         {
           __fetchOk: false,
@@ -4496,6 +4496,10 @@ describe("preferences local-agent config helpers", () => {
     expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[0].init.headers["anthropic-version"]).toBe("2023-06-01");
     expect(fetchCalls[1].init.headers["anthropic-version"]).toBeUndefined();
+    const savedProfile = JSON.parse(elements.get("zms-profilesJson").value)[0];
+    expect(savedProfile.bodyExtra.omitAnthropicVersion).toBe(true);
+    const savedPrefsProfile = JSON.parse(prefValues.get("extensions.zoteroMarkdownSummary.profilesJson"))[0];
+    expect(savedPrefsProfile.bodyExtra.omitAnthropicVersion).toBe(true);
     const optionValues = elements.get("zms-model-options").children.map((option: any) => option.value);
     expect(optionValues[0]).toBe("claude-compatible");
     expect(optionValues).toContain("claude-sonnet-4-6");

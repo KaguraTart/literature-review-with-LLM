@@ -1010,11 +1010,12 @@ var ZoteroMarkdownSummaryWorkbench = {
           throw err;
         }
       }
+      const fallbackProfile = this.applyModelListCompatibilityFallback(profile, request) || profile;
       const displayOptions = mergeModelOptions(
         tagModelOptions(options, "online"),
         tagModelOptions(recommended, "recommended")
       );
-      this.cacheWorkbenchModelOptions(profile, displayOptions);
+      this.cacheWorkbenchModelOptions(fallbackProfile, displayOptions);
       this.renderWorkbenchModelOptions(displayOptions, { resetVendor });
       if (displayOptions.length) {
         if (wasModelBlank || !modelInput?.value?.trim()) {
@@ -1040,6 +1041,30 @@ var ZoteroMarkdownSummaryWorkbench = {
       }
       this.setStatus(`${this.t("testFailed")}: ${safeError(err)}`);
     }
+  },
+
+  applyModelListCompatibilityFallback(profile, request) {
+    const fields = normalizeProviderFallbackFieldList(request?.compatibilityFallbackFields);
+    if (!fields.length || !profile) return null;
+    const effectiveProfile = request?.effectiveProfile && typeof request.effectiveProfile === "object"
+      ? request.effectiveProfile
+      : profile;
+    const currentId = String(profile.id || this.state.profile?.id || "");
+    const effectiveId = String(effectiveProfile.id || currentId);
+    if (currentId && effectiveId && currentId !== effectiveId) return null;
+    const currentProfile = hydrateProfile({
+      ...(this.state.profile || {}),
+      ...(profile || {}),
+      id: profile?.id || this.state.profile?.id,
+      isDefault: profile?.isDefault !== false
+    });
+    const nextProfile = profileWithProviderCompatibilityFallback(currentProfile, effectiveProfile, fields);
+    if (JSON.stringify(nextProfile) === JSON.stringify(this.state.profile)) return this.state.profile;
+    this.state.profile = nextProfile;
+    this.syncProfileCapabilityInputs(nextProfile);
+    this.renderProfileStatus();
+    this.renderProfileTrigger();
+    return nextProfile;
   },
 
   async exportProviderDiagnostics() {
@@ -11301,6 +11326,15 @@ function profileWithProviderCompatibilityFallback(currentProfile, effectiveProfi
   });
 }
 
+function profileWithProviderModelListFallback(profile, fields, usedFallback = []) {
+  const normalizedFields = normalizeProviderFallbackFieldList(fields);
+  const base = hydrateProfile({
+    ...(profile || {}),
+    bodyExtra: mergeProviderFallbackBodyExtra(profile?.bodyExtra, {}, normalizedFields, usedFallback)
+  });
+  return profileWithProviderCompatibilityFallback(profile, base, normalizedFields);
+}
+
 function providerCapabilityDowngradesFromFallback(profile, fields) {
   const fieldSet = new Set(normalizeProviderFallbackFieldList(fields));
   const downgrades = {};
@@ -16826,6 +16860,7 @@ async function workbenchFetchModelOptions(request) {
   const seen = new Set();
   let nextUrl = request.url;
   let headers = request.headers;
+  let effectiveProfile = request.profile ? hydrateProfile(request.profile) : null;
   const usedFallbackFields = [];
   for (let page = 0; nextUrl && page < WORKBENCH_MODEL_LIST_MAX_PAGES; page += 1) {
     if (seen.has(nextUrl)) break;
@@ -16839,8 +16874,9 @@ async function workbenchFetchModelOptions(request) {
       data = safeParseJSON(text);
       const fallbackFields = providerCompatibilityFallbackFields(request.profile?.protocol, {}, response.status, text, usedFallbackFields);
       if (!fallbackFields.length) break;
+      if (effectiveProfile) effectiveProfile = profileWithProviderModelListFallback(effectiveProfile, fallbackFields, usedFallbackFields);
       headers = providerRequestHeadersWithFallback(headers, fallbackFields);
-      usedFallbackFields.push(...fallbackFields);
+      usedFallbackFields.splice(0, usedFallbackFields.length, ...normalizeProviderFallbackFieldList([...usedFallbackFields, ...fallbackFields]));
     }
     if (!response.ok) {
       throw new Error(providerErrorText(response.status, text));
@@ -16852,6 +16888,8 @@ async function workbenchFetchModelOptions(request) {
     items.push(...workbenchModelListItemsFromResponse(data));
     nextUrl = workbenchNextModelListURL(nextUrl, data);
   }
+  request.compatibilityFallbackFields = normalizeProviderFallbackFieldList(usedFallbackFields);
+  if (effectiveProfile) request.effectiveProfile = effectiveProfile;
   return workbenchModelOptionsFromItems(items);
 }
 

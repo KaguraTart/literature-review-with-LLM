@@ -589,11 +589,13 @@ var ZoteroMarkdownSummaryPrefs = {
           throw err;
         }
       }
+      const persistedProfile = this.persistProfileCompatibilityFallback(profile, request);
+      const cacheProfile = persistedProfile || profile;
       const displayOptions = mergeModelOptions(
         tagModelOptions(modelOptions, "online"),
         tagModelOptions(recommended, "recommended")
       );
-      this.cacheModelOptionsForProfile(profile, displayOptions);
+      this.cacheModelOptionsForProfile(cacheProfile, displayOptions);
       renderModelOptions(displayOptions, { resetVendor });
       if (displayOptions.length && (wasModelBlank || !String(modelInput?.value || "").trim())) {
         if (modelInput) modelInput.value = displayOptions[0].id;
@@ -3005,6 +3007,7 @@ async function fetchModelOptions(request) {
   const seenUrls = new Set();
   let nextUrl = request.url;
   let headers = request.headers;
+  let effectiveProfile = request.profile ? hydrateProfile(request.profile) : null;
   const usedFallbackFields = [];
   for (let page = 0; nextUrl && page < MODEL_LIST_MAX_PAGES; page += 1) {
     if (seenUrls.has(nextUrl)) break;
@@ -3018,8 +3021,9 @@ async function fetchModelOptions(request) {
       data = safeParseJSON(text);
       const fallbackFields = providerCompatibilityFallbackFields(request.profile?.protocol, {}, response.status, text, usedFallbackFields);
       if (!fallbackFields.length) break;
+      if (effectiveProfile) effectiveProfile = profileWithProviderConnectionTestFallback(effectiveProfile, {}, fallbackFields, usedFallbackFields);
       headers = providerRequestHeadersWithFallback(headers, fallbackFields);
-      usedFallbackFields.push(...fallbackFields);
+      usedFallbackFields.splice(0, usedFallbackFields.length, ...normalizeProviderFallbackFieldList([...usedFallbackFields, ...fallbackFields]));
     }
     if (!response.ok) {
       throw new Error(providerErrorText(response.status, text));
@@ -3031,6 +3035,8 @@ async function fetchModelOptions(request) {
     items.push(...modelListItemsFromResponse(data));
     nextUrl = nextModelListURL(nextUrl, data);
   }
+  request.compatibilityFallbackFields = normalizeProviderFallbackFieldList(usedFallbackFields);
+  if (effectiveProfile) request.effectiveProfile = effectiveProfile;
   return modelOptionsFromItems(items);
 }
 

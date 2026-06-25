@@ -2351,16 +2351,19 @@ describe("workbench writeback helpers", () => {
       };
     };
 
-    await expect(loaded.workbenchFetchModelOptions({
+    const request = {
       url: "https://router.example/v1/models",
       headers: { authorization: "Bearer secret", "anthropic-version": "2023-06-01" },
       profile: { protocol: "anthropic_messages" }
-    })).resolves.toEqual([
+    };
+    await expect(loaded.workbenchFetchModelOptions(request)).resolves.toEqual([
       { id: "claude-compatible", label: "Claude Compatible" }
     ]);
     expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[0].headers["anthropic-version"]).toBe("2023-06-01");
     expect(fetchCalls[1].headers["anthropic-version"]).toBeUndefined();
+    expect((request as any).compatibilityFallbackFields).toEqual(["headers.anthropic-version"]);
+    expect((request as any).effectiveProfile.bodyExtra.omitAnthropicVersion).toBe(true);
   });
 
   it("validates remote profile credentials before sending provider requests", () => {
@@ -2865,6 +2868,80 @@ describe("workbench writeback helpers", () => {
       model: "model-x"
     });
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Models loaded: 2");
+  });
+
+  it("persists Anthropic header fallback after loading workbench model options", async () => {
+    const prefs: Record<string, any> = {};
+    const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument({
+      "zms-profile-name": "Anthropic Compatible",
+      "zms-profile-base-url": "https://router.example",
+      "zms-profile-api-key": "new-secret",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    const fetchCalls: Array<{ url: string; headers: Record<string, string> }> = [];
+    loaded.fetch = async (url: string, init: any) => {
+      fetchCalls.push({ url, headers: init.headers || {} });
+      if (init.headers?.["anthropic-version"]) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({ error: { message: "Unsupported header: anthropic-version" } })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: [{ id: "claude-compatible", display_name: "Claude Compatible" }] })
+      };
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelListLoaded: "Models loaded",
+      modelSelectPlaceholder: "Choose provider model",
+      modelSelectCustom: "Custom model...",
+      onlineModels: "Online",
+      recommendedModels: "Recommended"
+    }[key] || key);
+    const profile = {
+      id: "anthropic-compatible",
+      name: "Anthropic Compatible",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://old.example",
+      apiKey: "old-secret",
+      model: "",
+      capabilities: { text: true, imageBase64: true, pdfBase64: true, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: { authHeader: "authorization" },
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    await workbench.loadModelsForWorkbench();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0]).toMatchObject({
+      url: "https://router.example/v1/models",
+      headers: { authorization: "Bearer new-secret", "anthropic-version": "2023-06-01" }
+    });
+    expect(fetchCalls[1].headers).not.toHaveProperty("anthropic-version");
+    expect(dom.getElementById("zms-profile-model").value).toBe("claude-compatible");
+    const savedProfile = JSON.parse(prefs.profilesJson)[0];
+    expect(savedProfile).toMatchObject({
+      apiKey: "new-secret",
+      baseURL: "https://router.example",
+      model: "claude-compatible"
+    });
+    expect(savedProfile.bodyExtra).toMatchObject({
+      authHeader: "authorization",
+      omitAnthropicVersion: true
+    });
+    expect(prefs.apiKey).toBe("new-secret");
+    expect(prefs.model).toBe("claude-compatible");
+    expect(dom.elements.get("zms-chat-status").textContent).toBe("Models loaded: 1");
   });
 
   it("restores cached workbench model dropdowns when switching back to a provider", async () => {
