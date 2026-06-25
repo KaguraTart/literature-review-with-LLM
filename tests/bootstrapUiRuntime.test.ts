@@ -221,6 +221,43 @@ describe("bootstrap UI runtime wiring", () => {
     ]);
   });
 
+  it("registers a visible HTML toolbar button when Zotero uses an HTML toolbar", () => {
+    const doc = new FakeDocument();
+    const toolbar = doc.createElementNS(HTML_NS, "div");
+    toolbar.id = "zotero-items-toolbar";
+    doc.documentElement.appendChild(toolbar);
+    const { helpers } = loadBootstrapUi(doc);
+
+    helpers.registerToolbarButton({ document: doc, setTimeout: (callback: () => void) => callback() });
+
+    const button = doc.getElementById("zotero-markdown-summary-toolbar-button");
+    expect(button).toBeTruthy();
+    expect(button?.parentNode).toBe(toolbar);
+    expect(button?.localName).toBe("button");
+    expect(button?.getAttribute("class")).toContain("zms-toolbar-button");
+    expect(button?.getAttribute("aria-label")).toBe("openWorkbench");
+    expect(button?.getAttribute("title")).toBe("openWorkbench");
+    expect(button?.getAttribute("style")).toContain("display:inline-flex");
+    expect(button?.children[0]?.localName).toBe("img");
+    expect((button?.children[0] as any)?.src).toBe("chrome://zotero-markdown-summary/content/logo.svg");
+
+    const event = {
+      button: 0,
+      defaultPrevented: false,
+      propagationStopped: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+      stopPropagation() {
+        this.propagationStopped = true;
+      }
+    };
+    button?.eventListeners.get("click")?.[0]?.(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
+    expect(doc.getElementById("zotero-markdown-summary-workbench-panel")).toBeTruthy();
+  });
+
   it("keeps tools menu entries enabled by falling back to the current Zotero selection", () => {
     const { helpers } = loadBootstrapUi();
 
