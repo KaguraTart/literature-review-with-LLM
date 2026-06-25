@@ -17256,8 +17256,18 @@ function workbenchDirectModelListItemsFromResponse(data, options = {}) {
     "list",
     "model_list",
     "modelList",
+    "model_ids",
+    "modelIds",
+    "supported_models",
+    "supportedModels",
+    "supported_model_ids",
+    "supportedModelIds",
     "available_models",
     "availableModels",
+    "available_model_ids",
+    "availableModelIds",
+    "model_catalog",
+    "modelCatalog",
     "model_names",
     "modelNames",
     "deployments",
@@ -17268,7 +17278,8 @@ function workbenchDirectModelListItemsFromResponse(data, options = {}) {
     "engineList"
   ];
   for (const field of fields) {
-    if (Array.isArray(data?.[field])) return data[field];
+    const items = workbenchModelListItemsFromFieldValue(data?.[field], field);
+    if (items.length) return items;
   }
   if (Array.isArray(data?.models?.data)) return data.models.data;
   if (Array.isArray(data?.models?.items)) return data.models.items;
@@ -17285,6 +17296,19 @@ function workbenchDirectModelListItemsFromResponse(data, options = {}) {
   return [];
 }
 
+function workbenchModelListItemsFromFieldValue(value, field = "") {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && workbenchModelListDelimitedStringFields().has(field)) return workbenchModelListItemsFromDelimitedString(value);
+  return [];
+}
+
+function workbenchModelListItemsFromDelimitedString(value) {
+  return String(value || "")
+    .split(/[\n,;]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function workbenchModelListItemsFromObjectMap(value, options = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];
   if (workbenchModelOptionFromItem(value).id) return [];
@@ -17293,6 +17317,11 @@ function workbenchModelListItemsFromObjectMap(value, options = {}) {
   for (const [key, item] of Object.entries(value)) {
     const id = String(key || "").trim();
     if (!id || workbenchModelListMapMetadataKeys().has(id)) continue;
+    if (item === true) {
+      items.push({ id, label: id });
+      continue;
+    }
+    if (item === false) continue;
     if (typeof item === "string") {
       const label = item.trim();
       if (label) items.push({ id, label });
@@ -17303,6 +17332,25 @@ function workbenchModelListItemsFromObjectMap(value, options = {}) {
     items.push(option.id ? item : { ...item, id });
   }
   return items;
+}
+
+function workbenchModelListDelimitedStringFields() {
+  return new Set([
+    "model_ids",
+    "modelIds",
+    "supported_models",
+    "supportedModels",
+    "supported_model_ids",
+    "supportedModelIds",
+    "available_models",
+    "availableModels",
+    "available_model_ids",
+    "availableModelIds",
+    "model_catalog",
+    "modelCatalog",
+    "model_names",
+    "modelNames"
+  ]);
 }
 
 function workbenchModelListMapMetadataKeys() {
@@ -17320,8 +17368,18 @@ function workbenchModelListMapMetadataKeys() {
     "list",
     "model_list",
     "modelList",
+    "model_ids",
+    "modelIds",
+    "supported_models",
+    "supportedModels",
+    "supported_model_ids",
+    "supportedModelIds",
     "available_models",
     "availableModels",
+    "available_model_ids",
+    "availableModelIds",
+    "model_catalog",
+    "modelCatalog",
     "model_names",
     "modelNames",
     "deployments",
