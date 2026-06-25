@@ -375,7 +375,7 @@ describe("bootstrap UI runtime wiring", () => {
     expect(helpers.unregisterItemPaneSection()).toBe(true);
   });
 
-  it("does not duplicate the manual side button after the Zotero pane section is registered", () => {
+  it("keeps the manual side button visible after the Zotero pane section is registered", () => {
     const doc = new FakeDocument();
     const sidenav = doc.createElementNS(HTML_NS, "item-pane-sidenav");
     sidenav.id = "zotero-view-item-sidenav";
@@ -388,8 +388,9 @@ describe("bootstrap UI runtime wiring", () => {
     expect(helpers.registerItemPaneSection()).toBe(true);
     helpers.ensureWorkbenchButtons(win);
 
-    expect(doc.getElementById("zotero-markdown-summary-sidenav-button")).toBeNull();
-    expect(group.children).toHaveLength(0);
+    const button = doc.getElementById("zotero-markdown-summary-sidenav-button");
+    expect(button).toBeTruthy();
+    expect(button?.parentNode?.parentNode).toBe(group);
   });
 
   it("opens the embedded workbench when the HTML side-nav button is clicked", () => {
