@@ -980,11 +980,21 @@ function streamPayloads(record) {
     .split(/\r?\n/)
     .map((line) => sseFieldValue(line, "data"))
     .filter((value) => value !== undefined);
-  if (!dataLines.length) return [];
+  if (!dataLines.length) return rawJSONStreamPayloads(record);
   const joined = dataLines.join("\n").trim();
   if (!joined) return [];
   if (dataLines.length === 1 || joined === "[DONE]" || parseResponseBodySafe(joined)) return [joined];
   return dataLines.map((line) => String(line || "").trim()).filter(Boolean);
+}
+
+function rawJSONStreamPayloads(record) {
+  const trimmed = String(record || "").trim();
+  if (!trimmed) return [];
+  if (trimmed === "[DONE]" || parseResponseBodySafe(trimmed)) return [trimmed];
+  return trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line === "[DONE]" || !!parseResponseBodySafe(line));
 }
 
 function sseFieldValue(line, field) {
@@ -1047,6 +1057,8 @@ function mockProviderStreamResponse(path) {
       "data: \"delta\":\"responses\"",
       "data: }",
       "",
+      "{\"type\":\"response.output_text.delta\",\"delta\":\"\"}",
+      "",
       "event: response.completed",
       "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":1,\"total_tokens\":3}}}",
       "",
@@ -1065,6 +1077,8 @@ function mockProviderStreamResponse(path) {
       "data: \"delta\":{\"type\":\"text_delta\",\"text\":\"anthropic\"}",
       "data: }",
       "",
+      "{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"\"}}",
+      "",
       "event: message_delta",
       "data: {\"type\":\"message_delta\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}",
       "",
@@ -1074,7 +1088,9 @@ function mockProviderStreamResponse(path) {
   }
   return [
     "data: {\"choices\":[{\"delta\":{\"content\":\"OK \"}}]}",
-    "data: {\"candidates\":[{\"content\":{\"parts\":[{\"type\":\"thinking\",\"text\":\"hidden\"},{\"text\":\"chat\"}]}}]}",
+    "",
+    "{\"candidates\":[{\"content\":{\"parts\":[{\"type\":\"thinking\",\"text\":\"hidden\"},{\"text\":\"chat\"}]}}]}",
+    "",
     "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}",
     "data: [DONE]",
     ""

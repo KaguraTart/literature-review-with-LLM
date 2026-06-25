@@ -12341,11 +12341,21 @@ function streamPayloads(record) {
     .split(/\r?\n/)
     .map((line) => sseFieldValue(line, "data"))
     .filter((value) => value !== undefined);
-  if (!dataLines.length) return [];
+  if (!dataLines.length) return rawJSONStreamPayloads(record);
   const joined = dataLines.join("\n").trim();
   if (!joined) return [];
   if (dataLines.length === 1 || joined === "[DONE]" || safeParseJSON(joined)) return [joined];
   return dataLines.map((line) => String(line || "").trim()).filter(Boolean);
+}
+
+function rawJSONStreamPayloads(record) {
+  const trimmed = String(record || "").trim();
+  if (!trimmed) return [];
+  if (trimmed === "[DONE]" || safeParseJSON(trimmed)) return [trimmed];
+  return trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line === "[DONE]" || !!safeParseJSON(line));
 }
 
 function sseFieldValue(line, field) {

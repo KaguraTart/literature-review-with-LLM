@@ -4607,6 +4607,36 @@ describe("workbench writeback helpers", () => {
     expect(deltas).toEqual(["first", " second"]);
   });
 
+  it("parses raw JSON and JSONL records in workbench streams", async () => {
+    const response: any = {
+      body: streamFromText([
+        "{\"choices\":[{\"delta\":{\"content\":\"raw \"}}]}",
+        "{\"candidates\":[{\"content\":{\"parts\":[{\"type\":\"thinking\",\"text\":\"hidden\"},{\"text\":\"jsonl chat\"}]}}]}",
+        "{\"usage\":{\"prompt_tokens\":6,\"completion_tokens\":2,\"total_tokens\":8}}",
+        "[DONE]"
+      ].join("\n"))
+    };
+    const deltas: string[] = [];
+    const text = await helpers.readStream(response, "openai_chat", (delta) => deltas.push(delta));
+
+    expect(text).toBe("raw jsonl chat");
+    expect(deltas).toEqual(["raw jsonl chat"]);
+    expect(response.zmsUsage).toEqual({
+      inputTokens: 6,
+      outputTokens: 2,
+      totalTokens: 8
+    });
+
+    const anthropicResponse: any = {
+      body: streamFromText("{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"raw anthropic\"}}")
+    };
+    const anthropicDeltas: string[] = [];
+    const anthropicText = await helpers.readStream(anthropicResponse, "anthropic_messages", (delta) => anthropicDeltas.push(delta));
+
+    expect(anthropicText).toBe("raw anthropic");
+    expect(anthropicDeltas).toEqual(["raw anthropic"]);
+  });
+
   it("does not duplicate OpenAI Responses done snapshots in workbench streams", async () => {
     const response = {
       body: streamFromText([

@@ -1823,6 +1823,14 @@ describe("provider adapters", () => {
       "data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}",
       "data: {\"choices\":[{\"delta\":{\"content\":\" second\"}}]}"
     ].join("\n"))).toBe("first second");
+    expect(parseStreamChunk("openai_chat", "{\"choices\":[{\"delta\":{\"content\":\"raw chat\"}}]}")).toBe("raw chat");
+    expect(parseStreamChunk("openai_chat", [
+      "{\"choices\":[{\"delta\":{\"content\":\"raw \"}}]}",
+      "{\"candidates\":[{\"content\":{\"parts\":[{\"type\":\"thinking\",\"text\":\"hidden\"},{\"text\":\"jsonl chat\"}]}}]}",
+      "[DONE]"
+    ].join("\n"))).toBe("raw jsonl chat");
+    expect(parseStreamChunk("openai_responses", "{\"type\":\"response.output_text.delta\",\"delta\":\"raw responses\"}")).toBe("raw responses");
+    expect(parseStreamChunk("anthropic_messages", "{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"raw anthropic\"}}")).toBe("raw anthropic");
     expect(redact("Authorization: Bearer sk-test-secret")).toContain("[redacted]");
     const redacted = redact("Groq gsk_test-secret xAI xai-test-secret Perplexity pplx-test-secret MiniMax ms-test-secret Hugging Face hf_test-secret DeepInfra deepinfra-test-secret Cloudflare cloudflare-test-secret CF cf-test-secret Gemini AIzaSyA1234567890abcdefghijklmnop");
     expect(redacted).not.toContain("gsk_test-secret");
@@ -2070,6 +2078,15 @@ describe("provider adapters", () => {
       outputTokens: 2,
       totalTokens: 7,
       reasoningTokens: 1
+    });
+
+    expect(parseStreamUsage([
+      "{\"choices\":[],\"usage\":{\"prompt_tokens\":6,\"completion_tokens\":2,\"total_tokens\":8}}",
+      "{\"response\":{\"usage\":{\"input_tokens\":5,\"output_tokens\":1}}}"
+    ].join("\n"))).toEqual({
+      inputTokens: 6,
+      outputTokens: 2,
+      totalTokens: 8
     });
   });
 

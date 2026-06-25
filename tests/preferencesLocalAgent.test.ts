@@ -5131,6 +5131,13 @@ describe("preferences local-agent config helpers", () => {
       "",
       "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"anthropic\"}}"
     ].join("\n"))).toBe("start stream anthropic");
+    expect(helpers.extractProviderConnectionText("openai_chat", [
+      "{\"choices\":[{\"delta\":{\"content\":\"raw \"}}]}",
+      "{\"candidates\":[{\"content\":{\"parts\":[{\"type\":\"thinking\",\"text\":\"hidden\"},{\"text\":\"settings jsonl\"}]}}]}",
+      "[DONE]"
+    ].join("\n"))).toBe("raw settings jsonl");
+    expect(helpers.extractProviderConnectionText("openai_responses", "{\"type\":\"response.output_text.delta\",\"delta\":\"raw responses settings\"}")).toBe("raw responses settings");
+    expect(helpers.extractProviderConnectionText("anthropic_messages", "{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"raw anthropic settings\"}}")).toBe("raw anthropic settings");
     expect(() => helpers.extractProviderConnectionText("openai_chat", [
       "data: {\"type\":\"error\",\"error\":{\"code\":\"rate_limit\",\"message\":\"Too many requests for sk-test-secret\"}}"
     ].join("\n"))).toThrow("Too many requests for [redacted]");

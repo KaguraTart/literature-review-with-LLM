@@ -3655,6 +3655,7 @@ function providerTextFromStreamText(protocol, text) {
   if (!payloads.length) return "";
   return payloads
     .map((payload) => {
+      if (payload === "[DONE]") return "";
       const data = safeParseJSON(payload);
       if (!data) return payload.trim();
       const errorText = providerResponseErrorDetail(data);
@@ -3668,6 +3669,7 @@ function providerTextFromStreamText(protocol, text) {
 function streamPayloadsFromText(text) {
   const payloads = [];
   let buffer = [];
+  let sawDataLine = false;
   for (const rawLine of String(text || "").split(/\r?\n/)) {
     const line = rawLine.trimEnd();
     if (!line.trim()) {
@@ -3678,6 +3680,7 @@ function streamPayloadsFromText(text) {
       continue;
     }
     if (!line.startsWith("data:")) continue;
+    sawDataLine = true;
     const value = line.slice(5).trimStart();
     if (value === "[DONE]") {
       if (buffer.length) {
@@ -3689,7 +3692,19 @@ function streamPayloadsFromText(text) {
     buffer.push(value);
   }
   if (buffer.length) pushStreamPayload(payloads, buffer);
+  if (!sawDataLine) return rawJSONStreamPayloadsFromText(text);
   return payloads;
+}
+
+function rawJSONStreamPayloadsFromText(text) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return [];
+  if (trimmed === "[DONE]") return [];
+  if (safeParseJSON(trimmed)) return [trimmed];
+  return trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "[DONE]" && !!safeParseJSON(line));
 }
 
 function pushStreamPayload(payloads, buffer) {
