@@ -294,6 +294,8 @@ const requiredMarkers = [
   [bootstrapZoteroItem, "indexedTextLength", "indexed text counter in bootstrap Zotero item"],
   [bootstrapUi, "registerToolbarButton", "toolbar button registrar in bootstrap UI"],
   [bootstrapUi, "registerSidenavButton", "right side button registrar in bootstrap UI"],
+  [bootstrapUi, "zotero-markdown-summary-fallback-button", "fallback workbench entry in bootstrap UI"],
+  [bootstrapUi, "ensureFallbackWorkbenchButton", "fallback workbench button registrar in bootstrap UI"],
   [bootstrapUi, "openEmbeddedWorkbench", "embedded workbench opener in bootstrap UI"],
   [bootstrapUi, "openEmbeddedReader", "embedded reader opener in bootstrap UI"],
   [bootstrapUi, "ensureEmbeddedWorkbenchPanel", "embedded panel builder in bootstrap UI"],
