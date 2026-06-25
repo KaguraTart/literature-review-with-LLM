@@ -160,10 +160,6 @@ function registerSidenavButton(win) {
 function ensureSidenavButton(win) {
   const doc = win?.document;
   if (!doc) return false;
-  if (registeredItemPaneSectionID) {
-    removeExistingSidenavButton(doc.getElementById(SIDENAV_BUTTON_ID));
-    return false;
-  }
   const sidenav = findContextSidenav(doc);
   if (!sidenav) return false;
   const host = sidenavButtonInsertionHost(sidenav);
