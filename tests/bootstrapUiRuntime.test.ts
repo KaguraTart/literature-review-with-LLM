@@ -401,6 +401,54 @@ describe("bootstrap UI runtime wiring", () => {
     expect(doc.getElementById("zotero-markdown-summary-sidenav-button")?.parentNode?.parentNode).toBe(group);
   });
 
+  it("moves the toolbar button out of hidden stale Zotero toolbar hosts", () => {
+    const doc = new FakeDocument();
+    const staleToolbar = doc.createXULElement("toolbar");
+    staleToolbar.id = "zotero-items-toolbar";
+    staleToolbar.hidden = true;
+    const staleButton = doc.createXULElement("toolbarbutton");
+    staleButton.id = "zotero-markdown-summary-toolbar-button";
+    staleToolbar.appendChild(staleButton);
+    const currentToolbar = doc.createXULElement("toolbar");
+    currentToolbar.id = "zotero-toolbar-item-tree";
+    doc.documentElement.append(staleToolbar, currentToolbar);
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+
+    const button = doc.getElementById("zotero-markdown-summary-toolbar-button");
+    expect(button).toBeTruthy();
+    expect(button?.parentNode).toBe(currentToolbar);
+    expect(staleButton.parentNode).toBeNull();
+  });
+
+  it("moves the side button out of hidden stale Zotero side-nav hosts", () => {
+    const doc = new FakeDocument();
+    const staleSidenav = doc.createElementNS(HTML_NS, "item-pane-sidenav");
+    staleSidenav.id = "zotero-context-pane-sidenav";
+    staleSidenav.hidden = true;
+    const staleGroup = doc.createElementNS(HTML_NS, "div");
+    staleGroup.setAttribute("class", "inherit-flex");
+    const staleWrapper = doc.createElementNS(HTML_NS, "div");
+    staleWrapper.setAttribute("class", "pin-wrapper zms-sidenav-open-wrapper");
+    const staleButton = doc.createElementNS(HTML_NS, "button");
+    staleButton.id = "zotero-markdown-summary-sidenav-button";
+    staleWrapper.appendChild(staleButton);
+    staleGroup.appendChild(staleWrapper);
+    staleSidenav.appendChild(staleGroup);
+    const currentSidenav = doc.createElementNS(HTML_NS, "nav");
+    currentSidenav.id = "zotero-context-pane-side-nav";
+    doc.documentElement.append(staleSidenav, currentSidenav);
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+
+    const button = doc.getElementById("zotero-markdown-summary-sidenav-button");
+    expect(button).toBeTruthy();
+    expect(button?.parentNode).toBe(currentSidenav);
+    expect(staleWrapper.parentNode).toBeNull();
+  });
+
   it("opens an embedded workbench panel with item launch parameters", () => {
     const doc = new FakeDocument();
     const host = doc.createXULElement("vbox");
