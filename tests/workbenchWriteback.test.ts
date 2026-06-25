@@ -674,7 +674,7 @@ describe("workbench writeback helpers", () => {
     });
     expect(profiles.find((profile) => profile.id === "deepseek")).toMatchObject({
       apiKey: "deepseek-secret",
-      model: "deepseek-v4-flash"
+      model: "deepseek-chat"
     });
     expect(profiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([
       "openai-compatible",
@@ -2977,21 +2977,20 @@ describe("workbench writeback helpers", () => {
 
     await workbench.loadModelsForWorkbench();
 
-    expect(dom.getElementById("zms-workbench-model-options").children.map((option: any) => option.value)).toContain("deepseek-v4-flash");
-    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-v4-flash");
-    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-v4-flash");
-    expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-v4-flash");
+    expect(dom.getElementById("zms-workbench-model-options").children.map((option: any) => option.value)).toContain("deepseek-chat");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-chat");
+    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-chat");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
     expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual(["DeepSeek · Recommended"]);
-    expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-v4-flash").textContent).toContain("DeepSeek V4 Flash");
-    expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-v4-flash").textContent).toContain("fast");
+    expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-chat").textContent).toContain("DeepSeek Chat");
     expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-chat");
-    expect(prefs.model).toBe("deepseek-v4-flash");
+    expect(prefs.model).toBe("deepseek-chat");
     expect(JSON.parse(prefs.profilesJson)[0]).toMatchObject({
       id: "deepseek",
-      model: "deepseek-v4-flash"
+      model: "deepseek-chat"
     });
-    expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 4");
+    expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 2");
   });
 
   it("groups online workbench model lists by returned provider vendor", async () => {
@@ -3554,7 +3553,7 @@ describe("workbench writeback helpers", () => {
     expect(providerSelect.children.map((option: any) => option.value)).toContain("litellm_proxy_chat");
     expect(providerSelect.children.map((option: any) => option.textContent)).toContain("DeepSeek 聊天接口");
     expect(providerSelect.children.map((option: any) => option.textContent)).toContain("LiteLLM Proxy 聊天接口");
-    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-v4-flash");
+    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
     expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-reasoner");
   });
@@ -3575,7 +3574,7 @@ describe("workbench writeback helpers", () => {
     const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
     workbench.t = (key: string) => ({
       modelPickerHelp: "先选择接口厂商，再从下拉框选择推荐模型",
-      loadModels: "刷新在线模型",
+      loadModels: "加载模型列表",
       newConversation: "新对话",
       compactContext: "压缩上下文",
       copySession: "复制会话",
@@ -3595,8 +3594,8 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-paper-meta").textContent).toBe("正在读取论文");
     expect(dom.getElementById("zms-composer-profile").textContent).toBe("模型");
     expect(dom.getElementById("zms-workbench-model-help").textContent).toContain("先选择接口厂商");
-    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("刷新在线模型");
-    expect(dom.getElementById("zms-load-models-workbench").title).toBe("刷新在线模型");
+    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("加载模型列表");
+    expect(dom.getElementById("zms-load-models-workbench").title).toBe("加载模型列表");
     expect(dom.getElementById("zms-new-conversation").textContent).toBe("新对话");
     expect(dom.getElementById("zms-new-conversation").title).toBe("新对话");
     expect(dom.getElementById("zms-compact-context").textContent).toBe("压缩上下文");
@@ -3621,7 +3620,7 @@ describe("workbench writeback helpers", () => {
     const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
     workbench.t = (key: string) => ({
       modelPickerHelp: "Choose a provider first, then choose a model.",
-      loadModels: "Refresh online models",
+      loadModels: "Load model list",
       newConversation: "New conversation",
       compactContext: "Compact context",
       copySession: "Copy session",
@@ -3644,7 +3643,7 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-paper-meta").textContent).toBe("Reading paper");
     expect(dom.getElementById("zms-composer-profile").textContent).toBe("Model");
     expect(dom.getElementById("zms-visual-review-status").textContent).toContain("No visual extraction JSON");
-    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("Refresh online models");
+    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("Load model list");
   });
 
   it("does not overwrite active workbench statuses during localization", () => {
@@ -3962,9 +3961,9 @@ describe("workbench writeback helpers", () => {
 
     workbench.renderWorkbenchModelRecommendations({ selectDefault: true });
 
-    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-v4-flash");
+    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
     expect(dom.getElementById("zms-profile-model-select").children[0].textContent).toBe("Choose DeepSeek model");
-    expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-v4-flash");
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-chat");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
   });
 
