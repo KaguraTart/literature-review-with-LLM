@@ -7488,6 +7488,8 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("synthesisVersion: evidence-synthesis-v1");
     expect(report).toContain("## 跨文献综合");
     expect(report).toContain("### 证据覆盖图");
+    expect(report).toContain("### 综合主张台账");
+    expect(report).toContain("| 候选主张 | 支持论文与证据 | 证据强度 | 反证/缺失 | 写作优先级 |");
     expect(report).toContain("### 两两对比");
     expect(report).toContain("### 缺口台账");
     expect(report).toContain("## 横向分析清单");
@@ -7559,6 +7561,12 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("## Cross-paper Synthesis");
     expect(report).toContain("### Evidence Coverage Map");
     expect(report).toContain("attention, transformer");
+    expect(report).toContain("### Synthesis Claim Ledger");
+    expect(report).toContain("| Claim seed | Supporting papers and evidence | Evidence strength | Counter-evidence / gaps | Writing priority |");
+    expect(report).toContain("Method / Model: Draft as a shared signal around: attention, transformer");
+    expect(report).toContain("Moderate: at least two papers have evidence and can seed a draft claim.");
+    expect(report).toContain("Comparison paper 2: Metadata Only Paper");
+    expect(report).toContain("Medium: fill missing paper evidence before finalizing.");
     expect(report).toContain("[chunk:focal-method source=fulltext locator=page:2 hash=focalmethod]");
     expect(report).toContain("[paper2:cmp-method source=fulltext locator=page:3 hash=cmpmethod]");
     expect(report).toContain("### Pairwise Contrasts");
