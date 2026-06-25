@@ -2287,7 +2287,7 @@ function providerAuthGuide(profile, provider, zh = false) {
       : (zh ? "API Key 会作为 Authorization: Bearer 发送" : "API key is sent as Authorization: Bearer")) + versionText;
   }
   if (provider === "azure_openai") {
-    return zh ? "默认使用 Bearer；如 Azure 网关要求 api-key，请在自定义 Headers JSON 填写 api-key。" : "Uses Bearer by default; if your Azure gateway requires api-key, set it in Custom headers JSON.";
+    return zh ? "API Key 会作为 api-key header 发送；如网关需要特殊鉴权，可用自定义 Headers JSON 覆盖。" : "API key is sent as the api-key header; use Custom headers JSON only when your gateway requires a custom auth route.";
   }
   return zh ? "API Key 会作为 Authorization: Bearer 发送。" : "API key is sent as Authorization: Bearer.";
 }
