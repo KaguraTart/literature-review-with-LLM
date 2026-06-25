@@ -380,6 +380,7 @@ describe("bootstrap UI runtime wiring", () => {
     const doc = new FakeDocument();
     const sidenav = doc.createElementNS(HTML_NS, "item-pane-sidenav");
     sidenav.id = "zotero-view-item-sidenav";
+    sidenav.rect = { width: 34, height: 260 };
     const group = doc.createElementNS(HTML_NS, "div");
     group.setAttribute("class", "inherit-flex");
     sidenav.appendChild(group);
@@ -429,6 +430,7 @@ describe("bootstrap UI runtime wiring", () => {
     const doc = new FakeDocument();
     const sidenav = doc.createElementNS(HTML_NS, "item-pane-sidenav");
     sidenav.id = "zotero-view-item-sidenav";
+    sidenav.rect = { width: 34, height: 260 };
     const group = doc.createElementNS(HTML_NS, "div");
     group.setAttribute("class", "inherit-flex highlight-notes-inactive");
     sidenav.appendChild(group);
@@ -568,6 +570,7 @@ describe("bootstrap UI runtime wiring", () => {
 
     const sidenav = doc.createElementNS(HTML_NS, "item-pane-sidenav");
     sidenav.id = "zotero-view-item-sidenav";
+    sidenav.rect = { width: 34, height: 260 };
     const group = doc.createElementNS(HTML_NS, "div");
     group.setAttribute("class", "inherit-flex");
     sidenav.appendChild(group);
@@ -577,6 +580,47 @@ describe("bootstrap UI runtime wiring", () => {
 
     expect(doc.getElementById("zotero-markdown-summary-sidenav-button")).toBeTruthy();
     expect(doc.getElementById("zotero-markdown-summary-fallback-button")).toBeNull();
+  });
+
+  it("keeps the fallback button when the side-nav entry exists only in a zero-size host", () => {
+    const doc = new FakeDocument();
+    const sidenav = doc.createElementNS(HTML_NS, "item-pane-sidenav");
+    sidenav.id = "zotero-view-item-sidenav";
+    sidenav.rect = { width: 0, height: 0 };
+    const group = doc.createElementNS(HTML_NS, "div");
+    group.setAttribute("class", "inherit-flex");
+    sidenav.appendChild(group);
+    doc.documentElement.appendChild(sidenav);
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+
+    expect(doc.getElementById("zotero-markdown-summary-sidenav-button")).toBeTruthy();
+    expect(doc.getElementById("zotero-markdown-summary-fallback-button")).toBeTruthy();
+  });
+
+  it("reports existing visible toolbar and side-nav entries as ensured", () => {
+    const doc = new FakeDocument();
+    const toolbar = doc.createXULElement("toolbar");
+    toolbar.id = "zotero-items-toolbar";
+    toolbar.rect = { width: 420, height: 34 };
+    const sidenav = doc.createElementNS(HTML_NS, "item-pane-sidenav");
+    sidenav.id = "zotero-view-item-sidenav";
+    sidenav.rect = { width: 34, height: 260 };
+    const group = doc.createElementNS(HTML_NS, "div");
+    group.setAttribute("class", "inherit-flex");
+    sidenav.appendChild(group);
+    doc.documentElement.append(toolbar, sidenav);
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+    const secondPass = helpers.ensureWorkbenchButtons(win);
+
+    expect(secondPass.toolbar).toBe(true);
+    expect(secondPass.sidenav).toBe(true);
+    expect(secondPass.fallback).toBe(false);
+    expect(doc.getElementById("zotero-markdown-summary-toolbar-button")?.parentNode).toBe(toolbar);
+    expect(doc.getElementById("zotero-markdown-summary-sidenav-button")?.parentNode?.parentNode).toBe(group);
   });
 
   it("removes the fallback button during UI unregister", () => {
