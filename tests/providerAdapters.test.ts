@@ -8,6 +8,7 @@ import {
   modelsEndpointFor,
   omitProviderRequestBodyFields,
   parseStreamChunk,
+  parseStreamChunkResult,
   parseStreamUsage,
   providerCompatibilityFallbackFields,
   providerRequestHeadersWithFallback,
@@ -1869,6 +1870,21 @@ describe("provider adapters", () => {
     ].join("\n"))).toBe("raw jsonl chat");
     expect(parseStreamChunk("openai_responses", "{\"type\":\"response.output_text.delta\",\"delta\":\"raw responses\"}")).toBe("raw responses");
     expect(parseStreamChunk("anthropic_messages", "{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"raw anthropic\"}}")).toBe("raw anthropic");
+    expect(parseStreamChunkResult("openai_responses", "data: {\"type\":\"response.output_text.delta\",\"delta\":\"delta text\"}")).toEqual({
+      text: "delta text",
+      snapshot: false
+    });
+    expect(parseStreamChunkResult("openai_responses", "data: {\"type\":\"response.completed\",\"response\":{\"output_text\":\"snapshot text\"}}")).toEqual({
+      text: "snapshot text",
+      snapshot: true
+    });
+    expect(parseStreamChunkResult("openai_responses", [
+      "data: {\"type\":\"response.output_text.delta\",\"delta\":\"delta text\"}",
+      "data: {\"type\":\"response.completed\",\"response\":{\"output_text\":\"delta text\"}}"
+    ].join("\n"))).toEqual({
+      text: "delta text",
+      snapshot: true
+    });
     expect(redact("Authorization: Bearer sk-test-secret")).toContain("[redacted]");
     const redacted = redact("Groq gsk_test-secret xAI xai-test-secret Perplexity pplx-test-secret MiniMax ms-test-secret Hugging Face hf_test-secret DeepInfra deepinfra-test-secret Cloudflare cloudflare-test-secret CF cf-test-secret Gemini AIzaSyA1234567890abcdefghijklmnop");
     expect(redacted).not.toContain("gsk_test-secret");
