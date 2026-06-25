@@ -10,6 +10,12 @@
   overflow-x: hidden;
 }
 
+.zms-form *,
+.zms-form *::before,
+.zms-form *::after {
+  box-sizing: border-box;
+}
+
 hbox.zms-row {
   display: flex;
   flex-wrap: wrap;
@@ -63,6 +69,11 @@ hbox.zms-row {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+  min-width: 0;
+}
+
+.zms-outputDir-control > * {
+  min-width: 0;
 }
 
 #zms-outputDir.zms-outputDir-field {
@@ -73,7 +84,7 @@ hbox.zms-row {
 }
 
 .zms-outputDir-button {
-  flex: 0 1 auto;
+  flex: 0 1 8em;
   min-width: 5.5em;
   max-width: 100%;
   margin-left: 0;

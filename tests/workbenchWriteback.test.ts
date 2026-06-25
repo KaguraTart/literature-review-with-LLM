@@ -1270,6 +1270,18 @@ describe("workbench writeback helpers", () => {
       capabilities: { streaming: true, imageBase64: true },
       bodyExtra: {}
     }, messages, "zh-CN", "system", requestInput, false)).toThrow("text-only");
+
+    expect(() => helpers.bodyForProfile({
+      id: "deepseek",
+      protocol: "openai_chat",
+      model: "deepseek-chat",
+      capabilities: { streaming: true, imageBase64: true },
+      bodyExtra: {
+        modelFeatureHints: ["image"],
+        modelFeatureHintsModel: "deepseek-chat",
+        modelFeatureHintsSource: "model-picker"
+      }
+    }, messages, "zh-CN", "system", requestInput, false)).not.toThrow();
   });
 
   it("blocks raw PDF requests for explicitly text-only models", () => {
@@ -1280,6 +1292,30 @@ describe("workbench writeback helpers", () => {
       filename: "paper.pdf",
       images: []
     };
+
+    expect(() => helpers.bodyForProfile({
+      id: "deepseek",
+      protocol: "openai_responses",
+      model: "deepseek-chat",
+      capabilities: { streaming: true, imageBase64: false, pdfBase64: true },
+      bodyExtra: {
+        modelFeatureHints: ["image"],
+        modelFeatureHintsModel: "deepseek-chat",
+        modelFeatureHintsSource: "model-picker"
+      }
+    }, [{ role: "user", content: "读 PDF" }], "zh-CN", "system", requestInput, false)).toThrow("text-only");
+
+    expect(() => helpers.bodyForProfile({
+      id: "deepseek",
+      protocol: "openai_responses",
+      model: "deepseek-chat",
+      capabilities: { streaming: true, imageBase64: false, pdfBase64: true },
+      bodyExtra: {
+        modelFeatureHints: ["pdf"],
+        modelFeatureHintsModel: "deepseek-chat",
+        modelFeatureHintsSource: "model-picker"
+      }
+    }, [{ role: "user", content: "读 PDF" }], "zh-CN", "system", requestInput, false)).not.toThrow();
 
     expect(() => helpers.bodyForProfile({
       id: "deepseek",
@@ -2970,6 +3006,11 @@ describe("workbench writeback helpers", () => {
     expect(filteredValues).not.toContain("openai/gpt-4o");
     expect(modelSelect.value).toBe("google/gemini-2.5-pro");
     expect(dom.getElementById("zms-profile-model").value).toBe("google/gemini-2.5-pro");
+    expect(workbench.state.profile.bodyExtra).toMatchObject({
+      modelFeatureHints: ["image", "pdf"],
+      modelFeatureHintsModel: "google/gemini-2.5-pro",
+      modelFeatureHintsSource: "model-picker"
+    });
   });
 
   it("loads multi-vendor LiteLLM Proxy recommendations in the workbench without credentials", async () => {
@@ -3298,6 +3339,10 @@ describe("workbench writeback helpers", () => {
     workbench.t = (key: string) => ({
       modelPickerHelp: "先选择接口厂商，再从下拉框选择推荐模型",
       loadModels: "加载模型列表",
+      newConversation: "新对话",
+      compactContext: "压缩上下文",
+      copySession: "复制会话",
+      visualReviewNoReport: "还没有图表解析 JSON，请先导出图表解析报告",
       placeholder: "向当前论文提问",
       placeholderHint: "Enter 换行",
       candidateSearchPlaceholder: "输入检索式"
@@ -3308,6 +3353,11 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-workbench-model-help").textContent).toContain("先选择接口厂商");
     expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("加载模型列表");
     expect(dom.getElementById("zms-load-models-workbench").title).toBe("加载模型列表");
+    expect(dom.getElementById("zms-new-conversation").textContent).toBe("新对话");
+    expect(dom.getElementById("zms-new-conversation").title).toBe("新对话");
+    expect(dom.getElementById("zms-compact-context").textContent).toBe("压缩上下文");
+    expect(dom.getElementById("zms-copy-session").textContent).toBe("复制会话");
+    expect(dom.getElementById("zms-visual-review-status").textContent).toContain("还没有图表解析");
   });
 
   it("applies a workbench provider preset without reusing the previous provider API key", () => {

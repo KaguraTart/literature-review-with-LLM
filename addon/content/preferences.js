@@ -182,9 +182,11 @@ var ZoteroMarkdownSummaryPrefs = {
   },
 
   async chooseOutputDir() {
+    if (this._choosingOutputDir) return false;
+    this._choosingOutputDir = true;
     const element = document.getElementById("zms-outputDir");
-    if (!element) return false;
     try {
+      if (!element) return false;
       const selected = await chooseOutputDirectory(element.value, this.t("chooseOutputDirTitle"));
       if (!selected) return false;
       element.value = selected;
@@ -192,6 +194,8 @@ var ZoteroMarkdownSummaryPrefs = {
     } catch (err) {
       this.setStatus(`${this.t("outputDirChooseFailed")}: ${safeError(err)}`);
       return false;
+    } finally {
+      this._choosingOutputDir = false;
     }
   },
 
@@ -396,13 +400,14 @@ var ZoteroMarkdownSummaryPrefs = {
     if (customHeaders === null) return null;
     const localAgent = this.localAgentFromEditor();
     if (localAgent === null) return null;
-    const bodyExtra = jsonObjectFromTextarea("zms-profileBodyExtra", this);
+    let bodyExtra = jsonObjectFromTextarea("zms-profileBodyExtra", this);
     if (bodyExtra === null) return null;
     if (localAgent) {
       bodyExtra.localAgent = localAgent;
     } else if (bodyExtra.localAgent !== undefined) {
       delete bodyExtra.localAgent;
     }
+    bodyExtra = bodyExtraWithModelPickerFeatureHints(bodyExtra, "zms-model-select", "zms-model");
     return {
       id,
       name,
@@ -744,15 +749,30 @@ var ZoteroMarkdownSummaryPrefs = {
 
   bindOutputDirEvents() {
     const element = document.getElementById("zms-outputDir");
-    if (!element || element.dataset?.zmsOutputDirBound === "1") return;
-    if (element.dataset) element.dataset.zmsLastSaved = String(element.value || "");
-    const saveIfChanged = () => {
-      if (element.dataset && element.dataset.zmsLastSaved === String(element.value || "")) return;
-      this.saveOutputDir();
+    if (element && element.dataset?.zmsOutputDirBound !== "1") {
+      if (element.dataset) element.dataset.zmsLastSaved = String(element.value || "");
+      const saveIfChanged = () => {
+        if (element.dataset && element.dataset.zmsLastSaved === String(element.value || "")) return;
+        this.saveOutputDir();
+      };
+      element.addEventListener("change", saveIfChanged);
+      element.addEventListener("blur", saveIfChanged);
+      if (element.dataset) element.dataset.zmsOutputDirBound = "1";
+    }
+    this.bindOutputDirButton("zms-choose-outputDir-button", "zmsOutputDirChooseBound", () => this.chooseOutputDir());
+    this.bindOutputDirButton("zms-save-outputDir-button", "zmsOutputDirSaveBound", () => this.saveOutputDir());
+  },
+
+  bindOutputDirButton(id, flag, handler) {
+    const button = document.getElementById(id);
+    if (!button || button.dataset?.[flag] === "1" || typeof button.addEventListener !== "function") return;
+    const run = (event) => {
+      event?.preventDefault?.();
+      handler();
     };
-    element.addEventListener("change", saveIfChanged);
-    element.addEventListener("blur", saveIfChanged);
-    if (element.dataset) element.dataset.zmsOutputDirBound = "1";
+    button.addEventListener("click", run);
+    button.addEventListener("command", run);
+    if (button.dataset) button.dataset[flag] = "1";
   },
 
   bindModelPickerEvents() {
@@ -1245,7 +1265,7 @@ function defaultOutputDir() {
 
 function zoteroDataDirectory() {
   try {
-    return Zotero?.DataDirectory?.dir || "";
+    return runtimeZotero()?.DataDirectory?.dir || "";
   } catch (_err) {
     return "";
   }
@@ -1253,38 +1273,45 @@ function zoteroDataDirectory() {
 
 function zoteroProfileDirectory() {
   try {
-    const nsIFile = typeof Ci !== "undefined" ? Ci.nsIFile : undefined;
-    return Services?.dirsvc?.get?.("ProfD", nsIFile)?.path || "";
+    return runtimeServices()?.dirsvc?.get?.("ProfD", runtimeCi()?.nsIFile)?.path || "";
   } catch (_err) {
     return "";
   }
 }
 
 async function chooseOutputDirectory(currentPath, title) {
-  const cc = typeof Cc !== "undefined" ? Cc : undefined;
-  const ci = typeof Ci !== "undefined" ? Ci : undefined;
+  const cc = runtimeCc();
+  const ci = runtimeCi();
   const nsIFilePicker = ci?.nsIFilePicker;
   const pickerFactory = cc?.["@mozilla.org/filepicker;1"];
   const pickerTitle = title || "Choose output folder";
   const displayPath = pathFromPickerString(currentPath);
   const displayDirectory = fileForDirectoryPicker(currentPath);
+  const pickerErrors = [];
   const zoteroFilePicker = zoteroFilePickerClass();
   if (zoteroFilePicker) {
     try {
       return await chooseOutputDirectoryWithZoteroFilePicker(zoteroFilePicker, pickerTitle, displayPath);
-    } catch (_err) {
+    } catch (err) {
+      pickerErrors.push(`Zotero FilePicker: ${safeError(err)}`);
       // Fall back to the raw nsIFilePicker path below.
     }
   }
   if (!pickerFactory || !nsIFilePicker) {
-    throw new Error("Folder picker is not available in this Zotero runtime");
+    throw new Error(folderPickerFailureMessage(["Folder picker is not available in this Zotero runtime", ...pickerErrors]));
   }
   try {
     const picker = pickerFactory.createInstance(nsIFilePicker);
     return await chooseOutputDirectoryWithPicker(picker, pickerTitle, nsIFilePicker, displayDirectory, true);
-  } catch (_err) {
+  } catch (err) {
+    pickerErrors.push(`native FilePicker/window: ${safeError(err)}`);
+  }
+  try {
     const picker = pickerFactory.createInstance(nsIFilePicker);
     return chooseOutputDirectoryWithPicker(picker, pickerTitle, nsIFilePicker, displayDirectory, false);
+  } catch (err) {
+    pickerErrors.push(`native FilePicker/no-window: ${safeError(err)}`);
+    throw new Error(folderPickerFailureMessage(pickerErrors));
   }
 }
 
@@ -1312,12 +1339,11 @@ async function chooseOutputDirectoryWithZoteroFilePicker(FilePicker, title, disp
 
 function zoteroFilePickerClass() {
   try {
-    if (typeof ChromeUtils !== "undefined") {
-      return ChromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs")?.FilePicker || null;
-    }
+    const chromeUtils = runtimeChromeUtils();
+    if (chromeUtils) return chromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs")?.FilePicker || null;
   } catch (_err) {}
   try {
-    return Zotero?.FilePicker || null;
+    return runtimeZotero()?.FilePicker || null;
   } catch (_err) {
     return null;
   }
@@ -1373,9 +1399,10 @@ function directoryPickerParentCandidates(useWindowParent = true) {
     try { addWindow(window.parent); } catch (_err) {}
   }
   for (const win of zoteroDirectoryPickerWindowCandidates()) addWindow(win);
-  try { addWindow(Services?.wm?.getMostRecentWindow?.("navigator:browser")); } catch (_err) {}
-  try { addWindow(Services?.wm?.getMostRecentWindow?.("zotero:pref")); } catch (_err) {}
-  try { addWindow(Services?.wm?.getMostRecentWindow?.(null)); } catch (_err) {}
+  const services = runtimeServices();
+  try { addWindow(services?.wm?.getMostRecentWindow?.("navigator:browser")); } catch (_err) {}
+  try { addWindow(services?.wm?.getMostRecentWindow?.("zotero:pref")); } catch (_err) {}
+  try { addWindow(services?.wm?.getMostRecentWindow?.(null)); } catch (_err) {}
   add(null);
   return candidates;
 }
@@ -1392,9 +1419,10 @@ function directoryPickerWindowCandidates() {
     try { add(window.parent); } catch (_err) {}
   }
   for (const win of zoteroDirectoryPickerWindowCandidates()) add(win);
-  try { add(Services?.wm?.getMostRecentWindow?.("navigator:browser")); } catch (_err) {}
-  try { add(Services?.wm?.getMostRecentWindow?.("zotero:pref")); } catch (_err) {}
-  try { add(Services?.wm?.getMostRecentWindow?.(null)); } catch (_err) {}
+  const services = runtimeServices();
+  try { add(services?.wm?.getMostRecentWindow?.("navigator:browser")); } catch (_err) {}
+  try { add(services?.wm?.getMostRecentWindow?.("zotero:pref")); } catch (_err) {}
+  try { add(services?.wm?.getMostRecentWindow?.(null)); } catch (_err) {}
   add(null);
   return candidates;
 }
@@ -1405,7 +1433,7 @@ function zoteroDirectoryPickerWindowCandidates() {
     if (!value || candidates.includes(value)) return;
     candidates.push(value);
   };
-  const zotero = typeof Zotero !== "undefined" ? Zotero : null;
+  const zotero = runtimeZotero();
   try { add(zotero?.getMainWindow?.()); } catch (_err) {}
   try { add(zotero?.getActiveZoteroPane?.()?.document?.defaultView); } catch (_err) {}
   try { add(zotero?.getActiveZoteroPane?.()?.window); } catch (_err) {}
@@ -1416,8 +1444,8 @@ function fileForDirectoryPicker(path) {
   const raw = pathFromPickerString(path);
   if (!raw) return null;
   try {
-    const cc = typeof Cc !== "undefined" ? Cc : undefined;
-    const ci = typeof Ci !== "undefined" ? Ci : undefined;
+    const cc = runtimeCc();
+    const ci = runtimeCi();
     const fileFactory = cc?.["@mozilla.org/file/local;1"];
     if (!fileFactory) return null;
     const file = fileFactory.createInstance(ci?.nsIFile);
@@ -1587,7 +1615,7 @@ function directoryPathFromPickerValue(value, seen, depth = 0) {
 function filePathFromQueryInterface(value) {
   try {
     if (typeof value.QueryInterface !== "function") return "";
-    const nsIFile = typeof Ci !== "undefined" ? Ci.nsIFile : undefined;
+    const nsIFile = runtimeCi()?.nsIFile;
     const file = nsIFile ? value.QueryInterface(nsIFile) : null;
     const filePath = pathFromPickerString(firstPathLikeValue(
       safeObjectValue(file, "path"),
@@ -1600,7 +1628,7 @@ function filePathFromQueryInterface(value) {
   }
   try {
     if (typeof value.QueryInterface !== "function") return "";
-    const nsIFileURL = typeof Ci !== "undefined" ? Ci.nsIFileURL : undefined;
+    const nsIFileURL = runtimeCi()?.nsIFileURL;
     const fileURL = nsIFileURL ? value.QueryInterface(nsIFileURL) : null;
     return pathFromPickerString(firstPathLikeValue(
       safeObjectValue(safeObjectValue(fileURL, "file"), "path"),
@@ -1613,6 +1641,58 @@ function filePathFromQueryInterface(value) {
   } catch (_err) {
     return "";
   }
+}
+
+function folderPickerFailureMessage(errors) {
+  const details = (errors || []).map((entry) => String(entry || "").trim()).filter(Boolean);
+  return details.length
+    ? `Folder picker could not open (${details.join("; ")})`
+    : "Folder picker could not open";
+}
+
+function runtimeCc() {
+  if (typeof Cc !== "undefined" && Cc) return Cc;
+  const components = runtimeComponents();
+  return runtimeWindowValue("Cc") || components?.classes;
+}
+
+function runtimeCi() {
+  if (typeof Ci !== "undefined" && Ci) return Ci;
+  const components = runtimeComponents();
+  return runtimeWindowValue("Ci") || components?.interfaces;
+}
+
+function runtimeServices() {
+  if (typeof Services !== "undefined" && Services) return Services;
+  return runtimeWindowValue("Services");
+}
+
+function runtimeZotero() {
+  if (typeof Zotero !== "undefined" && Zotero) return Zotero;
+  return runtimeWindowValue("Zotero");
+}
+
+function runtimeChromeUtils() {
+  if (typeof ChromeUtils !== "undefined" && ChromeUtils) return ChromeUtils;
+  return runtimeWindowValue("ChromeUtils");
+}
+
+function runtimeComponents() {
+  if (typeof Components !== "undefined" && Components) return Components;
+  return runtimeWindowValue("Components");
+}
+
+function runtimeWindowValue(key) {
+  try {
+    if (typeof window !== "undefined" && window?.[key]) return window[key];
+  } catch (_err) {}
+  try {
+    if (typeof window !== "undefined" && window?.parent?.[key]) return window.parent[key];
+  } catch (_err) {}
+  try {
+    if (typeof globalThis !== "undefined" && globalThis?.[key]) return globalThis[key];
+  } catch (_err) {}
+  return undefined;
 }
 
 function safeObjectValue(value, key) {
@@ -1957,10 +2037,10 @@ function providerConfigDoctor(profile, language = "en-US") {
   if (profile?.endpointMode === "full_url" && (!fullURL || isPlaceholderEndpoint(fullURL))) missing.push(zh ? "完整接口地址" : "Full URL");
   if (!authReady) missing.push(zh ? "API Key 或自定义认证 header" : "API key or custom auth header");
   if (!isLocalAgent && (!model || model === "...")) missing.push(zh ? "模型名称" : "model name");
-  if (modelLikelyTextOnlyForProfile(profile) && canUseImageInput(profile)) {
+  if (modelLikelyTextOnlyForProfile(profile, "image") && canUseImageInput(profile)) {
     conflicts.push(zh ? `模型 ${model} 疑似仅支持文本，但已开启图片输入。` : `Model ${model} appears to be text-only, but image input is enabled.`);
   }
-  if (modelLikelyTextOnlyForProfile(profile) && canUsePdfBase64Input(profile)) {
+  if (modelLikelyTextOnlyForProfile(profile, "pdf") && canUsePdfBase64Input(profile)) {
     conflicts.push(zh ? `模型 ${model} 疑似仅支持文本，但已开启 PDF 原文输入。` : `Model ${model} appears to be text-only, but raw PDF input is enabled.`);
   }
   if (profile?.protocol === "openai_chat" && profile?.capabilities?.pdfBase64 === true) {
@@ -2539,31 +2619,50 @@ function canUseImageInput(profile) {
   return profile?.capabilities?.imageBase64 === true;
 }
 
-function modelLikelyTextOnlyForProfile(profile) {
+function modelLikelyTextOnlyForProfile(profile, inputFeature = "") {
+  const hints = modelFeatureHintsForProfile(profile);
+  const feature = String(inputFeature || "").trim().toLowerCase();
+  if (feature && hints.includes(feature)) return false;
+  if (!feature && (hints.includes("image") || hints.includes("pdf"))) return false;
   if (typeof zmsModelLikelyTextOnlyForProviderModel !== "function") return false;
   const provider = providerFromProfile(profile);
   return zmsModelLikelyTextOnlyForProviderModel(provider, profile?.model || "", profile?.model || "");
 }
 
+function modelFeatureHintsForProfile(profile) {
+  const bodyExtra = profile?.bodyExtra || {};
+  const hints = normalizeModelFeatureList(bodyExtra.modelFeatureHints || bodyExtra.modelFeatures || bodyExtra.featureHints);
+  if (!hints.length) return [];
+  const hintModel = String(bodyExtra.modelFeatureHintsModel || bodyExtra.modelFeaturesModel || "").trim();
+  const model = String(profile?.model || "").trim();
+  if (hintModel && model && hintModel !== model) return [];
+  return hints;
+}
+
 function modelCapabilityStatusLines(profile, translate = (key) => key) {
   const t = typeof translate === "function" ? translate : (key) => key;
-  if (!modelLikelyTextOnlyForProfile(profile)) return [];
-  const lines = [t("profileModelTextOnly")];
-  if (canUseImageInput(profile)) lines.push(t("profileImageModelMismatch"));
-  if (canUsePdfBase64Input(profile)) lines.push(t("profilePdfModelMismatch"));
+  const textOnly = modelLikelyTextOnlyForProfile(profile);
+  const imageMismatch = canUseImageInput(profile) && modelLikelyTextOnlyForProfile(profile, "image");
+  const pdfMismatch = canUsePdfBase64Input(profile) && modelLikelyTextOnlyForProfile(profile, "pdf");
+  if (!textOnly && !imageMismatch && !pdfMismatch) return [];
+  const lines = [];
+  if (textOnly) lines.push(t("profileModelTextOnly"));
+  if (imageMismatch) lines.push(t("profileImageModelMismatch"));
+  if (pdfMismatch) lines.push(t("profilePdfModelMismatch"));
   return lines;
 }
 
 function profileDraftFromEditor() {
   const errors = [];
   const customHeaders = jsonObjectFromValue(document.getElementById("zms-profileCustomHeaders")?.value, errors) || {};
-  const bodyExtra = jsonObjectFromValue(document.getElementById("zms-profileBodyExtra")?.value, errors) || {};
+  let bodyExtra = jsonObjectFromValue(document.getElementById("zms-profileBodyExtra")?.value, errors) || {};
   const localAgent = localAgentDraftFromEditor(errors);
   if (localAgent) {
     bodyExtra.localAgent = localAgent;
   } else if (bodyExtra.localAgent !== undefined) {
     delete bodyExtra.localAgent;
   }
+  bodyExtra = bodyExtraWithModelPickerFeatureHints(bodyExtra, "zms-model-select", "zms-model");
   const profile = {
     id: normalizeProfileId(document.getElementById("zms-activeProfileId")?.value || document.getElementById("zms-profileName")?.value) || "custom",
     name: String(document.getElementById("zms-profileName")?.value || "").trim(),
@@ -3849,6 +3948,52 @@ function modelValueFromPicker(selectId, inputId) {
   const selected = String(select?.value || "").trim();
   if (selected && selected !== "__custom") return selected;
   return String(input?.value || "").trim();
+}
+
+function bodyExtraWithModelPickerFeatureHints(bodyExtra, selectId, inputId) {
+  const next = { ...(bodyExtra || {}) };
+  const picked = modelPickerFeatureHints(selectId, inputId);
+  if (picked.model && picked.features.length) {
+    next.modelFeatureHints = picked.features;
+    next.modelFeatureHintsModel = picked.model;
+    next.modelFeatureHintsSource = "model-picker";
+    return next;
+  }
+  if (next.modelFeatureHintsSource === "model-picker") {
+    delete next.modelFeatureHints;
+    delete next.modelFeatureHintsModel;
+    delete next.modelFeatureHintsSource;
+  }
+  return next;
+}
+
+function modelPickerFeatureHints(selectId, inputId) {
+  const model = modelValueFromPicker(selectId, inputId);
+  const option = modelPickerSelectedOption(selectId, model);
+  const features = normalizeModelFeatureList(
+    optionAttribute(option, "data-features")
+    || option?.dataset?.features
+    || ""
+  );
+  return { model, features };
+}
+
+function modelPickerSelectedOption(selectId, model) {
+  const select = document.getElementById(selectId);
+  const value = String(model || "").trim();
+  if (!select || !value) return null;
+  return flattenedOptionChildren(select).find((option) => String(option?.value || "").trim() === value) || null;
+}
+
+function flattenedOptionChildren(element) {
+  const result = [];
+  for (const child of Array.from(element?.children || [])) {
+    if (String(child?.localName || "").toLowerCase() === "optgroup" || Array.isArray(child?.children)) {
+      result.push(...flattenedOptionChildren(child));
+    }
+    if (String(child?.value || "").trim()) result.push(child);
+  }
+  return result;
 }
 
 function setCustomModelInputVisible(model, visible) {

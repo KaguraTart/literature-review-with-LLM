@@ -38,7 +38,7 @@
   inset: 54px 14px 14px auto;
   display: none;
   box-sizing: border-box;
-  width: min(390px, calc(100% - 28px));
+  width: min(460px, calc(100% - 28px));
   min-width: 0;
   padding: 14px;
   overflow: auto;
@@ -54,6 +54,7 @@
 
 .zms-settings-header {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
   justify-content: space-between;
@@ -107,6 +108,15 @@
 }
 
 .zms-panel-primary input,
+.zms-panel-primary select,
+.zms-panel-primary textarea {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.zms-panel-primary input,
 .zms-panel-primary select {
   margin-bottom: 10px;
 }
@@ -130,7 +140,8 @@
 }
 
 .zms-output-dir-row button {
-  flex: 0 1 auto;
+  flex: 0 1 9rem;
+  min-width: 0;
   white-space: nowrap;
 }
 
@@ -171,7 +182,8 @@
 }
 
 .zms-profile-model-row button {
-  flex: 0 1 auto;
+  flex: 0 1 10rem;
+  min-width: 0;
   margin-bottom: 0;
   white-space: nowrap;
 }
@@ -207,11 +219,15 @@
 }
 
 .zms-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin: 2px 0 10px;
 }
 
 .zms-profile-actions button {
-  flex: 1;
+  flex: 1 1 8rem;
+  min-width: 0;
 }
 
 .zms-settings-details {

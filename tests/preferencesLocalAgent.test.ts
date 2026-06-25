@@ -3218,6 +3218,35 @@ describe("preferences local-agent config helpers", () => {
     expect(selectOptionValues(elements.get("zms-model-select"))).toContain("claude-opus-4-8");
   });
 
+  it("binds settings output directory buttons through click and command events", () => {
+    const { controller, elements } = loadPreferencesController();
+    const calls: string[] = [];
+    controller.chooseOutputDir = () => {
+      calls.push("choose");
+      return true;
+    };
+    controller.saveOutputDir = () => {
+      calls.push("save");
+      return true;
+    };
+
+    controller.bindOutputDirEvents();
+
+    const chooseButton = elements.get("zms-choose-outputDir-button");
+    const saveButton = elements.get("zms-save-outputDir-button");
+    expect(chooseButton.eventListeners.get("click")).toHaveLength(1);
+    expect(chooseButton.eventListeners.get("command")).toHaveLength(1);
+    expect(saveButton.eventListeners.get("click")).toHaveLength(1);
+    expect(saveButton.eventListeners.get("command")).toHaveLength(1);
+
+    chooseButton.eventListeners.get("click")[0]({ preventDefault() {} });
+    chooseButton.eventListeners.get("command")[0]({ preventDefault() {} });
+    saveButton.eventListeners.get("click")[0]({ preventDefault() {} });
+    saveButton.eventListeners.get("command")[0]({ preventDefault() {} });
+
+    expect(calls).toEqual(["choose", "choose", "save", "save"]);
+  });
+
   it("saves the selected settings model dropdown value even before the hidden input syncs", () => {
     const { controller, elements, prefValues } = loadPreferencesController();
     elements.get("zms-provider").value = "deepseek";
@@ -4043,6 +4072,48 @@ describe("preferences local-agent config helpers", () => {
     expect(filteredValues).not.toContain("openai/gpt-4o");
     expect(elements.get("zms-model-select").value).toBe("google/gemini-2.5-pro");
     expect(elements.get("zms-model").value).toBe("google/gemini-2.5-pro");
+  });
+
+  it("uses selected settings model feature hints for capability warnings and persistence", async () => {
+    const { controller, elements } = loadPreferencesController({
+      fetchResponse: {
+        data: [
+          {
+            id: "deepseek-chat",
+            display_name: "DeepSeek Chat Vision Route",
+            provider: "deepseek",
+            input_modalities: ["text", "image"]
+          }
+        ]
+      }
+    });
+    elements.get("zms-provider").value = "deepseek";
+    elements.get("zms-activeProfileId").value = "deepseek";
+    elements.get("zms-profileName").value = "DeepSeek";
+    elements.get("zms-profileProtocol").value = "openai_responses";
+    elements.get("zms-baseURL").value = "https://api.deepseek.com";
+    elements.get("zms-apiKey").value = "deepseek-secret";
+    elements.get("zms-model").value = "";
+    elements.get("zms-cap-imageBase64").checked = true;
+    elements.get("zms-cap-pdfBase64").checked = true;
+
+    await controller.loadModels();
+    const status = controller.refreshProfileStatus();
+
+    expect(elements.get("zms-model").value).toBe("deepseek-chat");
+    expect(status).not.toContain("Selected model appears text-only");
+    expect(status).not.toContain("Image input is enabled, but the selected model appears not to support images");
+    expect(status).toContain("Raw PDF input is enabled, but the selected model appears not to support PDF input");
+    expect(controller.checkProviderConfig()).toBe(false);
+    expect(elements.get("zms-profileStatus").textContent).toContain("raw PDF input is enabled");
+
+    expect(controller.upsertProfileFromEditor()).toMatchObject({ model: "deepseek-chat" });
+    const profiles = JSON.parse(elements.get("zms-profilesJson").value);
+    expect(profiles[0].bodyExtra).toMatchObject({
+      modelFeatureHints: ["image"],
+      modelFeatureHintsModel: "deepseek-chat",
+      modelFeatureHintsSource: "model-picker"
+    });
   });
 
   it("keeps recommended settings models when the online model list fails", async () => {
