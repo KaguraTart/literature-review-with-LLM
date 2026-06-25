@@ -55,6 +55,8 @@ function loadWorkbenchHelpers(options: { fetchResponses?: any[] } = {}) {
   return Object.assign(context, { fetchCalls }) as {
     fetchCalls: Array<{ url: string; init: any }>;
     renderSessionAsMarkdown: (messages: any[], t: (k: string) => string, compactionSummary?: string) => string;
+    messagesFromSessionMarkdown: (markdown: string) => any[];
+    sessionMessagesFromText: (path: string, text: string) => any[];
     requestMessagesWithHistory: (messages: any[], latestUserText: string, requestPrompt: string, options?: any) => any[];
     sessionIdFromPath: (path: string) => string;
     sessionLabelFromPath: (path: string) => string;
@@ -99,6 +101,57 @@ describe("workbench session helpers", () => {
     );
     expect(md).toContain("It uses a transformer.");
     expect(md).toContain("_Usage: input 10, output 5, total 15_");
+  });
+
+  it("restores legacy and localized Markdown chat role headings", () => {
+    const messages = helpers.messagesFromSessionMarkdown([
+      "---",
+      "source: old session",
+      "---",
+      "",
+      "# Chat session",
+      "",
+      "### User",
+      "",
+      "old English question",
+      "",
+      "### Assistant:",
+      "",
+      "old English answer",
+      "_Usage: input 1, output 2, total 3_",
+      "",
+      "### **用户**",
+      "",
+      "中文问题",
+      "",
+      "**助手**",
+      "",
+      "中文回答"
+    ].join("\n"));
+
+    expect(messages.map((message) => [message.role, message.content])).toEqual([
+      ["user", "old English question"],
+      ["assistant", "old English answer"],
+      ["user", "中文问题"],
+      ["assistant", "中文回答"]
+    ]);
+  });
+
+  it("restores Markdown session text through the generic session loader", () => {
+    const messages = helpers.sessionMessagesFromText("/tmp/chat-1.md", [
+      "### You",
+      "",
+      "question",
+      "",
+      "### Model",
+      "",
+      "answer"
+    ].join("\n"));
+
+    expect(messages.map((message) => [message.role, message.content])).toEqual([
+      ["user", "question"],
+      ["assistant", "answer"]
+    ]);
   });
 
   it("omits folded think blocks from exported session Markdown", () => {
@@ -518,6 +571,7 @@ describe("workbench session helpers", () => {
 
   it("extracts a sessionId from a session file path", () => {
     expect(helpers.sessionIdFromPath("/a/b/chat-1700000000000.jsonl")).toBe("chat-1700000000000");
+    expect(helpers.sessionIdFromPath("/a/b/Markdown Chat - ITEM chat-1700000000000.md")).toBe("chat-1700000000000");
     expect(helpers.sessionIdFromPath("/a/b/notes.md")).toBe("");
   });
 

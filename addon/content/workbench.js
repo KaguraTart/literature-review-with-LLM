@@ -13162,7 +13162,11 @@ function sessionIdFromPath(path) {
   const lower = name.toLowerCase();
   if (lower.endsWith(".jsonl")) return normalizeSessionId(name.slice(0, -6));
   if (lower.endsWith(".md")) {
-    const id = normalizeSessionId(name.slice(0, -3));
+    const raw = name.slice(0, -3);
+    const id = normalizeSessionId(raw);
+    if (id.startsWith("chat-")) return id;
+    const embedded = raw.match(/(?:^|[^A-Za-z0-9])chat[-_\s]*(\d{3,})(?=$|[^A-Za-z0-9])/i);
+    if (embedded) return normalizeSessionId(`chat-${embedded[1]}`);
     return id.startsWith("chat-") ? id : "";
   }
   return "";
@@ -13355,20 +13359,54 @@ function sessionMessagesFromText(path, text) {
 function messagesFromSessionMarkdown(markdown) {
   const body = String(markdown || "").replace(/^---[\s\S]*?---\s*/m, "");
   const messages = [];
-  const pattern = /^###\s+\*\*(You|Assistant)\*\*\s*$/gmi;
-  const matches = Array.from(body.matchAll(pattern));
-  for (let index = 0; index < matches.length; index += 1) {
-    const match = matches[index];
-    const next = matches[index + 1];
-    const raw = body.slice(match.index + match[0].length, next ? next.index : body.length);
-    const content = raw
-      .replace(/^\s+|\s+$/g, "")
-      .replace(/\n_Usage:[^\n]+_\s*$/i, "")
-      .trim();
-    if (!content) continue;
-    messages.push(makeMessage(match[1].toLowerCase() === "you" ? "user" : "assistant", content));
+  let currentRole = "";
+  let currentLines = [];
+  const flush = () => {
+    const content = sessionMarkdownMessageContent(currentLines.join("\n"));
+    if (currentRole && content) messages.push(makeMessage(currentRole, content));
+    currentLines = [];
+  };
+  for (const line of body.split(/\r?\n/)) {
+    const role = sessionMarkdownRoleFromLine(line);
+    if (role) {
+      flush();
+      currentRole = role;
+      continue;
+    }
+    if (currentRole) currentLines.push(line);
   }
+  flush();
   return messages;
+}
+
+function sessionMarkdownMessageContent(value) {
+  return String(value || "")
+    .replace(/^\s+|\s+$/g, "")
+    .replace(/\n_Usage:[^\n]+_\s*$/i, "")
+    .trim();
+}
+
+function sessionMarkdownRoleFromLine(line) {
+  const heading = String(line || "").trim().match(/^#{2,6}\s+(.+?)\s*$/);
+  const boldOnly = heading ? null : String(line || "").trim().match(/^\*\*(.+?)\*\*\s*[:：]?\s*$/);
+  const raw = heading?.[1] || boldOnly?.[1] || "";
+  if (!raw) return "";
+  return sessionMarkdownRoleLabel(raw);
+}
+
+function sessionMarkdownRoleLabel(value) {
+  const label = String(value || "")
+    .replace(/[*_`]+/g, "")
+    .replace(/[：:]\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const normalized = label.replace(/\s+/g, "");
+  const userLabels = new Set(["you", "user", "human", "me", "question", "q", "用户", "我", "提问", "问题"]);
+  const assistantLabels = new Set(["assistant", "ai", "model", "llm", "answer", "a", "助手", "模型", "回答"]);
+  if (userLabels.has(normalized)) return "user";
+  if (assistantLabels.has(normalized)) return "assistant";
+  return "";
 }
 
 async function latestSessionForItem(item, outputDir) {
