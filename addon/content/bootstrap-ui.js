@@ -1,5 +1,6 @@
 var registeredItemPaneSectionID = "";
 const FALLBACK_WORKBENCH_BUTTON_ID = "zotero-markdown-summary-fallback-button";
+const WORKBENCH_BUTTON_STYLE_ID = "zotero-markdown-summary-button-style";
 const WORKBENCH_BUTTON_RECOVERY_DELAYS_MS = [250, 1000, 2500, 5000];
 
 function registerToolbarButtons() {
@@ -30,6 +31,7 @@ function registerToolbarButton(win) {
 function ensureToolbarButton(win) {
   const doc = win?.document;
   if (!doc) return false;
+  ensureWorkbenchButtonStyle(doc);
   const toolbar = findToolbar(doc);
   if (!toolbar) return false;
   const existing = doc.getElementById(TOOLBAR_BUTTON_ID);
@@ -43,6 +45,7 @@ function ensureToolbarButton(win) {
 function createToolbarButton(doc, toolbar) {
   const label = t("openWorkbench");
   const imageURL = `chrome://${CHROME_NAME}/content/logo.svg`;
+  const iconBackground = workbenchButtonIconBackgroundStyle(imageURL, "20px");
   if (usesHTMLChildren(toolbar)) {
     const button = doc.createElementNS(HTML_NS, "button");
     button.id = TOOLBAR_BUTTON_ID;
@@ -60,7 +63,8 @@ function createToolbarButton(doc, toolbar) {
       "padding:4px",
       "border:0",
       "border-radius:6px",
-      "background:transparent",
+      "background-color:transparent",
+      iconBackground,
       "display:inline-flex",
       "align-items:center",
       "justify-content:center",
@@ -68,11 +72,6 @@ function createToolbarButton(doc, toolbar) {
       "cursor:default"
     ].join("; "));
 
-    const image = doc.createElementNS(HTML_NS, "img");
-    image.src = imageURL;
-    image.alt = "";
-    image.setAttribute("style", "width:20px;height:20px;display:block;pointer-events:none;");
-    button.appendChild(image);
     button.addEventListener("click", (event) => {
       if (event?.button && event.button !== 0) return;
       event?.preventDefault?.();
@@ -91,13 +90,22 @@ function createToolbarButton(doc, toolbar) {
   button.setAttribute("aria-label", label);
   button.setAttribute("title", label);
   button.setAttribute("tooltiptext", label);
-  button.setAttribute("image", imageURL);
   button.setAttribute("style", [
-    `list-style-image: url('${imageURL}')`,
+    "width: 32px",
+    "height: 28px",
     "-moz-context-properties: fill",
     "fill: #ef6f98",
     "min-width: 32px",
-    "min-height: 28px"
+    "max-width: 32px",
+    "min-height: 28px",
+    "max-height: 28px",
+    "padding: 4px",
+    "overflow: hidden",
+    "appearance: none",
+    "-moz-appearance: none",
+    "background-color: transparent",
+    iconBackground,
+    "list-style-image: none"
   ].join("; "));
   button.addEventListener("command", () => openWorkbenchForContext());
   button.addEventListener("click", (event) => {
@@ -124,6 +132,7 @@ function unregisterToolbarButtons(documentOrWindow) {
     doc?.getElementById(TOOLBAR_BUTTON_ID)?.remove();
     doc?.getElementById(SIDENAV_BUTTON_ID)?.remove();
     doc?.getElementById(FALLBACK_WORKBENCH_BUTTON_ID)?.remove();
+    doc?.getElementById(WORKBENCH_BUTTON_STYLE_ID)?.remove();
     closeEmbeddedWorkbench(doc);
     return;
   }
@@ -135,6 +144,7 @@ function unregisterToolbarButtons(documentOrWindow) {
     doc?.getElementById(TOOLBAR_BUTTON_ID)?.remove();
     doc?.getElementById(SIDENAV_BUTTON_ID)?.remove();
     doc?.getElementById(FALLBACK_WORKBENCH_BUTTON_ID)?.remove();
+    doc?.getElementById(WORKBENCH_BUTTON_STYLE_ID)?.remove();
     closeEmbeddedWorkbench(doc);
     return;
   }
@@ -147,6 +157,7 @@ function unregisterToolbarButtons(documentOrWindow) {
     doc?.getElementById(TOOLBAR_BUTTON_ID)?.remove();
     doc?.getElementById(SIDENAV_BUTTON_ID)?.remove();
     doc?.getElementById(FALLBACK_WORKBENCH_BUTTON_ID)?.remove();
+    doc?.getElementById(WORKBENCH_BUTTON_STYLE_ID)?.remove();
     closeEmbeddedWorkbench(doc);
   }
 }
@@ -165,6 +176,7 @@ function registerSidenavButton(win) {
 function ensureSidenavButton(win) {
   const doc = win?.document;
   if (!doc) return false;
+  ensureWorkbenchButtonStyle(doc);
   const sidenav = findContextSidenav(doc);
   if (!sidenav) return false;
   const host = sidenavButtonInsertionHost(sidenav);
@@ -305,6 +317,7 @@ function sidenavButtonInsertionHost(sidenav) {
 function createSidenavButton(doc, host) {
   const label = t("openWorkbench");
   const imageURL = `chrome://${CHROME_NAME}/content/logo.svg`;
+  const iconBackground = workbenchButtonIconBackgroundStyle(imageURL, "20px");
   if (elementHasClass(host, "inherit-flex")) {
     return createItemPaneSidenavButton(doc, label, imageURL);
   }
@@ -315,12 +328,7 @@ function createSidenavButton(doc, host) {
     button.type = "button";
     button.title = label;
     button.setAttribute("aria-label", label);
-    button.setAttribute("style", "width:32px;height:32px;margin:2px 0;padding:5px;border:0;background:transparent;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:default;");
-    const image = doc.createElementNS(HTML_NS, "img");
-    image.src = imageURL;
-    image.alt = "";
-    image.setAttribute("style", "width:20px;height:20px;display:block;");
-    button.appendChild(image);
+    button.setAttribute("style", `width:32px;height:32px;margin:2px 0;padding:5px;border:0;background-color:transparent;${iconBackground};border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:default;`);
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -332,13 +340,79 @@ function createSidenavButton(doc, host) {
   button.id = SIDENAV_BUTTON_ID;
   button.setAttribute("class", "toolbarbutton-1");
   button.setAttribute("tooltiptext", label);
-  button.setAttribute("image", imageURL);
-  button.setAttribute("style", `list-style-image: url('${imageURL}'); -moz-context-properties: fill; fill: #ef6f98; min-width: 32px; min-height: 32px; margin: 2px 0;`);
+  button.setAttribute("style", `width:32px;height:32px;max-width:32px;max-height:32px;overflow:hidden;list-style-image:none;-moz-context-properties:fill;fill:#ef6f98;min-width:32px;min-height:32px;margin:2px 0;background-color:transparent;${iconBackground};`);
   button.addEventListener("command", () => openWorkbenchForContext());
   return button;
 }
 
+function workbenchButtonIconBackgroundStyle(imageURL, size = "20px") {
+  return [
+    `background-image:url('${imageURL}')`,
+    `background-size:${size} ${size}`,
+    "background-repeat:no-repeat",
+    "background-position:center"
+  ].join(";");
+}
+
+function ensureWorkbenchButtonStyle(doc) {
+  if (!doc?.documentElement || doc.getElementById?.(WORKBENCH_BUTTON_STYLE_ID)) return;
+  const style = doc.createElementNS(HTML_NS, "style");
+  style.id = WORKBENCH_BUTTON_STYLE_ID;
+  style.textContent = `
+    #${TOOLBAR_BUTTON_ID},
+    #${SIDENAV_BUTTON_ID},
+    #${FALLBACK_WORKBENCH_BUTTON_ID} {
+      background-repeat: no-repeat !important;
+      background-position: center !important;
+      overflow: hidden !important;
+    }
+    #${TOOLBAR_BUTTON_ID} {
+      width: 32px !important;
+      max-width: 32px !important;
+      min-width: 32px !important;
+      height: 28px !important;
+      max-height: 28px !important;
+      min-height: 28px !important;
+      background-size: 20px 20px !important;
+    }
+    #${SIDENAV_BUTTON_ID} {
+      width: 32px !important;
+      max-width: 32px !important;
+      min-width: 32px !important;
+      height: 32px !important;
+      max-height: 32px !important;
+      min-height: 32px !important;
+      background-size: 20px 20px !important;
+    }
+    #${FALLBACK_WORKBENCH_BUTTON_ID} {
+      width: 36px !important;
+      max-width: 36px !important;
+      min-width: 36px !important;
+      height: 36px !important;
+      max-height: 36px !important;
+      min-height: 36px !important;
+      background-size: 22px 22px !important;
+    }
+    #${TOOLBAR_BUTTON_ID} image,
+    #${TOOLBAR_BUTTON_ID} img,
+    #${TOOLBAR_BUTTON_ID} .toolbarbutton-icon,
+    #${SIDENAV_BUTTON_ID} image,
+    #${SIDENAV_BUTTON_ID} img,
+    #${SIDENAV_BUTTON_ID} .toolbarbutton-icon,
+    #${FALLBACK_WORKBENCH_BUTTON_ID} image,
+    #${FALLBACK_WORKBENCH_BUTTON_ID} img {
+      width: 20px !important;
+      height: 20px !important;
+      max-width: 20px !important;
+      max-height: 20px !important;
+      object-fit: contain !important;
+    }
+  `;
+  doc.documentElement.appendChild(style);
+}
+
 function createItemPaneSidenavButton(doc, label, imageURL) {
+  const iconBackground = workbenchButtonIconBackgroundStyle(imageURL, "20px");
   const wrapper = doc.createElementNS(HTML_NS, "div");
   wrapper.setAttribute("class", "pin-wrapper zms-sidenav-open-wrapper");
   wrapper.setAttribute("style", "display:flex;align-items:center;justify-content:center;");
@@ -360,18 +434,14 @@ function createItemPaneSidenavButton(doc, label, imageURL) {
     "padding:4px",
     "border:0",
     "border-radius:6px",
-    "background:transparent",
+    "background-color:transparent",
+    iconBackground,
     "display:flex",
     "align-items:center",
     "justify-content:center",
     "cursor:default"
   ].join("; "));
 
-  const image = doc.createElementNS(HTML_NS, "img");
-  image.src = imageURL;
-  image.alt = "";
-  image.setAttribute("style", "width:20px;height:20px;display:block;pointer-events:none;");
-  button.appendChild(image);
   button.addEventListener("click", (event) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
@@ -925,22 +995,65 @@ function ensureWorkbenchButtons(win) {
 function ensureFallbackWorkbenchButton(win) {
   const doc = win?.document;
   if (!doc?.documentElement) return false;
+  ensureWorkbenchButtonStyle(doc);
   const toolbarButton = doc.getElementById(TOOLBAR_BUTTON_ID);
   const sidenavButton = doc.getElementById(SIDENAV_BUTTON_ID);
-  if (workbenchButtonLooksUsable(toolbarButton) || workbenchButtonLooksUsable(sidenavButton)) {
+  if (workbenchButtonLooksUsable(sidenavButton) || workbenchToolbarButtonLooksReliable(toolbarButton)) {
     doc.getElementById(FALLBACK_WORKBENCH_BUTTON_ID)?.remove?.();
     return false;
   }
   const existing = doc.getElementById(FALLBACK_WORKBENCH_BUTTON_ID);
-  if (workbenchButtonLooksUsable(existing) && existing.parentNode === doc.documentElement) return false;
+  const host = fallbackWorkbenchButtonHost(doc);
+  if (workbenchButtonLooksUsable(existing) && existing.parentNode === host) return false;
   existing?.remove?.();
   const button = createFallbackWorkbenchButton(doc);
-  doc.documentElement.appendChild(button);
+  host.appendChild(button);
   return true;
 }
 
 function workbenchButtonLooksUsable(button) {
   return !!button && !elementLooksHidden(button) && elementAttachedToDocument(button);
+}
+
+function workbenchToolbarButtonLooksReliable(button) {
+  if (!workbenchButtonLooksUsable(button)) return false;
+  const host = closestWorkbenchToolbarHost(button);
+  if (!host || elementLooksHidden(host)) return false;
+  const hostRect = safeElementRect(host);
+  if (!hostRect) return true;
+  const width = Number(hostRect.width || 0);
+  const height = Number(hostRect.height || 0);
+  return width > 0 && height > 0;
+}
+
+function closestWorkbenchToolbarHost(button) {
+  for (let node = button?.parentNode; node; node = node.parentNode) {
+    const id = String(node.id || node.getAttribute?.("id") || "");
+    if ([
+      "zotero-items-toolbar",
+      "zotero-toolbar-item-tree",
+      "zotero-toolbar",
+      "zotero-collections-toolbar",
+      "zotero-item-pane-toolbar"
+    ].includes(id)) return node;
+    if (String(node.localName || "").toLowerCase() === "toolbar") return node;
+  }
+  return null;
+}
+
+function fallbackWorkbenchButtonHost(doc) {
+  const preferredIDs = [
+    "zotero-pane-stack",
+    "zotero-pane",
+    "zotero-items-pane-content",
+    "zotero-items-pane",
+    "zotero-context-pane"
+  ];
+  for (const id of preferredIDs) {
+    const element = doc.getElementById?.(id);
+    if (element && !elementLooksHidden(element)) return element;
+  }
+  return doc.body || doc.documentElement;
 }
 
 function elementAttachedToDocument(element) {
@@ -952,6 +1065,7 @@ function elementAttachedToDocument(element) {
 function createFallbackWorkbenchButton(doc) {
   const label = t("openWorkbench");
   const imageURL = `chrome://${CHROME_NAME}/content/logo.svg`;
+  const iconBackground = workbenchButtonIconBackgroundStyle(imageURL, "22px");
   const button = doc.createElementNS(HTML_NS, "button");
   button.id = FALLBACK_WORKBENCH_BUTTON_ID;
   button.type = "button";
@@ -970,7 +1084,8 @@ function createFallbackWorkbenchButton(doc) {
     "padding:6px",
     "border:1px solid rgba(148,163,184,0.55)",
     "border-radius:10px",
-    "background:rgba(255,255,255,0.94)",
+    "background-color:rgba(255,255,255,0.94)",
+    iconBackground,
     "box-shadow:0 8px 24px rgba(15,23,42,0.22)",
     "display:flex",
     "align-items:center",
@@ -978,11 +1093,6 @@ function createFallbackWorkbenchButton(doc) {
     "cursor:default"
   ].join("; "));
 
-  const image = doc.createElementNS(HTML_NS, "img");
-  image.src = imageURL;
-  image.alt = "";
-  image.setAttribute("style", "width:22px;height:22px;display:block;pointer-events:none;");
-  button.appendChild(image);
   button.addEventListener("click", (event) => {
     if (event?.button && event.button !== 0) return;
     event?.preventDefault?.();
