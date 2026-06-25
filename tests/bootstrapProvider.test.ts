@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 function loadBootstrapProviderHelpers(fetchResponse: any = { output_text: "ok" }, prefOverrides: Record<string, any> = {}) {
   const fetchCalls: Array<{ url: string; body: any; headers: Record<string, string> }> = [];
+  const delayCalls: number[] = [];
   const linkedAttachments: any[] = [];
   const zoteroItems = new Map<number, any>();
   const prefs: Record<string, any> = {
@@ -56,7 +57,10 @@ function loadBootstrapProviderHelpers(fetchResponse: any = { output_text: "ok" }
         }
       },
       Promise: {
-        delay: () => Promise.resolve()
+        delay: (ms: number) => {
+          delayCalls.push(ms);
+          return Promise.resolve();
+        }
       }
     },
     Services: {
@@ -94,6 +98,7 @@ function loadBootstrapProviderHelpers(fetchResponse: any = { output_text: "ok" }
       return {
         ok: status >= 200 && status < 300,
         status,
+        headers: responsePayload?.__headers || {},
         body: streamText ? streamFromText(streamText) : streamLines ? streamFromLines(streamLines) : undefined,
         json: async () => responsePayload,
         text: async () => JSON.stringify(responsePayload)
@@ -114,6 +119,7 @@ function loadBootstrapProviderHelpers(fetchResponse: any = { output_text: "ok" }
   runInContext(uiCode, context, { filename: "bootstrap-ui.js" });
   return {
     fetchCalls,
+    delayCalls,
     prefs,
     linkedAttachments,
     zoteroItems,
@@ -3434,6 +3440,76 @@ describe("bootstrap provider helpers", () => {
 
     expect(result.markdown).toBe("summary after retry");
     expect(fetchCalls).toHaveLength(2);
+  });
+
+  it("honors retry headers for bootstrap OpenAI-compatible provider retries", async () => {
+    const { delayCalls, fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 429,
+          __headers: {
+            get: (name: string) => name.toLowerCase() === "retry-after-ms" ? "1250" : null
+          },
+          error: { code: "rate_limit_exceeded", message: "Too many requests for sk-test-secret" }
+        },
+        {
+          output_text: "summary after retry header"
+        }
+      ]
+    });
+
+    const result = await helpers.callOpenAICompatible(openAIResponsesSummaryRequest(), "hash", true);
+
+    expect(result.markdown).toBe("summary after retry header");
+    expect(fetchCalls).toHaveLength(2);
+    expect(delayCalls).toEqual([1250]);
+  });
+
+  it("honors retry headers for bootstrap Anthropic-compatible provider retries", async () => {
+    const { delayCalls, fetchCalls, helpers } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 503,
+          __headers: { "Retry-After": "0.5" },
+          error: { type: "overloaded_error", message: "Provider overloaded for sk-test-secret" }
+        },
+        {
+          content: [{ type: "text", text: "anthropic retry header summary" }]
+        }
+      ]
+    });
+
+    const result = await helpers.callAnthropic({
+      provider: "anthropic-compatible",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "routed-secret",
+      model: "m",
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+
+    expect(result.markdown).toBe("anthropic retry header summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(delayCalls).toEqual([500]);
+  });
+
+  it("parses and bounds bootstrap provider retry header variants", () => {
+    const { helpers } = loadBootstrapProviderHelpers();
+
+    expect((helpers as any).providerRetryAfterMs({ "Retry-After": "2" })).toBe(2000);
+    expect((helpers as any).providerRetryAfterMs(new Map([["retry-after-ms", "750"]]))).toBe(750);
+    expect((helpers as any).providerRetryAfterMs({ "Retry-After-Ms": "999999" })).toBe(10000);
+    expect((helpers as any).providerRetryAfterMs({ get: (name: string) => name.toLowerCase() === "retry-after" ? "0.25" : null })).toBe(250);
   });
 
   it("keeps custom OpenAI-compatible authorization headers in the bootstrap provider path", async () => {
