@@ -32,6 +32,7 @@ const ZMS_DEFAULT_OUTPUT_DIR_NAME = "Literature Review with LLM";
 
 var ZoteroMarkdownSummaryPrefs = {
   prefix: "extensions.zoteroMarkdownSummary",
+  modelOptionsByProvider: Object.create(null),
   fields: [
     "provider",
     "baseURL",
@@ -558,6 +559,7 @@ var ZoteroMarkdownSummaryPrefs = {
         tagModelOptions(modelOptions, "online"),
         tagModelOptions(recommended, "recommended")
       );
+      this.cacheModelOptionsForProfile(profile, displayOptions);
       renderModelOptions(displayOptions, { resetVendor: true });
       if (displayOptions.length && (wasModelBlank || !String(modelInput?.value || "").trim())) {
         if (modelInput) modelInput.value = displayOptions[0].id;
@@ -566,7 +568,9 @@ var ZoteroMarkdownSummaryPrefs = {
       this.setStatus(modelOptions.length ? `${this.t("modelListLoaded")}: ${modelOptions.length}` : `${this.t("modelRecommendationsLoaded")}: ${displayOptions.length}`);
     } catch (err) {
       if (recommended.length) {
-        renderModelOptions(tagModelOptions(recommended, "recommended"), { resetVendor: true });
+        const fallbackOptions = tagModelOptions(recommended, "recommended");
+        this.cacheModelOptionsForProfile(profile, fallbackOptions);
+        renderModelOptions(fallbackOptions, { resetVendor: true });
         syncModelSelectFromInput(recommended);
         this.setStatus(`${this.t("modelListFailedUsingRecommendations")}: ${safeError(err)}`);
         return;
@@ -578,13 +582,28 @@ var ZoteroMarkdownSummaryPrefs = {
   refreshModelRecommendations(options = {}) {
     const profile = profileDraftFromEditor().profile;
     const recommendations = recommendedModelOptionsForProfile(profile);
-    renderModelOptions(tagModelOptions(recommendations, "recommended"), { resetVendor: options.resetVendor === true });
+    const cached = options.useCache === false ? [] : this.cachedModelOptionsForProfile(profile);
+    const displayOptions = cached.length ? cached : tagModelOptions(recommendations, "recommended");
+    renderModelOptions(displayOptions, { resetVendor: options.resetVendor === true });
     const model = document.getElementById("zms-model");
-    if (model && options.selectDefault && shouldSelectProviderDefaultModel(model.value, recommendations) && recommendations[0]?.id) {
-      model.value = recommendations[0].id;
+    if (model && options.selectDefault && shouldSelectProviderDefaultModel(model.value, displayOptions) && displayOptions[0]?.id) {
+      model.value = displayOptions[0].id;
     }
-    syncModelSelectFromInput(recommendations);
+    syncModelSelectFromInput(displayOptions);
     return recommendations;
+  },
+
+  cacheModelOptionsForProfile(profile, modelOptions) {
+    const key = settingsModelOptionsCacheKey(profile);
+    if (!key) return;
+    const entries = normalizeModelOptions(modelOptions);
+    if (!entries.length) return;
+    this.modelOptionsByProvider[key] = entries;
+  },
+
+  cachedModelOptionsForProfile(profile) {
+    const key = settingsModelOptionsCacheKey(profile);
+    return key ? normalizeModelOptions(this.modelOptionsByProvider[key] || []) : [];
   },
 
   activeProfile() {
@@ -3887,6 +3906,16 @@ function modelOptionsFromOptionsElement(id) {
       features: String(optionAttribute(option, "data-features") || option.dataset?.features || "").split(/\s+/).filter(Boolean)
     }))
     .filter((entry) => entry.id);
+}
+
+function settingsModelOptionsCacheKey(profile) {
+  const provider = providerFromProfile(profile) || document.getElementById("zms-provider")?.value || "";
+  const protocol = String(profile?.protocol || "").trim();
+  const endpointMode = String(profile?.endpointMode || "base_url").trim();
+  const endpoint = endpointMode === "full_url"
+    ? String(profile?.fullURL || "").trim()
+    : String(profile?.baseURL || "").trim();
+  return [provider, protocol, endpointMode, endpoint].map((part) => String(part || "").trim()).join("|");
 }
 
 function optionAttribute(option, name) {

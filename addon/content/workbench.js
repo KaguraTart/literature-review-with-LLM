@@ -165,6 +165,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     candidates: [],
     candidatePath: "",
     settingsOpen: false,
+    modelOptionsByProvider: Object.create(null),
     pendingImages: [],
     visualReviewReportData: null,
     visualReviewPath: ""
@@ -965,6 +966,7 @@ var ZoteroMarkdownSummaryWorkbench = {
         tagModelOptions(options, "online"),
         tagModelOptions(recommended, "recommended")
       );
+      this.cacheWorkbenchModelOptions(profile, displayOptions);
       this.renderWorkbenchModelOptions(displayOptions, { resetVendor: true });
       if (displayOptions.length) {
         if (wasModelBlank || !modelInput?.value?.trim()) {
@@ -980,7 +982,9 @@ var ZoteroMarkdownSummaryWorkbench = {
       }
     } catch (err) {
       if (recommended.length) {
-        this.renderWorkbenchModelOptions(tagModelOptions(recommended, "recommended"), { resetVendor: true });
+        const fallbackOptions = tagModelOptions(recommended, "recommended");
+        this.cacheWorkbenchModelOptions(profile, fallbackOptions);
+        this.renderWorkbenchModelOptions(fallbackOptions, { resetVendor: true });
         this.syncWorkbenchModelSelect(recommended);
         this.setStatus(`${this.t("modelListFailedUsingRecommendations")}: ${safeError(err)}`);
         return;
@@ -1053,13 +1057,28 @@ var ZoteroMarkdownSummaryWorkbench = {
   renderWorkbenchModelRecommendations(options = {}) {
     const profile = this.profileFromSettingsPanel() || this.state.profile || {};
     const recommendations = recommendedModelOptionsForWorkbenchProfile(profile);
-    this.renderWorkbenchModelOptions(tagModelOptions(recommendations, "recommended"), { resetVendor: options.resetVendor === true });
+    const cached = options.useCache === false ? [] : this.cachedWorkbenchModelOptions(profile);
+    const displayOptions = cached.length ? cached : tagModelOptions(recommendations, "recommended");
+    this.renderWorkbenchModelOptions(displayOptions, { resetVendor: options.resetVendor === true });
     const modelInput = document.getElementById("zms-profile-model");
-    if (modelInput && options.selectDefault && shouldSelectProviderDefaultModel(modelInput.value, recommendations) && recommendations[0]?.id) {
-      modelInput.value = recommendations[0].id;
+    if (modelInput && options.selectDefault && shouldSelectProviderDefaultModel(modelInput.value, displayOptions) && displayOptions[0]?.id) {
+      modelInput.value = displayOptions[0].id;
     }
-    this.syncWorkbenchModelSelect(recommendations);
+    this.syncWorkbenchModelSelect(displayOptions);
     return recommendations;
+  },
+
+  cacheWorkbenchModelOptions(profile, modelOptions) {
+    const key = workbenchModelOptionsCacheKey(profile);
+    if (!key) return;
+    const entries = normalizeModelOptions(modelOptions);
+    if (!entries.length) return;
+    this.state.modelOptionsByProvider[key] = entries;
+  },
+
+  cachedWorkbenchModelOptions(profile) {
+    const key = workbenchModelOptionsCacheKey(profile);
+    return key ? normalizeModelOptions(this.state.modelOptionsByProvider?.[key] || []) : [];
   },
 
   syncWorkbenchModelSelect(modelOptions, options = {}) {
@@ -5761,6 +5780,16 @@ function modelOptionsFromOptionsElement(id) {
       features: String(optionAttribute(option, "data-features") || option.dataset?.features || "").split(/\s+/).filter(Boolean)
     }))
     .filter((entry) => entry.id);
+}
+
+function workbenchModelOptionsCacheKey(profile) {
+  const provider = workbenchProviderFromProfile(profile, profile?.id || "");
+  const protocol = String(profile?.protocol || "").trim();
+  const endpointMode = String(profile?.endpointMode || "base_url").trim();
+  const endpoint = endpointMode === "full_url"
+    ? String(profile?.fullURL || "").trim()
+    : String(profile?.baseURL || "").trim();
+  return [provider, protocol, endpointMode, endpoint].map((part) => String(part || "").trim()).join("|");
 }
 
 function optionAttribute(option, name) {

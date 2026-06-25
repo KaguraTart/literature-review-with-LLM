@@ -2867,6 +2867,69 @@ describe("workbench writeback helpers", () => {
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Models loaded: 2");
   });
 
+  it("restores cached workbench model dropdowns when switching back to a provider", async () => {
+    const prefs: Record<string, any> = {};
+    const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument({
+      "zms-profile-name": "OpenAI Compatible Chat",
+      "zms-profile-base-url": "https://router.example/v1",
+      "zms-profile-api-key": "router-secret",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    const fetchCalls: string[] = [];
+    loaded.fetch = async (url: string) => {
+      fetchCalls.push(url);
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: [{ id: "router-model-a" }, { id: "router-model-b" }] })
+      };
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelListLoaded: "Models loaded",
+      modelSelectPlaceholder: "Choose provider model",
+      modelSelectCustom: "Custom model...",
+      onlineModels: "Online",
+      recommendedModels: "Recommended",
+      providerPresetApplied: "Provider preset applied",
+      saved: "Saved"
+    }[key] || key);
+    const profile = {
+      id: "openai-compatible",
+      name: "OpenAI Compatible Chat",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "router-secret",
+      model: "",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    await workbench.loadModelsForWorkbench();
+
+    expect(fetchCalls).toEqual(["https://router.example/v1/models"]);
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("router-model-a");
+
+    workbench.applyWorkbenchProviderPreset("anthropic");
+
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("claude-sonnet-4-6");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).not.toContain("router-model-a");
+
+    workbench.applyWorkbenchProviderPreset("openai_compatible");
+
+    expect(fetchCalls).toEqual(["https://router.example/v1/models"]);
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("router-model-a");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("router-model-b");
+    expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
+  });
+
   it("loads recommended workbench models before API credentials are configured", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const dom = fakeDocument({

@@ -4054,6 +4054,33 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toBe("Models loaded: 2");
   });
 
+  it("restores cached settings model dropdowns when switching back to a provider", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      fetchResponse: {
+        data: [{ id: "router-model-a" }, { id: "router-model-b" }]
+      }
+    });
+
+    await controller.loadModels();
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("router-model-a");
+
+    elements.get("zms-provider").value = "anthropic";
+    controller.applyProviderPreset();
+
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("claude-sonnet-4-6");
+    expect(selectOptionValues(elements.get("zms-model-select"))).not.toContain("router-model-a");
+
+    elements.get("zms-provider").value = "openai";
+    controller.applyProviderPreset();
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("router-model-a");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("router-model-b");
+    expect(elements.get("zms-model").hidden).toBe(true);
+  });
+
   it("groups online settings model lists by returned provider vendor", async () => {
     const { controller, elements } = loadPreferencesController({
       fetchResponse: {
