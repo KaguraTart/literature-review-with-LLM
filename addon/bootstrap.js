@@ -12,6 +12,7 @@ const SIDENAV_BUTTON_ID = "zotero-markdown-summary-sidenav-button";
 const WORKBENCH_PANEL_ID = "zotero-markdown-summary-workbench-panel";
 const WORKBENCH_FRAME_ID = "zotero-markdown-summary-workbench-frame";
 const WORKBENCH_STYLE_ID = "zotero-markdown-summary-workbench-style";
+const ITEM_PANE_SECTION_ID = "zotero-markdown-summary-workbench-section";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SYSTEM_PROMPT = "你是学术论文阅读助手，输出中文 Markdown 摘要。";
 const USER_PROMPT = "请按研究问题、方法、实验、结论、局限、可借鉴点总结。";
@@ -35,6 +36,7 @@ async function startup({ id, rootURI: startupRootURI }) {
   registerChrome();
   preferencePaneID = await registerPreferencePane();
   registerMenus();
+  registerItemPaneSection();
   registerToolbarButtons();
   registerSidenavButtons();
   installMainWindowObserver();
@@ -42,6 +44,7 @@ async function startup({ id, rootURI: startupRootURI }) {
 
 function shutdown() {
   uninstallMainWindowObserver();
+  unregisterItemPaneSection();
   for (const menuID of registeredMenus) {
     try {
       Zotero.MenuManager.unregisterMenu(menuID);
@@ -185,6 +188,8 @@ async function runSelfCheckForContext(context) {
   lines.push(`[${t("selfCheckRuntime")}]`);
   lines.push(reportLine(t("selfCheckToolbar"), yesNo(!!doc?.getElementById(TOOLBAR_BUTTON_ID)), !!doc?.getElementById(TOOLBAR_BUTTON_ID)));
   lines.push(reportLine(t("selfCheckSidenav"), yesNo(!!doc?.getElementById(SIDENAV_BUTTON_ID)), !!doc?.getElementById(SIDENAV_BUTTON_ID)));
+  const itemPaneEntryRegistered = typeof registeredItemPaneSectionID !== "undefined" && !!registeredItemPaneSectionID;
+  lines.push(reportLine(t("selfCheckItemPane"), yesNo(itemPaneEntryRegistered), itemPaneEntryRegistered));
   lines.push(reportLine(t("selfCheckEmbeddedPanel"), yesNo(!!doc?.getElementById(WORKBENCH_PANEL_ID)), undefined));
 
   lines.push("");

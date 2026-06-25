@@ -1,3 +1,5 @@
+var registeredItemPaneSectionID = "";
+
 function registerToolbarButtons() {
   const enumerator = Services.wm.getEnumerator("navigator:browser");
   while (enumerator.hasMoreElements()) {
@@ -158,6 +160,10 @@ function registerSidenavButton(win) {
 function ensureSidenavButton(win) {
   const doc = win?.document;
   if (!doc) return false;
+  if (registeredItemPaneSectionID) {
+    removeExistingSidenavButton(doc.getElementById(SIDENAV_BUTTON_ID));
+    return false;
+  }
   const sidenav = findContextSidenav(doc);
   if (!sidenav) return false;
   const host = sidenavButtonInsertionHost(sidenav);
@@ -166,6 +172,106 @@ function ensureSidenavButton(win) {
   removeExistingSidenavButton(existing);
   appendSidenavButton(doc, sidenav);
   return true;
+}
+
+function registerItemPaneSection() {
+  if (registeredItemPaneSectionID || typeof Zotero?.ItemPaneManager?.registerSection !== "function") return false;
+  const icon = `chrome://${CHROME_NAME}/content/logo.svg`;
+  try {
+    const paneID = Zotero.ItemPaneManager.registerSection({
+      paneID: ITEM_PANE_SECTION_ID,
+      pluginID,
+      header: {
+        l10nID: "workbench-open-title",
+        icon
+      },
+      sidenav: {
+        l10nID: "workbench-open-title",
+        icon,
+        orderable: true
+      },
+      onItemChange: ({ item, setEnabled }) => {
+        setEnabled?.(itemPaneWorkbenchItemAvailable(item));
+      },
+      onRender: ({ doc, body, item }) => {
+        renderItemPaneWorkbenchEntry(doc, body, item);
+      }
+    });
+    if (!paneID) return false;
+    registeredItemPaneSectionID = paneID;
+    return true;
+  } catch (err) {
+    Zotero.debug(`[Markdown Summary] Failed to register item pane entry: ${safeError(err)}`);
+    return false;
+  }
+}
+
+function unregisterItemPaneSection() {
+  const paneID = registeredItemPaneSectionID || ITEM_PANE_SECTION_ID;
+  if (!paneID || typeof Zotero?.ItemPaneManager?.unregisterSection !== "function") return false;
+  try {
+    const ok = Zotero.ItemPaneManager.unregisterSection(paneID);
+    registeredItemPaneSectionID = "";
+    return !!ok;
+  } catch (err) {
+    Zotero.debug(`[Markdown Summary] Failed to unregister item pane entry: ${safeError(err)}`);
+    registeredItemPaneSectionID = "";
+    return false;
+  }
+}
+
+function renderItemPaneWorkbenchEntry(doc, body, item) {
+  if (!doc || !body) return;
+  clearElementChildren(body);
+  const wrapper = doc.createElementNS(HTML_NS, "div");
+  wrapper.setAttribute("class", "zms-item-pane-entry");
+  wrapper.setAttribute("style", "display:flex;flex-direction:column;gap:8px;padding:8px 0;");
+
+  const summary = doc.createElementNS(HTML_NS, "p");
+  summary.setAttribute("style", "margin:0;color:var(--fill-secondary, #5f6b7a);font:400 12px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.45;");
+  summary.textContent = t("itemPaneWorkbenchSummary");
+
+  const button = doc.createElementNS(HTML_NS, "button");
+  button.type = "button";
+  button.setAttribute("class", "zms-item-pane-open-workbench");
+  button.setAttribute("style", "align-self:flex-start;min-height:28px;padding:4px 10px;border:1px solid var(--material-border, #c9d2dc);border-radius:6px;background:var(--material-button, #f7f9fb);color:var(--fill-primary, #1f2933);font:600 12px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;");
+  button.textContent = t("openWorkbench");
+  button.addEventListener("click", (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (itemPaneWorkbenchItemAvailable(item)) {
+      openEmbeddedWorkbench([item]);
+      return;
+    }
+    openWorkbenchForContext();
+  });
+
+  wrapper.append(summary, button);
+  body.appendChild(wrapper);
+}
+
+function clearElementChildren(element) {
+  if (typeof element?.replaceChildren === "function") {
+    element.replaceChildren();
+    return;
+  }
+  if (Array.isArray(element?.children)) {
+    for (const child of [...element.children]) {
+      child.parentNode = null;
+    }
+    element.children = [];
+  }
+  while (element?.firstChild) {
+    element.firstChild.remove?.();
+  }
+  if (element) element.textContent = "";
+}
+
+function itemPaneWorkbenchItemAvailable(item) {
+  if (!item) return false;
+  if (typeof item.isRegularItem === "function" && item.isRegularItem()) return true;
+  if (typeof item.isPDFAttachment === "function" && item.isPDFAttachment()) return true;
+  return item.attachmentContentType === "application/pdf";
 }
 
 function findContextSidenav(doc) {
@@ -309,7 +415,11 @@ function preferredWorkbenchHost(elements) {
   for (const element of elements || []) {
     if (element && !unique.includes(element)) unique.push(element);
   }
-  return unique.find((element) => !elementLooksHidden(element)) || unique[0] || null;
+  return unique
+    .filter((element) => !elementLooksHidden(element))
+    .sort((left, right) => elementVisibilityScore(right) - elementVisibilityScore(left))[0]
+    || unique[0]
+    || null;
 }
 
 function workbenchButtonIsCurrent(button, host) {
@@ -349,8 +459,43 @@ function elementLooksHidden(element) {
     if (String(node.getAttribute?.("aria-hidden") || "").toLowerCase() === "true") return true;
     const style = String(node.getAttribute?.("style") || "").toLowerCase().replace(/\s+/g, "");
     if (style.includes("display:none") || style.includes("visibility:hidden")) return true;
+    const computed = computedStyleForElement(node);
+    if (computed) {
+      if (computed.display === "none" || computed.visibility === "hidden" || computed.visibility === "collapse") return true;
+      if (computed.opacity === "0" && node === element) return true;
+    }
   }
   return false;
+}
+
+function elementVisibilityScore(element) {
+  if (!element || elementLooksHidden(element)) return -1;
+  const rect = safeElementRect(element);
+  if (rect) {
+    const width = Number(rect.width || 0);
+    const height = Number(rect.height || 0);
+    if (width > 0 && height > 0) return 1000 + Math.min(width * height, 100000);
+    if (width > 0 || height > 0) return 500 + width + height;
+  }
+  return 1;
+}
+
+function safeElementRect(element) {
+  try {
+    if (typeof element?.getBoundingClientRect !== "function") return null;
+    return element.getBoundingClientRect();
+  } catch (_err) {
+    return null;
+  }
+}
+
+function computedStyleForElement(element) {
+  try {
+    const win = element?.ownerGlobal || element?.ownerDocument?.defaultView;
+    return win?.getComputedStyle?.(element) || null;
+  } catch (_err) {
+    return null;
+  }
 }
 
 function toolbarMenuItem(doc, label, onCommand) {
