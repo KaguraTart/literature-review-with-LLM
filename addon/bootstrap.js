@@ -354,6 +354,8 @@ async function generateForItem(item, settings, force) {
   }
   const prompts = summaryPromptsForSettings(settings);
   const result = await callProvider({
+    id: settings.id,
+    name: settings.name,
     provider: settings.provider,
     endpointMode: settings.endpointMode,
     customHeaders: settings.customHeaders,
@@ -373,6 +375,7 @@ async function generateForItem(item, settings, force) {
       stream: settings.stream
     }
   }, sourceHash);
+  applyEffectiveProviderProfile(settings, result.effectiveProfile);
   const markdown = renderMarkdown(item, pdf, settings, result);
   await ensureDirectory(settings.outputDir);
   await writeSummaryMarkdown(outputPath, markdown);
@@ -555,13 +558,15 @@ async function callOpenAICompatible(summaryRequest, sourceHash, nativeOpenAI) {
   } else {
     if (!hasExplicitAuthHeader(headers)) setHeaderIfMissing(headers, "authorization", apiKey ? `Bearer ${apiKey}` : "");
   }
-  const data = await requestJSON(url, withoutBlankHeaders(headers), merged, merged.stream === true, summaryRequest.protocol || protocol);
+  const data = await requestJSON(url, withoutBlankHeaders(headers), merged, merged.stream === true, summaryRequest.protocol || protocol, summaryRequest);
+  const effectiveProfile = persistBootstrapProviderCompatibilityFallback(summaryRequest, data);
   return {
     markdown: extractOpenAIText(data),
     usage: providerUsageFromResponse(data),
     provider: summaryRequest.provider,
     model,
-    sourceHash
+    sourceHash,
+    effectiveProfile: effectiveProfile || data?.zmsEffectiveProfile || null
   };
 }
 
@@ -621,13 +626,15 @@ async function callAnthropic(summaryRequest, sourceHash) {
     max_tokens: request.maxOutputTokens,
     stream: request.stream
   });
-  const data = await requestJSON(messageUrl, withoutBlankHeaders(headers), merged, merged.stream === true, "anthropic_messages");
+  const data = await requestJSON(messageUrl, withoutBlankHeaders(headers), merged, merged.stream === true, "anthropic_messages", summaryRequest);
+  const effectiveProfile = persistBootstrapProviderCompatibilityFallback(summaryRequest, data);
   return {
     markdown: extractAnthropicText(data),
     usage: providerUsageFromResponse(data),
     provider: summaryRequest.provider,
     model,
-    sourceHash
+    sourceHash,
+    effectiveProfile: effectiveProfile || data?.zmsEffectiveProfile || null
   };
 }
 
@@ -721,12 +728,13 @@ function normalizeLocalAgentTool(value) {
   return tool || "ask_all_agents";
 }
 
-async function requestJSON(url, headers, body, stream, protocol = "openai_chat") {
+async function requestJSON(url, headers, body, stream, protocol = "openai_chat", profile = null) {
   let lastError;
   let requestBody = body;
   let requestHeaders = headers;
   let requestStream = stream;
   let usedCompatibilityFallbackFields = [];
+  let effectiveProfile = profile ? normalizeBootstrapProviderProfile(profile) : null;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const response = await fetch(url, {
@@ -738,6 +746,7 @@ async function requestJSON(url, headers, body, stream, protocol = "openai_chat")
         const text = await response.text();
         const fallbackFields = providerCompatibilityFallbackFields(protocol, requestBody, response.status, text, usedCompatibilityFallbackFields);
         if (fallbackFields.length && attempt < 3) {
+          effectiveProfile = profileWithBootstrapProviderConnectionFallback(effectiveProfile || profile, requestBody, fallbackFields, usedCompatibilityFallbackFields);
           requestBody = omitProviderRequestBodyFields(requestBody, fallbackFields, usedCompatibilityFallbackFields);
           requestHeaders = providerRequestHeadersWithFallback(requestHeaders, fallbackFields);
           requestStream = requestBody.stream === true;
@@ -755,6 +764,7 @@ async function requestJSON(url, headers, body, stream, protocol = "openai_chat")
         const text = await response.text();
         const fallbackFields = providerCompatibilityFallbackFields(protocol, requestBody, response.status, text, usedCompatibilityFallbackFields);
         if (fallbackFields.length && attempt < 3) {
+          effectiveProfile = profileWithBootstrapProviderConnectionFallback(effectiveProfile || profile, requestBody, fallbackFields, usedCompatibilityFallbackFields);
           requestBody = omitProviderRequestBodyFields(requestBody, fallbackFields, usedCompatibilityFallbackFields);
           requestHeaders = providerRequestHeadersWithFallback(requestHeaders, fallbackFields);
           requestStream = requestBody.stream === true;
@@ -762,11 +772,13 @@ async function requestJSON(url, headers, body, stream, protocol = "openai_chat")
           continue;
         }
         const data = safeParseJSON(text);
-        if (data) return data;
-        return JSON.parse(text);
+        if (data) return attachBootstrapCompatibilityFallback(data, effectiveProfile, usedCompatibilityFallbackFields);
+        return attachBootstrapCompatibilityFallback(JSON.parse(text), effectiveProfile, usedCompatibilityFallbackFields);
       }
-      if (requestStream && response.body) return await readProviderStream(response, protocol);
-      return await response.json();
+      if (requestStream && response.body) {
+        return attachBootstrapCompatibilityFallback(await readProviderStream(response, protocol), effectiveProfile, usedCompatibilityFallbackFields);
+      }
+      return attachBootstrapCompatibilityFallback(await response.json(), effectiveProfile, usedCompatibilityFallbackFields);
     } catch (err) {
       if (err?.retryableProviderError === false) throw err;
       lastError = err;
@@ -777,6 +789,170 @@ async function requestJSON(url, headers, body, stream, protocol = "openai_chat")
     }
   }
   throw lastError;
+}
+
+function attachBootstrapCompatibilityFallback(data, effectiveProfile, fields) {
+  const normalizedFields = normalizeProviderFallbackFieldList(fields);
+  if (data && typeof data === "object") {
+    if (effectiveProfile) data.zmsEffectiveProfile = effectiveProfile;
+    if (normalizedFields.length) data.zmsCompatibilityFallbackFields = normalizedFields;
+  }
+  return data;
+}
+
+function persistBootstrapProviderCompatibilityFallback(summaryRequest, data) {
+  const fields = normalizeProviderFallbackFieldList(data?.zmsCompatibilityFallbackFields);
+  if (!fields.length || !data?.zmsEffectiveProfile || isLocalAgentProfile(summaryRequest)) return null;
+  if (typeof persistSettingsActiveProfile !== "function") return null;
+  return persistSettingsActiveProfile(data.zmsEffectiveProfile);
+}
+
+function applyEffectiveProviderProfile(settings, effectiveProfile) {
+  if (!settings || !effectiveProfile) return;
+  if (effectiveProfile.bodyExtra && typeof effectiveProfile.bodyExtra === "object") {
+    settings.bodyExtra = effectiveProfile.bodyExtra;
+  }
+  if (effectiveProfile.capabilities && typeof effectiveProfile.capabilities === "object") {
+    settings.capabilities = effectiveProfile.capabilities;
+  }
+}
+
+function profileWithBootstrapProviderConnectionFallback(profile, body, fields, usedFallback = []) {
+  const normalizedFields = normalizeProviderFallbackFieldList(fields);
+  const base = normalizeBootstrapProviderProfile({
+    ...(profile || {}),
+    bodyExtra: mergeProviderFallbackBodyExtra(profile?.bodyExtra, body, normalizedFields, usedFallback)
+  });
+  return profileWithBootstrapProviderCompatibilityFallback(profile, base, normalizedFields);
+}
+
+function profileWithBootstrapProviderCompatibilityFallback(currentProfile, effectiveProfile, fields) {
+  const normalizedFields = normalizeProviderFallbackFieldList(fields);
+  const base = normalizeBootstrapProviderProfile({
+    ...(currentProfile || {}),
+    ...(effectiveProfile || {}),
+    id: effectiveProfile?.id || currentProfile?.id,
+    isDefault: currentProfile?.isDefault !== false
+  });
+  const downgrades = providerCapabilityDowngradesFromFallback(base, normalizedFields);
+  if (!Object.keys(downgrades).length) return base;
+  return normalizeBootstrapProviderProfile({
+    ...base,
+    capabilities: {
+      ...(base.capabilities || {}),
+      ...downgrades
+    }
+  });
+}
+
+function providerCapabilityDowngradesFromFallback(profile, fields) {
+  const fieldSet = new Set(normalizeProviderFallbackFieldList(fields));
+  const downgrades = {};
+  if (
+    fieldSet.has("messages.content.image_url")
+    || fieldSet.has("input.content.input_image")
+    || fieldSet.has("messages.content.image")
+  ) {
+    downgrades.imageBase64 = false;
+  }
+  if (
+    fieldSet.has("messages.content.document")
+    || (fieldSet.has("input_file.file_data") && fieldSet.has("input_file.file_url"))
+    || isTrueValue(profile?.bodyExtra?.omitPdfInputFile)
+  ) {
+    downgrades.pdfBase64 = false;
+  }
+  if (fieldSet.has("stream")) {
+    downgrades.streaming = false;
+  }
+  return downgrades;
+}
+
+function normalizeProviderFallbackFieldList(fields) {
+  return Array.from(new Set((Array.isArray(fields) ? fields : [])
+    .map((field) => String(field || "").trim())
+    .filter(Boolean)));
+}
+
+function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = []) {
+  const nextExtra = { ...(bodyExtra || {}) };
+  const omitFields = [...fields];
+  const usedFields = new Set(Array.isArray(usedFallback) ? usedFallback : []);
+  if (fields.includes("instructions") && body?.instructions !== undefined) {
+    nextExtra.instructionsFallbackToUser = true;
+  }
+  if (fields.includes("system") && body?.system !== undefined) {
+    nextExtra.systemFallbackToUser = true;
+  }
+  if (fields.includes("messages.role.system") && openAIChatHasSystemMessage(body)) {
+    nextExtra.systemFallbackToUser = true;
+    removeFromArray(omitFields, "messages.role.system");
+  }
+  if (fields.includes("max_completion_tokens") && !usedFields.has("max_tokens") && body?.max_completion_tokens !== undefined && body?.max_tokens === undefined) {
+    nextExtra.tokenLimitField = "max_tokens";
+    removeFromArray(omitFields, "max_completion_tokens");
+  }
+  if (fields.includes("max_tokens") && !usedFields.has("max_completion_tokens") && body?.max_tokens !== undefined && body?.max_completion_tokens === undefined) {
+    nextExtra.tokenLimitField = "max_completion_tokens";
+    removeFromArray(omitFields, "max_tokens");
+  }
+  if (fields.includes("input_file.file_data")) {
+    if (usedFields.has("input_file.file_url")) nextExtra.omitPdfInputFile = true;
+    else nextExtra.pdfInputFileField = "file_url";
+    removeFromArray(omitFields, "input_file.file_data");
+  }
+  if (fields.includes("input_file.file_url")) {
+    if (usedFields.has("input_file.file_data")) nextExtra.omitPdfInputFile = true;
+    else nextExtra.pdfInputFileField = "file_data";
+    removeFromArray(omitFields, "input_file.file_url");
+  }
+  if (fields.includes("image_url.url")) {
+    nextExtra.imageURLFormat = "string";
+    removeFromArray(omitFields, "image_url.url");
+  }
+  if (fields.includes("messages.content.image_url")) {
+    nextExtra.omitOpenAIChatImage = true;
+    removeFromArray(omitFields, "messages.content.image_url");
+  }
+  if (fields.includes("input.content.input_image")) {
+    nextExtra.omitOpenAIResponsesImage = true;
+    removeFromArray(omitFields, "input.content.input_image");
+  }
+  if (fields.includes("messages.content")) {
+    nextExtra.anthropicTextContentFormat = "blocks";
+    removeFromArray(omitFields, "messages.content");
+  }
+  if (fields.includes("messages.content.document")) {
+    nextExtra.omitAnthropicDocument = true;
+    removeFromArray(omitFields, "messages.content.document");
+  }
+  if (fields.includes("messages.content.image")) {
+    nextExtra.omitAnthropicImage = true;
+    removeFromArray(omitFields, "messages.content.image");
+  }
+  if (fields.includes("headers.anthropic-version")) {
+    nextExtra.omitAnthropicVersion = true;
+    removeFromArray(omitFields, "headers.anthropic-version");
+  }
+  return mergeProviderBodyOmitFields(nextExtra, omitFields);
+}
+
+function removeFromArray(values, value) {
+  let index = values.indexOf(value);
+  while (index >= 0) {
+    values.splice(index, 1);
+    index = values.indexOf(value);
+  }
+}
+
+function mergeProviderBodyOmitFields(bodyExtra, fields) {
+  const current = Array.from(providerBodyOmitFields(bodyExtra));
+  return { ...(bodyExtra || {}), omitFields: Array.from(new Set([...current, ...fields])) };
+}
+
+function normalizeBootstrapProviderProfile(profile) {
+  if (typeof normalizeSettingsProfile === "function") return normalizeSettingsProfile(profile);
+  return profile || null;
 }
 
 function shouldInspectBootstrapOkResponse(response, requestedStream) {

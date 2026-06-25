@@ -49,6 +49,10 @@ function loadBootstrapProviderHelpers(fetchResponse: any = { output_text: "ok" }
         get: (key: string) => {
           const name = String(key || "").replace(/^extensions\.zoteroMarkdownSummary\./, "");
           return prefs[name];
+        },
+        set: (key: string, value: any) => {
+          const name = String(key || "").replace(/^extensions\.zoteroMarkdownSummary\./, "");
+          prefs[name] = value;
         }
       },
       Promise: {
@@ -110,6 +114,7 @@ function loadBootstrapProviderHelpers(fetchResponse: any = { output_text: "ok" }
   runInContext(uiCode, context, { filename: "bootstrap-ui.js" });
   return {
     fetchCalls,
+    prefs,
     linkedAttachments,
     zoteroItems,
     helpers: context as {
@@ -1862,6 +1867,59 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls[1].body).not.toHaveProperty("response_format");
     expect(fetchCalls[1].body).not.toHaveProperty("max_completion_tokens");
     expect(fetchCalls[1].body).toMatchObject({ max_tokens: 1024 });
+  });
+
+  it("persists direct OpenAI-compatible fallback settings to the active profile", async () => {
+    const profile = {
+      id: "openai-compatible",
+      name: "OpenAI Compatible Chat",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "o3-mini",
+      capabilities: { text: true, imageBase64: true, streaming: true, jsonMode: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    const { fetchCalls, helpers, prefs } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 400,
+          error: { message: "responseFormat and maxCompletionTokens are not supported" }
+        },
+        {
+          choices: [{ message: { content: "fallback summary" } }]
+        }
+      ]
+    }, {
+      activeProfileId: "openai-compatible",
+      profilesJson: JSON.stringify([profile])
+    });
+
+    const result = await helpers.callOpenAICompatible({
+      ...profile,
+      provider: "openai-compatible",
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    const savedProfile = JSON.parse(prefs.profilesJson)[0];
+    expect(result.markdown).toBe("fallback summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(savedProfile.bodyExtra.tokenLimitField).toBe("max_tokens");
+    expect(savedProfile.bodyExtra.omitFields).toEqual(expect.arrayContaining(["response_format"]));
+    expect(savedProfile.model).toBe("o3-mini");
+    expect(prefs.activeProfileId).toBe("openai-compatible");
+    expect(prefs.provider).toBe("openai-compatible");
+    expect(prefs.model).toBe("o3-mini");
   });
 
   it("falls back when bootstrap OpenAI Chat endpoints reject system role", async () => {
@@ -3641,6 +3699,57 @@ describe("bootstrap provider helpers", () => {
     expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[0].headers).toMatchObject({ "anthropic-version": "2023-06-01" });
     expect(fetchCalls[1].headers).not.toHaveProperty("anthropic-version");
+  });
+
+  it("persists direct Anthropic-compatible header fallbacks to the active profile", async () => {
+    const profile = {
+      id: "anthropic-compatible",
+      name: "Anthropic Compatible Messages",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://router.example",
+      apiKey: "routed-secret",
+      model: "claude-compatible",
+      capabilities: { text: true, imageBase64: true, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: { authHeader: "authorization" },
+      isDefault: true
+    };
+    const { fetchCalls, helpers, prefs } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 400,
+          error: { message: "Unsupported header: anthropic-version" }
+        },
+        {
+          content: [{ type: "text", text: "anthropic header fallback summary" }]
+        }
+      ]
+    }, {
+      activeProfileId: "anthropic-compatible",
+      profilesJson: JSON.stringify([profile])
+    });
+
+    const result = await helpers.callAnthropic({
+      ...profile,
+      provider: "anthropic-compatible",
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+
+    const savedProfile = JSON.parse(prefs.profilesJson)[0];
+    expect(result.markdown).toBe("anthropic header fallback summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(savedProfile.bodyExtra.authHeader).toBe("authorization");
+    expect(savedProfile.bodyExtra.omitAnthropicVersion).toBe(true);
+    expect(prefs.provider).toBe("anthropic_compatible");
+    expect(prefs.model).toBe("claude-compatible");
   });
 
   it("extracts wrapped Anthropic usage metadata in direct summaries", async () => {
