@@ -3208,6 +3208,29 @@ describe("bootstrap provider helpers", () => {
         stream: false
       }
     }, "hash", false)).resolves.toMatchObject({ markdown: "visible summary after marker" });
+
+    const directResult = loadBootstrapProviderHelpers({
+      result: "direct result summary"
+    });
+    await expect(directResult.helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, streaming: true },
+      customHeaders: {},
+      bodyExtra: {},
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false)).resolves.toMatchObject({ markdown: "direct result summary" });
   });
 
   it("adds JSON mode defaults in bootstrap OpenAI provider requests", async () => {
@@ -4326,6 +4349,8 @@ describe("bootstrap provider helpers", () => {
     })).toBe("candidate stream");
     expect(helpers.extractOpenAIStreamText({ data: { choices: [{ delta: { content: "wrapped chat" } }] } })).toBe("wrapped chat");
     expect(helpers.extractOpenAIStreamText({ result: { type: "response.output_text.delta", delta: "wrapped responses" } })).toBe("wrapped responses");
+    expect(helpers.extractOpenAIStreamText({ result: "direct stream result" })).toBe("direct stream result");
+    expect(helpers.extractOpenAIStreamText({ generated_text: "generated stream text" })).toBe("generated stream text");
     expect(helpers.extractOpenAIStreamText({ body: { type: "response.output_text.delta", delta: "wrapped body" } })).toBe("wrapped body");
     expect(helpers.extractOpenAIStreamText({ completion: { choices: [{ delta: { content: "wrapped completion" } }] } })).toBe("wrapped completion");
     expect(helpers.extractAnthropicStreamText({
@@ -4346,6 +4371,9 @@ describe("bootstrap provider helpers", () => {
     expect(helpers.extractAnthropicStreamText({
       message: { type: "content_block_delta", delta: { type: "text_delta", text: "wrapped message" } }
     })).toBe("wrapped message");
+    expect(helpers.extractAnthropicStreamText({
+      payload: "anthropic stream payload"
+    })).toBe("anthropic stream payload");
     expect(helpers.isProviderStreamSnapshot("openai_responses", {
       data: { type: "response.completed", response: { output_text: "snapshot" } }
     })).toBe(true);

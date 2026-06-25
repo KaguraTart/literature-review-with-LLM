@@ -75,6 +75,23 @@ const MODEL_TEXT_CONTAINER_KEYS = [
   "output_parsed",
   "outputParsed"
 ] as const;
+const MODEL_DIRECT_TEXT_KEYS = [
+  "answer",
+  "final_answer",
+  "finalAnswer",
+  "generated_text",
+  "generatedText",
+  "generation",
+  "generated",
+  "result_text",
+  "resultText",
+  "response_text",
+  "responseText",
+  "outputText",
+  "message_text",
+  "messageText"
+] as const;
+const MODEL_STRING_WRAPPER_KEYS = ["result", "response", "payload", "data", "body"] as const;
 const PROVIDER_USAGE_CONTAINER_KEYS = [
   ...PROVIDER_RESPONSE_WRAPPER_KEYS,
   "delta",
@@ -226,6 +243,7 @@ function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, dept
       || data?.delta?.partial_json
       || data?.content_block?.text
       || extractAnthropicContent(data)
+      || extractMessageContent(data)
       || extractWrappedStreamContent(protocol, data, depth)
       || "";
   }
@@ -250,6 +268,8 @@ function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, dept
   if (eventContent) return eventContent;
   const directText = extractMessageContent(data?.text);
   if (directText) return directText;
+  const directModelText = extractMessageContent(data);
+  if (directModelText) return directModelText;
   return extractOutputContent(data?.output)
     || (typeof data?.delta === "string" ? data.delta : "")
     || extractWrappedStreamContent(protocol, data, depth)
@@ -369,18 +389,18 @@ function openaiChatMessages(request: ModelRequest): Array<Record<string, unknown
   return messages;
 }
 
-function extractMessageContent(content: unknown, depth = 0): string {
+function extractMessageContent(content: unknown, depth = 0, allowDirect = true): string {
   const record = content as Record<string, unknown> | null;
   if (!content || depth > 5) return "";
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.map((item: any) => extractMessageContent(item, depth + 1)).filter(Boolean).join("\n");
+    return content.map((item: any) => extractMessageContent(item, depth + 1, allowDirect)).filter(Boolean).join("\n");
   }
   if (record && typeof record === "object") {
     if (isReasoningContent(record)) return "";
     if (typeof record.text === "string") return record.text;
     if (record.text && typeof record.text === "object") {
-      const text = extractMessageContent(record.text, depth + 1);
+      const text = extractMessageContent(record.text, depth + 1, allowDirect);
       if (text) return text;
     }
     if (typeof record.value === "string") return record.value;
@@ -388,6 +408,10 @@ function extractMessageContent(content: unknown, depth = 0): string {
     if (typeof record.content === "string") return record.content;
     if (typeof record.completion === "string") return record.completion;
     if (typeof record.refusal === "string") return record.refusal;
+    if (allowDirect) {
+      const direct = extractDirectModelText(record);
+      if (direct) return direct;
+    }
     const structured = extractStructuredModelText(record.parsed, depth + 1)
       || extractStructuredModelText(record.json, depth + 1)
       || extractStructuredModelText(record.output_parsed, depth + 1)
@@ -396,9 +420,21 @@ function extractMessageContent(content: unknown, depth = 0): string {
     for (const key of MODEL_TEXT_CONTAINER_KEYS) {
       const value = record[key];
       if (!value || value === content) continue;
-      const text = extractMessageContent(value, depth + 1);
+      const text = extractMessageContent(value, depth + 1, allowDirect);
       if (text) return text;
     }
+  }
+  return "";
+}
+
+function extractDirectModelText(record: Record<string, unknown>): string {
+  for (const key of MODEL_DIRECT_TEXT_KEYS) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  for (const key of MODEL_STRING_WRAPPER_KEYS) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
   }
   return "";
 }
@@ -408,7 +444,7 @@ function extractStructuredModelText(value: unknown, depth = 0): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (typeof value === "object") {
-    const nested = extractMessageContent(value, depth + 1);
+    const nested = extractMessageContent(value, depth + 1, false);
     if (nested) return nested;
     return stringifyProviderJSON(value);
   }
@@ -448,6 +484,7 @@ function extractOpenAIResponseContent(data: any, depth = 0): string {
     || extractOpenAIEventContainer(data)
     || extractMessageContent(data?.text)
     || extractMessageContent(data?.refusal)
+    || extractMessageContent(data)
     || extractWrappedResponseContent("openai", data, depth);
 }
 
@@ -456,7 +493,8 @@ function extractAnthropicContent(data: any): string {
     || extractMessageContent(data?.message)
     || extractMessageContent(data?.body)
     || extractMessageContent(data?.candidates)
-    || extractMessageContent(data?.text);
+    || extractMessageContent(data?.text)
+    || extractMessageContent(data);
 }
 
 function extractAnthropicResponseContent(data: any, depth = 0): string {
