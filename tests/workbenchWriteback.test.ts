@@ -3523,6 +3523,49 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-visual-review-status").textContent).toContain("还没有图表解析");
   });
 
+  it("replaces Chinese-first workbench defaults when English UI is active", () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    dom.getElementById("zms-status").textContent = "就绪";
+    dom.getElementById("zms-chat-status").textContent = "就绪";
+    dom.getElementById("zms-paper-meta").textContent = "正在读取论文";
+    dom.getElementById("zms-composer-profile").textContent = "模型";
+    dom.getElementById("zms-visual-review-status").textContent = "还没有图表解析 JSON，请先导出图表解析报告。";
+    dom.getElementById("zms-write-action").options = [
+      { textContent: "" },
+      { textContent: "" },
+      { textContent: "" }
+    ];
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelPickerHelp: "Choose a provider first, then choose a model.",
+      loadModels: "Load model list",
+      newConversation: "New conversation",
+      compactContext: "Compact context",
+      copySession: "Copy session",
+      visualReviewNoReport: "No visual extraction JSON yet. Export a visual report first",
+      placeholder: "Ask about the current paper",
+      placeholderHint: "Enter for newline",
+      candidateSearchPlaceholder: "Enter a search query",
+      ready: "Ready",
+      loading: "Reading paper",
+      model: "Model",
+      appendNotes: "Append to Research Notes",
+      appendSection: "Append to Section",
+      replaceSection: "Replace Section"
+    }[key] || key);
+
+    workbench.applyLanguage();
+
+    expect(dom.getElementById("zms-status").textContent).toBe("Ready");
+    expect(dom.getElementById("zms-chat-status").textContent).toBe("Ready");
+    expect(dom.getElementById("zms-paper-meta").textContent).toBe("Reading paper");
+    expect(dom.getElementById("zms-composer-profile").textContent).toBe("Model");
+    expect(dom.getElementById("zms-visual-review-status").textContent).toContain("No visual extraction JSON");
+    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("Load model list");
+  });
+
   it("does not overwrite active workbench statuses during localization", () => {
     const loaded: any = loadWorkbenchHelpers();
     const dom = fakeDocument();

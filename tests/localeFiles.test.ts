@@ -108,4 +108,21 @@ describe("locale files", () => {
     expect(zmsMessage("preferences", "profileLocalAgentHeaders", "zh-CN")).toBe("代理请求头（JSON）");
     expect(zmsMessage("preferences", "profileLocalAgentSkills", "zh-CN")).toBe("技能级配置（JSON，可选）");
   });
+
+  it("keeps settings and workbench static defaults Chinese-first before runtime localization", () => {
+    const preferencesXhtml = readFileSync("addon/content/preferences.xhtml", "utf8");
+    const workbenchXhtml = readFileSync("addon/content/workbench.xhtml", "utf8");
+
+    expect(preferencesXhtml).toContain('id="zms-provider-label" value="接口厂商"');
+    expect(preferencesXhtml).toContain('id="zms-baseURL-label" value="接口地址"');
+    expect(preferencesXhtml).toContain('id="zms-apiKey-label" value="API 密钥"');
+    expect(preferencesXhtml).toContain('id="zms-temperature-label" value="温度"');
+    expect(preferencesXhtml).toContain('id="zms-profileLocalAgentEndpoint-label" value="代理地址"');
+
+    expect(workbenchXhtml).toContain('id="zms-quick-settings-heading">常用设置</html:h2>');
+    expect(workbenchXhtml).toContain('id="zms-workbench-provider-label" for="zms-workbench-provider">接口厂商</html:label>');
+    expect(workbenchXhtml).toContain('id="zms-load-models-workbench" class="zms-load-models-button" type="button" title="加载当前接口厂商的模型列表">加载模型列表</html:button>');
+    expect(workbenchXhtml).toContain('id="zms-status" class="zms-status">就绪</html:div>');
+    expect(workbenchXhtml).not.toContain("</html:footer>\n      </html:footer>");
+  });
 });

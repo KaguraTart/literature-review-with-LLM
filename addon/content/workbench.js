@@ -660,7 +660,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-load-visual-review", this.t("loadVisualReview"));
     setText("zms-save-visual-review", this.t("saveVisualReview"));
     const visualStatus = document.getElementById("zms-visual-review-status");
-    if (visualStatus && (!String(visualStatus.textContent || "").trim() || visualStatus.textContent === "No visual report loaded.")) {
+    if (visualStatus && ["", "No visual report loaded.", "还没有图表解析 JSON，请先导出图表解析报告。"].includes(String(visualStatus.textContent || "").trim())) {
       visualStatus.textContent = this.t("visualReviewNoReport");
     }
     setText("zms-export-review-draft", this.t("exportReviewDraft"));
@@ -690,10 +690,10 @@ var ZoteroMarkdownSummaryWorkbench = {
   },
 
   localizeInitialPlaceholders() {
-    setDefaultText("zms-status", this.t("ready"), ["", "Ready", "ready"]);
-    setDefaultText("zms-chat-status", this.t("ready"), ["", "Ready", "ready"]);
-    setDefaultText("zms-paper-meta", this.t("loading"), ["", "Loading", "loading"]);
-    setDefaultText("zms-composer-profile", this.t("model"), ["", "Model", "model"]);
+    setDefaultText("zms-status", this.t("ready"), ["", "Ready", "ready", "就绪"]);
+    setDefaultText("zms-chat-status", this.t("ready"), ["", "Ready", "ready", "就绪"]);
+    setDefaultText("zms-paper-meta", this.t("loading"), ["", "Loading", "loading", "正在读取论文"]);
+    setDefaultText("zms-composer-profile", this.t("model"), ["", "Model", "model", "模型"]);
   },
 
   t(key) {

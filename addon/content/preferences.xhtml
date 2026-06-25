@@ -8,7 +8,7 @@
     <label><html:h2 id="zms-title">Literature Review with LLM</html:h2></label>
     <vbox class="zms-form">
       <hbox align="center" class="zms-row">
-        <label class="zms-label" id="zms-uiLanguage-label" value="UI 语言"/>
+        <label class="zms-label" id="zms-uiLanguage-label" value="界面语言"/>
         <menulist id="zms-uiLanguage">
           <menupopup>
             <menuitem label="自动" value="auto"/>
@@ -31,11 +31,11 @@
         <label class="zms-label" id="zms-promptPackId-label" value="提示模板包"/>
         <menulist id="zms-promptPackId">
           <menupopup>
-            <menuitem label="通用 / General" value="general"/>
-            <menuitem label="AI / ML / Systems" value="ai-ml"/>
-            <menuitem label="交通与城市空域 / Transportation" value="transportation"/>
-            <menuitem label="医学与生命科学 / Biomedicine" value="biomedicine"/>
-            <menuitem label="社科与政策 / Social science" value="social-science"/>
+            <menuitem label="通用阅读" value="general"/>
+            <menuitem label="AI / ML / 系统" value="ai-ml"/>
+            <menuitem label="交通与城市空域" value="transportation"/>
+            <menuitem label="医学与生命科学" value="biomedicine"/>
+            <menuitem label="社科与政策" value="social-science"/>
             <menuitem label="综述写作 / Review writing" value="review-writing"/>
           </menupopup>
         </menulist>
@@ -46,14 +46,14 @@
         <html:datalist id="zms-profile-options"/>
       </hbox>
       <hbox align="center" class="zms-row">
-        <label class="zms-label" id="zms-provider-label" value="Provider"/>
+        <label class="zms-label" id="zms-provider-label" value="接口厂商"/>
         <menulist id="zms-provider">
           <menupopup>
             <menuitem label="MiniMax OpenAI 兼容" value="minimax"/>
             <menuitem label="OpenAI 原生" value="openai"/>
             <menuitem label="OpenAI 兼容接口" value="openai_compatible"/>
             <menuitem label="OpenAI Responses 兼容接口" value="openai_responses_compatible"/>
-            <menuitem label="Anthropic" value="anthropic"/>
+            <menuitem label="Anthropic 原生" value="anthropic"/>
             <menuitem label="Anthropic 兼容接口" value="anthropic_compatible"/>
             <menuitem label="Gemini OpenAI 兼容" value="gemini"/>
             <menuitem label="Azure OpenAI" value="azure_openai"/>
@@ -94,20 +94,20 @@
             <menuitem label="Tencent Hunyuan" value="hunyuan"/>
             <menuitem label="Ollama OpenAI 兼容" value="ollama"/>
             <menuitem label="LM Studio OpenAI 兼容" value="lm_studio"/>
-            <menuitem label="Local Agents" value="local_agents"/>
+            <menuitem label="本地代理工具" value="local_agents"/>
           </menupopup>
         </menulist>
       </hbox>
       <hbox align="center" class="zms-row">
-        <label class="zms-label" id="zms-baseURL-label" value="Base URL"/>
+        <label class="zms-label" id="zms-baseURL-label" value="接口地址"/>
         <html:input class="zms-field" id="zms-baseURL"/>
       </hbox>
       <hbox align="center" class="zms-row">
-        <label class="zms-label" id="zms-apiKey-label" value="API Key"/>
+        <label class="zms-label" id="zms-apiKey-label" value="API 密钥"/>
         <html:input class="zms-field" id="zms-apiKey" type="password"/>
       </hbox>
       <hbox align="start" class="zms-row zms-model-row">
-        <label class="zms-label" id="zms-model-label" value="Model"/>
+        <label class="zms-label" id="zms-model-label" value="模型"/>
         <html:div class="zms-model-picker">
           <html:div class="zms-model-picker-controls">
             <html:label class="zms-inline-label" id="zms-model-vendor-filter-label" for="zms-model-vendor-select">模型厂商</html:label>
@@ -149,7 +149,7 @@
         <menulist id="zms-inputMode">
           <menupopup>
             <menuitem label="提取文本" value="text"/>
-            <menuitem label="PDF base64" value="pdf_base64"/>
+            <menuitem label="PDF 原文" value="pdf_base64"/>
           </menupopup>
         </menulist>
       </hbox>
@@ -158,7 +158,7 @@
         <html:input class="zms-number" id="zms-maxOutputTokens" type="number" min="512" step="512"/>
       </hbox>
       <hbox align="center" class="zms-row">
-        <label class="zms-label" id="zms-temperature-label" value="Temperature"/>
+        <label class="zms-label" id="zms-temperature-label" value="温度"/>
         <html:input class="zms-number" id="zms-temperature" type="number" min="0.1" max="1" step="0.1"/>
       </hbox>
       <hbox align="center" class="zms-row">
@@ -175,23 +175,23 @@
           <label class="zms-label" id="zms-profileProtocol-label" value="协议"/>
           <menulist id="zms-profileProtocol">
             <menupopup>
-              <menuitem label="OpenAI Chat" value="openai_chat"/>
+              <menuitem label="OpenAI 聊天补全" value="openai_chat"/>
               <menuitem label="OpenAI Responses" value="openai_responses"/>
-              <menuitem label="Anthropic Messages" value="anthropic_messages"/>
+              <menuitem label="Anthropic 消息接口" value="anthropic_messages"/>
             </menupopup>
           </menulist>
         </hbox>
         <hbox align="center" class="zms-row">
-          <label class="zms-label" id="zms-profileEndpointMode-label" value="Endpoint 模式"/>
+          <label class="zms-label" id="zms-profileEndpointMode-label" value="接口模式"/>
           <menulist id="zms-profileEndpointMode">
             <menupopup>
-              <menuitem label="Base URL" value="base_url"/>
-              <menuitem label="Full URL" value="full_url"/>
+              <menuitem label="Base URL 自动拼接" value="base_url"/>
+              <menuitem label="完整 URL" value="full_url"/>
             </menupopup>
           </menulist>
         </hbox>
         <hbox align="center" class="zms-row">
-          <label class="zms-label" id="zms-profileFullURL-label" value="Full URL"/>
+          <label class="zms-label" id="zms-profileFullURL-label" value="完整接口地址"/>
           <html:input class="zms-field" id="zms-profileFullURL"/>
         </hbox>
         <vbox class="zms-row">
@@ -209,11 +209,11 @@
           </html:div>
         </vbox>
         <vbox class="zms-row">
-          <label id="zms-profileCustomHeaders-label" value="自定义 Headers JSON"/>
+          <label id="zms-profileCustomHeaders-label" value="自定义请求头（JSON）"/>
           <html:textarea class="zms-small-json" id="zms-profileCustomHeaders"/>
         </vbox>
         <vbox class="zms-row">
-          <label id="zms-profileBodyExtra-label" value="额外 Body JSON"/>
+          <label id="zms-profileBodyExtra-label" value="额外请求体（JSON）"/>
           <html:textarea class="zms-small-json" id="zms-profileBodyExtra"/>
         </vbox>
         <vbox class="zms-row">
@@ -223,7 +223,7 @@
             <checkbox id="zms-profileLocalAgentEnabled"/>
           </hbox>
           <hbox align="center" class="zms-row">
-            <label class="zms-label" id="zms-profileLocalAgentEndpoint-label" value="Endpoint"/>
+            <label class="zms-label" id="zms-profileLocalAgentEndpoint-label" value="代理地址"/>
             <html:input class="zms-field" id="zms-profileLocalAgentEndpoint"/>
           </hbox>
           <hbox align="center" class="zms-row">
@@ -231,11 +231,11 @@
             <html:input class="zms-field" id="zms-profileLocalAgentTool"/>
           </hbox>
           <hbox align="center" class="zms-row">
-            <label class="zms-label" id="zms-profileLocalAgentPayloadMode-label" value="Payload 模式"/>
+            <label class="zms-label" id="zms-profileLocalAgentPayloadMode-label" value="请求格式"/>
             <menulist id="zms-profileLocalAgentPayloadMode">
               <menupopup>
-                <menuitem label="JSONRPC" value="jsonrpc"/>
-                <menuitem label="Simple" value="simple"/>
+                <menuitem label="JSON-RPC" value="jsonrpc"/>
+                <menuitem label="简化请求" value="simple"/>
               </menupopup>
             </menulist>
           </hbox>
@@ -248,11 +248,11 @@
             <checkbox id="zms-profileLocalAgentFallback"/>
           </hbox>
           <vbox class="zms-row">
-            <label id="zms-profileLocalAgentHeaders-label" value="代理 Headers JSON"/>
+            <label id="zms-profileLocalAgentHeaders-label" value="代理请求头（JSON）"/>
             <html:textarea class="zms-small-json" id="zms-profileLocalAgentHeaders"/>
           </vbox>
           <vbox class="zms-row">
-            <label id="zms-profileLocalAgentSkills-label" value="技能级配置 JSON（可选）"/>
+            <label id="zms-profileLocalAgentSkills-label" value="技能级配置（JSON，可选）"/>
             <html:textarea class="zms-small-json" id="zms-profileLocalAgentSkills"/>
             <html:label id="zms-local-agent-note-1" class="zms-small-note" value="按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"/>
             <html:label id="zms-local-agent-note-2" class="zms-small-note" value="三位子技能可共用同一 endpoint，若某 skill 未单独配置 tool，会按 skill id 自动映射到对应工具名（ask_gemini/ask_claude/ask_opencode）。"/>

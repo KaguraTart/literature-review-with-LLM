@@ -15,209 +15,208 @@
     <html:aside id="zms-settings-panel" class="zms-sidebar" aria-hidden="true">
       <html:div class="zms-settings-header">
         <html:h1 id="zms-workbench-title">Literature Review with LLM</html:h1>
-        <html:button id="zms-settings-close" class="zms-settings-close" type="button">× Close</html:button>
+        <html:button id="zms-settings-close" class="zms-settings-close" type="button">收起</html:button>
       </html:div>
       <html:section class="zms-panel zms-panel-primary" data-zms-panel="profile">
-        <html:h2 id="zms-quick-settings-heading">Quick Settings</html:h2>
-        <html:label id="zms-workbench-output-dir-label" for="zms-workbench-output-dir">Output directory</html:label>
+        <html:h2 id="zms-quick-settings-heading">常用设置</html:h2>
+        <html:label id="zms-workbench-output-dir-label" for="zms-workbench-output-dir">输出目录</html:label>
         <html:div class="zms-output-dir-row">
           <html:input id="zms-workbench-output-dir" type="text"/>
-          <html:button id="zms-workbench-choose-output-dir" type="button">Choose Folder...</html:button>
-          <html:button id="zms-workbench-save-output-dir" type="button">Save</html:button>
+          <html:button id="zms-workbench-choose-output-dir" type="button">选择文件夹...</html:button>
+          <html:button id="zms-workbench-save-output-dir" type="button">保存</html:button>
         </html:div>
-        <html:label id="zms-profile-label" for="zms-profile">Profile</html:label>
+        <html:label id="zms-profile-label" for="zms-profile">配置档案</html:label>
         <html:select id="zms-profile"></html:select>
-        <html:label id="zms-workbench-provider-label" for="zms-workbench-provider">Model provider</html:label>
+        <html:label id="zms-workbench-provider-label" for="zms-workbench-provider">接口厂商</html:label>
         <html:select id="zms-workbench-provider"></html:select>
-        <html:label id="zms-profile-name-label" for="zms-profile-name">Profile name</html:label>
+        <html:label id="zms-profile-name-label" for="zms-profile-name">档案名称</html:label>
         <html:input id="zms-profile-name" type="text"/>
-        <html:label id="zms-profile-base-url-label" for="zms-profile-base-url">Base URL</html:label>
+        <html:label id="zms-profile-base-url-label" for="zms-profile-base-url">接口地址</html:label>
         <html:input id="zms-profile-base-url" type="url"/>
-        <html:label id="zms-profile-api-key-label" for="zms-profile-api-key">API Key</html:label>
+        <html:label id="zms-profile-api-key-label" for="zms-profile-api-key">API 密钥</html:label>
         <html:input id="zms-profile-api-key" type="password"/>
-        <html:label id="zms-profile-model-label" for="zms-profile-model">Model</html:label>
+        <html:label id="zms-profile-model-label" for="zms-profile-model">模型</html:label>
         <html:div class="zms-profile-model-row">
-          <html:label class="zms-inline-control-label" id="zms-profile-model-vendor-filter-label" for="zms-profile-model-vendor-select">Model vendor</html:label>
+          <html:label class="zms-inline-control-label" id="zms-profile-model-vendor-filter-label" for="zms-profile-model-vendor-select">模型厂商</html:label>
           <html:select id="zms-profile-model-vendor-select"></html:select>
-          <html:label class="zms-inline-control-label" id="zms-profile-model-select-label" for="zms-profile-model-select">Concrete model</html:label>
+          <html:label class="zms-inline-control-label" id="zms-profile-model-select-label" for="zms-profile-model-select">具体模型</html:label>
           <html:select id="zms-profile-model-select"></html:select>
           <html:input id="zms-profile-model" type="text" hidden="hidden"/>
           <html:datalist id="zms-workbench-model-options"/>
-          <html:button id="zms-load-models-workbench" class="zms-load-models-button" type="button" title="Load model list for the current provider">Load model list</html:button>
+          <html:button id="zms-load-models-workbench" class="zms-load-models-button" type="button" title="加载当前接口厂商的模型列表">加载模型列表</html:button>
         </html:div>
-        <html:p id="zms-workbench-model-help" class="zms-muted">Choose a provider first. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Load model list shows built-in recommendations first and appends online models when an API key is available.</html:p>
+        <html:p id="zms-workbench-model-help" class="zms-muted">先选接口厂商；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商，最后从“具体模型”下拉选择。点击“加载模型列表”会先显示内置推荐模型，有 API 密钥时追加在线模型。</html:p>
         <html:details class="zms-settings-details">
-          <html:summary id="zms-workbench-provider-env-heading">Paste env config</html:summary>
+          <html:summary id="zms-workbench-provider-env-heading">粘贴环境变量配置</html:summary>
           <html:textarea id="zms-workbench-provider-env-text" class="zms-provider-env-text" placeholder="OPENAI_API_KEY=...&#10;OPENAI_MODEL=..."></html:textarea>
           <html:div class="zms-actions">
-            <html:button id="zms-workbench-apply-provider-env" type="button">Apply to current profile</html:button>
+            <html:button id="zms-workbench-apply-provider-env" type="button">应用到当前档案</html:button>
           </html:div>
         </html:details>
         <html:label class="zms-checkbox-row" id="zms-profile-image-label">
           <html:input id="zms-profile-image-input" type="checkbox"/>
-          <html:span id="zms-profile-image-text">Images</html:span>
+          <html:span id="zms-profile-image-text">图片</html:span>
         </html:label>
         <html:label class="zms-checkbox-row" id="zms-profile-pdf-label">
           <html:input id="zms-profile-pdf-input" type="checkbox"/>
-          <html:span id="zms-profile-pdf-text">Raw PDF</html:span>
+          <html:span id="zms-profile-pdf-text">PDF 原文</html:span>
         </html:label>
         <html:label class="zms-checkbox-row" id="zms-local-ocr-label">
           <html:input id="zms-local-ocr-input" type="checkbox"/>
-          <html:span id="zms-local-ocr-text">Local OCR</html:span>
+          <html:span id="zms-local-ocr-text">本地 OCR</html:span>
         </html:label>
         <html:details id="zms-local-ocr-options" class="zms-settings-details">
-          <html:summary id="zms-local-ocr-options-heading">Local OCR Options</html:summary>
-          <html:label id="zms-local-ocr-endpoint-label" for="zms-local-ocr-endpoint">MCP Endpoint</html:label>
+          <html:summary id="zms-local-ocr-options-heading">本地 OCR 选项</html:summary>
+          <html:label id="zms-local-ocr-endpoint-label" for="zms-local-ocr-endpoint">MCP 地址</html:label>
           <html:input id="zms-local-ocr-endpoint" type="url"/>
-          <html:label id="zms-local-ocr-tool-label" for="zms-local-ocr-tool">Tool</html:label>
+          <html:label id="zms-local-ocr-tool-label" for="zms-local-ocr-tool">工具</html:label>
           <html:input id="zms-local-ocr-tool" type="text"/>
-          <html:label id="zms-local-ocr-language-label" for="zms-local-ocr-language">Language</html:label>
+          <html:label id="zms-local-ocr-language-label" for="zms-local-ocr-language">语言</html:label>
           <html:input id="zms-local-ocr-language" type="text"/>
-          <html:p id="zms-local-ocr-help" class="zms-muted">Use eng by default. Chinese OCR needs local language data.</html:p>
+          <html:p id="zms-local-ocr-help" class="zms-muted">默认使用 eng；中文 OCR 需要本机安装对应语言包。</html:p>
         </html:details>
         <html:div class="zms-actions zms-profile-actions">
-          <html:button id="zms-save-profile-settings" type="button">Save</html:button>
-          <html:button id="zms-test-profile-settings" type="button">Save and Test</html:button>
-          <html:button id="zms-export-provider-diagnostics" type="button">Export Diagnostics</html:button>
+          <html:button id="zms-save-profile-settings" type="button">保存</html:button>
+          <html:button id="zms-test-profile-settings" type="button">保存并测试</html:button>
+          <html:button id="zms-export-provider-diagnostics" type="button">导出诊断</html:button>
         </html:div>
         <html:p id="zms-profile-status" class="zms-muted"></html:p>
-        <html:label id="zms-skill-label" for="zms-skill">Skill</html:label>
+        <html:label id="zms-skill-label" for="zms-skill">咨询方式</html:label>
         <html:select id="zms-skill"></html:select>
         <html:p id="zms-skill-description" class="zms-muted"></html:p>
-        <html:label id="zms-prompt-pack-label" for="zms-prompt-pack">Research domain</html:label>
+        <html:label id="zms-prompt-pack-label" for="zms-prompt-pack">研究领域</html:label>
         <html:select id="zms-prompt-pack"></html:select>
         <html:p id="zms-prompt-pack-description" class="zms-muted"></html:p>
       </html:section>
       <html:details class="zms-panel zms-settings-details" data-zms-panel="paper">
-        <html:summary id="zms-paper-heading">Paper</html:summary>
-        <html:div id="zms-paper-meta" class="zms-muted">Loading</html:div>
+        <html:summary id="zms-paper-heading">论文</html:summary>
+        <html:div id="zms-paper-meta" class="zms-muted">正在读取论文</html:div>
       </html:details>
       <html:details class="zms-panel zms-settings-details" data-zms-panel="sessions">
-        <html:summary id="zms-sessions-heading">Sessions</html:summary>
+        <html:summary id="zms-sessions-heading">会话与文件</html:summary>
         <html:div class="zms-actions zms-session-actions">
-          <html:button id="zms-save-session">Save Session</html:button>
-          <html:button id="zms-export-reading-log">Export Log</html:button>
-          <html:button id="zms-export-comparison-report">Export Matrix</html:button>
-          <html:button id="zms-start-cross-review">Cross-paper Review</html:button>
-          <html:button id="zms-export-visual-report">Export Visual</html:button>
-          <html:button id="zms-export-review-draft">Export Draft</html:button>
-          <html:button id="zms-export-proposal-note">Export Proposal</html:button>
-          <html:button id="zms-export-journal-outline">Export Outline</html:button>
-          <html:button id="zms-new-conversation" title="Start a fresh conversation (the current one is auto-saved)">New conversation</html:button>
-          <html:button id="zms-compact-context" title="Compress older messages into a summary to free context window">Compact context</html:button>
-          <html:button id="zms-copy-session" title="Copy the current conversation as Markdown">Copy session</html:button>
-          <html:button id="zms-open-reader">Read Markdown</html:button>
+          <html:button id="zms-save-session">保存会话</html:button>
+          <html:button id="zms-export-reading-log">导出阅读日志</html:button>
+          <html:button id="zms-export-comparison-report">导出对比矩阵</html:button>
+          <html:button id="zms-start-cross-review">生成文献综述</html:button>
+          <html:button id="zms-export-visual-report">导出图表解析</html:button>
+          <html:button id="zms-export-review-draft">导出综述草稿</html:button>
+          <html:button id="zms-export-proposal-note">导出开题笔记</html:button>
+          <html:button id="zms-export-journal-outline">导出投稿提纲</html:button>
+          <html:button id="zms-new-conversation" title="开始新对话，当前会话会自动保存">新对话</html:button>
+          <html:button id="zms-compact-context" title="把较早消息压缩为摘要，释放上下文窗口">压缩上下文</html:button>
+          <html:button id="zms-copy-session" title="复制当前会话为 Markdown">复制会话</html:button>
+          <html:button id="zms-open-reader">阅读 Markdown</html:button>
         </html:div>
         <html:section class="zms-visual-review-editor" aria-live="polite">
           <html:div class="zms-visual-review-header">
-            <html:strong id="zms-visual-review-heading">Chart review</html:strong>
+            <html:strong id="zms-visual-review-heading">图表复核</html:strong>
             <html:div class="zms-visual-review-actions">
-              <html:button id="zms-load-visual-review">Load review</html:button>
-              <html:button id="zms-save-visual-review">Save review</html:button>
+              <html:button id="zms-load-visual-review">加载复核</html:button>
+              <html:button id="zms-save-visual-review">保存复核</html:button>
             </html:div>
           </html:div>
-          <html:p id="zms-visual-review-status" class="zms-muted">No visual report loaded.</html:p>
+          <html:p id="zms-visual-review-status" class="zms-muted">还没有图表解析 JSON，请先导出图表解析报告。</html:p>
           <html:div id="zms-visual-review-list" class="zms-list zms-visual-review-list"></html:div>
         </html:section>
         <html:div id="zms-session-list" class="zms-list"></html:div>
       </html:details>
       <html:details class="zms-panel zms-settings-details" data-zms-panel="candidates">
-        <html:summary id="zms-candidates-heading">Candidates</html:summary>
-        <html:label id="zms-candidate-query-label" for="zms-candidate-query">Search Query</html:label>
+        <html:summary id="zms-candidates-heading">候选论文检索</html:summary>
+        <html:label id="zms-candidate-query-label" for="zms-candidate-query">检索式</html:label>
         <html:textarea id="zms-candidate-query"></html:textarea>
         <html:div class="zms-candidate-search-grid">
-          <html:label id="zms-candidate-limit-label" for="zms-candidate-limit">Limit</html:label>
+          <html:label id="zms-candidate-limit-label" for="zms-candidate-limit">数量</html:label>
           <html:input id="zms-candidate-limit" type="number" min="1" max="50" value="10"/>
-          <html:label id="zms-candidate-email-label" for="zms-candidate-email">Email</html:label>
+          <html:label id="zms-candidate-email-label" for="zms-candidate-email">邮箱</html:label>
           <html:input id="zms-candidate-email" type="email"/>
         </html:div>
-        <html:label id="zms-candidate-semantic-key-label" for="zms-candidate-semantic-key">Semantic Scholar API Key</html:label>
+        <html:label id="zms-candidate-semantic-key-label" for="zms-candidate-semantic-key">Semantic Scholar API 密钥</html:label>
         <html:input id="zms-candidate-semantic-key" type="password"/>
         <html:div class="zms-citation-policy-grid">
-          <html:label id="zms-citation-policy-label" for="zms-citation-policy">Network Policy</html:label>
+          <html:label id="zms-citation-policy-label" for="zms-citation-policy">网络策略</html:label>
           <html:select id="zms-citation-policy">
-            <html:option id="zms-citation-policy-balanced" value="balanced" selected="selected">Balanced</html:option>
-            <html:option id="zms-citation-policy-precise" value="precise">Precise</html:option>
-            <html:option id="zms-citation-policy-broad" value="broad">Broad</html:option>
+            <html:option id="zms-citation-policy-balanced" value="balanced" selected="selected">平衡</html:option>
+            <html:option id="zms-citation-policy-precise" value="precise">精确</html:option>
+            <html:option id="zms-citation-policy-broad" value="broad">宽检索</html:option>
           </html:select>
-          <html:label id="zms-citation-direction-label" for="zms-citation-direction">Direction</html:label>
+          <html:label id="zms-citation-direction-label" for="zms-citation-direction">方向</html:label>
           <html:select id="zms-citation-direction">
-            <html:option id="zms-citation-direction-both" value="both" selected="selected">Both</html:option>
-            <html:option id="zms-citation-direction-references" value="references">References</html:option>
-            <html:option id="zms-citation-direction-citations" value="citations">Citations</html:option>
+            <html:option id="zms-citation-direction-both" value="both" selected="selected">双向</html:option>
+            <html:option id="zms-citation-direction-references" value="references">参考文献</html:option>
+            <html:option id="zms-citation-direction-citations" value="citations">引用本文</html:option>
           </html:select>
-          <html:label id="zms-citation-hops-label" for="zms-citation-hops">Hops</html:label>
+          <html:label id="zms-citation-hops-label" for="zms-citation-hops">跳数</html:label>
           <html:input id="zms-citation-hops" type="number" min="1" max="3" value="2"/>
-          <html:label id="zms-citation-max-requests-label" for="zms-citation-max-requests">Max Requests</html:label>
+          <html:label id="zms-citation-max-requests-label" for="zms-citation-max-requests">请求上限</html:label>
           <html:input id="zms-citation-max-requests" type="number" min="1" max="100" value="12"/>
-          <html:label id="zms-citation-per-seed-label" for="zms-citation-per-seed">Per Seed</html:label>
+          <html:label id="zms-citation-per-seed-label" for="zms-citation-per-seed">每种子条数</html:label>
           <html:input id="zms-citation-per-seed" type="number" min="1" max="100" value="4"/>
-          <html:label id="zms-citation-seed-limit-label" for="zms-citation-seed-limit">Seeds</html:label>
+          <html:label id="zms-citation-seed-limit-label" for="zms-citation-seed-limit">种子数</html:label>
           <html:input id="zms-citation-seed-limit" type="number" min="1" max="20" value="4"/>
         </html:div>
         <html:div class="zms-actions zms-candidate-actions">
-          <html:button id="zms-search-candidates">Search</html:button>
-          <html:button id="zms-expand-citation-network">Expand Network</html:button>
-          <html:button id="zms-load-candidates">Load</html:button>
-          <html:button id="zms-apply-candidate-recommendations">Apply Recommendations</html:button>
-          <html:button id="zms-save-candidates">Save Decisions</html:button>
-          <html:button id="zms-export-candidate-review">Export Review</html:button>
-          <html:button id="zms-import-candidates">Import Included</html:button>
-          <html:button id="zms-attach-candidate-pdfs">Attach PDFs</html:button>
-          <html:button id="zms-reconcile-candidate-duplicates">Mark Duplicates</html:button>
+          <html:button id="zms-search-candidates">检索</html:button>
+          <html:button id="zms-expand-citation-network">扩展引用网络</html:button>
+          <html:button id="zms-load-candidates">加载</html:button>
+          <html:button id="zms-apply-candidate-recommendations">应用建议</html:button>
+          <html:button id="zms-save-candidates">保存决策</html:button>
+          <html:button id="zms-export-candidate-review">导出审阅报告</html:button>
+          <html:button id="zms-import-candidates">导入纳入项</html:button>
+          <html:button id="zms-attach-candidate-pdfs">补全 PDF</html:button>
+          <html:button id="zms-reconcile-candidate-duplicates">标记重复</html:button>
         </html:div>
         <html:p id="zms-candidate-status" class="zms-muted"></html:p>
         <html:div id="zms-candidate-list" class="zms-list zms-candidate-list"></html:div>
       </html:details>
-      <html:div id="zms-status" class="zms-status">Ready</html:div>
+      <html:div id="zms-status" class="zms-status">就绪</html:div>
     </html:aside>
     <html:section class="zms-chat">
       <html:header class="zms-chat-bar">
         <html:div class="zms-chat-context">
-          <html:div id="zms-chat-paper-title" class="zms-chat-paper-title">Paper Chat</html:div>
-          <html:div id="zms-chat-status" class="zms-chat-status">Ready</html:div>
+          <html:div id="zms-chat-paper-title" class="zms-chat-paper-title">论文聊天</html:div>
+          <html:div id="zms-chat-status" class="zms-chat-status">就绪</html:div>
         </html:div>
         <html:div class="zms-chat-actions">
-          <html:button id="zms-settings-toggle" class="zms-settings-toggle" type="button">Settings</html:button>
+          <html:button id="zms-settings-toggle" class="zms-settings-toggle" type="button">设置</html:button>
           <html:button id="zms-close-workbench" class="zms-close-workbench" type="button">×</html:button>
         </html:div>
       </html:header>
       <html:div id="zms-messages" class="zms-messages"></html:div>
       <html:section id="zms-writeback" class="zms-writeback" hidden="hidden">
-        <html:h2 id="zms-writeback-title">Write Preview</html:h2>
+        <html:h2 id="zms-writeback-title">写入预览</html:h2>
         <html:div class="zms-writeback-grid">
-          <html:label for="zms-write-action" id="zms-write-action-label">Action</html:label>
+          <html:label for="zms-write-action" id="zms-write-action-label">动作</html:label>
           <html:select id="zms-write-action">
-            <html:option value="append_research_notes">Append to Research Notes</html:option>
-            <html:option value="append_section">Append to Section</html:option>
-            <html:option value="replace_section">Replace Section</html:option>
+            <html:option value="append_research_notes">追加到聊天摘录</html:option>
+            <html:option value="append_section">追加到章节</html:option>
+            <html:option value="replace_section">替换章节</html:option>
           </html:select>
-          <html:label for="zms-write-section" id="zms-write-section-label">Section</html:label>
+          <html:label for="zms-write-section" id="zms-write-section-label">章节</html:label>
           <html:select id="zms-write-section"></html:select>
         </html:div>
         <html:pre id="zms-write-summary" class="zms-write-summary"></html:pre>
         <html:textarea id="zms-write-diff" readonly="readonly"></html:textarea>
         <html:div class="zms-actions">
-          <html:button id="zms-preview-write">Preview</html:button>
-          <html:button id="zms-confirm-write">Confirm Write</html:button>
-          <html:button id="zms-cancel-write">Cancel</html:button>
+          <html:button id="zms-preview-write">预览</html:button>
+          <html:button id="zms-confirm-write">确认写入</html:button>
+          <html:button id="zms-cancel-write">取消</html:button>
         </html:div>
       </html:section>
       <html:footer id="zms-composer" class="zms-composer">
         <html:div id="zms-image-attachments" class="zms-image-attachments" hidden="hidden"></html:div>
-        <html:textarea id="zms-input" placeholder="Ask about the current paper" autofocus="autofocus" tabindex="0"></html:textarea>
+        <html:textarea id="zms-input" placeholder="向当前论文提问" autofocus="autofocus" tabindex="0"></html:textarea>
         <html:input id="zms-image-file" type="file" accept="image/*" multiple="multiple" hidden="hidden"/>
         <html:div class="zms-composer-toolbar">
           <html:div class="zms-composer-left">
             <html:button id="zms-attach-image" class="zms-icon-button zms-attach-image" type="button">+</html:button>
-            <html:span id="zms-composer-profile" class="zms-composer-pill zms-composer-label">Model</html:span>
+            <html:span id="zms-composer-profile" class="zms-composer-pill zms-composer-label">模型</html:span>
           </html:div>
           <html:div class="zms-composer-actions">
-            <html:button id="zms-stop" class="zms-icon-button zms-stop-button" type="button">Stop</html:button>
-            <html:button id="zms-send" class="zms-send-button" type="button">Send</html:button>
+            <html:button id="zms-stop" class="zms-icon-button zms-stop-button" type="button">停止</html:button>
+            <html:button id="zms-send" class="zms-send-button" type="button">发送</html:button>
           </html:div>
         </html:div>
-      </html:footer>
     </html:section>
   </html:main>
 </window>
