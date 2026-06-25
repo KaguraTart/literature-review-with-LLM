@@ -114,13 +114,13 @@
             <html:select class="zms-field zms-model-vendor-select" id="zms-model-vendor-select"></html:select>
             <html:label class="zms-inline-label" id="zms-model-select-label" for="zms-model-select">具体模型</html:label>
             <html:select class="zms-field zms-model-select" id="zms-model-select"></html:select>
-            <button id="zms-load-models-button" label="加载模型列表" oncommand="ZoteroMarkdownSummaryPrefs.loadModels()"/>
+            <button id="zms-load-models-button" label="加载在线模型" oncommand="ZoteroMarkdownSummaryPrefs.loadModels()"/>
           </html:div>
           <html:input class="zms-field zms-model-custom" id="zms-model" hidden="hidden" placeholder="自定义或私有部署模型名称"/>
           <html:datalist id="zms-model-options"/>
         </html:div>
       </hbox>
-      <html:label id="zms-model-help" class="zms-small-note" value="先选接口厂商，推荐模型会自动显示；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商。有 API Key 时点“加载模型列表”会追加厂商实时返回的在线模型。"/>
+      <html:label id="zms-model-help" class="zms-small-note" value="先选接口厂商，推荐模型会自动显示；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商。只有私有部署或列表里没有的模型才需要自定义；有 API Key 时点“加载在线模型”会追加厂商实时返回的模型。"/>
       <vbox class="zms-row">
         <label id="zms-providerEnv-label" value="粘贴环境变量配置"/>
         <html:textarea class="zms-small-json" id="zms-providerEnvText" placeholder="OPENAI_API_KEY=...&#10;OPENAI_MODEL=..."/>

@@ -3391,7 +3391,7 @@ function providerDiagnosticsLabels(outputLanguage) {
       coreProtocolLiveCheck: "核心协议 live 检查",
       statusSnapshot: "当前状态快照",
       troubleshooting: "排查清单",
-      checkModel: "确认模型名称真实存在，优先从“具体模型”下拉选择，必要时加载模型列表。",
+      checkModel: "确认模型名称真实存在，优先从“具体模型”下拉选择，必要时加载在线模型。",
       checkEndpoint: "确认 Base URL 不重复包含 /chat/completions、/responses、/messages 或 /models。",
       checkAuth: "确认 API key 或自定义认证 header 属于当前厂商。",
       checkCapabilities: "图片/PDF/流式开关要和模型能力一致。",
