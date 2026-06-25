@@ -15,6 +15,7 @@ const WORKBENCH_STYLE_ID = "zotero-markdown-summary-workbench-style";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SYSTEM_PROMPT = "你是学术论文阅读助手，输出中文 Markdown 摘要。";
 const USER_PROMPT = "请按研究问题、方法、实验、结论、局限、可借鉴点总结。";
+const PROVIDER_RETRY_DELAY_MAX_MS = 10000;
 const PROMPT_PACK_IDS = ["general", "ai-ml", "transportation", "biomedicine", "social-science", "review-writing"];
 var UI_MESSAGES = typeof ZMS_I18N === "undefined" ? {} : ZMS_I18N;
 
@@ -753,9 +754,9 @@ async function requestJSON(url, headers, body, stream, protocol = "openai_chat",
           usedCompatibilityFallbackFields = Array.from(new Set([...usedCompatibilityFallbackFields, ...fallbackFields]));
           continue;
         }
-        const error = providerHTTPError(response.status, text);
+        const error = providerHTTPError(response.status, text, response.headers);
         if (error.retryableProviderError && attempt < 3) {
-          await Zotero.Promise.delay(500 * 2 ** attempt);
+          await Zotero.Promise.delay(providerRetryDelayMs(error, attempt));
           continue;
         }
         throw error;
@@ -783,7 +784,7 @@ async function requestJSON(url, headers, body, stream, protocol = "openai_chat",
       if (err?.retryableProviderError === false) throw err;
       lastError = err;
       if (attempt < 3) {
-        await Zotero.Promise.delay(500 * 2 ** attempt);
+        await Zotero.Promise.delay(providerRetryDelayMs(err, attempt));
         continue;
       }
     }
@@ -972,10 +973,84 @@ function responseHeaderValue(response, name) {
   return entry ? String(entry[1] || "") : "";
 }
 
-function providerHTTPError(status, text) {
+function providerHTTPError(status, text, headers) {
   const error = new Error(providerErrorText(status, text));
   error.retryableProviderError = status === 429 || status >= 500;
+  const retryAfterMs = providerRetryAfterMs(headers);
+  if (retryAfterMs != null) {
+    error.providerRetryAfterMs = retryAfterMs;
+  }
   return error;
+}
+
+function providerRetryDelayMs(error, attempt) {
+  const headerDelay = clampProviderRetryDelayMs(error?.providerRetryAfterMs);
+  if (headerDelay != null) return headerDelay;
+  return clampProviderRetryDelayMs(500 * 2 ** attempt) || 0;
+}
+
+function providerRetryAfterMs(headers) {
+  const retryAfterMs = numericProviderHeaderMs(
+    responseHeaderMapValue(headers, "retry-after-ms")
+      || responseHeaderMapValue(headers, "x-retry-after-ms")
+  );
+  if (retryAfterMs != null) return retryAfterMs;
+
+  const retryAfter = responseHeaderMapValue(headers, "retry-after");
+  if (retryAfter) {
+    const numericSeconds = Number(String(retryAfter).trim());
+    if (Number.isFinite(numericSeconds) && numericSeconds >= 0) {
+      return clampProviderRetryDelayMs(numericSeconds * 1000);
+    }
+    const dateDelay = Date.parse(String(retryAfter)) - Date.now();
+    if (Number.isFinite(dateDelay) && dateDelay >= 0) {
+      return clampProviderRetryDelayMs(dateDelay);
+    }
+  }
+
+  const reset = responseHeaderMapValue(headers, "x-ratelimit-reset")
+    || responseHeaderMapValue(headers, "x-rate-limit-reset");
+  if (!reset) return null;
+  const resetText = String(reset).trim();
+  const resetNumber = Number(resetText);
+  if (Number.isFinite(resetNumber) && resetNumber > 0) {
+    const epochMs = resetNumber > 100000000000 ? resetNumber : resetNumber * 1000;
+    const delayMs = epochMs - Date.now();
+    return delayMs >= 0 ? clampProviderRetryDelayMs(delayMs) : null;
+  }
+  const resetDateDelay = Date.parse(resetText) - Date.now();
+  return Number.isFinite(resetDateDelay) && resetDateDelay >= 0 ? clampProviderRetryDelayMs(resetDateDelay) : null;
+}
+
+function numericProviderHeaderMs(value) {
+  if (value == null || value === "") return null;
+  const ms = Number(String(value).trim());
+  return Number.isFinite(ms) && ms >= 0 ? clampProviderRetryDelayMs(ms) : null;
+}
+
+function responseHeaderMapValue(headers, name) {
+  if (!headers || !name) return "";
+  const lower = name.toLowerCase();
+  if (typeof headers.get === "function") {
+    try {
+      return headers.get(name) || headers.get(lower) || "";
+    } catch (_err) {
+      return "";
+    }
+  }
+  if (headers instanceof Map) {
+    return headers.get(name) || headers.get(lower) || "";
+  }
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === lower) return headers[key];
+  }
+  return "";
+}
+
+function clampProviderRetryDelayMs(value) {
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return Math.min(Math.ceil(ms), PROVIDER_RETRY_DELAY_MAX_MS);
 }
 
 async function readProviderStream(response, protocol) {
