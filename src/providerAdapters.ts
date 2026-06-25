@@ -231,16 +231,16 @@ function parseStreamPayload(protocol: ProviderProtocol, payload: string): string
 function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, depth = 0): string {
   const errorText = streamErrorText(data);
   if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
-  if (isReasoningStreamEvent(data)) return "";
+  if (isNonAnswerStreamEvent(data)) return "";
   if (protocol === "anthropic_messages") {
     if (data?.type === "content_block_delta") {
-      return data?.delta?.text || data?.delta?.partial_json || "";
+      return anthropicDeltaText(data?.delta);
     }
     if (data?.type === "content_block_start") {
+      if (isNonAnswerContentPart(data?.content_block)) return "";
       return extractMessageContent(data?.content_block);
     }
-    return data?.delta?.text
-      || data?.delta?.partial_json
+    return anthropicDeltaText(data?.delta)
       || data?.content_block?.text
       || extractAnthropicContent(data)
       || extractMessageContent(data)
@@ -282,7 +282,7 @@ function extractOpenAIChoiceContent(choices: unknown): string {
     .map((choice: any) => {
       if (typeof choice?.delta === "string") return choice.delta;
       return extractMessageContent(choice?.delta?.content)
-        || extractMessageContent(choice?.delta)
+        || (isNonAnswerContentPart(choice?.delta) ? "" : extractMessageContent(choice?.delta))
         || extractMessageContent(choice?.message?.content)
         || extractMessageContent(choice?.message)
         || (typeof choice?.text === "string" ? choice.text : "")
@@ -405,7 +405,7 @@ function extractMessageContent(content: unknown, depth = 0, allowDirect = true):
     return content.map((item: any) => extractMessageContent(item, depth + 1, allowDirect)).filter(Boolean).join("\n");
   }
   if (record && typeof record === "object") {
-    if (isReasoningContent(record)) return "";
+    if (isNonAnswerContentPart(record)) return "";
     if (typeof record.text === "string") return record.text;
     if (record.text && typeof record.text === "object") {
       const text = extractMessageContent(record.text, depth + 1, allowDirect);
@@ -522,16 +522,33 @@ function extractWrappedResponseContent(protocol: "openai" | "anthropic", data: a
   return "";
 }
 
-function isReasoningContent(record: Record<string, unknown>): boolean {
+function isNonAnswerContentPart(record: Record<string, unknown> | null | undefined): boolean {
+  if (!record || typeof record !== "object") return false;
   const type = String(record.type || "");
-  return type.includes("reasoning") || type.includes("thinking");
+  return type.includes("reasoning")
+    || type.includes("thinking")
+    || type.includes("tool_use")
+    || type.includes("tool_call")
+    || type.includes("function_call")
+    || type.includes("signature")
+    || type === "input_json_delta"
+    || type === "json_delta";
 }
 
-function isReasoningStreamEvent(record: unknown): boolean {
+function isNonAnswerStreamEvent(record: unknown): boolean {
   if (!record || typeof record !== "object") return false;
   const data = record as Record<string, any>;
+  const type = String(data.type || "");
+  if (/^(response\.)?(output_item|content_block)\.(added|done)$/.test(type) && isNonAnswerContentPart(data.item || data.content_block)) return true;
+  if (type.includes("tool_call") || type.includes("function_call")) return true;
   return [data.type, data.delta?.type, data.content_block?.type]
-    .some((type) => isReasoningContent({ type }));
+    .some((type) => isNonAnswerContentPart({ type }));
+}
+
+function anthropicDeltaText(delta: any): string {
+  if (!delta || typeof delta !== "object") return "";
+  if (isNonAnswerContentPart(delta)) return "";
+  return typeof delta.text === "string" ? delta.text : "";
 }
 
 function stripThink(value: unknown): string {

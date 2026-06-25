@@ -1774,6 +1774,8 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.refusal.done\",\"refusal\":\"done refusal\"}")).toBe("done refusal");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"hidden reasoning\"}")).toBe("");
     expect(parseStreamChunk("openai_responses", "data: {\"data\":{\"type\":\"response.reasoning_text.delta\",\"delta\":\"wrapped hidden\"}}")).toBe("");
+    expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{\\\"query\\\"\"}")).toBe("");
+    expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"arguments\":\"{\\\"query\\\":\\\"paper\\\"}\"}}")).toBe("");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.content_part.done\",\"part\":{\"type\":\"output_text\",\"text\":\"snapshot part\"}}")).toBe("snapshot part");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.content_part.done\",\"part\":{\"type\":\"output_text\",\"text\":{\"value\":\"snapshot value part\"}}}")).toBe("snapshot value part");
     expect(parseStreamChunk("openai_responses", "data: {\"type\":\"response.output_item.done\",\"item\":{\"content\":[{\"type\":\"output_text\",\"text\":\"snapshot item\"}]}}")).toBe("snapshot item");
@@ -1784,13 +1786,16 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_chat", "data: {\"text\":{\"value\":\"router stream text\"}}")).toBe("router stream text");
     expect(parseStreamChunk("openai_chat", "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"candidate stream\"}]}}]}")).toBe("candidate stream");
     expect(parseStreamChunk("openai_chat", "data: {\"candidates\":[{\"content\":{\"parts\":[{\"type\":\"thinking\",\"text\":\"hidden\"},{\"text\":\" visible candidate\"}]}}]}")).toBe(" visible candidate");
+    expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"query\\\"\"}}]}}]}")).toBe("");
+    expect(parseStreamChunk("openai_chat", "data: {\"choices\":[{\"delta\":{\"function_call\":{\"arguments\":\"{\\\"query\\\"\"}}}]}")).toBe("");
     expect(parseStreamChunk("openai_chat", "data: {\"result\":\"direct stream result\"}")).toBe("direct stream result");
     expect(parseStreamChunk("openai_responses", "data: {\"generated_text\":\"generated stream text\"}")).toBe("generated stream text");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"claude\"}}")).toBe("claude");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"text\":\"hidden thinking\"}}")).toBe("");
-    expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"ok\\\"\"}}")).toBe("{\"ok\"");
+    expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"ok\\\"\"}}")).toBe("");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\",\"text\":\"start text\"}}")).toBe("start text");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"thinking\",\"text\":\"hidden start\"}}")).toBe("");
+    expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"name\":\"search\",\"input\":{\"query\":\"paper\"}}}")).toBe("");
     expect(parseStreamChunk("openai_chat", "data: {\"data\":{\"choices\":[{\"delta\":{\"content\":\"wrapped chat\"}}]}}")).toBe("wrapped chat");
     expect(parseStreamChunk("openai_responses", "data: {\"result\":{\"type\":\"response.output_text.delta\",\"delta\":\"wrapped responses\"}}")).toBe("wrapped responses");
     expect(parseStreamChunk("openai_responses", "data: {\"body\":{\"type\":\"response.output_text.delta\",\"delta\":\"wrapped body\"}}")).toBe("wrapped body");

@@ -12257,16 +12257,16 @@ function streamTextFromData(protocol, data, depth = 0) {
   if (!data) return "";
   const errorText = streamErrorText(data);
   if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
-  if (isReasoningStreamEvent(data)) return "";
+  if (isNonAnswerStreamEvent(data)) return "";
   if (protocol === "anthropic_messages") {
     if (data?.type === "content_block_delta") {
-      return data?.delta?.text || data?.delta?.partial_json || "";
+      return anthropicDeltaText(data?.delta);
     }
     if (data?.type === "content_block_start") {
+      if (isNonAnswerModelPart(data?.content_block)) return "";
       return modelTextFromValue(data?.content_block);
     }
-    return data?.delta?.text
-      || data?.delta?.partial_json
+    return anthropicDeltaText(data?.delta)
       || data?.content_block?.text
       || modelTextFromValue(data?.content)
       || modelTextFromValue(data?.message)
@@ -12983,7 +12983,7 @@ function modelTextFromValue(value, depth = 0, allowDirect = true) {
     return value.map((item) => modelTextFromValue(item, depth + 1, allowDirect)).filter(Boolean).join("\n");
   }
   if (typeof value === "object") {
-    if (isReasoningModelPart(value)) return "";
+    if (isNonAnswerModelPart(value)) return "";
     if (typeof value.text === "string") return value.text;
     if (value.text && typeof value.text === "object") {
       const text = modelTextFromValue(value.text, depth + 1, allowDirect);
@@ -13051,7 +13051,7 @@ function modelTextFromChoices(choices) {
     .map((choice) => {
       if (typeof choice?.delta === "string") return choice.delta;
       return modelTextFromValue(choice?.delta?.content)
-        || modelTextFromValue(choice?.delta)
+        || (isNonAnswerModelPart(choice?.delta) ? "" : modelTextFromValue(choice?.delta))
         || modelTextFromValue(choice?.message?.content)
         || modelTextFromValue(choice?.message)
         || (typeof choice?.text === "string" ? choice.text : "")
@@ -13124,15 +13124,32 @@ function isStreamSnapshot(protocol, value, depth = 0) {
   });
 }
 
-function isReasoningModelPart(value) {
+function isNonAnswerModelPart(value) {
+  if (!value || typeof value !== "object") return false;
   const type = String(value?.type || "");
-  return type.includes("reasoning") || type.includes("thinking");
+  return type.includes("reasoning")
+    || type.includes("thinking")
+    || type.includes("tool_use")
+    || type.includes("tool_call")
+    || type.includes("function_call")
+    || type.includes("signature")
+    || type === "input_json_delta"
+    || type === "json_delta";
 }
 
-function isReasoningStreamEvent(value) {
+function isNonAnswerStreamEvent(value) {
   if (!value || typeof value !== "object") return false;
+  const type = String(value.type || "");
+  if (/^(response\.)?(output_item|content_block)\.(added|done)$/.test(type) && isNonAnswerModelPart(value.item || value.content_block)) return true;
+  if (type.includes("tool_call") || type.includes("function_call")) return true;
   return [value.type, value.delta?.type, value.content_block?.type]
-    .some((type) => isReasoningModelPart({ type }));
+    .some((type) => isNonAnswerModelPart({ type }));
+}
+
+function anthropicDeltaText(delta) {
+  if (!delta || typeof delta !== "object") return "";
+  if (isNonAnswerModelPart(delta)) return "";
+  return typeof delta.text === "string" ? delta.text : "";
 }
 
 async function ensureSummaryFile(item, pdf, outputDir, options = {}) {

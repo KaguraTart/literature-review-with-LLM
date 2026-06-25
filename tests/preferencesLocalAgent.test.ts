@@ -5104,7 +5104,19 @@ describe("preferences local-agent config helpers", () => {
       type: "content_block_start",
       content_block: { type: "text", text: "anthropic start ok" }
     }))).toBe("anthropic start ok");
+    expect(() => helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
+      choices: [{ delta: { tool_calls: [{ function: { arguments: "{\"query\"" } }] } }]
+    }))).toThrow("No text returned from model");
+    expect(() => helpers.extractProviderConnectionText("openai_responses", JSON.stringify({
+      type: "response.output_item.done",
+      item: { type: "function_call", arguments: "{\"query\":\"paper\"}" }
+    }))).toThrow("No text returned from model");
+    expect(() => helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({
+      type: "content_block_delta",
+      delta: { type: "input_json_delta", partial_json: "{\"query\"" }
+    }))).toThrow("No text returned from model");
     expect(helpers.extractProviderConnectionText("openai_chat", [
+      "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"query\\\"\"}}]}}]}",
       "data: {\"choices\":[{\"delta\":{\"content\":\"stream \"}}]}",
       "",
       "data: {\"choices\":[{\"delta\":{\"content\":\"chat\"}}]}",
@@ -5118,12 +5130,17 @@ describe("preferences local-agent config helpers", () => {
       "data: [DONE]"
     ].join("\n"))).toBe("stream object responses");
     expect(helpers.extractProviderConnectionText("openai_responses", [
+      "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{\\\"query\\\"\"}",
       "data: {\"type\":\"response.output_text.done\",\"text\":\"done responses\"}",
       "data: {\"delta\":{\"output_text\":\" router delta\"}}",
       "data: [DONE]"
     ].join("\n"))).toBe("done responses router delta");
     expect(helpers.extractProviderConnectionText("anthropic_messages", [
       "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"thinking\",\"text\":\"hidden start\"}}",
+      "",
+      "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"name\":\"search\",\"input\":{\"query\":\"paper\"}}}",
+      "",
+      "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"query\\\"\"}}",
       "",
       "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\",\"text\":\"start \"}}",
       "",
