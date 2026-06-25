@@ -1382,6 +1382,71 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("honors Retry-After timing headers for model-list checks", async () => {
+    let modelRequestCount = 0;
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "models-secret",
+        "--models",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        models: true,
+        retryCount: 1,
+        modelCount: 1,
+        modelIds: ["model-after-rate-limit"]
+      });
+      expect(requests.map((request) => request.pathWithQuery)).toEqual([
+        "/v1/models",
+        "/v1/models"
+      ]);
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.path.endsWith("/models") && requestData.method === "GET") {
+          modelRequestCount += 1;
+          if (modelRequestCount === 1) {
+            response.writeHead(429, { "content-type": "application/json", "retry-after-ms": "0" });
+            response.end(JSON.stringify({ error: { message: "rate limited" } }));
+            return;
+          }
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ data: [{ id: "model-after-rate-limit" }] }));
+      }
+    });
+  });
+
+  it("does not retry model-list checks without provider retry timing headers", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      let error: any;
+      try {
+        await runSmoke([
+          "--profile", "openai-compatible",
+          "--base-url", `${baseURL}/v1`,
+          "--api-key", "models-secret",
+          "--models",
+          "--json"
+        ]);
+      } catch (err) {
+        error = err;
+      }
+
+      expect(requests).toHaveLength(1);
+      expect(error?.stdout).toContain("\"status\": 503");
+      expect(error?.stdout).toContain("\"retryCount\": 0");
+      expect(error?.stdout).toContain("temporary unavailable");
+    }, {
+      handler: (_requestData, response) => {
+        response.writeHead(503, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "temporary unavailable" } }));
+      }
+    });
+  });
+
   it("fails model-list checks when a 200 response contains a provider error", async () => {
     await withMockProvider(async (baseURL) => {
       let error: any;
@@ -2468,6 +2533,53 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("honors Retry-After timing headers in live model-list checks", async () => {
+    let modelRequestCount = 0;
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--models", "--include", "openai-compatible", "--json"], scrubProviderEnv({
+        OPENAI_COMPATIBLE_API_KEY: "live-compatible-models-secret",
+        OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        models: true,
+        counts: {
+          passed: 1,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results[0]).toMatchObject({
+        id: "openai-compatible",
+        status: "passed",
+        report: {
+          retryCount: 1,
+          modelCount: 2
+        }
+      });
+      expect(requests.map((request) => request.path)).toEqual([
+        "/v1/models",
+        "/v1/models"
+      ]);
+      expect(JSON.stringify(report)).not.toContain("live-compatible-models-secret");
+    }, {
+      handler: (requestData, response) => {
+        if (requestData.path.endsWith("/models") && requestData.method === "GET") {
+          modelRequestCount += 1;
+          if (modelRequestCount === 1) {
+            response.writeHead(429, { "content-type": "application/json", "retry-after": "0" });
+            response.end(JSON.stringify({ error: { message: "rate limited" } }));
+            return;
+          }
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(liveMockResponse(requestData.path)));
+      }
+    });
+  });
+
   it("runs live OpenAI-compatible checks against local endpoints without API credentials", async () => {
     await withLiveMockProvider(async (baseURL, requests) => {
       const report = await runLive(["--include", "openai-compatible", "--json"], scrubProviderEnv({
@@ -2788,16 +2900,19 @@ async function withMockProvider(
 }
 
 async function withLiveMockProvider(
-  run: (baseURL: string, requests: any[]) => Promise<void>
+  run: (baseURL: string, requests: any[]) => Promise<void>,
+  options: { handler?: (requestData: any, response: any) => void } = {}
 ) {
   const requests: any[] = [];
   const server = createServer(async (request, response) => {
     const bodyText = await readRequestBody(request);
-    const path = new URL(request.url || "/", "http://127.0.0.1").pathname;
+    const parsedUrl = new URL(request.url || "/", "http://127.0.0.1");
+    const path = parsedUrl.pathname;
     const body = bodyText ? JSON.parse(bodyText) : {};
-    requests.push({
+    const requestData = {
       method: request.method,
       path,
+      pathWithQuery: `${parsedUrl.pathname}${parsedUrl.search}`,
       authorization: request.headers.authorization,
       xApiKey: request.headers["x-api-key"],
       accept: request.headers.accept,
@@ -2805,7 +2920,12 @@ async function withLiveMockProvider(
       xRouter: request.headers["x-router"],
       xGlobal: request.headers["x-global"],
       body
-    });
+    };
+    requests.push(requestData);
+    if (options.handler) {
+      options.handler(requestData, response);
+      return;
+    }
     if (body?.stream === true) {
       response.writeHead(200, { "content-type": "text/event-stream" });
       response.end(liveMockStreamResponse(path));

@@ -298,6 +298,12 @@ const SOURCE_MARKERS = [
     markers: ["fetchModelOptions", "nextModelListURL", "MODEL_LIST_MAX_PAGES", "workbenchFetchModelOptions", "workbenchNextModelListURL", "WORKBENCH_MODEL_LIST_MAX_PAGES", "providerRequestHeadersWithFallback", "retries settings model lists without a rejected Anthropic version header", "retries workbench model lists without a rejected Anthropic version header", "follows bounded wrapped model-list pagination in the workbench"]
   },
   {
+    id: "provider.model-list-retry-after",
+    description: "Provider smoke and live model-list checks honor explicit provider retry timing headers",
+    files: ["scripts/verify-provider-smoke.mjs", "scripts/verify-provider-live.mjs", "tests/providerSmokeScript.test.ts"],
+    markers: ["providerModelListRetryDelayMs", "providerRetryAfterMs", "PROVIDER_MODEL_LIST_MAX_ATTEMPTS", "honors Retry-After timing headers for model-list checks", "does not retry model-list checks without provider retry timing headers", "honors Retry-After timing headers in live model-list checks", "runProviderModels"]
+  },
+  {
     id: "provider.model-picker-presets",
     description: "Settings and workbench expose provider-specific recommended model dropdowns before falling back to custom model input",
     files: ["addon/content/provider-models.js", "addon/content/preferences.xhtml", "addon/content/preferences.js", "addon/content/workbench.xhtml", "addon/content/workbench.js", "tests/preferencesLocalAgent.test.ts", "tests/workbenchWriteback.test.ts", "tests/providerCatalogConsistency.test.ts"],

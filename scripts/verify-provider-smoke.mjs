@@ -24,6 +24,8 @@ const DEFAULT_PROMPT = "Reply with OK only.";
 const DEFAULT_CONTEXT = "Provider smoke-test context.";
 const DEFAULT_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 const DEFAULT_PDF_BASE64 = "JVBERi0xLjQKMSAwIG9iago8PD4+CmVuZG9iagp0cmFpbGVyCjw8Pj4KJSVFT0YK";
+const PROVIDER_RETRY_DELAY_MAX_MS = 10000;
+const PROVIDER_MODEL_LIST_MAX_ATTEMPTS = 4;
 
 if (isMainModule()) {
   try {
@@ -226,6 +228,7 @@ export async function runProviderModels(options = {}) {
   const items = [];
   let nextUrl = endpoint;
   const usedCompatibilityFallbackFields = [];
+  const retryDelaysMs = [];
   try {
     for (let page = 0; nextUrl && page < maxPages; page += 1) {
       if (seenUrls.has(nextUrl)) break;
@@ -234,7 +237,7 @@ export async function runProviderModels(options = {}) {
       let response;
       let rawText = "";
       let parsed = null;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      for (let attempt = 0; attempt < PROVIDER_MODEL_LIST_MAX_ATTEMPTS; attempt += 1) {
         response = await fetch(nextUrl, {
           method: "GET",
           headers,
@@ -243,9 +246,18 @@ export async function runProviderModels(options = {}) {
         rawText = await response.text();
         parsed = parseResponseBody(rawText);
         const fallbackFields = providerCompatibilityFallbackFields(profile.protocol, {}, response.status, rawText, usedCompatibilityFallbackFields);
-        if (!fallbackFields.length) break;
-        headers = providerRequestHeadersWithFallback(headers, fallbackFields);
-        usedCompatibilityFallbackFields.push(...fallbackFields);
+        if (fallbackFields.length) {
+          headers = providerRequestHeadersWithFallback(headers, fallbackFields);
+          usedCompatibilityFallbackFields.push(...fallbackFields);
+          continue;
+        }
+        const retryDelayMs = providerModelListRetryDelayMs(response, attempt);
+        if (retryDelayMs != null) {
+          retryDelaysMs.push(retryDelayMs);
+          await delay(retryDelayMs);
+          continue;
+        }
+        break;
       }
       if (!response.ok) {
         return {
@@ -255,6 +267,7 @@ export async function runProviderModels(options = {}) {
           profile: profile.id,
           protocol: profile.protocol,
           endpoint: nextUrl,
+          retryCount: retryDelaysMs.length,
           error: providerErrorText(parsed, rawText)
         };
       }
@@ -267,6 +280,7 @@ export async function runProviderModels(options = {}) {
           profile: profile.id,
           protocol: profile.protocol,
           endpoint: nextUrl,
+          retryCount: retryDelaysMs.length,
           error: responseError
         };
       }
@@ -282,6 +296,7 @@ export async function runProviderModels(options = {}) {
       endpoint,
       pages: requests.length,
       truncated: Boolean(nextUrl),
+      retryCount: retryDelaysMs.length,
       modelCount: modelOptions.length,
       modelIds: modelOptions.map((option) => option.id),
       modelOptions
@@ -1318,6 +1333,85 @@ function stringField(...values) {
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return "";
+}
+
+function providerModelListRetryableStatus(status) {
+  const numericStatus = Number(status);
+  return numericStatus === 429 || numericStatus >= 500;
+}
+
+function providerModelListRetryDelayMs(response, attempt) {
+  if (!response || !providerModelListRetryableStatus(response.status)) return null;
+  if (attempt >= PROVIDER_MODEL_LIST_MAX_ATTEMPTS - 1) return null;
+  return providerRetryAfterMs(response.headers);
+}
+
+function providerRetryAfterMs(headers) {
+  const retryAfterMs = numericProviderHeaderMs(
+    providerHeaderValue(headers, "retry-after-ms")
+      || providerHeaderValue(headers, "x-retry-after-ms")
+  );
+  if (retryAfterMs != null) return retryAfterMs;
+
+  const retryAfter = providerHeaderValue(headers, "retry-after");
+  if (retryAfter) {
+    const numericSeconds = Number(String(retryAfter).trim());
+    if (Number.isFinite(numericSeconds) && numericSeconds >= 0) {
+      return clampProviderRetryDelayMs(numericSeconds * 1000);
+    }
+    const dateDelay = Date.parse(String(retryAfter)) - Date.now();
+    if (Number.isFinite(dateDelay) && dateDelay >= 0) {
+      return clampProviderRetryDelayMs(dateDelay);
+    }
+  }
+
+  const reset = providerHeaderValue(headers, "x-ratelimit-reset")
+    || providerHeaderValue(headers, "x-rate-limit-reset");
+  if (!reset) return null;
+  const resetText = String(reset).trim();
+  const resetNumber = Number(resetText);
+  if (Number.isFinite(resetNumber) && resetNumber > 0) {
+    const epochMs = resetNumber > 100000000000 ? resetNumber : resetNumber * 1000;
+    const delayMs = epochMs - Date.now();
+    return delayMs >= 0 ? clampProviderRetryDelayMs(delayMs) : null;
+  }
+  const resetDateDelay = Date.parse(resetText) - Date.now();
+  return Number.isFinite(resetDateDelay) && resetDateDelay >= 0 ? clampProviderRetryDelayMs(resetDateDelay) : null;
+}
+
+function numericProviderHeaderMs(value) {
+  if (value == null || value === "") return null;
+  const ms = Number(String(value).trim());
+  return Number.isFinite(ms) && ms >= 0 ? clampProviderRetryDelayMs(ms) : null;
+}
+
+function providerHeaderValue(headers, name) {
+  if (!headers || !name) return "";
+  const lower = name.toLowerCase();
+  if (typeof headers.get === "function") {
+    try {
+      return headers.get(name) || headers.get(lower) || "";
+    } catch (_err) {
+      return "";
+    }
+  }
+  if (headers instanceof Map) {
+    return headers.get(name) || headers.get(lower) || "";
+  }
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === lower) return headers[key];
+  }
+  return "";
+}
+
+function clampProviderRetryDelayMs(value) {
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return Math.min(Math.ceil(ms), PROVIDER_RETRY_DELAY_MAX_MS);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function requestContentTypes(body) {
