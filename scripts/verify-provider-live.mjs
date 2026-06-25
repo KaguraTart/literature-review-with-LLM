@@ -925,6 +925,7 @@ function providerLiveDoctorCase(entry, options, env) {
       label: entry.label,
       profile: entry.profile,
       protocol: entry.protocol,
+      protocolGroup: providerLiveProtocolGroupForCase(entry),
       status,
       ready: status === "ready",
       missing: activeMissing,
@@ -967,6 +968,7 @@ function providerLiveDoctorCase(entry, options, env) {
       missing: [],
       conflicts: [],
       error: redactKnownSecrets(error?.message || String(error), env),
+      protocolGroup: providerLiveProtocolGroupForCase(entry),
       commands: doctorCommandsForCase(entry)
     };
   }
@@ -1035,6 +1037,7 @@ function doctorAuthStatus(entry, env, customHeaders, endpoint) {
 }
 
 function doctorCommandsForCase(entry, capabilities = null) {
+  const protocolGroup = providerLiveProtocolGroupForCase(entry);
   return {
     generation: `npm run verify:provider:live -- --include ${entry.id}`,
     generationWithEnvFile: `npm run verify:provider:live -- --include ${entry.id} --provider-env-file .env.local`,
@@ -1045,8 +1048,21 @@ function doctorCommandsForCase(entry, capabilities = null) {
     pdf: caseSupportsPdfInput(entry, capabilities) ? `npm run verify:provider:pdf:live -- --include ${entry.id}` : "",
     pdfWithEnvFile: caseSupportsPdfInput(entry, capabilities) ? `npm run verify:provider:pdf:live -- --include ${entry.id} --provider-env-file .env.local` : "",
     envTemplate: `npm run verify:provider:live -- --env-template --include ${entry.id}`,
-    dotenvTemplate: `npm run verify:provider:live -- --env-template --dotenv-template --include ${entry.id} > .env.local`
+    dotenvTemplate: `npm run verify:provider:live -- --env-template --dotenv-template --include ${entry.id} > .env.local`,
+    protocolGroup,
+    protocolGroupDoctor: protocolGroup ? `npm run verify:provider:live -- --doctor --include ${protocolGroup}` : "",
+    protocolGroupDoctorWithEnvFile: protocolGroup ? `npm run verify:provider:live -- --doctor --include ${protocolGroup} --provider-env-file .env.local` : "",
+    protocolGroupModelListWithEnvFile: protocolGroup && entry.modelList !== false ? `npm run verify:provider:models:live -- --include ${protocolGroup} --provider-env-file .env.local` : "",
+    coreDoctorWithEnvFile: `npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local`,
+    mainstreamDoctorWithEnvFile: `npm run verify:provider:live -- --doctor --include mainstream --provider-env-file .env.local`
   };
+}
+
+function providerLiveProtocolGroupForCase(entry) {
+  if (entry?.protocol === "openai_chat") return "openai-chat";
+  if (entry?.protocol === "openai_responses") return "openai-responses";
+  if (entry?.protocol === "anthropic_messages") return "anthropic-messages";
+  return "";
 }
 
 function providerEnvTemplateForCase(entry) {
@@ -1728,6 +1744,9 @@ function formatDoctorReport(report) {
     if (entry.commands?.modelListWithEnvFile) lines.push(`  models: ${entry.commands.modelListWithEnvFile}`);
     if (entry.commands?.imageWithEnvFile) lines.push(`  image: ${entry.commands.imageWithEnvFile}`);
     if (entry.commands?.pdfWithEnvFile) lines.push(`  pdf: ${entry.commands.pdfWithEnvFile}`);
+    if (entry.commands?.protocolGroupDoctorWithEnvFile) lines.push(`  protocolGroup: ${entry.commands.protocolGroupDoctorWithEnvFile}`);
+    if (entry.commands?.protocolGroupModelListWithEnvFile) lines.push(`  protocolModels: ${entry.commands.protocolGroupModelListWithEnvFile}`);
+    if (entry.commands?.coreDoctorWithEnvFile) lines.push(`  core: ${entry.commands.coreDoctorWithEnvFile}`);
     if (entry.commands?.dotenvTemplate) lines.push(`  envDraft: ${entry.commands.dotenvTemplate}`);
   }
   return `${lines.join("\n")}\n`;

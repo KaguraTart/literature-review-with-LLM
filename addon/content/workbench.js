@@ -3258,6 +3258,30 @@ function renderProviderDiagnosticsMarkdown(profile, options = {}) {
     verify.envFileModelsCommand || verify.modelsCommand || labels.notConfigured,
     `\`\`\``,
     "",
+    ...(verify.protocolGroupDoctorCommand ? [
+      `### ${labels.protocolGroupLiveCheck}`,
+      "",
+      `\`\`\`bash`,
+      verify.protocolGroupDoctorCommand,
+      `\`\`\``,
+      ""
+    ] : []),
+    ...(verify.protocolGroupModelsCommand ? [
+      `### ${labels.protocolGroupModelListCheck}`,
+      "",
+      `\`\`\`bash`,
+      verify.protocolGroupModelsCommand,
+      `\`\`\``,
+      ""
+    ] : []),
+    ...(verify.coreDoctorCommand ? [
+      `### ${labels.coreProtocolLiveCheck}`,
+      "",
+      `\`\`\`bash`,
+      verify.coreDoctorCommand,
+      `\`\`\``,
+      ""
+    ] : []),
     `## ${labels.statusSnapshot}`,
     "",
     "```text",
@@ -3331,6 +3355,9 @@ function providerDiagnosticsLabels(outputLanguage) {
       pdfLiveCheck: "PDF live 检查",
       pdfOverrideLiveCheck: "PDF 能力覆盖 live 检查",
       modelListLiveCheck: "模型列表 live 检查",
+      protocolGroupLiveCheck: "当前协议族 live 检查",
+      protocolGroupModelListCheck: "当前协议族模型列表检查",
+      coreProtocolLiveCheck: "核心协议 live 检查",
       statusSnapshot: "当前状态快照",
       troubleshooting: "排查清单",
       checkModel: "确认模型名称真实存在，必要时先点击“加载模型列表”。",
@@ -3403,6 +3430,9 @@ function providerDiagnosticsLabels(outputLanguage) {
     pdfLiveCheck: "PDF Live Check",
     pdfOverrideLiveCheck: "PDF Capability Override Check",
     modelListLiveCheck: "Model-list Live Check",
+    protocolGroupLiveCheck: "Current Protocol-family Live Check",
+    protocolGroupModelListCheck: "Current Protocol-family Model-list Check",
+    coreProtocolLiveCheck: "Core Protocol Live Check",
     statusSnapshot: "Current Status Snapshot",
     troubleshooting: "Troubleshooting Checklist",
     checkModel: "Confirm the model name exists. Use Load model list first when available.",
@@ -3572,11 +3602,17 @@ function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProvid
       envFileImageCommand: "",
       envFilePdfCommand: "",
       envFileModelsCommand: "npm run local-agent:service:doctor",
+      protocolGroup: "",
+      protocolGroupDoctorCommand: "",
+      protocolGroupModelsCommand: "",
+      coreDoctorCommand: "",
+      mainstreamDoctorCommand: "",
       imageOverrideCommand: "",
       pdfOverrideCommand: ""
     };
   }
   const entry = providerLiveVerifyCaseForWorkbench(profile, provider);
+  const protocolGroup = providerLiveProtocolGroupForWorkbench(profile);
   const baseURL = String(profile?.baseURL || workbenchProviderDefaults(provider).baseURL || "").trim();
   const model = String(profile?.model || "").trim();
   const assignments = [];
@@ -3600,8 +3636,20 @@ function providerLiveVerifyGuideForWorkbench(profile, provider = workbenchProvid
     envFileImageCommand: canUseImageInput(profile) ? `npm run verify:provider:image:live -- --include ${entry.include} --provider-env-file .env.local` : "",
     envFilePdfCommand: canUsePdfBase64Input(profile) ? `npm run verify:provider:pdf:live -- --include ${entry.include} --provider-env-file .env.local` : "",
     envFileModelsCommand: `npm run verify:provider:models:live -- --include ${entry.include} --provider-env-file .env.local`,
+    protocolGroup,
+    protocolGroupDoctorCommand: protocolGroup ? `npm run verify:provider:live -- --doctor --include ${protocolGroup} --provider-env-file .env.local` : "",
+    protocolGroupModelsCommand: protocolGroup ? `npm run verify:provider:models:live -- --include ${protocolGroup} --provider-env-file .env.local` : "",
+    coreDoctorCommand: "npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local",
+    mainstreamDoctorCommand: "npm run verify:provider:live -- --doctor --include mainstream --provider-env-file .env.local",
     ...overrideCommands
   };
+}
+
+function providerLiveProtocolGroupForWorkbench(profile) {
+  if (profile?.protocol === "openai_chat") return "openai-chat";
+  if (profile?.protocol === "openai_responses") return "openai-responses";
+  if (profile?.protocol === "anthropic_messages") return "anthropic-messages";
+  return "";
 }
 
 function providerCapabilityOverrideCommandsForWorkbench(profile, provider, entry, prefix) {

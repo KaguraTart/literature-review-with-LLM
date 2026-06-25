@@ -2557,6 +2557,12 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("npm run verify:provider:image:live -- --include deepseek --provider-env-file .env.local");
     expect(report).toContain("### Model-list Live Check");
     expect(report).toContain("npm run verify:provider:models:live -- --include deepseek --provider-env-file .env.local");
+    expect(report).toContain("### Current Protocol-family Live Check");
+    expect(report).toContain("npm run verify:provider:live -- --doctor --include openai-chat --provider-env-file .env.local");
+    expect(report).toContain("### Current Protocol-family Model-list Check");
+    expect(report).toContain("npm run verify:provider:models:live -- --include openai-chat --provider-env-file .env.local");
+    expect(report).toContain("### Core Protocol Live Check");
+    expect(report).toContain("npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local");
     expect(report).toContain("npm run verify:provider:live -- --include deepseek");
     expect(report).toContain("`Authorization`");
     expect(report).toContain("## Redacted Request Preview");
@@ -2715,6 +2721,12 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("npm run verify:provider:live -- --env-template --include deepseek");
     expect(report).toContain("npm run verify:provider:live -- --env-template --dotenv-template --include deepseek > .env.local");
     expect(report).toContain("npm run verify:provider:live -- --include deepseek --provider-env-file .env.local");
+    expect(report).toContain("### 当前协议族 live 检查");
+    expect(report).toContain("npm run verify:provider:live -- --doctor --include openai-chat --provider-env-file .env.local");
+    expect(report).toContain("### 当前协议族模型列表检查");
+    expect(report).toContain("npm run verify:provider:models:live -- --include openai-chat --provider-env-file .env.local");
+    expect(report).toContain("### 核心协议 live 检查");
+    expect(report).toContain("npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local");
     expect(report).not.toContain("new-secret");
     expect(report).not.toContain("old-secret");
     expect(workbench.state.profile.apiKey).toBe("new-secret");

@@ -2489,6 +2489,8 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-profileStatus").textContent).toContain("Missing: API key or custom auth header");
     expect(elements.get("zms-profileStatus").textContent).not.toContain("model name");
     expect(elements.get("zms-profileStatus").textContent).toContain("Next: npm run verify:provider:live -- --doctor --include openai --provider-env-file .env.local");
+    expect(elements.get("zms-profileStatus").textContent).toContain("Protocol family check: npm run verify:provider:live -- --doctor --include openai-responses --provider-env-file .env.local");
+    expect(elements.get("zms-profileStatus").textContent).toContain("Core protocol check: npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local");
     expect(elements.get("zms-profileStatus").textContent).not.toContain("sk-test-secret");
 
     elements.get("zms-apiKey").value = "doctor-secret";
@@ -2542,6 +2544,9 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).toContain("Env-file live check: npm run verify:provider:live -- --include openai --provider-env-file .env.local");
     expect(guide).toContain("npm run verify:provider:live -- --include openai");
     expect(guide).toContain("npm run verify:provider:models:live -- --include openai");
+    expect(guide).toContain("Protocol-family check: npm run verify:provider:live -- --doctor --include openai-responses --provider-env-file .env.local");
+    expect(guide).toContain("Protocol-family model-list check: npm run verify:provider:models:live -- --include openai-responses --provider-env-file .env.local");
+    expect(guide).toContain("Core protocol check: npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local");
     expect(guide).not.toContain("sk-test-secret");
   });
 
@@ -2562,6 +2567,8 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).toContain("Draft .env.local: npm run verify:provider:live -- --env-template --dotenv-template --include anthropic-compatible > .env.local");
     expect(guide).toContain(".env.local config doctor: npm run verify:provider:live -- --doctor --include anthropic-compatible --provider-env-file .env.local");
     expect(guide).toContain("Env-file live check: npm run verify:provider:live -- --include anthropic-compatible --provider-env-file .env.local");
+    expect(guide).toContain("Protocol-family check: npm run verify:provider:live -- --doctor --include anthropic-messages --provider-env-file .env.local");
+    expect(guide).toContain("Protocol-family model-list check: npm run verify:provider:models:live -- --include anthropic-messages --provider-env-file .env.local");
     expect(guide).toContain("--include anthropic-compatible");
     expect(guide).toContain("Image capability override check: ANTHROPIC_COMPATIBLE_API_KEY=... ANTHROPIC_COMPATIBLE_MODEL=claude-router ANTHROPIC_COMPATIBLE_BASE_URL=https://router.example/anthropic ANTHROPIC_COMPATIBLE_CAPABILITIES_JSON='{\"imageBase64\":true}' npm run verify:provider:image:live -- --include anthropic-compatible");
     expect(guide).toContain("PDF capability override check: ANTHROPIC_COMPATIBLE_API_KEY=... ANTHROPIC_COMPATIBLE_MODEL=claude-router ANTHROPIC_COMPATIBLE_BASE_URL=https://router.example/anthropic ANTHROPIC_COMPATIBLE_CAPABILITIES_JSON='{\"pdfBase64\":true}' npm run verify:provider:pdf:live -- --include anthropic-compatible");
@@ -2581,6 +2588,7 @@ describe("preferences local-agent config helpers", () => {
     expect(guide).toContain("OPENAI_COMPATIBLE_MODEL=qwen3");
     expect(guide).toContain("OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1");
     expect(guide).toContain("--include openai-compatible");
+    expect(guide).toContain("Protocol-family check: npm run verify:provider:live -- --doctor --include openai-chat --provider-env-file .env.local");
     expect(guide).toContain("Image capability override check: OPENAI_COMPATIBLE_MODEL=qwen3 OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1 OPENAI_COMPATIBLE_CAPABILITIES_JSON='{\"imageBase64\":true}' npm run verify:provider:image:live -- --include openai-compatible");
     expect(guide).not.toContain("PDF capability override check");
     expect(guide).not.toContain("OPENAI_COMPATIBLE_API_KEY=...");

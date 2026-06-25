@@ -2070,7 +2070,9 @@ function providerConfigDoctor(profile, language = "en-US") {
     `${zh ? "模型" : "Model"}: ${model || (isLocalAgent ? (zh ? "可选" : "optional") : (zh ? "缺失" : "missing"))}`,
     `${zh ? "鉴权" : "Auth"}: ${authStatus}`,
     `${zh ? "能力" : "Capabilities"}: ${capabilityText}`,
-    `${zh ? "下一步" : "Next"}: ${verify.doctorCommand}`
+    `${zh ? "下一步" : "Next"}: ${verify.doctorCommand}`,
+    `${zh ? "同协议族检查" : "Protocol family check"}: ${verify.protocolGroupDoctorCommand || verify.doctorCommand}`,
+    `${zh ? "核心协议检查" : "Core protocol check"}: ${verify.coreDoctorCommand}`
   ];
   if (missing.length) {
     lines.push(`${zh ? "缺失项" : "Missing"}: ${missing.join(", ")}`);
@@ -2130,7 +2132,11 @@ function providerSetupGuide(profile, language = "en-US") {
       ...(verify.imageOverrideCommand ? [`图片能力覆盖检查：${verify.imageOverrideCommand}`] : []),
       `PDF 联网检查：${verify.pdfCommand || "当前档案使用 Zotero 文本抽取"}`,
       ...(verify.pdfOverrideCommand ? [`PDF 能力覆盖检查：${verify.pdfOverrideCommand}`] : []),
-      `模型列表联网检查：${verify.modelsCommand}`
+      `模型列表联网检查：${verify.modelsCommand}`,
+      `当前协议族检查：${verify.protocolGroupDoctorCommand || "当前档案没有可归类协议族"}`,
+      `当前协议族模型列表检查：${verify.protocolGroupModelsCommand || "当前档案没有可归类协议族"}`,
+      `核心协议检查：${verify.coreDoctorCommand}`,
+      `主流厂商检查：${verify.mainstreamDoctorCommand}`
     ].join("\n");
   }
   return [
@@ -2152,7 +2158,11 @@ function providerSetupGuide(profile, language = "en-US") {
     ...(verify.imageOverrideCommand ? [`Image capability override check: ${verify.imageOverrideCommand}`] : []),
     `PDF live check: ${verify.pdfCommand || "uses Zotero extracted text"}`,
     ...(verify.pdfOverrideCommand ? [`PDF capability override check: ${verify.pdfOverrideCommand}`] : []),
-    `Model-list live check: ${verify.modelsCommand}`
+    `Model-list live check: ${verify.modelsCommand}`,
+    `Protocol-family check: ${verify.protocolGroupDoctorCommand || "not available"}`,
+    `Protocol-family model-list check: ${verify.protocolGroupModelsCommand || "not available"}`,
+    `Core protocol check: ${verify.coreDoctorCommand}`,
+    `Mainstream provider check: ${verify.mainstreamDoctorCommand}`
   ].join("\n");
 }
 
@@ -2202,6 +2212,7 @@ function providerModelListGuide(profile) {
 
 function providerLiveVerifyGuide(profile, provider = providerFromProfile(profile)) {
   const entry = providerLiveVerifyCase(profile, provider);
+  const protocolGroup = providerLiveProtocolGroup(profile);
   const baseURL = String(profile?.baseURL || providerDefaults(provider).baseURL || "").trim();
   const model = String(profile?.model || "").trim();
   const assignments = [];
@@ -2236,8 +2247,20 @@ function providerLiveVerifyGuide(profile, provider = providerFromProfile(profile
     envFileImageCommand,
     envFilePdfCommand,
     envFileModelsCommand,
+    protocolGroup,
+    protocolGroupDoctorCommand: protocolGroup ? `npm run verify:provider:live -- --doctor --include ${protocolGroup} --provider-env-file .env.local` : "",
+    protocolGroupModelsCommand: protocolGroup ? `npm run verify:provider:models:live -- --include ${protocolGroup} --provider-env-file .env.local` : "",
+    coreDoctorCommand: "npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local",
+    mainstreamDoctorCommand: "npm run verify:provider:live -- --doctor --include mainstream --provider-env-file .env.local",
     ...overrideCommands
   };
+}
+
+function providerLiveProtocolGroup(profile) {
+  if (profile?.protocol === "openai_chat") return "openai-chat";
+  if (profile?.protocol === "openai_responses") return "openai-responses";
+  if (profile?.protocol === "anthropic_messages") return "anthropic-messages";
+  return "";
 }
 
 function providerCapabilityOverrideCommands(profile, provider, entry, prefix) {

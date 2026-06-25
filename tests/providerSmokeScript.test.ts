@@ -1745,9 +1745,14 @@ describe("provider smoke verifier", () => {
       endpoint: "https://api.openai.com/v1/chat/completions",
       modelsEndpoint: "https://api.openai.com/v1/models",
       auth: "missing",
+      protocolGroup: "openai-chat",
       commands: {
         generationWithEnvFile: "npm run verify:provider:live -- --include openai-compatible --provider-env-file .env.local",
-        dotenvTemplate: "npm run verify:provider:live -- --env-template --dotenv-template --include openai-compatible > .env.local"
+        dotenvTemplate: "npm run verify:provider:live -- --env-template --dotenv-template --include openai-compatible > .env.local",
+        protocolGroup: "openai-chat",
+        protocolGroupDoctorWithEnvFile: "npm run verify:provider:live -- --doctor --include openai-chat --provider-env-file .env.local",
+        protocolGroupModelListWithEnvFile: "npm run verify:provider:models:live -- --include openai-chat --provider-env-file .env.local",
+        coreDoctorWithEnvFile: "npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local"
       }
     });
     const anthropicCompatible = report.cases.find((entry: any) => entry.id === "anthropic-compatible");
@@ -1778,6 +1783,9 @@ describe("provider smoke verifier", () => {
     expect(stdout).toContain("Provider live configuration doctor");
     expect(stdout).toContain("openai-compatible: missing");
     expect(stdout).toContain("missing: OPENAI_COMPATIBLE_API_KEY, OPENAI_COMPATIBLE_BASE_URL");
+    expect(stdout).toContain("protocolGroup: npm run verify:provider:live -- --doctor --include openai-chat --provider-env-file .env.local");
+    expect(stdout).toContain("protocolModels: npm run verify:provider:models:live -- --include openai-chat --provider-env-file .env.local");
+    expect(stdout).toContain("core: npm run verify:provider:live -- --doctor --include core --provider-env-file .env.local");
     expect(stdout).toContain("envDraft: npm run verify:provider:live -- --env-template --dotenv-template --include openai-compatible > .env.local");
 
     const openai = await runLive(["--doctor", "--include", "openai", "--json"], scrubProviderEnv());
