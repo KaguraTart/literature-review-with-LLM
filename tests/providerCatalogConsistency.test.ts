@@ -237,7 +237,7 @@ describe("provider catalog consistency", () => {
       .zmsRecommendedModelOptionsForProvider("openrouter")
       .map((option) => option.vendor);
 
-    expect([...new Set(openrouterVendors)]).toEqual(["OpenAI", "Anthropic", "Google Gemini", "DeepSeek"]);
+    expect([...new Set(openrouterVendors)]).toEqual(["OpenAI", "Anthropic", "Google Gemini", "DeepSeek", "xAI", "Mistral", "Qwen", "MiniMax"]);
     expect(preferences.zmsRecommendedModelOptionsForProvider("openai_compatible")[0].vendor).toBe("OpenAI");
     expect(preferences.zmsRecommendedModelOptionsForProvider("deepseek")[0].vendor).toBe("DeepSeek");
   });

@@ -125,7 +125,7 @@ describe("locale files", () => {
 
     expect(workbenchXhtml).toContain('id="zms-quick-settings-heading">常用设置</html:h2>');
     expect(workbenchXhtml).toContain('id="zms-workbench-provider-label" for="zms-workbench-provider">接口厂商</html:label>');
-    expect(workbenchXhtml).toContain('id="zms-load-models-workbench" class="zms-load-models-button" type="button" title="加载当前接口厂商的模型列表">加载模型列表</html:button>');
+    expect(workbenchXhtml).toContain('id="zms-load-models-workbench" class="zms-load-models-button" type="button" title="刷新当前接口厂商的在线模型">刷新在线模型</html:button>');
     expect(workbenchXhtml).toContain('id="zms-status" class="zms-status">就绪</html:div>');
     expect(workbenchXhtml).not.toContain("</html:footer>\n      </html:footer>");
   });

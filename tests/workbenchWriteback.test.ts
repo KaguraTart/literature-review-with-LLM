@@ -3148,6 +3148,7 @@ describe("workbench writeback helpers", () => {
       "Google Gemini · Recommended",
       "DeepSeek · Recommended",
       "xAI · Recommended",
+      "MiniMax · Recommended",
       "Ollama · Recommended"
     ]);
     expect(selectOptionByValue(modelSelect, "openai/gpt-4o-mini").textContent).toContain("image / fast");
@@ -3426,6 +3427,7 @@ describe("workbench writeback helpers", () => {
       "Google Gemini",
       "DeepSeek",
       "xAI",
+      "MiniMax",
       "Ollama"
     ]);
     dom.getElementById("zms-profile-model-vendor-select").value = "Anthropic";
@@ -3567,7 +3569,7 @@ describe("workbench writeback helpers", () => {
     const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
     workbench.t = (key: string) => ({
       modelPickerHelp: "先选择接口厂商，再从下拉框选择推荐模型",
-      loadModels: "加载模型列表",
+      loadModels: "刷新在线模型",
       newConversation: "新对话",
       compactContext: "压缩上下文",
       copySession: "复制会话",
@@ -3587,8 +3589,8 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-paper-meta").textContent).toBe("正在读取论文");
     expect(dom.getElementById("zms-composer-profile").textContent).toBe("模型");
     expect(dom.getElementById("zms-workbench-model-help").textContent).toContain("先选择接口厂商");
-    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("加载模型列表");
-    expect(dom.getElementById("zms-load-models-workbench").title).toBe("加载模型列表");
+    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("刷新在线模型");
+    expect(dom.getElementById("zms-load-models-workbench").title).toBe("刷新在线模型");
     expect(dom.getElementById("zms-new-conversation").textContent).toBe("新对话");
     expect(dom.getElementById("zms-new-conversation").title).toBe("新对话");
     expect(dom.getElementById("zms-compact-context").textContent).toBe("压缩上下文");
@@ -3613,7 +3615,7 @@ describe("workbench writeback helpers", () => {
     const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
     workbench.t = (key: string) => ({
       modelPickerHelp: "Choose a provider first, then choose a model.",
-      loadModels: "Load model list",
+      loadModels: "Refresh online models",
       newConversation: "New conversation",
       compactContext: "Compact context",
       copySession: "Copy session",
@@ -3636,7 +3638,7 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-paper-meta").textContent).toBe("Reading paper");
     expect(dom.getElementById("zms-composer-profile").textContent).toBe("Model");
     expect(dom.getElementById("zms-visual-review-status").textContent).toContain("No visual extraction JSON");
-    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("Load model list");
+    expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("Refresh online models");
   });
 
   it("does not overwrite active workbench statuses during localization", () => {
