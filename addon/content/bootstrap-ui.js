@@ -35,7 +35,7 @@ function ensureToolbarButton(win) {
   const toolbar = findToolbar(doc);
   if (!toolbar) return false;
   const existing = doc.getElementById(TOOLBAR_BUTTON_ID);
-  if (workbenchButtonIsCurrent(existing, toolbar)) return false;
+  if (workbenchButtonIsCurrent(existing, toolbar)) return true;
   existing?.remove?.();
   const button = createToolbarButton(doc, toolbar);
   toolbar.appendChild(button);
@@ -181,7 +181,7 @@ function ensureSidenavButton(win) {
   if (!sidenav) return false;
   const host = sidenavButtonInsertionHost(sidenav);
   const existing = doc.getElementById(SIDENAV_BUTTON_ID);
-  if (workbenchButtonIsCurrent(existing, host)) return false;
+  if (workbenchButtonIsCurrent(existing, host)) return true;
   removeExistingSidenavButton(existing);
   appendSidenavButton(doc, sidenav);
   return true;
@@ -998,7 +998,7 @@ function ensureFallbackWorkbenchButton(win) {
   ensureWorkbenchButtonStyle(doc);
   const toolbarButton = doc.getElementById(TOOLBAR_BUTTON_ID);
   const sidenavButton = doc.getElementById(SIDENAV_BUTTON_ID);
-  if (workbenchButtonLooksUsable(sidenavButton) || workbenchToolbarButtonLooksReliable(toolbarButton)) {
+  if (workbenchSidenavButtonLooksReliable(sidenavButton) || workbenchToolbarButtonLooksReliable(toolbarButton)) {
     doc.getElementById(FALLBACK_WORKBENCH_BUTTON_ID)?.remove?.();
     return false;
   }
@@ -1019,11 +1019,14 @@ function workbenchToolbarButtonLooksReliable(button) {
   if (!workbenchButtonLooksUsable(button)) return false;
   const host = closestWorkbenchToolbarHost(button);
   if (!host || elementLooksHidden(host)) return false;
-  const hostRect = safeElementRect(host);
-  if (!hostRect) return true;
-  const width = Number(hostRect.width || 0);
-  const height = Number(hostRect.height || 0);
-  return width > 0 && height > 0;
+  return elementHasUsableLayoutBox(host);
+}
+
+function workbenchSidenavButtonLooksReliable(button) {
+  if (!workbenchButtonLooksUsable(button)) return false;
+  const host = closestWorkbenchSidenavHost(button);
+  if (!host || elementLooksHidden(host)) return false;
+  return elementHasUsableLayoutBox(host) || elementHasUsableLayoutBox(button);
 }
 
 function closestWorkbenchToolbarHost(button) {
@@ -1039,6 +1042,28 @@ function closestWorkbenchToolbarHost(button) {
     if (String(node.localName || "").toLowerCase() === "toolbar") return node;
   }
   return null;
+}
+
+function closestWorkbenchSidenavHost(button) {
+  for (let node = button?.parentNode; node; node = node.parentNode) {
+    const id = String(node.id || node.getAttribute?.("id") || "");
+    if ([
+      "zotero-context-pane-sidenav",
+      "zotero-context-pane-side-nav",
+      "zotero-context-sidenav",
+      "zotero-view-item-sidenav"
+    ].includes(id)) return node;
+    if (String(node.localName || "").toLowerCase().includes("sidenav")) return node;
+  }
+  return null;
+}
+
+function elementHasUsableLayoutBox(element) {
+  const rect = safeElementRect(element);
+  if (!rect) return true;
+  const width = Number(rect.width || 0);
+  const height = Number(rect.height || 0);
+  return width > 0 && height > 0;
 }
 
 function fallbackWorkbenchButtonHost(doc) {
