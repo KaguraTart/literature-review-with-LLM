@@ -3267,7 +3267,12 @@ function modelOptionFromItem(item, depth = 0) {
       }
     }
   }
-  return compactModelOption({ id, label, vendor: explicitVendor, features: explicitFeatures });
+  return compactModelOption({ id, label, vendor: explicitVendor || inferredModelVendorFromModelListId(id, label), features: explicitFeatures });
+}
+
+function inferredModelVendorFromModelListId(id, label) {
+  const value = String(id || "").trim();
+  return value.includes("/") ? inferredModelVendor({ id: value, label }) : "";
 }
 
 function compactModelOption(option) {
@@ -3356,33 +3361,52 @@ function modelFeaturesFromModelListItem(item) {
   collectModelFeatureHints(features, item?.inputModalities);
   collectModelFeatureHints(features, item?.supported_modalities);
   collectModelFeatureHints(features, item?.supportedModalities);
+  collectModelFeatureHints(features, item?.input);
+  collectModelFeatureHints(features, item?.inputs);
+  collectModelFeatureHints(features, item?.input_formats);
+  collectModelFeatureHints(features, item?.inputFormats);
+  collectModelFeatureHints(features, item?.supported_input_formats);
+  collectModelFeatureHints(features, item?.supportedInputFormats);
+  collectModelFeatureHints(features, item?.content_types);
+  collectModelFeatureHints(features, item?.contentTypes);
+  collectModelFeatureHints(features, item?.supported_content_types);
+  collectModelFeatureHints(features, item?.supportedContentTypes);
   collectModelFeatureHints(features, item?.capabilities);
   collectModelFeatureHints(features, item?.architecture);
+  collectModelFeatureHints(features, item?.metadata);
   collectModelFeatureHints(features, item?.metadata?.capabilities);
   collectModelFeatureHints(features, item?.metadata?.modalities);
+  collectModelFeatureHints(features, item?.meta);
   collectModelFeatureHints(features, item?.meta?.capabilities);
-  collectModelFeatureHints(features, item?.details?.families);
+  collectModelFeatureHints(features, item?.model_info);
+  collectModelFeatureHints(features, item?.modelInfo);
+  collectModelFeatureHints(features, item?.details);
+  collectModelFeatureHints(features, item?.supported_parameters);
+  collectModelFeatureHints(features, item?.supportedParameters);
   return normalizeModelFeatureList(features);
 }
 
-function collectModelFeatureHints(features, value) {
+function collectModelFeatureHints(features, value, depth = 0) {
   if (value === undefined || value === null) return;
   if (typeof value === "string" || typeof value === "number") {
     pushModelFeatureHintsFromText(features, String(value));
     return;
   }
   if (Array.isArray(value)) {
-    for (const item of value) collectModelFeatureHints(features, item);
+    for (const item of value) collectModelFeatureHints(features, item, depth + 1);
     return;
   }
-  if (typeof value !== "object") return;
+  if (typeof value !== "object" || depth >= 5) return;
   for (const [key, entry] of Object.entries(value)) {
     const keyText = String(key || "");
     if (entry === true || entry === "true" || entry === 1 || entry === "1") {
       pushModelFeatureHintsFromText(features, keyText);
     }
-    if (typeof entry === "string" || typeof entry === "number" || Array.isArray(entry)) {
-      collectModelFeatureHints(features, entry);
+    if (entry && typeof entry === "object") {
+      pushModelFeatureHintsFromText(features, keyText);
+    }
+    if (typeof entry === "string" || typeof entry === "number" || Array.isArray(entry) || (entry && typeof entry === "object")) {
+      collectModelFeatureHints(features, entry, depth + 1);
     }
   }
 }

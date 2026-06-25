@@ -1494,6 +1494,33 @@ describe("preferences local-agent config helpers", () => {
     ]);
     expect(helpers.modelOptionsFromResponse({
       data: [
+        {
+          id: "anthropic/claude-3.7-sonnet:thinking",
+          name: "Claude 3.7 Sonnet Thinking",
+          architecture: {
+            input_modalities: ["text", "image"],
+            output_modalities: ["text"]
+          },
+          supported_parameters: ["tools", "reasoning", "include_reasoning"]
+        },
+        {
+          id: "google/gemini-2.5-pro",
+          name: "Gemini 2.5 Pro",
+          architecture: {
+            input: {
+              modalities: ["text", "image"],
+              formats: ["text/plain", "application/pdf"]
+            }
+          },
+          supportedParameters: ["reasoning_effort"]
+        }
+      ]
+    })).toEqual([
+      { id: "anthropic/claude-3.7-sonnet:thinking", label: "Claude 3.7 Sonnet Thinking", vendor: "Anthropic", features: ["image", "reasoning"] },
+      { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro", vendor: "Google Gemini", features: ["image", "pdf", "reasoning"] }
+    ]);
+    expect(helpers.modelOptionsFromResponse({
+      data: [
         { model: "router-model", displayName: "Router Model" },
         { model_name: "model-name-field", title: "Model Name Field" },
         { deployment_id: "deployment-field", display_name: "Deployment Field" },
@@ -4145,7 +4172,13 @@ describe("preferences local-agent config helpers", () => {
             id: "google/gemini-2.5-pro",
             display_name: "Gemini 2.5 Pro",
             provider: { id: "google", name: "Google" },
-            supported_modalities: ["text", "image", "pdf"]
+            architecture: {
+              input: {
+                modalities: ["text", "image"],
+                formats: ["text/plain", "application/pdf"]
+              }
+            },
+            supported_parameters: ["reasoning_effort"]
           },
           {
             id: "anthropic/claude-sonnet-4-6",
@@ -4178,7 +4211,7 @@ describe("preferences local-agent config helpers", () => {
     expect(selectGroupLabels(elements.get("zms-model-select"))).toContain("Anthropic · Online");
     expect(selectGroupLabels(elements.get("zms-model-select"))).toContain("Google Gemini · Online");
     expect(selectGroupLabels(elements.get("zms-model-select"))).toContain("OpenAI · Online");
-    expect(selectOptionByValue(elements.get("zms-model-select"), "google/gemini-2.5-pro").textContent).toContain("image / pdf");
+    expect(selectOptionByValue(elements.get("zms-model-select"), "google/gemini-2.5-pro").textContent).toContain("image / pdf / reasoning");
     elements.get("zms-model-vendor-select").value = "Google Gemini";
     controller.renderModelOptionsFromCache({ selectFirstVisible: true });
 
@@ -4188,6 +4221,13 @@ describe("preferences local-agent config helpers", () => {
     expect(filteredValues).not.toContain("openai/gpt-4o");
     expect(elements.get("zms-model-select").value).toBe("google/gemini-2.5-pro");
     expect(elements.get("zms-model").value).toBe("google/gemini-2.5-pro");
+    expect(controller.upsertProfileFromEditor()).toMatchObject({
+      bodyExtra: {
+        modelFeatureHints: ["image", "pdf", "reasoning"],
+        modelFeatureHintsModel: "google/gemini-2.5-pro",
+        modelFeatureHintsSource: "model-picker"
+      }
+    });
   });
 
   it("keeps the selected settings model vendor when refreshing the same provider model list", async () => {

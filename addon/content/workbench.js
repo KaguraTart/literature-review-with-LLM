@@ -16948,7 +16948,12 @@ function workbenchModelOptionFromItem(item, depth = 0) {
       }
     }
   }
-  return compactWorkbenchModelOption({ id, label, vendor: explicitVendor, features: explicitFeatures });
+  return compactWorkbenchModelOption({ id, label, vendor: explicitVendor || inferredWorkbenchModelVendorFromModelListId(id, label), features: explicitFeatures });
+}
+
+function inferredWorkbenchModelVendorFromModelListId(id, label) {
+  const value = String(id || "").trim();
+  return value.includes("/") ? inferredModelVendor({ id: value, label }) : "";
 }
 
 function compactWorkbenchModelOption(option) {
@@ -17037,33 +17042,52 @@ function workbenchModelFeaturesFromModelListItem(item) {
   collectWorkbenchModelFeatureHints(features, item?.inputModalities);
   collectWorkbenchModelFeatureHints(features, item?.supported_modalities);
   collectWorkbenchModelFeatureHints(features, item?.supportedModalities);
+  collectWorkbenchModelFeatureHints(features, item?.input);
+  collectWorkbenchModelFeatureHints(features, item?.inputs);
+  collectWorkbenchModelFeatureHints(features, item?.input_formats);
+  collectWorkbenchModelFeatureHints(features, item?.inputFormats);
+  collectWorkbenchModelFeatureHints(features, item?.supported_input_formats);
+  collectWorkbenchModelFeatureHints(features, item?.supportedInputFormats);
+  collectWorkbenchModelFeatureHints(features, item?.content_types);
+  collectWorkbenchModelFeatureHints(features, item?.contentTypes);
+  collectWorkbenchModelFeatureHints(features, item?.supported_content_types);
+  collectWorkbenchModelFeatureHints(features, item?.supportedContentTypes);
   collectWorkbenchModelFeatureHints(features, item?.capabilities);
   collectWorkbenchModelFeatureHints(features, item?.architecture);
+  collectWorkbenchModelFeatureHints(features, item?.metadata);
   collectWorkbenchModelFeatureHints(features, item?.metadata?.capabilities);
   collectWorkbenchModelFeatureHints(features, item?.metadata?.modalities);
+  collectWorkbenchModelFeatureHints(features, item?.meta);
   collectWorkbenchModelFeatureHints(features, item?.meta?.capabilities);
-  collectWorkbenchModelFeatureHints(features, item?.details?.families);
+  collectWorkbenchModelFeatureHints(features, item?.model_info);
+  collectWorkbenchModelFeatureHints(features, item?.modelInfo);
+  collectWorkbenchModelFeatureHints(features, item?.details);
+  collectWorkbenchModelFeatureHints(features, item?.supported_parameters);
+  collectWorkbenchModelFeatureHints(features, item?.supportedParameters);
   return normalizeModelFeatureList(features);
 }
 
-function collectWorkbenchModelFeatureHints(features, value) {
+function collectWorkbenchModelFeatureHints(features, value, depth = 0) {
   if (value === undefined || value === null) return;
   if (typeof value === "string" || typeof value === "number") {
     pushWorkbenchModelFeatureHintsFromText(features, String(value));
     return;
   }
   if (Array.isArray(value)) {
-    for (const item of value) collectWorkbenchModelFeatureHints(features, item);
+    for (const item of value) collectWorkbenchModelFeatureHints(features, item, depth + 1);
     return;
   }
-  if (typeof value !== "object") return;
+  if (typeof value !== "object" || depth >= 5) return;
   for (const [key, entry] of Object.entries(value)) {
     const keyText = String(key || "");
     if (entry === true || entry === "true" || entry === 1 || entry === "1") {
       pushWorkbenchModelFeatureHintsFromText(features, keyText);
     }
-    if (typeof entry === "string" || typeof entry === "number" || Array.isArray(entry)) {
-      collectWorkbenchModelFeatureHints(features, entry);
+    if (entry && typeof entry === "object") {
+      pushWorkbenchModelFeatureHintsFromText(features, keyText);
+    }
+    if (typeof entry === "string" || typeof entry === "number" || Array.isArray(entry) || (entry && typeof entry === "object")) {
+      collectWorkbenchModelFeatureHints(features, entry, depth + 1);
     }
   }
 }

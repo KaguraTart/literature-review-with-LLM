@@ -3018,7 +3018,13 @@ describe("workbench writeback helpers", () => {
             id: "google/gemini-2.5-pro",
             display_name: "Gemini 2.5 Pro",
             provider: { id: "google", name: "Google" },
-            supported_modalities: ["text", "image", "pdf"]
+            architecture: {
+              input: {
+                modalities: ["text", "image"],
+                formats: ["text/plain", "application/pdf"]
+              }
+            },
+            supported_parameters: ["reasoning_effort"]
           },
           {
             id: "anthropic/claude-sonnet-4-6",
@@ -3076,7 +3082,7 @@ describe("workbench writeback helpers", () => {
     expect(selectGroupLabels(modelSelect)).toContain("Anthropic · Online");
     expect(selectGroupLabels(modelSelect)).toContain("Google Gemini · Online");
     expect(selectGroupLabels(modelSelect)).toContain("OpenAI · Online");
-    expect(selectOptionByValue(modelSelect, "google/gemini-2.5-pro").textContent).toContain("image / PDF");
+    expect(selectOptionByValue(modelSelect, "google/gemini-2.5-pro").textContent).toContain("image / PDF / reasoning");
 
     dom.getElementById("zms-profile-model-vendor-select").value = "Google Gemini";
     workbench.renderWorkbenchModelOptionsFromCache({ selectFirstVisible: true });
@@ -3088,7 +3094,7 @@ describe("workbench writeback helpers", () => {
     expect(modelSelect.value).toBe("google/gemini-2.5-pro");
     expect(dom.getElementById("zms-profile-model").value).toBe("google/gemini-2.5-pro");
     expect(workbench.state.profile.bodyExtra).toMatchObject({
-      modelFeatureHints: ["image", "pdf"],
+      modelFeatureHints: ["image", "pdf", "reasoning"],
       modelFeatureHintsModel: "google/gemini-2.5-pro",
       modelFeatureHintsSource: "model-picker"
     });
