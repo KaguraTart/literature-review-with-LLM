@@ -17285,6 +17285,8 @@ function workbenchDirectModelListItemsFromResponse(data, options = {}) {
   if (Array.isArray(data?.models?.items)) return data.models.items;
   if (Array.isArray(data?.results?.data)) return data.results.data;
   if (Array.isArray(data?.objects?.data)) return data.objects.data;
+  const providerGroups = workbenchModelListItemsFromProviderGroups(data);
+  if (providerGroups.length) return providerGroups;
   for (const field of fields) {
     const items = workbenchModelListItemsFromObjectMap(data?.[field]);
     if (items.length) return items;
@@ -17294,6 +17296,53 @@ function workbenchDirectModelListItemsFromResponse(data, options = {}) {
     if (rootItems.length) return rootItems;
   }
   return [];
+}
+
+function workbenchModelListItemsFromProviderGroups(data) {
+  const fields = [
+    "providers",
+    "provider_models",
+    "providerModels",
+    "models_by_provider",
+    "modelsByProvider",
+    "by_provider",
+    "byProvider"
+  ];
+  for (const field of fields) {
+    const items = workbenchModelListItemsFromProviderGroupMap(data?.[field]);
+    if (items.length) return items;
+  }
+  return [];
+}
+
+function workbenchModelListItemsFromProviderGroupMap(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const items = [];
+  for (const [provider, group] of Object.entries(value)) {
+    const providerKey = String(provider || "").trim();
+    if (!providerKey || workbenchModelListMapMetadataKeys().has(providerKey)) continue;
+    items.push(...workbenchModelListItemsFromProviderGroup(providerKey, group));
+  }
+  return items;
+}
+
+function workbenchModelListItemsFromProviderGroup(provider, group) {
+  const source = Array.isArray(group)
+    ? group
+    : workbenchDirectModelListItemsFromResponse(group, { includeRootObjectMap: true });
+  if (!source.length) return [];
+  return source
+    .map((item) => workbenchModelListItemWithProvider(item, provider))
+    .filter(Boolean);
+}
+
+function workbenchModelListItemWithProvider(item, provider) {
+  if (typeof item === "string") return { id: item, label: item, provider };
+  if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+  return {
+    ...item,
+    provider: item.provider ?? item.provider_id ?? item.providerId ?? item.vendor ?? provider
+  };
 }
 
 function workbenchModelListItemsFromFieldValue(value, field = "") {
@@ -17395,6 +17444,13 @@ function workbenchModelListMapMetadataKeys() {
     "edges",
     "results",
     "objects",
+    "providers",
+    "provider_models",
+    "providerModels",
+    "models_by_provider",
+    "modelsByProvider",
+    "by_provider",
+    "byProvider",
     "metadata",
     "meta",
     "pagination",

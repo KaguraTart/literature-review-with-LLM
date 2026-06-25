@@ -412,6 +412,47 @@ describe("workbench session helpers", () => {
     ]);
   });
 
+  it("loads provider-grouped model-list responses in the workbench", async () => {
+    const grouped = loadWorkbenchHelpers({
+      fetchResponses: [
+        {
+          providers: {
+            anthropic: {
+              models: [
+                {
+                  id: "claude-sonnet-4-6",
+                  display_name: "Claude Sonnet 4.6",
+                  capabilities: { vision: true, pdf: true }
+                }
+              ]
+            },
+            openai: {
+              model_list: {
+                "gpt-4o": {
+                  display_name: "GPT-4o",
+                  modalities: ["text", "image"]
+                },
+                "gpt-disabled": false
+              }
+            },
+            metadata: { count: 2 }
+          }
+        }
+      ]
+    });
+
+    const options = await grouped.workbenchFetchModelOptions({
+      url: "https://router.example/v1/models",
+      headers: { authorization: "Bearer sk-test-secret" }
+    });
+
+    expect(grouped.fetchCalls).toHaveLength(1);
+    expect(options).toEqual([
+      { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", vendor: "Anthropic", features: ["image", "pdf"] },
+      { id: "gpt-4o", label: "GPT-4o", vendor: "OpenAI", features: ["image"] }
+    ]);
+  });
+
   it("loads delimited model-list fields in the workbench", async () => {
     const delimited = loadWorkbenchHelpers({
       fetchResponses: [

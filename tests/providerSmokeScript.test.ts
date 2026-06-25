@@ -1423,6 +1423,47 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("loads provider-grouped model-list responses from aggregator routers", async () => {
+    await withMockProvider(async (baseURL) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--models",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        models: true,
+        modelCount: 3,
+        modelIds: ["claude-sonnet-4-6", "gpt-4o", "router/qwen-plus"]
+      });
+      expect(report.modelOptions).toEqual([
+        { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+        { id: "gpt-4o", label: "GPT-4o" },
+        { id: "router/qwen-plus", label: "Qwen Plus" }
+      ]);
+    }, {
+      responseBody: {
+        providers: {
+          anthropic: {
+            models: [
+              { id: "claude-sonnet-4-6", display_name: "Claude Sonnet 4.6" }
+            ]
+          },
+          openai: {
+            model_list: {
+              "gpt-4o": { display_name: "GPT-4o" },
+              "gpt-disabled": false
+            }
+          },
+          qwen: [{ id: "router/qwen-plus", display_name: "Qwen Plus" }],
+          metadata: { count: 3 }
+        }
+      }
+    });
+  });
+
   it("loads nested paginated model-list responses from provider-specific envelopes", async () => {
     await withMockProvider(async (baseURL, requests) => {
       const report = await runSmoke([

@@ -1257,6 +1257,8 @@ function directModelListItemsFromResponse(data, options = {}) {
   if (Array.isArray(data?.models?.items)) return data.models.items;
   if (Array.isArray(data?.results?.data)) return data.results.data;
   if (Array.isArray(data?.objects?.data)) return data.objects.data;
+  const providerGroups = modelListItemsFromProviderGroups(data);
+  if (providerGroups.length) return providerGroups;
   for (const field of fields) {
     const items = modelListItemsFromObjectMap(data?.[field]);
     if (items.length) return items;
@@ -1266,6 +1268,53 @@ function directModelListItemsFromResponse(data, options = {}) {
     if (rootItems.length) return rootItems;
   }
   return [];
+}
+
+function modelListItemsFromProviderGroups(data) {
+  const fields = [
+    "providers",
+    "provider_models",
+    "providerModels",
+    "models_by_provider",
+    "modelsByProvider",
+    "by_provider",
+    "byProvider"
+  ];
+  for (const field of fields) {
+    const items = modelListItemsFromProviderGroupMap(data?.[field]);
+    if (items.length) return items;
+  }
+  return [];
+}
+
+function modelListItemsFromProviderGroupMap(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const items = [];
+  for (const [provider, group] of Object.entries(value)) {
+    const providerKey = String(provider || "").trim();
+    if (!providerKey || modelListMapMetadataKeys().has(providerKey)) continue;
+    items.push(...modelListItemsFromProviderGroup(providerKey, group));
+  }
+  return items;
+}
+
+function modelListItemsFromProviderGroup(provider, group) {
+  const source = Array.isArray(group)
+    ? group
+    : directModelListItemsFromResponse(group, { includeRootObjectMap: true });
+  if (!source.length) return [];
+  return source
+    .map((item) => modelListItemWithProvider(item, provider))
+    .filter(Boolean);
+}
+
+function modelListItemWithProvider(item, provider) {
+  if (typeof item === "string") return { id: item, label: item, provider };
+  if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+  return {
+    ...item,
+    provider: item.provider ?? item.provider_id ?? item.providerId ?? item.vendor ?? provider
+  };
 }
 
 function modelListItemsFromFieldValue(value, field = "") {
@@ -1367,6 +1416,13 @@ function modelListMapMetadataKeys() {
     "edges",
     "results",
     "objects",
+    "providers",
+    "provider_models",
+    "providerModels",
+    "models_by_provider",
+    "modelsByProvider",
+    "by_provider",
+    "byProvider",
     "metadata",
     "meta",
     "pagination",
