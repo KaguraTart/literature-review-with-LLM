@@ -4024,6 +4024,77 @@ describe("workbench writeback helpers", () => {
     });
   });
 
+  it("persists provider compatibility fallback capability downgrades to the active workbench profile", () => {
+    const prefs: Record<string, any> = {};
+    const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument({
+      "zms-profile-name": "OpenAI",
+      "zms-profile-base-url": "https://api.openai.com/v1",
+      "zms-profile-api-key": "sk-test",
+      "zms-profile-model": "gpt-4.1"
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => key;
+    const profile = {
+      id: "openai",
+      name: "OpenAI",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test",
+      model: "gpt-4.1",
+      capabilities: { text: true, imageBase64: true, pdfBase64: true, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+    dom.getElementById("zms-profile-image-input").checked = true;
+    dom.getElementById("zms-profile-pdf-input").checked = true;
+
+    const updated = workbench.applyProviderCompatibilityFallbackToActiveProfile({
+      zmsCompatibilityFallbackFields: ["input.content.input_image", "input_file.file_data", "input_file.file_url", "stream"],
+      zmsEffectiveProfile: {
+        ...profile,
+        bodyExtra: {
+          omitOpenAIResponsesImage: true,
+          omitPdfInputFile: true
+        }
+      }
+    });
+
+    expect(updated).toMatchObject({
+      id: "openai",
+      bodyExtra: {
+        omitOpenAIResponsesImage: true,
+        omitPdfInputFile: true
+      },
+      capabilities: {
+        imageBase64: false,
+        pdfBase64: false,
+        streaming: false
+      }
+    });
+    expect(dom.getElementById("zms-profile-image-input").checked).toBe(false);
+    expect(dom.getElementById("zms-profile-pdf-input").checked).toBe(false);
+    expect(JSON.parse(prefs.profilesJson)[0]).toMatchObject({
+      id: "openai",
+      bodyExtra: {
+        omitOpenAIResponsesImage: true,
+        omitPdfInputFile: true
+      },
+      capabilities: {
+        imageBase64: false,
+        pdfBase64: false,
+        streaming: false
+      }
+    });
+    expect(prefs.apiKey).toBe("sk-test");
+    expect(prefs.model).toBe("gpt-4.1");
+  });
+
   it("saves a workbench model dropdown selection immediately", () => {
     const prefs: Record<string, any> = {};
     const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
@@ -10529,6 +10600,11 @@ describe("workbench writeback helpers", () => {
       image_url: "data:image/png;base64,aW1hZ2U="
     });
     expect(fetchCalls[2].body.messages[1].content).toBe("describe\n\nCONTEXT:\npaper text");
+    expect(response.zmsCompatibilityFallbackFields).toEqual(["image_url.url", "messages.content.image_url"]);
+    expect(response.zmsEffectiveProfile.bodyExtra).toMatchObject({
+      imageURLFormat: "string",
+      omitOpenAIChatImage: true
+    });
   });
 
   it("downgrades unsupported OpenAI Chat JSON and token fields in the workbench request path", async () => {
@@ -11163,6 +11239,7 @@ describe("workbench writeback helpers", () => {
 
     expect(response.ok).toBe(true);
     expect(response.zmsRequestedStream).toBe(false);
+    expect(response.zmsCompatibilityFallbackFields).toEqual(["stream", "stream_options"]);
     expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[0].body).toMatchObject({ stream: true });
     expect(fetchCalls[1].body).not.toHaveProperty("stream");
