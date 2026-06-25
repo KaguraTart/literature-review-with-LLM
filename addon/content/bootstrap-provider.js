@@ -477,7 +477,7 @@ function extractOpenAIStreamText(chunk, depth = 0) {
   if (!chunk) return "";
   const errorText = streamErrorText(chunk);
   if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
-  if (isReasoningStreamEvent(chunk)) return "";
+  if (isNonAnswerStreamEvent(chunk)) return "";
   const choiceText = extractOpenAIChoiceText(chunk?.choices);
   if (choiceText) return choiceText;
   if ((chunk?.type === "response.output_text.delta" || chunk?.type === "response.text.delta") && typeof chunk?.delta === "string") return chunk.delta;
@@ -488,7 +488,7 @@ function extractOpenAIStreamText(chunk, depth = 0) {
     const nestedDelta = extractOpenAIMessageContent(chunk.delta.content);
     if (nestedDelta) return nestedDelta;
   }
-  const deltaText = extractOpenAIMessageContent(chunk?.delta);
+  const deltaText = isNonAnswerModelPart(chunk?.delta) ? "" : extractOpenAIMessageContent(chunk?.delta);
   if (deltaText) return deltaText;
   const directContent = extractOpenAIMessageContent(chunk.content);
   if (directContent) return directContent;
@@ -511,7 +511,7 @@ function extractOpenAIChoiceText(choices) {
     .map((choice) => {
       if (typeof choice?.delta === "string") return choice.delta;
       return extractOpenAIMessageContent(choice?.delta?.content)
-        || extractOpenAIMessageContent(choice?.delta)
+        || (isNonAnswerModelPart(choice?.delta) ? "" : extractOpenAIMessageContent(choice?.delta))
         || extractOpenAIMessageContent(choice?.message?.content)
         || extractOpenAIMessageContent(choice?.message)
         || (typeof choice?.text === "string" ? choice.text : "")
@@ -525,16 +525,16 @@ function extractAnthropicStreamText(chunk, depth = 0) {
   if (!chunk) return "";
   const errorText = streamErrorText(chunk);
   if (errorText) throw new Error(`Stream error: ${redact(errorText)}`);
-  if (isReasoningStreamEvent(chunk)) return "";
+  if (isNonAnswerStreamEvent(chunk)) return "";
   if (chunk?.type === "content_block_delta") {
-    if (typeof chunk?.delta?.text === "string") return chunk.delta.text;
-    if (typeof chunk?.delta?.partial_json === "string") return chunk.delta.partial_json;
+    return anthropicDeltaText(chunk?.delta);
   }
   if (chunk?.type === "content_block_start") {
+    if (isNonAnswerModelPart(chunk?.content_block)) return "";
     return extractOpenAIMessageContent(chunk?.content_block);
   }
-  if (typeof chunk?.delta?.text === "string") return chunk.delta.text;
-  if (typeof chunk?.delta?.partial_json === "string") return chunk.delta.partial_json;
+  const deltaText = anthropicDeltaText(chunk?.delta);
+  if (deltaText) return deltaText;
   if (typeof chunk?.content_block?.text === "string") return chunk.content_block.text;
   const contentText = extractOpenAIMessageContent(chunk?.content) || extractOpenAIMessageContent(chunk?.message);
   if (contentText) return contentText;
@@ -712,7 +712,7 @@ function extractOpenAIMessageContent(content, depth = 0, allowDirect = true) {
     return content.map((part) => extractOpenAIMessageContent(part, depth + 1, allowDirect)).filter(Boolean).join("\n");
   }
   if (typeof content === "object") {
-    if (isOpenAIReasoningPart(content)) return "";
+    if (isNonAnswerModelPart(content)) return "";
     if (typeof content?.text === "string") return content.text;
     if (content?.text && typeof content.text === "object") {
       const text = extractOpenAIMessageContent(content.text, depth + 1, allowDirect);
@@ -805,15 +805,32 @@ function isOpenAIStreamSnapshot(value, depth = 0) {
   });
 }
 
-function isOpenAIReasoningPart(value) {
+function isNonAnswerModelPart(value) {
+  if (!value || typeof value !== "object") return false;
   const type = String(value?.type || "");
-  return type.includes("reasoning") || type.includes("thinking");
+  return type.includes("reasoning")
+    || type.includes("thinking")
+    || type.includes("tool_use")
+    || type.includes("tool_call")
+    || type.includes("function_call")
+    || type.includes("signature")
+    || type === "input_json_delta"
+    || type === "json_delta";
 }
 
-function isReasoningStreamEvent(value) {
+function isNonAnswerStreamEvent(value) {
   if (!value || typeof value !== "object") return false;
+  const type = String(value.type || "");
+  if (/^(response\.)?(output_item|content_block)\.(added|done)$/.test(type) && isNonAnswerModelPart(value.item || value.content_block)) return true;
+  if (type.includes("tool_call") || type.includes("function_call")) return true;
   return [value.type, value.delta?.type, value.content_block?.type]
-    .some((type) => isOpenAIReasoningPart({ type }));
+    .some((type) => isNonAnswerModelPart({ type }));
+}
+
+function anthropicDeltaText(delta) {
+  if (!delta || typeof delta !== "object") return "";
+  if (isNonAnswerModelPart(delta)) return "";
+  return typeof delta.text === "string" ? delta.text : "";
 }
 
 function safeParseJSON(text) {
