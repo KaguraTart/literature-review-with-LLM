@@ -1542,6 +1542,21 @@ describe("preferences local-agent config helpers", () => {
     ]);
     expect(helpers.modelOptionsFromResponse({
       data: [
+        {
+          id: "flag-model",
+          display_name: "Flag Model",
+          supports_vision: true,
+          supports_pdf: "supported",
+          supports_reasoning: "yes",
+          low_latency: 1,
+          local_model: "enabled"
+        }
+      ]
+    })).toEqual([
+      { id: "flag-model", label: "Flag Model", features: ["image", "pdf", "reasoning", "fast", "local"] }
+    ]);
+    expect(helpers.modelOptionsFromResponse({
+      data: [
         { model: "router-model", displayName: "Router Model" },
         { model_name: "model-name-field", title: "Model Name Field" },
         { deployment_id: "deployment-field", display_name: "Deployment Field" },
@@ -4610,6 +4625,28 @@ describe("preferences local-agent config helpers", () => {
     expect(options.map((option: any) => option.value)).toContain("gpt-4.1");
     expect(options.find((option: any) => option.value === "model-a")?.label).toBe("Model A");
     expect(elements.get("zms-status").value).toBe("Models loaded: 2");
+  });
+
+  it("follows object link model-list pagination in settings", async () => {
+    const { controller, elements, fetchCalls } = loadPreferencesController({
+      fetchResponses: [
+        {
+          data: [{ id: "model-c", display_name: "Model C" }],
+          links: { next: { href: "/v1/models?page=2" } }
+        },
+        {
+          data: [{ id: "model-a", display_name: "Model A" }]
+        }
+      ]
+    });
+
+    await controller.loadModels();
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[1].url).toBe("https://api.openai.com/v1/models?page=2");
+    const options = elements.get("zms-model-options").children;
+    expect(options.map((option: any) => option.value).slice(0, 2)).toEqual(["model-a", "model-c"]);
+    expect(options.find((option: any) => option.value === "model-c")?.label).toBe("Model C");
   });
 
   it("loads body-wrapped model-list pages in settings", async () => {
