@@ -265,10 +265,14 @@ describe("provider catalog consistency", () => {
       id: "claude-sonnet-4-6",
       features: expect.arrayContaining(["image", "pdf"])
     });
-    expect(preferences.zmsRecommendedModelOptionsForProvider("deepseek").find((option) => option.id === "deepseek-reasoner")).toMatchObject({
+    expect(preferences.zmsRecommendedModelOptionsForProvider("deepseek")[0]).toMatchObject({
+      id: "deepseek-v4-flash",
+      features: expect.arrayContaining(["fast"])
+    });
+    expect(preferences.zmsRecommendedModelOptionsForProvider("deepseek").find((option) => option.id === "deepseek-v4-pro")).toMatchObject({
       features: expect.arrayContaining(["reasoning"])
     });
-    expect(preferences.zmsRecommendedModelOptionsForProvider("deepseek").find((option) => option.id === "deepseek-chat")?.features || []).not.toContain("image");
+    expect(preferences.zmsRecommendedModelOptionsForProvider("deepseek").find((option) => option.id === "deepseek-v4-flash")?.features || []).not.toContain("image");
     expect(preferences.zmsRecommendedModelOptionsForProvider("ollama")[0]).toMatchObject({
       features: expect.arrayContaining(["local"])
     });
@@ -277,6 +281,8 @@ describe("provider catalog consistency", () => {
   it("marks explicit text-only model IDs without blocking multimodal IDs", () => {
     const preferences = loadPreferencesHelpers();
 
+    expect(preferences.zmsModelLikelyTextOnlyForProviderModel("deepseek", "deepseek-v4-flash")).toBe(true);
+    expect(preferences.zmsModelLikelyTextOnlyForProviderModel("deepseek", "deepseek-v4-pro")).toBe(true);
     expect(preferences.zmsModelLikelyTextOnlyForProviderModel("deepseek", "deepseek-chat")).toBe(true);
     expect(preferences.zmsModelLikelyTextOnlyForProviderModel("deepseek", "deepseek-reasoner")).toBe(false);
     expect(preferences.zmsModelLikelyTextOnlyForProviderModel("openai", "gpt-5.4-mini")).toBe(false);

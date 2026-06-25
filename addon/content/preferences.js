@@ -1323,7 +1323,7 @@ function applyPreferencePlaceholders(lang) {
   const providerEnv = document.getElementById("zms-providerEnvText");
   if (providerEnv) {
     providerEnv.setAttribute?.("placeholder", zh
-      ? "粘贴如：\nDEEPSEEK_API_KEY=...\nDEEPSEEK_MODEL=deepseek-chat"
+      ? "粘贴如：\nDEEPSEEK_API_KEY=...\nDEEPSEEK_MODEL=deepseek-v4-flash"
       : "Paste for example:\nOPENAI_API_KEY=...\nOPENAI_MODEL=gpt-5.4-mini");
   }
   const model = document.getElementById("zms-model");
