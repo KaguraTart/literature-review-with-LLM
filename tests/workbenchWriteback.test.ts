@@ -4745,6 +4745,8 @@ describe("workbench writeback helpers", () => {
       body: streamFromText([
         "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"hidden reasoning\"}",
         "data: {\"data\":{\"type\":\"response.reasoning_text.delta\",\"delta\":\"wrapped hidden\"}}",
+        "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{\\\"query\\\"\"}",
+        "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"arguments\":\"{\\\"query\\\":\\\"paper\\\"}\"}}",
         "data: {\"type\":\"response.output_text.delta\",\"delta\":{\"text\":\"object \"}}",
         "data: {\"type\":\"response.output_text.delta\",\"delta\":\"visible\"}"
       ].join("\n"))
@@ -4760,6 +4762,8 @@ describe("workbench writeback helpers", () => {
     const response = {
       body: streamFromText([
         "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hidden\"}}]}",
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"query\\\"\"}}]}}]}",
+        "data: {\"choices\":[{\"delta\":{\"function_call\":{\"arguments\":\"{\\\"query\\\"\"}}}]}",
         "data: {\"delta\":{\"output_text\":\"router \"}}",
         "data: {\"choices\":[{\"delta\":{\"content\":[{\"type\":\"reasoning\",\"text\":\"hidden\"},{\"type\":\"text\",\"text\":\"visible\"}]}}]}",
         "data: {\"choices\":[{\"message\":{\"content\":[{\"type\":\"output_text\",\"text\":\" tail\"}]}}]}"
@@ -4790,6 +4794,8 @@ describe("workbench writeback helpers", () => {
     const response = {
       body: streamFromText([
         "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"text\":\"hidden thinking\"}}",
+        "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"name\":\"search\",\"input\":{\"query\":\"paper\"}}}",
+        "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"query\\\"\"}}",
         "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"visible\"}}"
       ].join("\n"))
     };

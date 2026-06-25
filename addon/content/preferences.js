@@ -3954,13 +3954,14 @@ function openAITextFromResponse(data, depth = 0) {
 
 function anthropicTextFromResponse(data, depth = 0) {
   if (data?.type === "content_block_delta") {
-    if (typeof data?.delta?.text === "string") return data.delta.text;
-    if (typeof data?.delta?.partial_json === "string") return data.delta.partial_json;
+    return anthropicDeltaText(data?.delta);
   }
   if (data?.type === "content_block_start") {
+    if (isNonAnswerModelPart(data?.content_block)) return "";
     return modelTextFromValue(data?.content_block);
   }
-  if (typeof data?.delta?.text === "string") return data.delta.text;
+  const deltaText = anthropicDeltaText(data?.delta);
+  if (deltaText) return deltaText;
   if (typeof data?.content_block?.text === "string") return data.content_block.text;
   return modelTextFromValue(data?.content)
     || modelTextFromValue(data?.message)
@@ -3973,6 +3974,7 @@ function anthropicTextFromResponse(data, depth = 0) {
 
 function openAIEventDeltaText(data) {
   const type = String(data?.type || "");
+  if (isNonAnswerStreamEvent(data)) return "";
   if ((type === "response.output_text.delta" || type === "response.text.delta") && typeof data?.delta === "string") return data.delta;
   if (type === "response.refusal.delta" && typeof data?.delta === "string") return data.delta;
   if (type === "response.output_text.done" && typeof data?.text === "string") return data.text;
@@ -3993,7 +3995,7 @@ function modelTextFromChoices(choices) {
     .map((choice) => {
       if (typeof choice?.delta === "string") return choice.delta;
       return modelTextFromValue(choice?.delta?.content)
-        || modelTextFromValue(choice?.delta)
+        || (isNonAnswerModelPart(choice?.delta) ? "" : modelTextFromValue(choice?.delta))
         || modelTextFromValue(choice?.message?.content)
         || modelTextFromValue(choice?.message)
         || (typeof choice?.text === "string" ? choice.text : "")
@@ -4021,7 +4023,7 @@ function modelTextFromValue(value, depth = 0, allowDirect = true) {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.map((part) => modelTextFromValue(part, depth + 1, allowDirect)).filter(Boolean).join("\n");
   if (typeof value === "object") {
-    if (isReasoningModelPart(value)) return "";
+    if (isNonAnswerModelPart(value)) return "";
     if (typeof value.text === "string") return value.text;
     if (value.text && typeof value.text === "object") {
       const text = modelTextFromValue(value.text, depth + 1, allowDirect);
@@ -4083,9 +4085,32 @@ function stringifyProviderJSON(value) {
   }
 }
 
-function isReasoningModelPart(value) {
+function isNonAnswerModelPart(value) {
+  if (!value || typeof value !== "object") return false;
   const type = String(value?.type || "");
-  return type.includes("reasoning") || type.includes("thinking");
+  return type.includes("reasoning")
+    || type.includes("thinking")
+    || type.includes("tool_use")
+    || type.includes("tool_call")
+    || type.includes("function_call")
+    || type.includes("signature")
+    || type === "input_json_delta"
+    || type === "json_delta";
+}
+
+function isNonAnswerStreamEvent(value) {
+  if (!value || typeof value !== "object") return false;
+  const type = String(value.type || "");
+  if (/^(response\.)?(output_item|content_block)\.(added|done)$/.test(type) && isNonAnswerModelPart(value.item || value.content_block)) return true;
+  if (type.includes("tool_call") || type.includes("function_call")) return true;
+  return [value.type, value.delta?.type, value.content_block?.type]
+    .some((type) => isNonAnswerModelPart({ type }));
+}
+
+function anthropicDeltaText(delta) {
+  if (!delta || typeof delta !== "object") return "";
+  if (isNonAnswerModelPart(delta)) return "";
+  return typeof delta.text === "string" ? delta.text : "";
 }
 
 function localAgentErrorText(status, text) {
