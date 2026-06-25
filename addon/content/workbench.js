@@ -941,11 +941,13 @@ var ZoteroMarkdownSummaryWorkbench = {
     const wasModelBlank = !String(modelInput?.value || "").trim();
     const recommended = this.renderWorkbenchModelRecommendations({ selectDefault: true, resetVendor: true });
     if (!profileHasUsableAuth(profile) && !isLocalEndpoint(endpointForProfile(profile))) {
+      if (recommended.length) this.commitWorkbenchModelPickerSelection();
       this.setStatus(recommended.length ? `${this.t("modelRecommendationsLoaded")}: ${recommended.length}` : this.t("apiKeyMissing"));
       return;
     }
     const request = workbenchModelListRequestForProfile(profile);
     if (!request) {
+      if (recommended.length) this.commitWorkbenchModelPickerSelection();
       this.setStatus(recommended.length ? `${this.t("modelRecommendationsLoaded")}: ${recommended.length}` : this.t("modelListUnavailable"));
       return;
     }
@@ -986,6 +988,7 @@ var ZoteroMarkdownSummaryWorkbench = {
         this.cacheWorkbenchModelOptions(profile, fallbackOptions);
         this.renderWorkbenchModelOptions(fallbackOptions, { resetVendor: true });
         this.syncWorkbenchModelSelect(recommended);
+        this.commitWorkbenchModelPickerSelection();
         this.setStatus(`${this.t("modelListFailedUsingRecommendations")}: ${safeError(err)}`);
         return;
       }

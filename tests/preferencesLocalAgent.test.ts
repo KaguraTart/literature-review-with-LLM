@@ -3057,8 +3057,8 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-choose-outputDir-button").label).toBe("选择文件夹...");
   });
 
-  it("preloads recommended provider models without requiring an API key", async () => {
-    const { controller, elements } = loadPreferencesController();
+  it("preloads recommended provider models without requiring an API key and saves the choice", async () => {
+    const { controller, elements, prefValues } = loadPreferencesController();
     elements.get("zms-provider").value = "deepseek";
     elements.get("zms-activeProfileId").value = "deepseek";
     elements.get("zms-profileName").value = "DeepSeek";
@@ -3079,6 +3079,11 @@ describe("preferences local-agent config helpers", () => {
     expect(selectOptionByValue(elements.get("zms-model-select"), "deepseek-v4-flash").textContent).toContain("fast");
     expect(selectOptionByValue(elements.get("zms-model-select"), "deepseek-v4-flash").attributes["data-features"]).toBe("fast");
     expect(selectOptionValues(elements.get("zms-model-select"))).toContain("deepseek-chat");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.model")).toBe("deepseek-v4-flash");
+    expect(JSON.parse(prefValues.get("extensions.zoteroMarkdownSummary.profilesJson"))[0]).toMatchObject({
+      id: "deepseek",
+      model: "deepseek-v4-flash"
+    });
     expect(elements.get("zms-status").value).toBe("Recommended models loaded: 4");
   });
 
@@ -3112,8 +3117,8 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toBe("Recommended models loaded: 6");
   });
 
-  it("lets Cline API users choose a model vendor before choosing a model", async () => {
-    const { controller, elements } = loadPreferencesController();
+  it("lets Cline API users choose and save a model vendor before choosing a model", async () => {
+    const { controller, elements, prefValues } = loadPreferencesController();
     elements.get("zms-provider").value = "cline_api";
     elements.get("zms-activeProfileId").value = "cline-api";
     elements.get("zms-profileName").value = "Cline API";
@@ -3139,7 +3144,7 @@ describe("preferences local-agent config helpers", () => {
     expect(selectGroupLabels(elements.get("zms-model-select"))).toContain("Google Gemini · Recommended");
 
     elements.get("zms-model-vendor-select").value = "Google Gemini";
-    controller.renderModelOptionsFromCache({ selectFirstVisible: true });
+    controller.renderModelOptionsFromCache({ selectFirstVisible: true, commitSelection: true });
 
     const filteredValues = selectOptionValues(elements.get("zms-model-select"));
     expect(filteredValues).toContain("google/gemini-2.5-pro");
@@ -3148,6 +3153,11 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model-select").value).toBe("google/gemini-2.5-pro");
     expect(elements.get("zms-model").value).toBe("google/gemini-2.5-pro");
     expect(elements.get("zms-model").hidden).toBe(true);
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.model")).toBe("google/gemini-2.5-pro");
+    expect(JSON.parse(prefValues.get("extensions.zoteroMarkdownSummary.profilesJson"))[0]).toMatchObject({
+      id: "cline-api",
+      model: "google/gemini-2.5-pro"
+    });
   });
 
   it("resets stale settings model vendor filters when a new provider loads recommendations", async () => {

@@ -535,11 +535,13 @@ var ZoteroMarkdownSummaryPrefs = {
     const wasModelBlank = !String(modelInput?.value || "").trim();
     const recommended = this.refreshModelRecommendations({ selectDefault: true, resetVendor: true });
     if (!profileHasUsableAuth(profile)) {
+      if (recommended.length) this.commitModelPickerSelection();
       this.setStatus(recommended.length ? `${this.t("modelRecommendationsLoaded")}: ${recommended.length}` : this.t("apiKeyMissing"));
       return;
     }
     const request = modelListRequestForProfile(profile);
     if (!request) {
+      if (recommended.length) this.commitModelPickerSelection();
       this.setStatus(recommended.length ? `${this.t("modelRecommendationsLoaded")}: ${recommended.length}` : this.t("modelListUnavailable"));
       return;
     }
@@ -572,6 +574,7 @@ var ZoteroMarkdownSummaryPrefs = {
         this.cacheModelOptionsForProfile(profile, fallbackOptions);
         renderModelOptions(fallbackOptions, { resetVendor: true });
         syncModelSelectFromInput(recommended);
+        this.commitModelPickerSelection();
         this.setStatus(`${this.t("modelListFailedUsingRecommendations")}: ${safeError(err)}`);
         return;
       }
@@ -804,19 +807,23 @@ var ZoteroMarkdownSummaryPrefs = {
     }
     const select = document.getElementById("zms-model-select");
     if (select && select.dataset?.zmsModelSelectBound !== "1") {
-      select.addEventListener("change", () => this.selectModelFromDropdown());
+      select.addEventListener("change", () => this.selectModelFromDropdown({ commit: true }));
       if (select.dataset) select.dataset.zmsModelSelectBound = "1";
     }
     const vendorSelect = document.getElementById("zms-model-vendor-select");
     if (vendorSelect && vendorSelect.dataset?.zmsModelVendorBound !== "1") {
-      vendorSelect.addEventListener("change", () => this.renderModelOptionsFromCache({ selectFirstVisible: true }));
+      vendorSelect.addEventListener("change", () => this.renderModelOptionsFromCache({ selectFirstVisible: true, commitSelection: true }));
       if (vendorSelect.dataset) vendorSelect.dataset.zmsModelVendorBound = "1";
     }
     const model = document.getElementById("zms-model");
     if (!model || model.dataset?.zmsModelPickerBound === "1") return;
     const sync = () => syncModelSelectFromInput();
     model.addEventListener("input", sync);
-    model.addEventListener("change", sync);
+    model.addEventListener("change", () => {
+      sync();
+      this.commitModelPickerSelection();
+    });
+    model.addEventListener("blur", () => this.commitModelPickerSelection());
     if (model.dataset) model.dataset.zmsModelPickerBound = "1";
     syncModelSelectFromInput();
   },
@@ -827,9 +834,10 @@ var ZoteroMarkdownSummaryPrefs = {
       this.refreshProfileStatus();
       this.refreshProviderGuide();
     }
+    if (options.commitSelection) this.commitModelPickerSelection();
   },
 
-  selectModelFromDropdown() {
+  selectModelFromDropdown(options = {}) {
     const select = document.getElementById("zms-model-select");
     const model = document.getElementById("zms-model");
     if (!select || !model) return;
@@ -839,10 +847,18 @@ var ZoteroMarkdownSummaryPrefs = {
       setCustomModelInputVisible(model, false);
       this.refreshProfileStatus();
       this.refreshProviderGuide();
+      if (options.commit === true) this.commitModelPickerSelection();
       return;
     }
     setCustomModelInputVisible(model, true);
     model.focus?.();
+  },
+
+  commitModelPickerSelection() {
+    const profile = this.upsertProfileFromEditor();
+    if (!profile) return null;
+    if (!this.save({ updateProfile: false, statusKey: "" })) return null;
+    return profile;
   },
 
   applyLanguage() {

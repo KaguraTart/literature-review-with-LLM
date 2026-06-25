@@ -2931,7 +2931,8 @@ describe("workbench writeback helpers", () => {
   });
 
   it("loads recommended workbench models before API credentials are configured", async () => {
-    const loaded: any = loadWorkbenchHelpers();
+    const prefs: Record<string, any> = {};
+    const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
     const dom = fakeDocument({
       "zms-profile-name": "DeepSeek",
       "zms-profile-base-url": "https://api.deepseek.com",
@@ -2985,6 +2986,11 @@ describe("workbench writeback helpers", () => {
     expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-v4-flash").textContent).toContain("DeepSeek V4 Flash");
     expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-v4-flash").textContent).toContain("fast");
     expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-chat");
+    expect(prefs.model).toBe("deepseek-v4-flash");
+    expect(JSON.parse(prefs.profilesJson)[0]).toMatchObject({
+      id: "deepseek",
+      model: "deepseek-v4-flash"
+    });
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 4");
   });
 
