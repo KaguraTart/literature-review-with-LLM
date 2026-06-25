@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Literature Review with LLM",
-  "version": "0.1.111",
+  "version": "0.1.112",
   "description": "Create Markdown summaries as linked attachments for Zotero items.",
   "applications": {
     "zotero": {
