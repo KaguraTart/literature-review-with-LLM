@@ -2219,7 +2219,7 @@ describe("preferences local-agent config helpers", () => {
     });
     expect(profiles.find((profile) => profile.id === "deepseek")).toMatchObject({
       apiKey: "deepseek-secret",
-      model: "deepseek-chat"
+      model: "deepseek-v4-flash"
     });
     expect(profiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([
       "gemini",
@@ -3146,20 +3146,20 @@ describe("preferences local-agent config helpers", () => {
 
     await controller.loadModels();
 
-    expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toContain("deepseek-chat");
-    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("deepseek-chat");
-    expect(elements.get("zms-model").value).toBe("deepseek-chat");
-    expect(elements.get("zms-model-select").value).toBe("deepseek-chat");
+    expect(elements.get("zms-model-options").children.map((option: any) => option.value)).toContain("deepseek-v4-flash");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toEqual(expect.arrayContaining(["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"]));
+    expect(elements.get("zms-model").value).toBe("deepseek-v4-flash");
+    expect(elements.get("zms-model-select").value).toBe("deepseek-v4-flash");
     expect(elements.get("zms-model").hidden).toBe(true);
     expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual(["DeepSeek · Recommended"]);
-    expect(selectOptionByValue(elements.get("zms-model-select"), "deepseek-chat").textContent).toContain("DeepSeek Chat");
+    expect(selectOptionByValue(elements.get("zms-model-select"), "deepseek-v4-flash").textContent).toContain("DeepSeek V4 Flash");
     expect(selectOptionValues(elements.get("zms-model-select"))).toContain("deepseek-chat");
-    expect(prefValues.get("extensions.zoteroMarkdownSummary.model")).toBe("deepseek-chat");
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.model")).toBe("deepseek-v4-flash");
     expect(JSON.parse(prefValues.get("extensions.zoteroMarkdownSummary.profilesJson"))[0]).toMatchObject({
       id: "deepseek",
-      model: "deepseek-chat"
+      model: "deepseek-v4-flash"
     });
-    expect(elements.get("zms-status").value).toBe("Recommended models loaded: 2");
+    expect(elements.get("zms-status").value).toBe("Recommended models loaded: 4");
   });
 
   it("shows multi-vendor LiteLLM Proxy model recommendations before credentials are configured", async () => {
@@ -3195,7 +3195,7 @@ describe("preferences local-agent config helpers", () => {
     expect(selectOptionByValue(elements.get("zms-model-select"), "anthropic/claude-sonnet-4-6").textContent).toContain("image");
     expect(elements.get("zms-model").value).toBe("openai/gpt-4o-mini");
     expect(elements.get("zms-model").hidden).toBe(true);
-    expect(elements.get("zms-status").value).toBe("Recommended models loaded: 17");
+    expect(elements.get("zms-status").value).toBe("Recommended models loaded: 19");
   });
 
   it("lets Cline API users choose and save a model vendor before choosing a model", async () => {
@@ -3513,9 +3513,9 @@ describe("preferences local-agent config helpers", () => {
 
     controller.refreshModelRecommendations({ selectDefault: true });
 
-    expect(elements.get("zms-model").value).toBe("deepseek-chat");
+    expect(elements.get("zms-model").value).toBe("deepseek-v4-flash");
     expect(elements.get("zms-model-select").children[0].textContent).toBe("Choose DeepSeek model");
-    expect(elements.get("zms-model-select").value).toBe("deepseek-chat");
+    expect(elements.get("zms-model-select").value).toBe("deepseek-v4-flash");
     expect(elements.get("zms-model").hidden).toBe(true);
   });
 
@@ -4240,7 +4240,7 @@ describe("preferences local-agent config helpers", () => {
     expect(profiles.find((profile: any) => profile.id === "openai")).toMatchObject({ model: "gpt-5.4-mini" });
     expect(profiles.find((profile: any) => profile.id === "anthropic")).toMatchObject({ model: "claude-sonnet-4-6" });
     expect(profiles.find((profile: any) => profile.id === "cline-api")).toMatchObject({ model: "anthropic/claude-sonnet-4-6" });
-    expect(profiles.find((profile: any) => profile.id === "deepseek")).toMatchObject({ model: "deepseek-chat" });
+    expect(profiles.find((profile: any) => profile.id === "deepseek")).toMatchObject({ model: "deepseek-v4-flash" });
     expect(profiles.find((profile: any) => profile.id === "azure-openai")).toMatchObject({ model: "" });
     expect(profiles.find((profile: any) => profile.id === "local-agents")).toMatchObject({ model: "" });
   });

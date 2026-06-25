@@ -102,6 +102,7 @@ Provider notes:
 - Anthropic-compatible requests also retry without optional body fields such as `stream`, `metadata`, `thinking`, `top_p`, `top_k`, `stop_sequences`, `tools`, or `tool_choice` when a router explicitly rejects them. If a router rejects the `anthropic-version` header, the settings test, workbench, and direct summary path retry once without that header; you can also set `bodyExtra.omitAnthropicVersion` to `true`.
 - Gemini is currently configured through the OpenAI-compatible endpoint style.
 - Vercel AI Gateway includes three presets: OpenAI Chat and Responses use `https://ai-gateway.vercel.sh/v1`; Anthropic Messages uses `https://ai-gateway.vercel.sh`. Use an AI Gateway API key in the API key field. Chat supports image input when the selected gateway model supports it; Responses and Anthropic presets also allow raw PDF input.
+- DeepSeek defaults to `deepseek-v4-flash`, with `deepseek-v4-pro` available for reasoning-heavy tasks. Legacy `deepseek-chat` and `deepseek-reasoner` remain selectable for compatibility.
 - Cline API uses `https://api.cline.bot/api/v1` as an OpenAI-compatible Chat endpoint. The model dropdown lists common `provider/model` router IDs such as Anthropic, Gemini, OpenAI, DeepSeek, xAI, and MiniMax options; image input is declared by default, but actual image understanding still depends on the selected routed model.
 - Cloudflare AI presets use `https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1`; replace `YOUR_ACCOUNT_ID` with your Cloudflare account ID and use a Cloudflare API token as the API key. Three presets are available: OpenAI Chat, OpenAI Responses, and Anthropic-compatible Messages. Model list and raw image/PDF input are disabled by default because support depends on the selected Workers AI or routed model.
 - GitHub Models uses `https://models.github.ai/inference` without an added `/v1` segment and includes the required GitHub API headers; use a PAT with Models access as the API key.
@@ -291,7 +292,7 @@ NVIDIA_NIM_API_KEY=... NVIDIA_NIM_MODEL=... npm run verify:provider:live -- --in
 SAMBANOVA_API_KEY=... SAMBANOVA_MODEL=... npm run verify:provider:live -- --include sambanova
 SAMBANOVA_RESPONSES_API_KEY=... SAMBANOVA_RESPONSES_MODEL=... npm run verify:provider:live -- --include sambanova-responses
 SAMBANOVA_ANTHROPIC_API_KEY=... SAMBANOVA_ANTHROPIC_MODEL=... npm run verify:provider:live -- --include sambanova-anthropic
-DEEPSEEK_API_KEY=... DEEPSEEK_MODEL=... npm run verify:provider:live -- --include deepseek
+DEEPSEEK_API_KEY=... DEEPSEEK_MODEL=deepseek-v4-flash npm run verify:provider:live -- --include deepseek
 OPENROUTER_API_KEY=... OPENROUTER_MODEL=... npm run verify:provider:live -- --include openrouter
 GROQ_API_KEY=... GROQ_MODEL=... npm run verify:provider:live -- --include groq
 MISTRAL_API_KEY=... MISTRAL_MODEL=... npm run verify:provider:live -- --include mistral

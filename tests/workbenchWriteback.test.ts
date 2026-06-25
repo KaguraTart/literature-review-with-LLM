@@ -674,7 +674,7 @@ describe("workbench writeback helpers", () => {
     });
     expect(profiles.find((profile) => profile.id === "deepseek")).toMatchObject({
       apiKey: "deepseek-secret",
-      model: "deepseek-chat"
+      model: "deepseek-v4-flash"
     });
     expect(profiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([
       "openai-compatible",
@@ -3115,20 +3115,20 @@ describe("workbench writeback helpers", () => {
 
     await workbench.loadModelsForWorkbench();
 
-    expect(dom.getElementById("zms-workbench-model-options").children.map((option: any) => option.value)).toContain("deepseek-chat");
-    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-chat");
-    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
-    expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-chat");
+    expect(dom.getElementById("zms-workbench-model-options").children.map((option: any) => option.value)).toContain("deepseek-v4-flash");
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toEqual(expect.arrayContaining(["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"]));
+    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-v4-flash");
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-v4-flash");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
     expect(selectGroupLabels(dom.getElementById("zms-profile-model-select"))).toEqual(["DeepSeek · Recommended"]);
-    expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-chat").textContent).toContain("DeepSeek Chat");
+    expect(selectOptionByValue(dom.getElementById("zms-profile-model-select"), "deepseek-v4-flash").textContent).toContain("DeepSeek V4 Flash");
     expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-chat");
-    expect(prefs.model).toBe("deepseek-chat");
+    expect(prefs.model).toBe("deepseek-v4-flash");
     expect(JSON.parse(prefs.profilesJson)[0]).toMatchObject({
       id: "deepseek",
-      model: "deepseek-chat"
+      model: "deepseek-v4-flash"
     });
-    expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 2");
+    expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 4");
   });
 
   it("groups online workbench model lists by returned provider vendor", async () => {
@@ -3795,7 +3795,7 @@ describe("workbench writeback helpers", () => {
     expect(providerSelect.children.map((option: any) => option.value)).toContain("litellm_proxy_chat");
     expect(providerSelect.children.map((option: any) => option.textContent)).toContain("DeepSeek 聊天接口");
     expect(providerSelect.children.map((option: any) => option.textContent)).toContain("LiteLLM Proxy 聊天接口");
-    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
+    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-v4-flash");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
     expect(selectOptionValues(dom.getElementById("zms-profile-model-select"))).toContain("deepseek-reasoner");
   });
@@ -4354,9 +4354,9 @@ describe("workbench writeback helpers", () => {
 
     workbench.renderWorkbenchModelRecommendations({ selectDefault: true });
 
-    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-chat");
+    expect(dom.getElementById("zms-profile-model").value).toBe("deepseek-v4-flash");
     expect(dom.getElementById("zms-profile-model-select").children[0].textContent).toBe("Choose DeepSeek model");
-    expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-chat");
+    expect(dom.getElementById("zms-profile-model-select").value).toBe("deepseek-v4-flash");
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
   });
 
