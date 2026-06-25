@@ -1063,6 +1063,22 @@ describe("workbench writeback helpers", () => {
     expect(openaiFileURLBody.input[2].content.find((part: any) => part.type === "input_file")).not.toHaveProperty("file_data");
     expect(openaiFileURLBody).not.toHaveProperty("pdfInputFileField");
 
+    const openaiStaticFileURLBody = helpers.bodyForProfile({
+      protocol: "openai_responses",
+      model: "model-a",
+      capabilities: { streaming: true },
+      bodyExtra: { omitFields: ["input_file.file_data"] }
+    }, messages, "zh-CN", "system", requestInput, false);
+    expect(openaiStaticFileURLBody.input[2].content).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "input_file",
+        filename: "paper.pdf",
+        file_url: "data:application/pdf;base64,abc123"
+      })
+    ]));
+    expect(openaiStaticFileURLBody.input[2].content.find((part: any) => part.type === "input_file")).not.toHaveProperty("file_data");
+    expect(openaiStaticFileURLBody).not.toHaveProperty("omitFields");
+
     const openaiTextOnlyPDFBody = helpers.bodyForProfile({
       protocol: "openai_responses",
       model: "model-a",
@@ -1109,6 +1125,24 @@ describe("workbench writeback helpers", () => {
     expect(JSON.stringify(anthropicTextOnlyBody.messages)).not.toContain("application/pdf");
     expect(anthropicTextOnlyBody.messages[2].content).toBe("second question");
     expect(anthropicTextOnlyBody).not.toHaveProperty("omitAnthropicDocument");
+    const anthropicStaticTextOnlyBody = helpers.bodyForProfile({
+      protocol: "anthropic_messages",
+      model: "model-a",
+      capabilities: { streaming: true, imageBase64: true },
+      bodyExtra: { omitFields: ["messages.content.document", "messages.content.image"] }
+    }, messages, "zh-CN", "system", {
+      type: "pdf_base64",
+      source: "pdf_base64",
+      base64: "abc123",
+      filename: "paper.pdf",
+      images: [{ name: "screen.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+    }, false);
+    expect(JSON.stringify(anthropicStaticTextOnlyBody.messages)).not.toContain("application/pdf");
+    expect(JSON.stringify(anthropicStaticTextOnlyBody.messages)).not.toContain("\"image\"");
+    expect(anthropicStaticTextOnlyBody.messages[2].content).toEqual([
+      expect.objectContaining({ type: "text", text: expect.stringContaining("second question") })
+    ]);
+    expect(anthropicStaticTextOnlyBody).not.toHaveProperty("omitFields");
     expect(anthropicBody).not.toHaveProperty("temperature");
     expect(helpers.bodyForProfile({
       protocol: "anthropic_messages",
@@ -1185,6 +1219,17 @@ describe("workbench writeback helpers", () => {
       { type: "image_url", image_url: "data:image/png;base64,aW1hZ2U=" }
     ]);
     expect(stringImageChatBody).not.toHaveProperty("imageURLFormat");
+    const staticStringImageChatBody = helpers.bodyForProfile({
+      protocol: "openai_chat",
+      model: "model-a",
+      capabilities: { streaming: true, imageBase64: true },
+      bodyExtra: { omitFields: ["image_url.url"] }
+    }, messages, "zh-CN", "system", requestInput, false);
+    expect(staticStringImageChatBody.messages[1].content).toEqual([
+      { type: "text", text: "请解释这张图" },
+      { type: "image_url", image_url: "data:image/png;base64,aW1hZ2U=" }
+    ]);
+    expect(staticStringImageChatBody).not.toHaveProperty("omitFields");
 
     const responsesBody = helpers.bodyForProfile({
       protocol: "openai_responses",

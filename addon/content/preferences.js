@@ -927,7 +927,7 @@ function prefFallbackMessage(key, lang) {
     modelSelectPlaceholder: zh ? "选择接口厂商推荐模型" : "Choose provider model",
     modelSelectCustom: zh ? "自定义/私有部署模型..." : "Custom/private model...",
     modelPickerHelp: zh
-      ? "先选接口厂商；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商，最后从模型下拉选择具体模型。点击“加载模型列表”会先显示内置推荐模型，有 API Key 时追加在线模型。"
+      ? "先选接口厂商；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商，最后从“具体模型”下拉选择。点击“加载模型列表”会先显示内置推荐模型，有 API Key 时追加在线模型。"
       : "Choose a provider first. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Load model list shows built-in recommendations first and appends online models when an API key is available.",
     onlineModels: zh ? "在线模型" : "Online",
     recommendedModels: zh ? "推荐模型" : "Recommended",
@@ -1168,9 +1168,9 @@ function applyPreferenceTextLabels(lang) {
     "zms-cap-toolUse-label": zh ? "工具调用" : "Tool use",
     "zms-cap-modelList-label": zh ? "在线模型列表" : "Model list",
     "zms-model-vendor-filter-label": zh ? "模型厂商" : "Model vendor",
-    "zms-model-select-label": zh ? "模型下拉" : "Model dropdown",
+    "zms-model-select-label": zh ? "具体模型" : "Concrete model",
     "zms-model-help": zh
-      ? "先选接口厂商；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商，最后从模型下拉选择具体模型。点击“加载模型列表”会先显示内置推荐模型，有 API Key 时追加在线模型。"
+      ? "先选接口厂商；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商，最后从“具体模型”下拉选择。点击“加载模型列表”会先显示内置推荐模型，有 API Key 时追加在线模型。"
       : "Choose a provider first. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Load model list shows built-in recommendations first and appends online models when an API key is available.",
     "zms-local-agent-note-1": zh
       ? "按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"
@@ -4042,8 +4042,67 @@ function omitProviderBodyFields(body, bodyExtra) {
   const fields = providerBodyOmitFields(bodyExtra);
   if (!fields.size) return body;
   const next = { ...body };
-  for (const field of fields) delete next[field];
+  for (const field of fields) {
+    if (applyNestedProviderBodyOmitField(next, field)) continue;
+    delete next[field];
+  }
   return next;
+}
+
+function applyNestedProviderBodyOmitField(body, field) {
+  if (field === "instructions") {
+    moveInstructionsIntoOpenAIResponsesInput(body);
+    return true;
+  }
+  if (field === "system") {
+    moveAnthropicSystemIntoMessages(body);
+    return true;
+  }
+  if (field === "text.format") {
+    removeOpenAIResponsesTextField(body, "format");
+    return true;
+  }
+  if (field === "text.verbosity") {
+    removeOpenAIResponsesTextField(body, "verbosity");
+    return true;
+  }
+  if (field === "input_file.file_data") {
+    switchOpenAIResponsesInputFileField(body, "file_data", "file_url");
+    return true;
+  }
+  if (field === "input_file.file_url") {
+    switchOpenAIResponsesInputFileField(body, "file_url", "file_data");
+    return true;
+  }
+  if (field === "image_url.url") {
+    switchOpenAIChatImageURLToString(body);
+    return true;
+  }
+  if (field === "messages.content.image_url") {
+    removeOpenAIChatImageParts(body);
+    return true;
+  }
+  if (field === "input.content.input_image") {
+    removeOpenAIResponsesInputImages(body);
+    return true;
+  }
+  if (field === "messages.role.system") {
+    moveOpenAIChatSystemIntoMessages(body);
+    return true;
+  }
+  if (field === "messages.content") {
+    switchAnthropicStringMessagesToTextBlocks(body);
+    return true;
+  }
+  if (field === "messages.content.document") {
+    removeAnthropicDocumentBlocks(body);
+    return true;
+  }
+  if (field === "messages.content.image") {
+    removeAnthropicImageBlocks(body);
+    return true;
+  }
+  return false;
 }
 
 function providerBodyOmitFields(bodyExtra) {

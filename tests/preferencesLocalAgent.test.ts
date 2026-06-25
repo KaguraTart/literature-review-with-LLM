@@ -1003,6 +1003,16 @@ describe("preferences local-agent config helpers", () => {
     expect(strippedRequest.body).not.toHaveProperty("max_tokens");
     expect(strippedRequest.body).not.toHaveProperty("omitFields");
 
+    const responsesTextFormatOmitted = helpers.connectionTestRequestForProfile({
+      ...helpers.providerDefaults("openai"),
+      apiKey: "sk-test-secret",
+      model: "response-model",
+      capabilities: { streaming: true, modelList: true, jsonMode: true },
+      bodyExtra: { omitFields: ["text.format"] }
+    });
+    expect(responsesTextFormatOmitted.body).not.toHaveProperty("text");
+    expect(responsesTextFormatOmitted.body).not.toHaveProperty("omitFields");
+
     const systemFallbackRequest = helpers.connectionTestRequestForProfile({
       ...profile,
       bodyExtra: { systemFallbackToUser: true }
@@ -1025,6 +1035,19 @@ describe("preferences local-agent config helpers", () => {
     expect(anthropicSystemFallbackRequest.body).not.toHaveProperty("system");
     expect(anthropicSystemFallbackRequest.body.messages[0].content).toContain("SYSTEM:\nYou are a provider connection test endpoint");
     expect(anthropicSystemFallbackRequest.body.messages[0].content).toContain("ping");
+    const anthropicSystemOmittedRequest = helpers.connectionTestRequestForProfile({
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://router.example",
+      apiKey: "anthropic-secret",
+      model: "claude-compatible",
+      capabilities: { streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: { omitFields: ["system"] }
+    });
+    expect(anthropicSystemOmittedRequest.body).not.toHaveProperty("system");
+    expect(anthropicSystemOmittedRequest.body.messages[0].content).toContain("SYSTEM:\nYou are a provider connection test endpoint");
+    expect(anthropicSystemOmittedRequest.body).not.toHaveProperty("omitFields");
 
     const pastedChatEndpointProfile = {
       ...profile,
@@ -2978,7 +3001,7 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-apiKey-label").value).toBe("API 密钥");
     expect(elements.get("zms-model-label").value).toBe("模型");
     expect(elements.get("zms-model-vendor-filter-label").value).toBe("模型厂商");
-    expect(elements.get("zms-model-select-label").value).toBe("模型下拉");
+    expect(elements.get("zms-model-select-label").value).toBe("具体模型");
     expect(elements.get("zms-model-help").value).toContain("加载模型列表");
     expect(elements.get("zms-load-models-button").label).toBe("加载模型列表");
     expect(elements.get("zms-test-button").label).toBe("保存并测试");

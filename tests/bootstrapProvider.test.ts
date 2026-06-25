@@ -2348,6 +2348,36 @@ describe("bootstrap provider helpers", () => {
       model: "router-model",
       capabilities: { pdfBase64: false, imageBase64: true, streaming: true },
       customHeaders: {},
+      bodyExtra: { omitFields: ["image_url.url"] },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: {
+          type: "text",
+          text: "paper text",
+          images: [{ name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+        },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", false);
+
+    expect(fetchCalls[2].body.messages[1].content).toEqual([
+      { type: "text", text: "prompt\n\npaper text" },
+      { type: "image_url", image_url: "data:image/png;base64,aW1hZ2U=" }
+    ]);
+    expect(fetchCalls[2].body).not.toHaveProperty("omitFields");
+
+    await helpers.callOpenAICompatible({
+      provider: "openai-compatible",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://router.example/v1",
+      apiKey: "sk-test-secret",
+      model: "router-model",
+      capabilities: { pdfBase64: false, imageBase64: true, streaming: true },
+      customHeaders: {},
       bodyExtra: { omitOpenAIChatImage: true },
       request: {
         system: "system",
@@ -2363,8 +2393,8 @@ describe("bootstrap provider helpers", () => {
       }
     }, "hash", false);
 
-    expect(fetchCalls[2].body.messages[1].content).toBe("prompt\n\npaper text");
-    expect(fetchCalls[2].body).not.toHaveProperty("omitOpenAIChatImage");
+    expect(fetchCalls[3].body.messages[1].content).toBe("prompt\n\npaper text");
+    expect(fetchCalls[3].body).not.toHaveProperty("omitOpenAIChatImage");
   });
 
   it("falls back when bootstrap OpenAI Chat endpoints reject image_url object fields", async () => {
@@ -2546,6 +2576,37 @@ describe("bootstrap provider helpers", () => {
       { type: "input_text", text: "prompt" }
     ]);
     expect(fetchCalls[3].body).not.toHaveProperty("omitOpenAIResponsesImage");
+
+    await helpers.callOpenAICompatible({
+      provider: "openai",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test-secret",
+      model: "response-model",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true },
+      customHeaders: {},
+      bodyExtra: { omitFields: ["input_file.file_data", "input.content.input_image"] },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: {
+          type: "pdf_base64",
+          base64: "cGRm",
+          filename: "paper.pdf",
+          images: [{ name: "figure.jpg", mimeType: "image/jpeg", base64: "aW1hZ2U=" }]
+        },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash", true);
+
+    expect(fetchCalls[4].body.input[0].content).toEqual([
+      { type: "input_file", filename: "paper.pdf", file_url: "data:application/pdf;base64,cGRm" },
+      { type: "input_text", text: "prompt" }
+    ]);
+    expect(fetchCalls[4].body).not.toHaveProperty("omitFields");
   });
 
   it("sends image attachments through bootstrap Anthropic message bodies", async () => {
@@ -2614,6 +2675,39 @@ describe("bootstrap provider helpers", () => {
       { type: "text", text: "prompt" }
     ]);
     expect(fetchCalls[1].body).not.toHaveProperty("omitImageInput");
+
+    await helpers.callAnthropic({
+      provider: "anthropic",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "sk-test-secret",
+      model: "claude-model",
+      capabilities: { pdfBase64: true, imageBase64: true, streaming: true },
+      customHeaders: {},
+      bodyExtra: {
+        directBrowserAccess: false,
+        omitFields: ["messages.content.document", "messages.content.image"]
+      },
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: {
+          type: "pdf_base64",
+          base64: "cGRm",
+          filename: "paper.pdf",
+          images: [{ name: "figure.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+        },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+
+    expect(fetchCalls[2].body.messages[0].content).toEqual([
+      { type: "text", text: "prompt" }
+    ]);
+    expect(fetchCalls[2].body).not.toHaveProperty("omitFields");
   });
 
   it("rejects bootstrap image attachments when the provider profile disables image input", async () => {

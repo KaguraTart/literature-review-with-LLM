@@ -10399,17 +10399,66 @@ function omitProviderBodyFields(body, bodyExtra) {
   if (!fields.size) return body;
   const next = { ...body };
   for (const field of fields) {
-    if (field === "text.format") {
-      removeOpenAIResponsesTextField(next, "format");
-      continue;
-    }
-    if (field === "text.verbosity") {
-      removeOpenAIResponsesTextField(next, "verbosity");
-      continue;
-    }
+    if (applyNestedProviderBodyOmitField(next, field)) continue;
     delete next[field];
   }
   return next;
+}
+
+function applyNestedProviderBodyOmitField(body, field) {
+  if (field === "instructions") {
+    moveInstructionsIntoOpenAIResponsesInput(body);
+    return true;
+  }
+  if (field === "system") {
+    moveAnthropicSystemIntoMessages(body);
+    return true;
+  }
+  if (field === "text.format") {
+    removeOpenAIResponsesTextField(body, "format");
+    return true;
+  }
+  if (field === "text.verbosity") {
+    removeOpenAIResponsesTextField(body, "verbosity");
+    return true;
+  }
+  if (field === "input_file.file_data") {
+    switchOpenAIResponsesInputFileField(body, "file_data", "file_url");
+    return true;
+  }
+  if (field === "input_file.file_url") {
+    switchOpenAIResponsesInputFileField(body, "file_url", "file_data");
+    return true;
+  }
+  if (field === "image_url.url") {
+    switchOpenAIChatImageURLToString(body);
+    return true;
+  }
+  if (field === "messages.content.image_url") {
+    removeOpenAIChatImageParts(body);
+    return true;
+  }
+  if (field === "input.content.input_image") {
+    removeOpenAIResponsesInputImages(body);
+    return true;
+  }
+  if (field === "messages.role.system") {
+    moveOpenAIChatSystemIntoMessages(body);
+    return true;
+  }
+  if (field === "messages.content") {
+    switchAnthropicStringMessagesToTextBlocks(body);
+    return true;
+  }
+  if (field === "messages.content.document") {
+    removeAnthropicDocumentBlocks(body);
+    return true;
+  }
+  if (field === "messages.content.image") {
+    removeAnthropicImageBlocks(body);
+    return true;
+  }
+  return false;
 }
 
 function removeOpenAIResponsesTextField(body, field) {
@@ -10419,6 +10468,141 @@ function removeOpenAIResponsesTextField(body, field) {
   delete nextText[field];
   if (Object.keys(nextText).length) body.text = nextText;
   else delete body.text;
+}
+
+function switchAnthropicStringMessagesToTextBlocks(body) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message) => typeof message?.content === "string"
+    ? { ...message, content: [{ type: "text", text: message.content }] }
+    : message);
+}
+
+function switchOpenAIChatImageURLToString(body) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message) => {
+    const content = Array.isArray(message?.content) ? message.content : null;
+    if (!content) return message;
+    return {
+      ...message,
+      content: content.map((part) => {
+        const imageURL = part?.image_url;
+        if (part?.type !== "image_url" || !imageURL || typeof imageURL !== "object" || Array.isArray(imageURL) || imageURL.url === undefined) return part;
+        return { ...part, image_url: imageURL.url };
+      })
+    };
+  });
+}
+
+function switchOpenAIResponsesInputFileField(body, from, to) {
+  const input = Array.isArray(body.input) ? body.input : [];
+  body.input = input.map((item) => {
+    const content = Array.isArray(item?.content) ? item.content : [];
+    return {
+      ...item,
+      content: content.map((part) => {
+        if (part?.type !== "input_file" || part?.[from] === undefined) return part;
+        const { [from]: value, ...rest } = part;
+        return { ...rest, [to]: value };
+      })
+    };
+  });
+}
+
+function removeOpenAIChatImageParts(body) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message) => {
+    const content = Array.isArray(message?.content) ? message.content : null;
+    if (!content) return message;
+    return {
+      ...message,
+      content: content.filter((part) => part?.type !== "image_url")
+    };
+  });
+}
+
+function removeOpenAIResponsesInputImages(body) {
+  const input = Array.isArray(body.input) ? body.input : [];
+  body.input = input.map((item) => {
+    const content = Array.isArray(item?.content) ? item.content : [];
+    return {
+      ...item,
+      content: content.filter((part) => part?.type !== "input_image")
+    };
+  });
+}
+
+function removeAnthropicDocumentBlocks(body) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message) => {
+    const content = Array.isArray(message?.content) ? message.content : null;
+    if (!content) return message;
+    return {
+      ...message,
+      content: content.filter((part) => part?.type !== "document")
+    };
+  });
+}
+
+function removeAnthropicImageBlocks(body) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  body.messages = messages.map((message) => {
+    const content = Array.isArray(message?.content) ? message.content : null;
+    if (!content) return message;
+    return {
+      ...message,
+      content: content.filter((part) => part?.type !== "image")
+    };
+  });
+}
+
+function moveInstructionsIntoOpenAIResponsesInput(body) {
+  const systemText = fallbackSystemText(body.instructions);
+  if (systemText) {
+    body.input = inputWithPrependedOpenAIResponsesText(body.input, systemText);
+  }
+  delete body.instructions;
+}
+
+function inputWithPrependedOpenAIResponsesText(input, text) {
+  const textPart = { type: "input_text", text };
+  const items = Array.isArray(input) ? input.map((item) => ({ ...item })) : [];
+  const userIndex = items.findIndex((item) => item?.role === "user");
+  if (userIndex >= 0) {
+    const item = items[userIndex];
+    const content = Array.isArray(item.content) ? item.content : item.content ? [item.content] : [];
+    items[userIndex] = { ...item, content: [textPart, ...content] };
+    return items;
+  }
+  return [{ role: "user", content: [textPart] }, ...items];
+}
+
+function moveAnthropicSystemIntoMessages(body) {
+  const systemText = fallbackSystemText(body.system);
+  if (systemText) {
+    body.messages = messagesWithPrependedAnthropicText(body.messages, systemText);
+  }
+  delete body.system;
+}
+
+function moveOpenAIChatSystemIntoMessages(body) {
+  const messages = Array.isArray(body.messages) ? body.messages.map((item) => ({ ...item })) : [];
+  const systemText = messages
+    .filter((message) => String(message?.role || "").toLowerCase() === "system")
+    .map((message) => openAIChatContentText(message.content))
+    .filter(Boolean)
+    .join("\n\n");
+  const remaining = messages.filter((message) => String(message?.role || "").toLowerCase() !== "system");
+  body.messages = systemText ? messagesWithPrependedOpenAIChatText(remaining, fallbackSystemText(systemText)) : remaining;
+}
+
+function openAIChatContentText(content) {
+  if (!content) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map((part) => openAIChatContentText(part)).filter(Boolean).join("\n");
+  if (typeof content !== "object") return "";
+  if (typeof content.text === "string") return content.text;
+  if (typeof content.content === "string") return content.content;
+  return "";
 }
 
 function providerBodyOmitFields(bodyExtra) {

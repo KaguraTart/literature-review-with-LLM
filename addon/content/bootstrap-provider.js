@@ -1034,8 +1034,67 @@ function omitProviderBodyFields(body, bodyExtra) {
   const fields = providerBodyOmitFields(bodyExtra);
   if (!fields.size) return body;
   const next = { ...body };
-  for (const field of fields) delete next[field];
+  for (const field of fields) {
+    if (applyNestedProviderBodyOmitField(next, field)) continue;
+    delete next[field];
+  }
   return next;
+}
+
+function applyNestedProviderBodyOmitField(body, field) {
+  if (field === "instructions") {
+    moveInstructionsIntoOpenAIResponsesInput(body);
+    return true;
+  }
+  if (field === "system") {
+    moveAnthropicSystemIntoMessages(body);
+    return true;
+  }
+  if (field === "text.format") {
+    removeOpenAIResponsesTextField(body, "format");
+    return true;
+  }
+  if (field === "text.verbosity") {
+    removeOpenAIResponsesTextField(body, "verbosity");
+    return true;
+  }
+  if (field === "input_file.file_data") {
+    switchOpenAIResponsesInputFileField(body, "file_data", "file_url");
+    return true;
+  }
+  if (field === "input_file.file_url") {
+    switchOpenAIResponsesInputFileField(body, "file_url", "file_data");
+    return true;
+  }
+  if (field === "image_url.url") {
+    switchOpenAIChatImageURLToString(body);
+    return true;
+  }
+  if (field === "messages.content.image_url") {
+    removeOpenAIChatImageParts(body);
+    return true;
+  }
+  if (field === "input.content.input_image") {
+    removeOpenAIResponsesInputImages(body);
+    return true;
+  }
+  if (field === "messages.role.system") {
+    moveOpenAIChatSystemIntoMessages(body);
+    return true;
+  }
+  if (field === "messages.content") {
+    switchAnthropicStringMessagesToTextBlocks(body);
+    return true;
+  }
+  if (field === "messages.content.document") {
+    removeAnthropicDocumentBlocks(body);
+    return true;
+  }
+  if (field === "messages.content.image") {
+    removeAnthropicImageBlocks(body);
+    return true;
+  }
+  return false;
 }
 
 function providerBodyOmitFields(bodyExtra) {

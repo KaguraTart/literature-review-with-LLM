@@ -1418,6 +1418,61 @@ describe("provider adapters", () => {
     expect(providerBodyExtra(request.profile.bodyExtra)).toEqual({ response_format: { type: "json_object" } });
   });
 
+  it("applies static nested omitFields to provider request bodies", () => {
+    const imageInput = {
+      type: "text" as const,
+      text: "paper text",
+      images: [{ name: "screen.png", mimeType: "image/png", base64: "aW1hZ2U=" }]
+    };
+    const imageProfile = { ...profile, capabilities: { ...defaultCapabilities, imageBase64: true } };
+
+    const stringImageBody = bodyFor({
+      ...baseRequest,
+      profile: { ...imageProfile, bodyExtra: { omitFields: ["image_url.url"] } },
+      input: imageInput
+    });
+    expect((stringImageBody.messages as any[]).at(-1).content).toContainEqual({
+      type: "image_url",
+      image_url: "data:image/png;base64,aW1hZ2U="
+    });
+
+    const textOnlyChatBody = bodyFor({
+      ...baseRequest,
+      profile: { ...imageProfile, bodyExtra: { omitFields: ["messages.content.image_url"] } },
+      input: imageInput
+    });
+    expect(JSON.stringify(textOnlyChatBody.messages)).not.toContain("image_url");
+
+    const responsesBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...imageProfile,
+        protocol: "openai_responses",
+        capabilities: { ...defaultCapabilities, imageBase64: true, jsonMode: true },
+        bodyExtra: { omitFields: ["text.format", "input.content.input_image"] }
+      },
+      input: imageInput
+    });
+    expect(responsesBody).not.toHaveProperty("text");
+    expect(JSON.stringify(responsesBody.input)).not.toContain("input_image");
+
+    const anthropicBody = bodyFor({
+      ...baseRequest,
+      profile: {
+        ...imageProfile,
+        protocol: "anthropic_messages",
+        baseURL: "https://api.anthropic.com",
+        capabilities: { ...defaultCapabilities, imageBase64: true },
+        bodyExtra: { omitFields: ["messages.content", "messages.content.image"] }
+      },
+      input: imageInput
+    });
+    expect((anthropicBody.messages as any[])[0].content).toEqual([
+      { type: "text", text: "prompt\n\nCONTEXT:\npaper text" }
+    ]);
+    expect(JSON.stringify(anthropicBody.messages)).not.toContain("\"image\"");
+  });
+
   it("maps jsonMode capability to protocol-specific OpenAI request bodies", () => {
     expect(bodyFor({
       ...baseRequest,
