@@ -483,6 +483,66 @@ describe("bootstrap UI runtime wiring", () => {
     expect(doc.getElementById("zotero-markdown-summary-sidenav-button")?.parentNode?.parentNode).toBe(group);
   });
 
+  it("shows a fallback workbench button when Zotero has no visible button host yet", () => {
+    const doc = new FakeDocument();
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+
+    const button = doc.getElementById("zotero-markdown-summary-fallback-button");
+    expect(button).toBeTruthy();
+    expect(button?.parentNode).toBe(doc.documentElement);
+    expect(button?.getAttribute("aria-label")).toBe("openWorkbench");
+
+    const event = {
+      defaultPrevented: false,
+      propagationStopped: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+      stopPropagation() {
+        this.propagationStopped = true;
+      }
+    };
+    button?.eventListeners.get("click")?.[0]?.(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
+    expect(doc.getElementById("zotero-markdown-summary-workbench-panel")).toBeTruthy();
+  });
+
+  it("removes the fallback button after a normal side-nav entry becomes available", () => {
+    const doc = new FakeDocument();
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+    expect(doc.getElementById("zotero-markdown-summary-fallback-button")).toBeTruthy();
+
+    const sidenav = doc.createElementNS(HTML_NS, "item-pane-sidenav");
+    sidenav.id = "zotero-view-item-sidenav";
+    const group = doc.createElementNS(HTML_NS, "div");
+    group.setAttribute("class", "inherit-flex");
+    sidenav.appendChild(group);
+    doc.documentElement.appendChild(sidenav);
+
+    helpers.ensureWorkbenchButtons(win);
+
+    expect(doc.getElementById("zotero-markdown-summary-sidenav-button")).toBeTruthy();
+    expect(doc.getElementById("zotero-markdown-summary-fallback-button")).toBeNull();
+  });
+
+  it("removes the fallback button during UI unregister", () => {
+    const doc = new FakeDocument();
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+    expect(doc.getElementById("zotero-markdown-summary-fallback-button")).toBeTruthy();
+
+    helpers.unregisterToolbarButtons(win);
+
+    expect(doc.getElementById("zotero-markdown-summary-fallback-button")).toBeNull();
+  });
+
   it("moves the toolbar button out of hidden stale Zotero toolbar hosts", () => {
     const doc = new FakeDocument();
     const staleToolbar = doc.createXULElement("toolbar");

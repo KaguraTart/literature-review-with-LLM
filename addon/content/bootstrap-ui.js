@@ -1,4 +1,6 @@
 var registeredItemPaneSectionID = "";
+const FALLBACK_WORKBENCH_BUTTON_ID = "zotero-markdown-summary-fallback-button";
+const WORKBENCH_BUTTON_RECOVERY_DELAYS_MS = [250, 1000, 2500, 5000];
 
 function registerToolbarButtons() {
   const enumerator = Services.wm.getEnumerator("navigator:browser");
@@ -121,6 +123,7 @@ function unregisterToolbarButtons(documentOrWindow) {
     const doc = documentOrWindow.document;
     doc?.getElementById(TOOLBAR_BUTTON_ID)?.remove();
     doc?.getElementById(SIDENAV_BUTTON_ID)?.remove();
+    doc?.getElementById(FALLBACK_WORKBENCH_BUTTON_ID)?.remove();
     closeEmbeddedWorkbench(doc);
     return;
   }
@@ -131,6 +134,7 @@ function unregisterToolbarButtons(documentOrWindow) {
     removeWorkbenchSelectionWatcher(win || doc);
     doc?.getElementById(TOOLBAR_BUTTON_ID)?.remove();
     doc?.getElementById(SIDENAV_BUTTON_ID)?.remove();
+    doc?.getElementById(FALLBACK_WORKBENCH_BUTTON_ID)?.remove();
     closeEmbeddedWorkbench(doc);
     return;
   }
@@ -142,6 +146,7 @@ function unregisterToolbarButtons(documentOrWindow) {
     const doc = win.document;
     doc?.getElementById(TOOLBAR_BUTTON_ID)?.remove();
     doc?.getElementById(SIDENAV_BUTTON_ID)?.remove();
+    doc?.getElementById(FALLBACK_WORKBENCH_BUTTON_ID)?.remove();
     closeEmbeddedWorkbench(doc);
   }
 }
@@ -872,6 +877,9 @@ function installWorkbenchButtonWatcher(win) {
     interval: win.setInterval?.(refresh, 1500),
     observer: null
   };
+  for (const delay of WORKBENCH_BUTTON_RECOVERY_DELAYS_MS) {
+    win.setTimeout?.(refresh, delay);
+  }
   const MutationObserverCtor = typeof win.MutationObserver === "function"
     ? win.MutationObserver
     : (typeof MutationObserver === "function" ? MutationObserver : null);
@@ -908,10 +916,80 @@ function removeWorkbenchButtonWatcher(windowOrDocument) {
 }
 
 function ensureWorkbenchButtons(win) {
-  return {
-    toolbar: ensureToolbarButton(win),
-    sidenav: ensureSidenavButton(win)
-  };
+  const toolbar = ensureToolbarButton(win);
+  const sidenav = ensureSidenavButton(win);
+  const fallback = ensureFallbackWorkbenchButton(win);
+  return { toolbar, sidenav, fallback };
+}
+
+function ensureFallbackWorkbenchButton(win) {
+  const doc = win?.document;
+  if (!doc?.documentElement) return false;
+  const toolbarButton = doc.getElementById(TOOLBAR_BUTTON_ID);
+  const sidenavButton = doc.getElementById(SIDENAV_BUTTON_ID);
+  if (workbenchButtonLooksUsable(toolbarButton) || workbenchButtonLooksUsable(sidenavButton)) {
+    doc.getElementById(FALLBACK_WORKBENCH_BUTTON_ID)?.remove?.();
+    return false;
+  }
+  const existing = doc.getElementById(FALLBACK_WORKBENCH_BUTTON_ID);
+  if (workbenchButtonLooksUsable(existing) && existing.parentNode === doc.documentElement) return false;
+  existing?.remove?.();
+  const button = createFallbackWorkbenchButton(doc);
+  doc.documentElement.appendChild(button);
+  return true;
+}
+
+function workbenchButtonLooksUsable(button) {
+  return !!button && !elementLooksHidden(button) && elementAttachedToDocument(button);
+}
+
+function elementAttachedToDocument(element) {
+  const doc = element?.ownerDocument;
+  if (!doc?.documentElement) return !!element?.parentNode;
+  return elementContains(doc.documentElement, element);
+}
+
+function createFallbackWorkbenchButton(doc) {
+  const label = t("openWorkbench");
+  const imageURL = `chrome://${CHROME_NAME}/content/logo.svg`;
+  const button = doc.createElementNS(HTML_NS, "button");
+  button.id = FALLBACK_WORKBENCH_BUTTON_ID;
+  button.type = "button";
+  button.setAttribute("aria-label", label);
+  button.setAttribute("title", label);
+  button.setAttribute("class", "zms-fallback-workbench-button");
+  button.setAttribute("style", [
+    "position:fixed",
+    "top:96px",
+    "right:12px",
+    "z-index:2147483001",
+    "width:36px",
+    "height:36px",
+    "min-width:36px",
+    "min-height:36px",
+    "padding:6px",
+    "border:1px solid rgba(148,163,184,0.55)",
+    "border-radius:10px",
+    "background:rgba(255,255,255,0.94)",
+    "box-shadow:0 8px 24px rgba(15,23,42,0.22)",
+    "display:flex",
+    "align-items:center",
+    "justify-content:center",
+    "cursor:default"
+  ].join("; "));
+
+  const image = doc.createElementNS(HTML_NS, "img");
+  image.src = imageURL;
+  image.alt = "";
+  image.setAttribute("style", "width:22px;height:22px;display:block;pointer-events:none;");
+  button.appendChild(image);
+  button.addEventListener("click", (event) => {
+    if (event?.button && event.button !== 0) return;
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    openWorkbenchForContext();
+  });
+  return button;
 }
 
 function refreshEmbeddedWorkbenchForSelection(win) {
