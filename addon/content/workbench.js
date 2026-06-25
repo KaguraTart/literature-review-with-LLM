@@ -737,19 +737,19 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.state.profile = this.state.profiles.find((profile) => profile.id === select.value) || null;
       this.renderProfileStatus();
       this.renderProfileTrigger();
-      this.renderProfileEditor();
+      this.renderProfileEditor({ resetVendor: true });
       this.setStatus(this.state.profile ? profileStatusText(this.state.profile, (key) => this.t(key)) : this.t("noProfile"));
     };
   },
 
-  renderProfileEditor() {
+  renderProfileEditor(options = {}) {
     const profile = this.state.profile || {};
     this.renderWorkbenchProviderOptions();
     setInputValue("zms-profile-name", profile.name || profile.id || "");
     setInputValue("zms-profile-base-url", profile.baseURL || "");
     setInputValue("zms-profile-api-key", profile.apiKey || "");
     setInputValue("zms-profile-model", profile.model || "");
-    this.renderWorkbenchModelRecommendations({ selectDefault: true });
+    this.renderWorkbenchModelRecommendations({ selectDefault: true, resetVendor: options.resetVendor === true });
     const imageInput = document.getElementById("zms-profile-image-input");
     if (imageInput) imageInput.checked = profile?.capabilities?.imageBase64 === true;
     const pdfInput = document.getElementById("zms-profile-pdf-input");
@@ -811,7 +811,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       ...this.state.profiles.filter((profile) => profile?.id !== next.id)
     ]).map(hydrateProfile);
     this.renderProfiles();
-    this.renderProfileEditor();
+    this.renderProfileEditor({ resetVendor: true });
     this.renderProfileTrigger();
     this.setStatus(this.t("providerPresetApplied"));
     return next;

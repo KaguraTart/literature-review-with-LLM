@@ -261,9 +261,34 @@ hbox.zms-row {
   min-height: 16em;
 }
 
+.zms-advanced-settings {
+  width: 100%;
+  max-width: 58em;
+  margin-top: 14px;
+  border-top: 1px solid #d7dce2;
+  padding-top: 10px;
+}
+
+.zms-advanced-settings > summary {
+  cursor: pointer;
+  font-weight: 600;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.zms-advanced-settings > .zms-small-note {
+  margin: 6px 0 10px 0;
+}
+
+.zms-advanced-settings-body {
+  width: 100%;
+  max-width: 58em;
+  min-width: 0;
+  padding-top: 4px;
+}
+
 .zms-profile-editor {
   padding: 10px 0;
-  border-top: 1px solid #d7dce2;
   border-bottom: 1px solid #d7dce2;
 }
 
@@ -307,6 +332,10 @@ hbox.zms-row {
     border-color: rgba(255, 255, 255, 0.18);
     background: rgba(255, 255, 255, 0.08);
     color: #f3f4f6;
+  }
+
+  .zms-advanced-settings {
+    border-top-color: rgba(255, 255, 255, 0.18);
   }
 }
 

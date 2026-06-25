@@ -76,6 +76,8 @@ describe("locale files", () => {
       "profileCustomHeaders",
       "modelPickerHelp",
       "modelListLoaded",
+      "advancedSettings",
+      "advancedSettingsHelp",
       "saveAndTest",
       "testFailed"
     ]));
@@ -118,6 +120,8 @@ describe("locale files", () => {
     expect(preferencesXhtml).toContain('id="zms-apiKey-label" value="API 密钥"');
     expect(preferencesXhtml).toContain('id="zms-temperature-label" value="温度"');
     expect(preferencesXhtml).toContain('id="zms-profileLocalAgentEndpoint-label" value="代理地址"');
+    expect(preferencesXhtml).toContain('class="zms-advanced-settings"');
+    expect(preferencesXhtml).toContain('id="zms-advancedSettings-summary">高级设置</html:summary>');
 
     expect(workbenchXhtml).toContain('id="zms-quick-settings-heading">常用设置</html:h2>');
     expect(workbenchXhtml).toContain('id="zms-workbench-provider-label" for="zms-workbench-provider">接口厂商</html:label>');

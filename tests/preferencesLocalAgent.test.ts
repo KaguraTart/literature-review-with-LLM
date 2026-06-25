@@ -214,6 +214,8 @@ function loadPreferencesController(options: {
   createElement("zms-model-vendor-filter-label", { localName: "label" });
   createElement("zms-model-select-label", { localName: "label" });
   createElement("zms-model-help", { localName: "label" });
+  createElement("zms-advancedSettings-summary", { localName: "summary" });
+  createElement("zms-advancedSettings-help", { localName: "p" });
   createElement("zms-profile-options", { localName: "datalist" });
   createElement("zms-profileStatus", { localName: "pre" });
   createElement("zms-providerGuide", { localName: "pre" });
@@ -3037,6 +3039,8 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model-vendor-filter-label").value).toBe("模型厂商");
     expect(elements.get("zms-model-select-label").value).toBe("具体模型");
     expect(elements.get("zms-model-help").value).toContain("加载模型列表");
+    expect(elements.get("zms-advancedSettings-summary").textContent).toBe("高级设置");
+    expect(elements.get("zms-advancedSettings-help").textContent).toContain("通常不需要修改");
     expect(elements.get("zms-load-models-button").label).toBe("加载模型列表");
     expect(elements.get("zms-test-button").label).toBe("保存并测试");
     expect(elements.get("zms-temperature-label").value).toBe("温度");
@@ -3357,6 +3361,32 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-activeProfileId").value).toBe("anthropic");
     expect(elements.get("zms-baseURL").value).toBe("https://api.anthropic.com");
     expect(elements.get("zms-model").value).toBe("claude-sonnet-4-6");
+    expect(elements.get("zms-model-select").value).toBe("claude-sonnet-4-6");
+  });
+
+  it("resets the settings model vendor filter when switching provider presets", async () => {
+    const { controller, elements } = loadPreferencesController();
+    elements.get("zms-provider").value = "cline_api";
+    elements.get("zms-activeProfileId").value = "cline-api";
+    elements.get("zms-profileName").value = "Cline API";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "https://api.cline.bot/api/v1";
+    elements.get("zms-apiKey").value = "";
+    elements.get("zms-model").value = "";
+
+    await controller.loadModels();
+    elements.get("zms-model-vendor-select").value = "Google Gemini";
+    controller.renderModelOptionsFromCache({ selectFirstVisible: true });
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("google/gemini-2.5-pro");
+    expect(selectOptionValues(elements.get("zms-model-select"))).not.toContain("anthropic/claude-sonnet-4-6");
+
+    elements.get("zms-provider").value = "anthropic";
+    controller.applyProviderPreset();
+
+    expect(elements.get("zms-model-vendor-select").value).toBe("");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("claude-sonnet-4-6");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("claude-haiku-4-5");
+    expect(selectOptionValues(elements.get("zms-model-select"))).not.toContain("google/gemini-2.5-pro");
     expect(elements.get("zms-model-select").value).toBe("claude-sonnet-4-6");
   });
 

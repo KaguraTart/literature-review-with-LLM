@@ -71,7 +71,7 @@ var ZoteroMarkdownSummaryPrefs = {
     this.mergeDefaultProfilesIntoEditor();
     this.refreshProfileOptions();
     this.loadProfileEditor();
-    this.refreshModelRecommendations({ selectDefault: true });
+    this.refreshModelRecommendations({ selectDefault: true, resetVendor: true });
     this.refreshProviderGuide();
     this.bindProfileStatusEvents();
     this.bindOutputDirEvents();
@@ -124,7 +124,7 @@ var ZoteroMarkdownSummaryPrefs = {
     document.getElementById("zms-profileBodyExtra").value = JSON.stringify(nextProfile.bodyExtra || defaults.bodyExtra || {}, null, 2);
     document.getElementById("zms-profileCustomHeaders").value = JSON.stringify(nextProfile.customHeaders || defaults.customHeaders || {}, null, 2);
     this.setCapabilityValues(nextProfile.capabilities || defaults.capabilities);
-    this.refreshModelRecommendations({ selectDefault: true });
+    this.refreshModelRecommendations({ selectDefault: true, resetVendor: true });
     this.refreshProfileStatus();
     this.refreshProviderGuide();
   },
@@ -257,7 +257,7 @@ var ZoteroMarkdownSummaryPrefs = {
     this.loadLocalAgentEditor(hydrated.bodyExtra || {});
     this.setCapabilityValues(hydrated.capabilities || {});
     this.refreshProfileOptions();
-    this.refreshModelRecommendations();
+    this.refreshModelRecommendations({ resetVendor: true });
     this.refreshProfileStatus();
     this.refreshProviderGuide();
   },
@@ -1000,6 +1000,10 @@ function prefFallbackMessage(key, lang) {
     skillTemplate: zh ? "聊天技能提示词" : "Chat skill prompt",
     skillId: zh ? "技能" : "Skill",
     profilesJson: zh ? "接口档案 JSON" : "Provider profiles JSON",
+    advancedSettings: zh ? "高级设置" : "Advanced settings",
+    advancedSettingsHelp: zh
+      ? "通常不需要修改；用于自定义接口协议、请求头、提示词和技能模板。"
+      : "Usually not needed. Use this for custom protocols, request headers, prompts, and skill templates.",
     save: zh ? "保存设置" : "Save settings",
     doctor: zh ? "配置预检" : "Check config",
     chooseOutputDir: zh ? "选择文件夹..." : "Choose Folder...",
@@ -1211,6 +1215,10 @@ function applyPreferenceTextLabels(lang) {
     "zms-model-help": zh
       ? "先选接口厂商；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商，最后从“具体模型”下拉选择。点击“加载模型列表”会先显示内置推荐模型，有 API Key 时追加在线模型。"
       : "Choose a provider first. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Load model list shows built-in recommendations first and appends online models when an API key is available.",
+    "zms-advancedSettings-summary": zh ? "高级设置" : "Advanced settings",
+    "zms-advancedSettings-help": zh
+      ? "通常不需要修改；用于自定义接口协议、请求头、提示词和技能模板。"
+      : "Usually not needed. Use this for custom protocols, request headers, prompts, and skill templates.",
     "zms-local-agent-note-1": zh
       ? "按 skill id 配置 endpoint/tool/timeout/payloadMode，值可为空对象。ask-all/check 未配置独立映射时将默认使用 ask-gemini / ask-claude / ask-opencode；ask-gemini-claude 可只调用 Gemini 和 Claude。"
       : "Configure endpoint/tool/timeout/payloadMode by skill id. Empty objects are allowed. ask-all/check fall back to ask-gemini / ask-claude / ask-opencode when no separate mapping is set; ask-gemini-claude can call only Gemini and Claude.",
