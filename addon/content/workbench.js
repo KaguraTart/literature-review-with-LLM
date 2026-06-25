@@ -868,24 +868,63 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.setStatus(this.t("noProfile"));
       return null;
     }
-    this.state.profile = profile;
+    this.persistActiveProfile(profile);
+    this.syncLocalOcrPreference();
+    if (options.status !== false) this.setStatus(this.t("saved"));
+    return profile;
+  },
+
+  persistActiveProfile(profile, options = {}) {
+    if (!profile) return null;
+    const nextProfile = hydrateProfile({ ...profile, isDefault: true });
+    this.state.profile = nextProfile;
     const updated = [
-      { ...profile, isDefault: true },
+      nextProfile,
       ...this.state.profiles
-        .filter((item) => item.id !== profile.id)
+        .filter((item) => item?.id !== nextProfile.id)
         .map((item) => ({ ...item, isDefault: false }))
     ];
     this.state.profiles = normalizeDefaultProfileSelection(updated).map(hydrateProfile);
-    setPref("activeProfileId", profile.id || "");
+    setPref("activeProfileId", nextProfile.id || "");
     setPref("profilesJson", JSON.stringify(this.state.profiles, null, 2));
-    setPref("provider", workbenchProviderFromProfile(profile, pref("provider")));
-    setPref("baseURL", profile.baseURL || "");
-    setPref("apiKey", profile.apiKey || "");
-    setPref("model", profile.model || "");
-    this.syncLocalOcrPreference();
-    this.renderProfiles();
-    if (options.status !== false) this.setStatus(this.t("saved"));
-    return profile;
+    setPref("provider", workbenchProviderFromProfile(nextProfile, pref("provider")));
+    setPref("baseURL", nextProfile.baseURL || "");
+    setPref("apiKey", nextProfile.apiKey || "");
+    setPref("model", nextProfile.model || "");
+    this.syncProfileCapabilityInputs(nextProfile);
+    if (options.renderProfiles !== false) this.renderProfiles();
+    if (options.renderStatus !== false) {
+      this.renderProfileStatus();
+      this.renderProfileTrigger();
+    }
+    return nextProfile;
+  },
+
+  syncProfileCapabilityInputs(profile = this.state.profile) {
+    const capabilities = profile?.capabilities || {};
+    const imageInput = document.getElementById("zms-profile-image-input");
+    if (imageInput) imageInput.checked = capabilities.imageBase64 === true;
+    const pdfInput = document.getElementById("zms-profile-pdf-input");
+    if (pdfInput) {
+      const enabled = profile?.protocol !== "openai_chat";
+      pdfInput.disabled = !enabled;
+      pdfInput.checked = enabled && capabilities.pdfBase64 === true;
+    }
+  },
+
+  applyProviderCompatibilityFallbackToActiveProfile(response) {
+    const fields = normalizeProviderFallbackFieldList(response?.zmsCompatibilityFallbackFields);
+    if (!fields.length || !this.state.profile) return null;
+    const effectiveProfile = response?.zmsEffectiveProfile && typeof response.zmsEffectiveProfile === "object"
+      ? response.zmsEffectiveProfile
+      : this.state.profile;
+    const currentId = String(this.state.profile.id || "");
+    const effectiveId = String(effectiveProfile.id || currentId);
+    if (currentId && effectiveId && currentId !== effectiveId) return null;
+    const nextProfile = profileWithProviderCompatibilityFallback(this.state.profile, effectiveProfile, fields);
+    const changed = JSON.stringify(nextProfile) !== JSON.stringify(this.state.profile);
+    if (!changed) return null;
+    return this.persistActiveProfile(nextProfile, { renderProfiles: false });
   },
 
   syncLocalOcrPreference(options = {}) {
@@ -2046,6 +2085,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       this.state.abortController?.signal,
       { parseStream: true, onDelta }
     );
+    this.applyProviderCompatibilityFallbackToActiveProfile(response);
     if (!response.ok) {
       throw new Error(providerErrorText(response.status, await response.text()));
     }
@@ -11174,6 +11214,7 @@ async function requestModelWithRetry(profile, messages, outputLanguage, systemPr
       if (okInspection.fallback) {
         throw new Error(providerErrorText(response.status, okInspection.text || ""));
       }
+      attachProviderCompatibilityFallbackMetadata(okInspection.response, requestProfile, usedCompatibilityFallbackFields);
       okInspection.response.zmsRequestedStream = okInspection.requestedStream;
       if (options?.parseStream === true && okInspection.requestedStream === true && okInspection.response.body) {
         try {
@@ -11231,6 +11272,62 @@ function providerCompatibilityFallback(profile, body, status, text, usedFallback
     streamEnabled: fields.includes("stream") ? false : streamEnabled,
     usedFields: nextUsedFields
   };
+}
+
+function attachProviderCompatibilityFallbackMetadata(response, profile, fields) {
+  if (!response) return response;
+  const normalizedFields = normalizeProviderFallbackFieldList(fields);
+  response.zmsEffectiveProfile = profile;
+  if (normalizedFields.length) response.zmsCompatibilityFallbackFields = normalizedFields;
+  return response;
+}
+
+function profileWithProviderCompatibilityFallback(currentProfile, effectiveProfile, fields) {
+  const normalizedFields = normalizeProviderFallbackFieldList(fields);
+  const base = hydrateProfile({
+    ...(currentProfile || {}),
+    ...(effectiveProfile || {}),
+    id: effectiveProfile?.id || currentProfile?.id,
+    isDefault: currentProfile?.isDefault !== false
+  });
+  const downgrades = providerCapabilityDowngradesFromFallback(base, normalizedFields);
+  if (!Object.keys(downgrades).length) return base;
+  return hydrateProfile({
+    ...base,
+    capabilities: {
+      ...(base.capabilities || {}),
+      ...downgrades
+    }
+  });
+}
+
+function providerCapabilityDowngradesFromFallback(profile, fields) {
+  const fieldSet = new Set(normalizeProviderFallbackFieldList(fields));
+  const downgrades = {};
+  if (
+    fieldSet.has("messages.content.image_url")
+    || fieldSet.has("input.content.input_image")
+    || fieldSet.has("messages.content.image")
+  ) {
+    downgrades.imageBase64 = false;
+  }
+  if (
+    fieldSet.has("messages.content.document")
+    || (fieldSet.has("input_file.file_data") && fieldSet.has("input_file.file_url"))
+    || isTrueValue(profile?.bodyExtra?.omitPdfInputFile)
+  ) {
+    downgrades.pdfBase64 = false;
+  }
+  if (fieldSet.has("stream")) {
+    downgrades.streaming = false;
+  }
+  return downgrades;
+}
+
+function normalizeProviderFallbackFieldList(fields) {
+  return Array.from(new Set((Array.isArray(fields) ? fields : [])
+    .map((field) => String(field || "").trim())
+    .filter(Boolean)));
 }
 
 function providerCompatibilityFallbackFields(protocol, body, status, text, usedFallback = false) {
