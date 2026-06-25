@@ -5060,6 +5060,9 @@ describe("preferences local-agent config helpers", () => {
       refusal: "top-level refusal ok"
     }))).toBe("top-level refusal ok");
     expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
+      result: "direct result ok"
+    }))).toBe("direct result ok");
+    expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
       data: { choices: [{ message: { content: "wrapped chat ok" } }] }
     }))).toBe("wrapped chat ok");
     expect(helpers.extractProviderConnectionText("openai_chat", JSON.stringify({
@@ -5068,6 +5071,9 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.extractProviderConnectionText("openai_responses", JSON.stringify({
       result: { output_text: "wrapped responses ok" }
     }))).toBe("wrapped responses ok");
+    expect(helpers.extractProviderConnectionText("openai_responses", JSON.stringify({
+      generated_text: "generated ok"
+    }))).toBe("generated ok");
     expect(helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({
       content: [{ type: "thinking", thinking: "hidden" }, { type: "text", text: "anthropic ok" }]
     }))).toBe("anthropic ok");
@@ -5080,6 +5086,9 @@ describe("preferences local-agent config helpers", () => {
     expect(helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({
       data: { content: [{ type: "text", text: "wrapped anthropic ok" }] }
     }))).toBe("wrapped anthropic ok");
+    expect(helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({
+      response_text: "anthropic response ok"
+    }))).toBe("anthropic response ok");
     expect(helpers.extractProviderConnectionText("anthropic_messages", JSON.stringify({
       type: "content_block_start",
       content_block: { type: "text", text: "anthropic start ok" }

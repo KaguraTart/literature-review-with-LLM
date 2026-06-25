@@ -21,6 +21,23 @@ const MODEL_TEXT_CONTAINER_KEYS = [
   "output_parsed",
   "outputParsed"
 ];
+const MODEL_DIRECT_TEXT_KEYS = [
+  "answer",
+  "final_answer",
+  "finalAnswer",
+  "generated_text",
+  "generatedText",
+  "generation",
+  "generated",
+  "result_text",
+  "resultText",
+  "response_text",
+  "responseText",
+  "outputText",
+  "message_text",
+  "messageText"
+];
+const MODEL_STRING_WRAPPER_KEYS = ["result", "response", "payload", "data", "body"];
 const PROVIDER_USAGE_CONTAINER_KEYS = [
   ...PROVIDER_RESPONSE_WRAPPER_KEYS,
   "delta",
@@ -452,6 +469,7 @@ function extractOpenAITextValue(data, depth = 0) {
     || extractOpenAIEventContainer(data)
     || extractOpenAIMessageContent(data?.text)
     || extractOpenAIMessageContent(data?.refusal)
+    || extractOpenAIMessageContent(data)
     || extractWrappedResponseContent("openai", data, depth);
 }
 
@@ -482,6 +500,8 @@ function extractOpenAIStreamText(chunk, depth = 0) {
   if (eventText) return eventText;
   const directText = extractOpenAIMessageContent(chunk.text);
   if (directText) return directText;
+  const directModelText = extractOpenAIMessageContent(chunk);
+  if (directModelText) return directModelText;
   return extractWrappedStreamText("openai", chunk, depth);
 }
 
@@ -518,6 +538,8 @@ function extractAnthropicStreamText(chunk, depth = 0) {
   if (typeof chunk?.content_block?.text === "string") return chunk.content_block.text;
   const contentText = extractOpenAIMessageContent(chunk?.content) || extractOpenAIMessageContent(chunk?.message);
   if (contentText) return contentText;
+  const directModelText = extractOpenAIMessageContent(chunk);
+  if (directModelText) return directModelText;
   return extractWrappedStreamText("anthropic", chunk, depth);
 }
 
@@ -683,17 +705,17 @@ function jsonModeBodyDefaults(profile) {
   return { response_format: { type: "json_object" } };
 }
 
-function extractOpenAIMessageContent(content, depth = 0) {
+function extractOpenAIMessageContent(content, depth = 0, allowDirect = true) {
   if (!content || depth > 5) return "";
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.map((part) => extractOpenAIMessageContent(part, depth + 1)).filter(Boolean).join("\n");
+    return content.map((part) => extractOpenAIMessageContent(part, depth + 1, allowDirect)).filter(Boolean).join("\n");
   }
   if (typeof content === "object") {
     if (isOpenAIReasoningPart(content)) return "";
     if (typeof content?.text === "string") return content.text;
     if (content?.text && typeof content.text === "object") {
-      const text = extractOpenAIMessageContent(content.text, depth + 1);
+      const text = extractOpenAIMessageContent(content.text, depth + 1, allowDirect);
       if (text) return text;
     }
     if (typeof content?.value === "string") return content.value;
@@ -701,6 +723,10 @@ function extractOpenAIMessageContent(content, depth = 0) {
     if (typeof content?.content === "string") return content.content;
     if (typeof content?.completion === "string") return content.completion;
     if (typeof content?.refusal === "string") return content.refusal;
+    if (allowDirect) {
+      const direct = extractDirectModelText(content);
+      if (direct) return direct;
+    }
     const structured = extractStructuredModelText(content?.parsed, depth + 1)
       || extractStructuredModelText(content?.json, depth + 1)
       || extractStructuredModelText(content?.output_parsed, depth + 1)
@@ -709,9 +735,21 @@ function extractOpenAIMessageContent(content, depth = 0) {
     for (const key of MODEL_TEXT_CONTAINER_KEYS) {
       const nested = content?.[key];
       if (!nested || nested === content) continue;
-      const text = extractOpenAIMessageContent(nested, depth + 1);
+      const text = extractOpenAIMessageContent(nested, depth + 1, allowDirect);
       if (text) return text;
     }
+  }
+  return "";
+}
+
+function extractDirectModelText(record) {
+  for (const key of MODEL_DIRECT_TEXT_KEYS) {
+    const value = record?.[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  for (const key of MODEL_STRING_WRAPPER_KEYS) {
+    const value = record?.[key];
+    if (typeof value === "string" && value.trim()) return value;
   }
   return "";
 }
@@ -721,7 +759,7 @@ function extractStructuredModelText(value, depth = 0) {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (typeof value === "object") {
-    const nested = extractOpenAIMessageContent(value, depth + 1);
+    const nested = extractOpenAIMessageContent(value, depth + 1, false);
     if (nested) return nested;
     return stringifyProviderJSON(value);
   }
@@ -800,6 +838,7 @@ function extractAnthropicContent(data, depth = 0) {
     || extractOpenAIMessageContent(data?.body)
     || extractOpenAIMessageContent(data?.candidates)
     || extractOpenAIMessageContent(data?.text)
+    || extractOpenAIMessageContent(data)
     || extractWrappedResponseContent("anthropic", data, depth);
 }
 

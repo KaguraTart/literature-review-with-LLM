@@ -4675,14 +4675,15 @@ describe("workbench writeback helpers", () => {
     const response = {
       body: streamFromText([
         "data: {\"response\":{\"text\":\"snapshot response text\"}}",
-        "data: {\"text\":{\"value\":\" router stream text\"}}"
+        "data: {\"text\":{\"value\":\" router stream text\"}}",
+        "data: {\"result\":\" direct stream result\"}"
       ].join("\n"))
     };
     const deltas: string[] = [];
     const text = await helpers.readStream(response, "openai_chat", (delta) => deltas.push(delta));
 
-    expect(text).toBe("snapshot response text router stream text");
-    expect(deltas).toEqual(["snapshot response text", " router stream text"]);
+    expect(text).toBe("snapshot response text router stream text direct stream result");
+    expect(deltas).toEqual(["snapshot response text", " router stream text", " direct stream result"]);
   });
 
   it("ignores OpenAI Responses reasoning stream events in the workbench", async () => {
@@ -4809,6 +4810,15 @@ describe("workbench writeback helpers", () => {
     expect(helpers.extractResponseText("openai_chat", {
       response: { text: { value: "wrapped direct text" } }
     })).toBe("wrapped direct text");
+    expect(helpers.extractResponseText("openai_chat", {
+      result: "direct result text"
+    })).toBe("direct result text");
+    expect(helpers.extractResponseText("openai_responses", {
+      generated_text: "generated response text"
+    })).toBe("generated response text");
+    expect(helpers.extractResponseText("openai_chat", {
+      payload: "payload string text"
+    })).toBe("payload string text");
     expect(helpers.extractResponseText("openai_responses", {
       response: { output_text: "wrapped response text" }
     })).toBe("wrapped response text");
@@ -4836,6 +4846,9 @@ describe("workbench writeback helpers", () => {
     expect(helpers.extractResponseText("anthropic_messages", {
       payload: { text: { value: "anthropic wrapped direct text" } }
     })).toBe("anthropic wrapped direct text");
+    expect(helpers.extractResponseText("anthropic_messages", {
+      response_text: "anthropic response text"
+    })).toBe("anthropic response text");
   });
 
   it("normalizes session file paths for item-key scoped JSONL history", () => {

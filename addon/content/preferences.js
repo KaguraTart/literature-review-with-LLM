@@ -3847,6 +3847,23 @@ const PREFERENCES_MODEL_TEXT_CONTAINER_KEYS = [
   "output_parsed",
   "outputParsed"
 ];
+const PREFERENCES_MODEL_DIRECT_TEXT_KEYS = [
+  "answer",
+  "final_answer",
+  "finalAnswer",
+  "generated_text",
+  "generatedText",
+  "generation",
+  "generated",
+  "result_text",
+  "resultText",
+  "response_text",
+  "responseText",
+  "outputText",
+  "message_text",
+  "messageText"
+];
+const PREFERENCES_MODEL_STRING_WRAPPER_KEYS = ["result", "response", "payload", "data", "body"];
 
 function openAITextFromResponse(data, depth = 0) {
   return data?.output_text
@@ -3861,6 +3878,7 @@ function openAITextFromResponse(data, depth = 0) {
     || modelTextFromValue(data?.response)
     || modelTextFromValue(data?.text)
     || modelTextFromValue(data?.refusal)
+    || modelTextFromValue(data)
     || wrappedProviderTextFromResponse("openai", data, depth)
     || "";
 }
@@ -3879,7 +3897,9 @@ function anthropicTextFromResponse(data, depth = 0) {
     || modelTextFromValue(data?.message)
     || modelTextFromValue(data?.body)
     || modelTextFromValue(data?.candidates)
-    || (typeof data?.text === "string" ? data.text : wrappedProviderTextFromResponse("anthropic", data, depth));
+    || modelTextFromValue(data?.text)
+    || modelTextFromValue(data)
+    || wrappedProviderTextFromResponse("anthropic", data, depth);
 }
 
 function openAIEventDeltaText(data) {
@@ -3927,15 +3947,15 @@ function wrappedProviderTextFromResponse(protocol, data, depth) {
   return "";
 }
 
-function modelTextFromValue(value, depth = 0) {
+function modelTextFromValue(value, depth = 0, allowDirect = true) {
   if (!value || depth > 5) return "";
   if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.map((part) => modelTextFromValue(part, depth + 1)).filter(Boolean).join("\n");
+  if (Array.isArray(value)) return value.map((part) => modelTextFromValue(part, depth + 1, allowDirect)).filter(Boolean).join("\n");
   if (typeof value === "object") {
     if (isReasoningModelPart(value)) return "";
     if (typeof value.text === "string") return value.text;
     if (value.text && typeof value.text === "object") {
-      const text = modelTextFromValue(value.text, depth + 1);
+      const text = modelTextFromValue(value.text, depth + 1, allowDirect);
       if (text) return text;
     }
     if (typeof value.value === "string") return value.value;
@@ -3943,6 +3963,10 @@ function modelTextFromValue(value, depth = 0) {
     if (typeof value.content === "string") return value.content;
     if (typeof value.completion === "string") return value.completion;
     if (typeof value.refusal === "string") return value.refusal;
+    if (allowDirect) {
+      const direct = directModelText(value);
+      if (direct) return direct;
+    }
     const structured = structuredModelText(value?.parsed, depth + 1)
       || structuredModelText(value?.json, depth + 1)
       || structuredModelText(value?.output_parsed, depth + 1)
@@ -3951,9 +3975,21 @@ function modelTextFromValue(value, depth = 0) {
     for (const key of PREFERENCES_MODEL_TEXT_CONTAINER_KEYS) {
       const nested = value?.[key];
       if (!nested || nested === value) continue;
-      const text = modelTextFromValue(nested, depth + 1);
+      const text = modelTextFromValue(nested, depth + 1, allowDirect);
       if (text) return text;
     }
+  }
+  return "";
+}
+
+function directModelText(record) {
+  for (const key of PREFERENCES_MODEL_DIRECT_TEXT_KEYS) {
+    const value = record?.[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  for (const key of PREFERENCES_MODEL_STRING_WRAPPER_KEYS) {
+    const value = record?.[key];
+    if (typeof value === "string" && value.trim()) return value;
   }
   return "";
 }
@@ -3963,7 +3999,7 @@ function structuredModelText(value, depth = 0) {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (typeof value === "object") {
-    const nested = modelTextFromValue(value, depth + 1);
+    const nested = modelTextFromValue(value, depth + 1, false);
     if (nested) return nested;
     return stringifyProviderJSON(value);
   }

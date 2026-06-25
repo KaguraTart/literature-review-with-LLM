@@ -1784,6 +1784,8 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_chat", "data: {\"text\":{\"value\":\"router stream text\"}}")).toBe("router stream text");
     expect(parseStreamChunk("openai_chat", "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"candidate stream\"}]}}]}")).toBe("candidate stream");
     expect(parseStreamChunk("openai_chat", "data: {\"candidates\":[{\"content\":{\"parts\":[{\"type\":\"thinking\",\"text\":\"hidden\"},{\"text\":\" visible candidate\"}]}}]}")).toBe(" visible candidate");
+    expect(parseStreamChunk("openai_chat", "data: {\"result\":\"direct stream result\"}")).toBe("direct stream result");
+    expect(parseStreamChunk("openai_responses", "data: {\"generated_text\":\"generated stream text\"}")).toBe("generated stream text");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"claude\"}}")).toBe("claude");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"text\":\"hidden thinking\"}}")).toBe("");
     expect(parseStreamChunk("anthropic_messages", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"ok\\\"\"}}")).toBe("{\"ok\"");
@@ -1795,6 +1797,7 @@ describe("provider adapters", () => {
     expect(parseStreamChunk("openai_chat", "data: {\"completion\":{\"choices\":[{\"delta\":{\"content\":\"wrapped completion\"}}]}}")).toBe("wrapped completion");
     expect(parseStreamChunk("anthropic_messages", "data: {\"payload\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"wrapped anthropic\"}}}")).toBe("wrapped anthropic");
     expect(parseStreamChunk("anthropic_messages", "data: {\"message\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"wrapped message\"}}}")).toBe("wrapped message");
+    expect(parseStreamChunk("anthropic_messages", "data: {\"payload\":\"anthropic stream payload\"}")).toBe("anthropic stream payload");
     expect(parseStreamChunk("openai_chat", "data: not-json")).toBe("");
     expect(parseStreamChunk("openai_chat", [
       "event: message",
@@ -2104,6 +2107,19 @@ describe("provider adapters", () => {
     expect(extractResponseText("openai_chat", {
       response: { text: { value: "wrapped direct text" } }
     } as any)).toBe("wrapped direct text");
+    expect(extractResponseText("openai_chat", {
+      result: "direct result text"
+    } as any)).toBe("direct result text");
+    expect(extractResponseText("openai_chat", {
+      answer: "direct answer text"
+    } as any)).toBe("direct answer text");
+    expect(extractResponseText("openai_responses", {
+      generated_text: "generated response text"
+    } as any)).toBe("generated response text");
+    expect(extractResponseText("openai_chat", {
+      choices: [{ delta: { reasoning_content: "hidden" } }],
+      result: "visible fallback text"
+    } as any)).toBe("visible fallback text");
     expect(extractResponseText("anthropic_messages", {
       content: [{ type: "text", text: { value: "anthropic value text" } }]
     } as any)).toBe("anthropic value text");
@@ -2113,6 +2129,9 @@ describe("provider adapters", () => {
     expect(extractResponseText("anthropic_messages", {
       payload: { text: { value: "anthropic wrapped direct text" } }
     } as any)).toBe("anthropic wrapped direct text");
+    expect(extractResponseText("anthropic_messages", {
+      response_text: "anthropic response text"
+    } as any)).toBe("anthropic response text");
     expect(extractResponseText("openai_chat", {
       choices: [{ message: { content: null } }, { message: { content: "second choice text" } }]
     } as any)).toBe("second choice text");
