@@ -1358,6 +1358,37 @@ describe("provider smoke verifier", () => {
     });
   });
 
+  it("loads delimited provider model-list fields", async () => {
+    await withMockProvider(async (baseURL) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--models",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        models: true,
+        modelCount: 4,
+        modelIds: ["router/model-a", "router/model-b", "router/model-c", "router/model-d"]
+      });
+      expect(report.modelOptions).toEqual([
+        { id: "router/model-a", label: "router/model-a" },
+        { id: "router/model-b", label: "router/model-b" },
+        { id: "router/model-c", label: "router/model-c" },
+        { id: "router/model-d", label: "router/model-d" }
+      ]);
+    }, {
+      responseBody: {
+        result: {
+          supported_models: "router/model-c\nrouter/model-a, router/model-b;router/model-d",
+          has_more: false
+        }
+      }
+    });
+  });
+
   it("loads root object-map model-list responses without treating metadata as models", async () => {
     await withMockProvider(async (baseURL) => {
       const report = await runSmoke([
@@ -1370,17 +1401,20 @@ describe("provider smoke verifier", () => {
       expect(report).toMatchObject({
         ok: true,
         models: true,
-        modelCount: 2,
-        modelIds: ["root/model-a", "root/model-b"]
+        modelCount: 3,
+        modelIds: ["root/model-a", "root/model-b", "root/model-c"]
       });
       expect(report.modelOptions).toEqual([
         { id: "root/model-a", label: "Root Model A" },
-        { id: "root/model-b", label: "Root Model B" }
+        { id: "root/model-b", label: "Root Model B" },
+        { id: "root/model-c", label: "root/model-c" }
       ]);
     }, {
       responseBody: {
         "root/model-a": { display_name: "Root Model A" },
         "root/model-b": "Root Model B",
+        "root/model-c": true,
+        "root/model-disabled": false,
         first_id: "root/model-a",
         last_id: "root/model-b",
         nextToken: "",

@@ -1228,8 +1228,18 @@ function directModelListItemsFromResponse(data, options = {}) {
     "list",
     "model_list",
     "modelList",
+    "model_ids",
+    "modelIds",
+    "supported_models",
+    "supportedModels",
+    "supported_model_ids",
+    "supportedModelIds",
     "available_models",
     "availableModels",
+    "available_model_ids",
+    "availableModelIds",
+    "model_catalog",
+    "modelCatalog",
     "model_names",
     "modelNames",
     "deployments",
@@ -1240,7 +1250,8 @@ function directModelListItemsFromResponse(data, options = {}) {
     "engineList"
   ];
   for (const field of fields) {
-    if (Array.isArray(data?.[field])) return data[field];
+    const items = modelListItemsFromFieldValue(data?.[field], field);
+    if (items.length) return items;
   }
   if (Array.isArray(data?.models?.data)) return data.models.data;
   if (Array.isArray(data?.models?.items)) return data.models.items;
@@ -1257,6 +1268,19 @@ function directModelListItemsFromResponse(data, options = {}) {
   return [];
 }
 
+function modelListItemsFromFieldValue(value, field = "") {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && modelListDelimitedStringFields().has(field)) return modelListItemsFromDelimitedString(value);
+  return [];
+}
+
+function modelListItemsFromDelimitedString(value) {
+  return String(value || "")
+    .split(/[\n,;]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function modelListItemsFromObjectMap(value, options = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];
   if (modelOptionFromItem(value).id) return [];
@@ -1265,6 +1289,11 @@ function modelListItemsFromObjectMap(value, options = {}) {
   for (const [key, item] of Object.entries(value)) {
     const id = String(key || "").trim();
     if (!id || modelListMapMetadataKeys().has(id)) continue;
+    if (item === true) {
+      items.push({ id, label: id });
+      continue;
+    }
+    if (item === false) continue;
     if (typeof item === "string") {
       const label = item.trim();
       if (label) items.push({ id, label });
@@ -1275,6 +1304,25 @@ function modelListItemsFromObjectMap(value, options = {}) {
     items.push(option.id ? item : { ...item, id });
   }
   return items;
+}
+
+function modelListDelimitedStringFields() {
+  return new Set([
+    "model_ids",
+    "modelIds",
+    "supported_models",
+    "supportedModels",
+    "supported_model_ids",
+    "supportedModelIds",
+    "available_models",
+    "availableModels",
+    "available_model_ids",
+    "availableModelIds",
+    "model_catalog",
+    "modelCatalog",
+    "model_names",
+    "modelNames"
+  ]);
 }
 
 function modelListMapMetadataKeys() {
@@ -1292,8 +1340,18 @@ function modelListMapMetadataKeys() {
     "list",
     "model_list",
     "modelList",
+    "model_ids",
+    "modelIds",
+    "supported_models",
+    "supportedModels",
+    "supported_model_ids",
+    "supportedModelIds",
     "available_models",
     "availableModels",
+    "available_model_ids",
+    "availableModelIds",
+    "model_catalog",
+    "modelCatalog",
     "model_names",
     "modelNames",
     "deployments",
