@@ -684,7 +684,15 @@ var ZoteroMarkdownSummaryWorkbench = {
     action.options[0].textContent = this.t("appendNotes");
     action.options[1].textContent = this.t("appendSection");
     action.options[2].textContent = this.t("replaceSection");
+    this.localizeInitialPlaceholders();
     this.renderPromptPacks();
+  },
+
+  localizeInitialPlaceholders() {
+    setDefaultText("zms-status", this.t("ready"), ["", "Ready", "ready"]);
+    setDefaultText("zms-chat-status", this.t("ready"), ["", "Ready", "ready"]);
+    setDefaultText("zms-paper-meta", this.t("loading"), ["", "Loading", "loading"]);
+    setDefaultText("zms-composer-profile", this.t("model"), ["", "Model", "model"]);
   },
 
   t(key) {
@@ -5463,6 +5471,14 @@ function buildContextSourceHash(context, item, pdf) {
 function setText(id, text) {
   const element = document.getElementById(id);
   if (element) element.textContent = text;
+}
+
+function setDefaultText(id, text, defaults = []) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  const current = String(element.textContent || "").trim();
+  if (!defaults.map((value) => String(value).trim()).includes(current)) return;
+  element.textContent = text;
 }
 
 function setInputValue(id, value) {

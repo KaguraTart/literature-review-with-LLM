@@ -3342,6 +3342,10 @@ describe("workbench writeback helpers", () => {
     const loaded: any = loadWorkbenchHelpers();
     const dom = fakeDocument();
     (loaded as any).document = dom;
+    dom.getElementById("zms-status").textContent = "Ready";
+    dom.getElementById("zms-chat-status").textContent = "Ready";
+    dom.getElementById("zms-paper-meta").textContent = "Loading";
+    dom.getElementById("zms-composer-profile").textContent = "Model";
     dom.getElementById("zms-write-action").options = [
       { textContent: "" },
       { textContent: "" },
@@ -3357,11 +3361,18 @@ describe("workbench writeback helpers", () => {
       visualReviewNoReport: "还没有图表解析 JSON，请先导出图表解析报告",
       placeholder: "向当前论文提问",
       placeholderHint: "Enter 换行",
-      candidateSearchPlaceholder: "输入检索式"
+      candidateSearchPlaceholder: "输入检索式",
+      ready: "就绪",
+      loading: "正在读取论文",
+      model: "模型"
     }[key] || key);
 
     workbench.applyLanguage();
 
+    expect(dom.getElementById("zms-status").textContent).toBe("就绪");
+    expect(dom.getElementById("zms-chat-status").textContent).toBe("就绪");
+    expect(dom.getElementById("zms-paper-meta").textContent).toBe("正在读取论文");
+    expect(dom.getElementById("zms-composer-profile").textContent).toBe("模型");
     expect(dom.getElementById("zms-workbench-model-help").textContent).toContain("先选择接口厂商");
     expect(dom.getElementById("zms-load-models-workbench").textContent).toBe("加载模型列表");
     expect(dom.getElementById("zms-load-models-workbench").title).toBe("加载模型列表");
@@ -3370,6 +3381,38 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-compact-context").textContent).toBe("压缩上下文");
     expect(dom.getElementById("zms-copy-session").textContent).toBe("复制会话");
     expect(dom.getElementById("zms-visual-review-status").textContent).toContain("还没有图表解析");
+  });
+
+  it("does not overwrite active workbench statuses during localization", () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    dom.getElementById("zms-status").textContent = "正在导出诊断";
+    dom.getElementById("zms-chat-status").textContent = "连接失败：401";
+    dom.getElementById("zms-paper-meta").textContent = "3D Gaussian Splatting";
+    dom.getElementById("zms-composer-profile").textContent = "MiniMax · MiniMax-M3";
+    dom.getElementById("zms-write-action").options = [
+      { textContent: "" },
+      { textContent: "" },
+      { textContent: "" }
+    ];
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      ready: "就绪",
+      loading: "正在读取论文",
+      model: "模型",
+      visualReviewNoReport: "还没有图表解析 JSON",
+      placeholder: "向当前论文提问",
+      placeholderHint: "Enter 换行",
+      candidateSearchPlaceholder: "输入检索式"
+    }[key] || key);
+
+    workbench.applyLanguage();
+
+    expect(dom.getElementById("zms-status").textContent).toBe("正在导出诊断");
+    expect(dom.getElementById("zms-chat-status").textContent).toBe("连接失败：401");
+    expect(dom.getElementById("zms-paper-meta").textContent).toBe("3D Gaussian Splatting");
+    expect(dom.getElementById("zms-composer-profile").textContent).toBe("MiniMax · MiniMax-M3");
   });
 
   it("applies a workbench provider preset without reusing the previous provider API key", () => {
