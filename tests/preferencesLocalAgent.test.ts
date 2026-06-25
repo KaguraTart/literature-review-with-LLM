@@ -4180,6 +4180,38 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model").value).toBe("google/gemini-2.5-pro");
   });
 
+  it("keeps the selected settings model vendor when refreshing the same provider model list", async () => {
+    const { controller, elements } = loadPreferencesController({
+      fetchResponse: {
+        data: [
+          { id: "anthropic/claude-sonnet-4-6", display_name: "Claude Sonnet 4.6", provider: "anthropic" },
+          { id: "google/gemini-2.5-pro", display_name: "Gemini 2.5 Pro", provider: "google" },
+          { id: "openai/gpt-4o", display_name: "GPT-4o", owned_by: "openai" }
+        ]
+      }
+    });
+    elements.get("zms-provider").value = "cline_api";
+    elements.get("zms-activeProfileId").value = "cline-api";
+    elements.get("zms-profileName").value = "Cline API";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "https://api.cline.bot/api/v1";
+    elements.get("zms-apiKey").value = "cline-secret";
+    elements.get("zms-model").value = "";
+
+    await controller.loadModels();
+    elements.get("zms-model-vendor-select").value = "Google Gemini";
+    controller.renderModelOptionsFromCache({ selectFirstVisible: true, commitSelection: true });
+
+    await controller.loadModels();
+
+    expect(elements.get("zms-model-vendor-select").value).toBe("Google Gemini");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("google/gemini-2.5-pro");
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("google/gemini-2.5-flash");
+    expect(selectOptionValues(elements.get("zms-model-select"))).not.toContain("anthropic/claude-sonnet-4-6");
+    expect(elements.get("zms-model-select").value).toBe("google/gemini-2.5-pro");
+    expect(elements.get("zms-model").value).toBe("google/gemini-2.5-pro");
+  });
+
   it("uses selected settings model feature hints for capability warnings and persistence", async () => {
     const { controller, elements } = loadPreferencesController({
       fetchResponse: {

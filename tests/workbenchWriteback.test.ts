@@ -3229,6 +3229,73 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
   });
 
+  it("keeps the selected workbench model vendor when refreshing the same provider model list", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-profile-name": "Cline API",
+      "zms-profile-base-url": "https://api.cline.bot/api/v1",
+      "zms-profile-api-key": "cline-secret",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    loaded.fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        data: [
+          { id: "anthropic/claude-sonnet-4-6", display_name: "Claude Sonnet 4.6", provider: "anthropic" },
+          { id: "google/gemini-2.5-pro", display_name: "Gemini 2.5 Pro", provider: "google" },
+          { id: "openai/gpt-4o", display_name: "GPT-4o", owned_by: "openai" }
+        ]
+      })
+    });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelListLoaded: "Models loaded",
+      modelSelectPlaceholder: "Choose provider model",
+      modelSelectCustom: "Custom/private model...",
+      modelVendorFilter: "Model vendor",
+      allModelVendors: "All model vendors",
+      onlineModels: "Online",
+      recommendedModels: "Recommended",
+      modelFeatureImage: "image",
+      modelFeaturePdf: "PDF",
+      modelFeatureReasoning: "reasoning",
+      modelFeatureFast: "fast",
+      modelFeatureLocal: "local",
+      saved: "Saved"
+    }[key] || key);
+    const profile = {
+      id: "cline-api",
+      name: "Cline API",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.cline.bot/api/v1",
+      apiKey: "cline-secret",
+      model: "",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    await workbench.loadModelsForWorkbench();
+    dom.getElementById("zms-profile-model-vendor-select").value = "Google Gemini";
+    workbench.renderWorkbenchModelOptionsFromCache({ selectFirstVisible: true });
+
+    await workbench.loadModelsForWorkbench();
+
+    const modelSelect = dom.getElementById("zms-profile-model-select");
+    expect(dom.getElementById("zms-profile-model-vendor-select").value).toBe("Google Gemini");
+    expect(selectOptionValues(modelSelect)).toContain("google/gemini-2.5-pro");
+    expect(selectOptionValues(modelSelect)).toContain("google/gemini-2.5-flash");
+    expect(selectOptionValues(modelSelect)).not.toContain("anthropic/claude-sonnet-4-6");
+    expect(modelSelect.value).toBe("google/gemini-2.5-pro");
+    expect(dom.getElementById("zms-profile-model").value).toBe("google/gemini-2.5-pro");
+  });
+
   it("resets stale workbench model vendor filters when a new provider loads recommendations", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const dom = fakeDocument({

@@ -939,7 +939,8 @@ var ZoteroMarkdownSummaryWorkbench = {
     }
     const modelInput = document.getElementById("zms-profile-model");
     const wasModelBlank = !String(modelInput?.value || "").trim();
-    const recommended = this.renderWorkbenchModelRecommendations({ selectDefault: true, resetVendor: true });
+    const resetVendor = shouldResetWorkbenchModelVendorFilter(profile);
+    const recommended = this.renderWorkbenchModelRecommendations({ selectDefault: true, resetVendor });
     if (!profileHasUsableAuth(profile) && !isLocalEndpoint(endpointForProfile(profile))) {
       if (recommended.length) this.commitWorkbenchModelPickerSelection();
       this.setStatus(recommended.length ? `${this.t("modelRecommendationsLoaded")}: ${recommended.length}` : this.t("apiKeyMissing"));
@@ -969,7 +970,7 @@ var ZoteroMarkdownSummaryWorkbench = {
         tagModelOptions(recommended, "recommended")
       );
       this.cacheWorkbenchModelOptions(profile, displayOptions);
-      this.renderWorkbenchModelOptions(displayOptions, { resetVendor: true });
+      this.renderWorkbenchModelOptions(displayOptions, { resetVendor });
       if (displayOptions.length) {
         if (wasModelBlank || !modelInput?.value?.trim()) {
           if (modelInput) modelInput.value = displayOptions[0].id;
@@ -986,7 +987,7 @@ var ZoteroMarkdownSummaryWorkbench = {
       if (recommended.length) {
         const fallbackOptions = tagModelOptions(recommended, "recommended");
         this.cacheWorkbenchModelOptions(profile, fallbackOptions);
-        this.renderWorkbenchModelOptions(fallbackOptions, { resetVendor: true });
+        this.renderWorkbenchModelOptions(fallbackOptions, { resetVendor });
         this.syncWorkbenchModelSelect(recommended);
         this.commitWorkbenchModelPickerSelection();
         this.setStatus(`${this.t("modelListFailedUsingRecommendations")}: ${safeError(err)}`);
@@ -5793,6 +5794,14 @@ function workbenchModelOptionsCacheKey(profile) {
     ? String(profile?.fullURL || "").trim()
     : String(profile?.baseURL || "").trim();
   return [provider, protocol, endpointMode, endpoint].map((part) => String(part || "").trim()).join("|");
+}
+
+function shouldResetWorkbenchModelVendorFilter(profile) {
+  const select = document.getElementById("zms-profile-model-vendor-select");
+  const key = workbenchModelOptionsCacheKey(profile);
+  const previous = String(select?.dataset?.zmsModelOptionsKey || "");
+  if (select?.dataset) select.dataset.zmsModelOptionsKey = key;
+  return previous !== key;
 }
 
 function optionAttribute(option, name) {

@@ -533,7 +533,8 @@ var ZoteroMarkdownSummaryPrefs = {
     if (!profile) return;
     const modelInput = document.getElementById("zms-model");
     const wasModelBlank = !String(modelInput?.value || "").trim();
-    const recommended = this.refreshModelRecommendations({ selectDefault: true, resetVendor: true });
+    const resetVendor = shouldResetSettingsModelVendorFilter(profile);
+    const recommended = this.refreshModelRecommendations({ selectDefault: true, resetVendor });
     if (!profileHasUsableAuth(profile)) {
       if (recommended.length) this.commitModelPickerSelection();
       this.setStatus(recommended.length ? `${this.t("modelRecommendationsLoaded")}: ${recommended.length}` : this.t("apiKeyMissing"));
@@ -562,7 +563,7 @@ var ZoteroMarkdownSummaryPrefs = {
         tagModelOptions(recommended, "recommended")
       );
       this.cacheModelOptionsForProfile(profile, displayOptions);
-      renderModelOptions(displayOptions, { resetVendor: true });
+      renderModelOptions(displayOptions, { resetVendor });
       if (displayOptions.length && (wasModelBlank || !String(modelInput?.value || "").trim())) {
         if (modelInput) modelInput.value = displayOptions[0].id;
       }
@@ -572,7 +573,7 @@ var ZoteroMarkdownSummaryPrefs = {
       if (recommended.length) {
         const fallbackOptions = tagModelOptions(recommended, "recommended");
         this.cacheModelOptionsForProfile(profile, fallbackOptions);
-        renderModelOptions(fallbackOptions, { resetVendor: true });
+        renderModelOptions(fallbackOptions, { resetVendor });
         syncModelSelectFromInput(recommended);
         this.commitModelPickerSelection();
         this.setStatus(`${this.t("modelListFailedUsingRecommendations")}: ${safeError(err)}`);
@@ -1229,8 +1230,8 @@ function applyPreferenceTextLabels(lang) {
     "zms-model-vendor-filter-label": zh ? "模型厂商" : "Model vendor",
     "zms-model-select-label": zh ? "具体模型" : "Concrete model",
     "zms-model-help": zh
-      ? "先选接口厂商；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商，最后从“具体模型”下拉选择。点击“加载模型列表”会先显示内置推荐模型，有 API Key 时追加在线模型。"
-      : "Choose a provider first. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Load model list shows built-in recommendations first and appends online models when an API key is available.",
+      ? "先选接口厂商；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商，最后从“具体模型”下拉选择。点击“加载模型列表”会先显示内置推荐模型，有 API Key 时追加在线模型，并保留当前模型厂商筛选。"
+      : "Choose a provider first. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Load model list shows built-in recommendations first, appends online models when an API key is available, and keeps the current model-vendor filter.",
     "zms-advancedSettings-summary": zh ? "高级设置" : "Advanced settings",
     "zms-advancedSettings-help": zh
       ? "通常不需要修改；用于自定义接口协议、请求头、提示词和技能模板。"
@@ -3940,6 +3941,14 @@ function settingsModelOptionsCacheKey(profile) {
     ? String(profile?.fullURL || "").trim()
     : String(profile?.baseURL || "").trim();
   return [provider, protocol, endpointMode, endpoint].map((part) => String(part || "").trim()).join("|");
+}
+
+function shouldResetSettingsModelVendorFilter(profile) {
+  const select = document.getElementById("zms-model-vendor-select");
+  const key = settingsModelOptionsCacheKey(profile);
+  const previous = String(select?.dataset?.zmsModelOptionsKey || "");
+  if (select?.dataset) select.dataset.zmsModelOptionsKey = key;
+  return previous !== key;
 }
 
 function optionAttribute(option, name) {
