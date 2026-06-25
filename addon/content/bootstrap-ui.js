@@ -25,9 +25,18 @@ function registerToolbarButton(win) {
   button.id = TOOLBAR_BUTTON_ID;
   button.setAttribute("type", "menu-button");
   button.setAttribute("class", "toolbarbutton-1");
+  button.setAttribute("label", t("openWorkbench"));
+  button.setAttribute("aria-label", t("openWorkbench"));
+  button.setAttribute("title", t("openWorkbench"));
   button.setAttribute("tooltiptext", t("openWorkbench"));
   button.setAttribute("image", `chrome://${CHROME_NAME}/content/logo.svg`);
-  button.setAttribute("style", `list-style-image: url('chrome://${CHROME_NAME}/content/logo.svg'); -moz-context-properties: fill; fill: #ef6f98;`);
+  button.setAttribute("style", [
+    `list-style-image: url('chrome://${CHROME_NAME}/content/logo.svg')`,
+    "-moz-context-properties: fill",
+    "fill: #ef6f98",
+    "min-width: 32px",
+    "min-height: 28px"
+  ].join("; "));
   button.addEventListener("command", () => openWorkbenchForContext());
   button.addEventListener("click", (event) => {
     if (event?.button && event.button !== 0) return;

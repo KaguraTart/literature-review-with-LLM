@@ -203,7 +203,11 @@ describe("bootstrap UI runtime wiring", () => {
     expect(button).toBeTruthy();
     expect(button?.parentNode).toBe(toolbar);
     expect(button?.getAttribute("type")).toBe("menu-button");
+    expect(button?.getAttribute("label")).toBe("openWorkbench");
+    expect(button?.getAttribute("aria-label")).toBe("openWorkbench");
+    expect(button?.getAttribute("title")).toBe("openWorkbench");
     expect(button?.getAttribute("image")).toBe("chrome://zotero-markdown-summary/content/logo.svg");
+    expect(button?.getAttribute("style")).toContain("min-width: 32px");
     expect(button?.eventListeners.get("command")?.length).toBe(1);
     expect(button?.eventListeners.get("click")?.length).toBe(1);
     const popup = button?.children.find((child) => child.localName === "menupopup");
