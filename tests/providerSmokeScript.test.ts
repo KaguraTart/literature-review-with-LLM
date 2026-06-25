@@ -95,6 +95,68 @@ describe("provider smoke verifier", () => {
     }, { responseBody: { choices: [{ message: { content: "OK chat" } }] } });
   });
 
+  it("honors Retry-After timing headers for generation checks", async () => {
+    let generationRequestCount = 0;
+    await withMockProvider(async (baseURL, requests) => {
+      const report = await runSmoke([
+        "--profile", "openai-compatible",
+        "--base-url", `${baseURL}/v1`,
+        "--api-key", "smoke-secret",
+        "--model", "mock-chat",
+        "--json"
+      ]);
+
+      expect(report).toMatchObject({
+        ok: true,
+        protocol: "openai_chat",
+        retryCount: 1,
+        text: "OK after retry"
+      });
+      expect(requests.map((request) => request.path)).toEqual([
+        "/v1/chat/completions",
+        "/v1/chat/completions"
+      ]);
+    }, {
+      handler: (_requestData, response) => {
+        generationRequestCount += 1;
+        if (generationRequestCount === 1) {
+          response.writeHead(429, { "content-type": "application/json", "retry-after-ms": "0" });
+          response.end(JSON.stringify({ error: { message: "rate limited" } }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ choices: [{ message: { content: "OK after retry" } }] }));
+      }
+    });
+  });
+
+  it("does not retry generation checks without provider retry timing headers", async () => {
+    await withMockProvider(async (baseURL, requests) => {
+      let error: any;
+      try {
+        await runSmoke([
+          "--profile", "openai-compatible",
+          "--base-url", `${baseURL}/v1`,
+          "--api-key", "smoke-secret",
+          "--model", "mock-chat",
+          "--json"
+        ]);
+      } catch (err) {
+        error = err;
+      }
+
+      expect(requests).toHaveLength(1);
+      expect(error?.stdout).toContain("\"status\": 503");
+      expect(error?.stdout).toContain("\"retryCount\": 0");
+      expect(error?.stdout).toContain("temporary unavailable");
+    }, {
+      handler: (_requestData, response) => {
+        response.writeHead(503, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "temporary unavailable" } }));
+      }
+    });
+  });
+
   it("omits configured provider body fields before sending and parsing the response", async () => {
     await withMockProvider(async (baseURL, requests) => {
       const report = await runSmoke([
@@ -2255,6 +2317,51 @@ describe("provider smoke verifier", () => {
         ["/ollama/v1/chat/completions", undefined, "llama3.1"],
         ["/lm-studio/v1/chat/completions", undefined, "local-model"]
       ]);
+    });
+  });
+
+  it("honors Retry-After timing headers in live generation checks", async () => {
+    let generationRequestCount = 0;
+    await withLiveMockProvider(async (baseURL, requests) => {
+      const report = await runLive(["--include", "openai-compatible", "--json"], scrubProviderEnv({
+        OPENAI_COMPATIBLE_API_KEY: "live-compatible-secret",
+        OPENAI_COMPATIBLE_MODEL: "live-compatible",
+        OPENAI_COMPATIBLE_BASE_URL: `${baseURL}/v1`
+      }));
+
+      expect(report).toMatchObject({
+        ok: true,
+        live: true,
+        counts: {
+          passed: 1,
+          skipped: 0,
+          failed: 0
+        }
+      });
+      expect(report.results[0]).toMatchObject({
+        id: "openai-compatible",
+        status: "passed",
+        report: {
+          retryCount: 1,
+          text: "OK live chat"
+        }
+      });
+      expect(requests.map((request) => request.path)).toEqual([
+        "/v1/chat/completions",
+        "/v1/chat/completions"
+      ]);
+      expect(JSON.stringify(report)).not.toContain("live-compatible-secret");
+    }, {
+      handler: (requestData, response) => {
+        generationRequestCount += 1;
+        if (generationRequestCount === 1) {
+          response.writeHead(429, { "content-type": "application/json", "retry-after": "0" });
+          response.end(JSON.stringify({ error: { message: "rate limited" } }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(liveMockResponse(requestData.path)));
+      }
     });
   });
 

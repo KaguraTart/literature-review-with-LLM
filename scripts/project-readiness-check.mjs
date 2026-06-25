@@ -304,6 +304,12 @@ const SOURCE_MARKERS = [
     markers: ["providerModelListRetryDelayMs", "providerRetryAfterMs", "PROVIDER_MODEL_LIST_MAX_ATTEMPTS", "honors Retry-After timing headers for model-list checks", "does not retry model-list checks without provider retry timing headers", "honors Retry-After timing headers in live model-list checks", "runProviderModels"]
   },
   {
+    id: "provider.generation-retry-after",
+    description: "Provider smoke and live generation checks honor explicit provider retry timing headers",
+    files: ["scripts/verify-provider-smoke.mjs", "scripts/verify-provider-live.mjs", "tests/providerSmokeScript.test.ts"],
+    markers: ["providerGenerationRetryDelayMs", "PROVIDER_GENERATION_MAX_ATTEMPTS", "honors Retry-After timing headers for generation checks", "does not retry generation checks without provider retry timing headers", "honors Retry-After timing headers in live generation checks", "runProviderSmoke"]
+  },
+  {
     id: "provider.model-picker-presets",
     description: "Settings and workbench expose provider-specific recommended model dropdowns before falling back to custom model input",
     files: ["addon/content/provider-models.js", "addon/content/preferences.xhtml", "addon/content/preferences.js", "addon/content/workbench.xhtml", "addon/content/workbench.js", "tests/preferencesLocalAgent.test.ts", "tests/workbenchWriteback.test.ts", "tests/providerCatalogConsistency.test.ts"],
