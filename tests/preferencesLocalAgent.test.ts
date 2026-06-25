@@ -28,7 +28,7 @@ function loadPreferencesHelpers() {
     profileHasUsableAuth: (profile: any) => boolean;
     modelListRequestForProfile: (profile: any) => any;
     modelIdsFromResponse: (data: any) => string[];
-    modelOptionsFromResponse: (data: any) => Array<{ id: string; label: string }>;
+    modelOptionsFromResponse: (data: any) => Array<{ id: string; label: string; vendor?: string; features?: string[] }>;
     providerErrorText: (status: number, text: string) => string;
     localAgentErrorText: (status: number, text: string) => string;
     extractProviderConnectionText: (protocol: string, text: string) => string;
@@ -1463,6 +1463,32 @@ describe("preferences local-agent config helpers", () => {
     })).toEqual([
       { id: "claude-opus-4-8", label: "Claude Opus 4.8" },
       { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" }
+    ]);
+    expect(helpers.modelOptionsFromResponse({
+      data: [
+        {
+          id: "anthropic/claude-sonnet-4-6",
+          display_name: "Claude Sonnet 4.6",
+          provider: "anthropic",
+          input_modalities: ["text", "image"]
+        },
+        {
+          id: "google/gemini-2.5-pro",
+          display_name: "Gemini 2.5 Pro",
+          provider: { id: "google", name: "Google" },
+          supported_modalities: ["text", "image", "pdf"]
+        },
+        {
+          id: "openai/gpt-4o",
+          display_name: "GPT-4o",
+          owned_by: "openai",
+          capabilities: { vision: true, document: true }
+        }
+      ]
+    })).toEqual([
+      { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6", vendor: "Anthropic", features: ["image"] },
+      { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro", vendor: "Google Gemini", features: ["image", "pdf"] },
+      { id: "openai/gpt-4o", label: "GPT-4o", vendor: "OpenAI", features: ["image", "pdf"] }
     ]);
     expect(helpers.modelOptionsFromResponse({
       data: [
@@ -3958,6 +3984,65 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model-select").value).toBe("model-a");
     expect(elements.get("zms-model").value).toBe("model-a");
     expect(elements.get("zms-status").value).toBe("Models loaded: 2");
+  });
+
+  it("groups online settings model lists by returned provider vendor", async () => {
+    const { controller, elements } = loadPreferencesController({
+      fetchResponse: {
+        data: [
+          {
+            id: "openai/gpt-4o",
+            display_name: "GPT-4o",
+            owned_by: "openai",
+            capabilities: { vision: true }
+          },
+          {
+            id: "google/gemini-2.5-pro",
+            display_name: "Gemini 2.5 Pro",
+            provider: { id: "google", name: "Google" },
+            supported_modalities: ["text", "image", "pdf"]
+          },
+          {
+            id: "anthropic/claude-sonnet-4-6",
+            display_name: "Claude Sonnet 4.6",
+            provider: "anthropic",
+            input_modalities: ["text", "image"]
+          }
+        ]
+      }
+    });
+    elements.get("zms-provider").value = "cline_api";
+    elements.get("zms-activeProfileId").value = "cline-api";
+    elements.get("zms-profileName").value = "Cline API";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "https://api.cline.bot/api/v1";
+    elements.get("zms-apiKey").value = "cline-secret";
+    elements.get("zms-model").value = "";
+
+    await controller.loadModels();
+
+    expect(selectOptionValues(elements.get("zms-model-vendor-select"))).toEqual([
+      "",
+      "Anthropic",
+      "Google Gemini",
+      "OpenAI",
+      "DeepSeek",
+      "xAI",
+      "MiniMax"
+    ]);
+    expect(selectGroupLabels(elements.get("zms-model-select"))).toContain("Anthropic · Online");
+    expect(selectGroupLabels(elements.get("zms-model-select"))).toContain("Google Gemini · Online");
+    expect(selectGroupLabels(elements.get("zms-model-select"))).toContain("OpenAI · Online");
+    expect(selectOptionByValue(elements.get("zms-model-select"), "google/gemini-2.5-pro").textContent).toContain("image / pdf");
+    elements.get("zms-model-vendor-select").value = "Google Gemini";
+    controller.renderModelOptionsFromCache({ selectFirstVisible: true });
+
+    const filteredValues = selectOptionValues(elements.get("zms-model-select"));
+    expect(filteredValues).toContain("google/gemini-2.5-pro");
+    expect(filteredValues).toContain("google/gemini-2.5-flash");
+    expect(filteredValues).not.toContain("openai/gpt-4o");
+    expect(elements.get("zms-model-select").value).toBe("google/gemini-2.5-pro");
+    expect(elements.get("zms-model").value).toBe("google/gemini-2.5-pro");
   });
 
   it("keeps recommended settings models when the online model list fails", async () => {

@@ -2877,6 +2877,101 @@ describe("workbench writeback helpers", () => {
     expect(dom.elements.get("zms-chat-status").textContent).toBe("Recommended models loaded: 4");
   });
 
+  it("groups online workbench model lists by returned provider vendor", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const dom = fakeDocument({
+      "zms-profile-name": "Cline API",
+      "zms-profile-base-url": "https://api.cline.bot/api/v1",
+      "zms-profile-api-key": "cline-secret",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    loaded.fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        data: [
+          {
+            id: "openai/gpt-4o",
+            display_name: "GPT-4o",
+            owned_by: "openai",
+            capabilities: { vision: true }
+          },
+          {
+            id: "google/gemini-2.5-pro",
+            display_name: "Gemini 2.5 Pro",
+            provider: { id: "google", name: "Google" },
+            supported_modalities: ["text", "image", "pdf"]
+          },
+          {
+            id: "anthropic/claude-sonnet-4-6",
+            display_name: "Claude Sonnet 4.6",
+            provider: "anthropic",
+            input_modalities: ["text", "image"]
+          }
+        ]
+      })
+    });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelListLoaded: "Models loaded",
+      modelRecommendationsLoaded: "Recommended models loaded",
+      modelSelectPlaceholder: "Choose provider model",
+      modelSelectCustom: "Custom/private model...",
+      modelVendorFilter: "Model vendor",
+      allModelVendors: "All model vendors",
+      onlineModels: "Online",
+      recommendedModels: "Recommended",
+      modelFeatureImage: "image",
+      modelFeaturePdf: "PDF",
+      modelFeatureReasoning: "reasoning",
+      modelFeatureFast: "fast",
+      modelFeatureLocal: "local"
+    }[key] || key);
+    const profile = {
+      id: "cline-api",
+      name: "Cline API",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.cline.bot/api/v1",
+      apiKey: "cline-secret",
+      model: "",
+      capabilities: { text: true, imageBase64: true, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+
+    await workbench.loadModelsForWorkbench();
+
+    expect(selectOptionValues(dom.getElementById("zms-profile-model-vendor-select"))).toEqual([
+      "",
+      "Anthropic",
+      "Google Gemini",
+      "OpenAI",
+      "DeepSeek",
+      "xAI",
+      "MiniMax"
+    ]);
+    const modelSelect = dom.getElementById("zms-profile-model-select");
+    expect(selectGroupLabels(modelSelect)).toContain("Anthropic · Online");
+    expect(selectGroupLabels(modelSelect)).toContain("Google Gemini · Online");
+    expect(selectGroupLabels(modelSelect)).toContain("OpenAI · Online");
+    expect(selectOptionByValue(modelSelect, "google/gemini-2.5-pro").textContent).toContain("image / PDF");
+
+    dom.getElementById("zms-profile-model-vendor-select").value = "Google Gemini";
+    workbench.renderWorkbenchModelOptionsFromCache({ selectFirstVisible: true });
+
+    const filteredValues = selectOptionValues(modelSelect);
+    expect(filteredValues).toContain("google/gemini-2.5-pro");
+    expect(filteredValues).toContain("google/gemini-2.5-flash");
+    expect(filteredValues).not.toContain("openai/gpt-4o");
+    expect(modelSelect.value).toBe("google/gemini-2.5-pro");
+    expect(dom.getElementById("zms-profile-model").value).toBe("google/gemini-2.5-pro");
+  });
+
   it("loads multi-vendor LiteLLM Proxy recommendations in the workbench without credentials", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const dom = fakeDocument({

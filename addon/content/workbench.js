@@ -16503,6 +16503,8 @@ function workbenchModelOptionFromItem(item, depth = 0) {
     return { id, label: id };
   }
   if (!item || typeof item !== "object") return { id: "", label: "" };
+  const explicitVendor = workbenchModelVendorFromModelListItem(item);
+  const explicitFeatures = workbenchModelFeaturesFromModelListItem(item);
   const id = workbenchStringField(
     item?.id,
     item?.model,
@@ -16544,11 +16546,148 @@ function workbenchModelOptionFromItem(item, depth = 0) {
       const nested = item?.[key];
       if (nested && typeof nested === "object" && !Array.isArray(nested)) {
         const option = workbenchModelOptionFromItem(nested, depth + 1);
-        if (option.id) return option;
+        if (option.id) {
+          return compactWorkbenchModelOption({
+            ...option,
+            vendor: explicitVendor || option.vendor,
+            features: mergeWorkbenchModelFeatureHints(explicitFeatures, option.features)
+          });
+        }
       }
     }
   }
-  return { id, label };
+  return compactWorkbenchModelOption({ id, label, vendor: explicitVendor, features: explicitFeatures });
+}
+
+function compactWorkbenchModelOption(option) {
+  const result = {
+    id: String(option?.id || "").trim(),
+    label: String(option?.label || option?.id || "").trim()
+  };
+  const vendor = canonicalWorkbenchModelVendorLabel(option?.vendor);
+  const features = normalizeModelFeatureList(option?.features);
+  if (vendor) result.vendor = vendor;
+  if (features.length) result.features = features;
+  return result;
+}
+
+function workbenchModelVendorFromModelListItem(item) {
+  return canonicalWorkbenchModelVendorLabel(firstWorkbenchModelVendorValue(
+    item?.provider,
+    item?.provider_id,
+    item?.providerId,
+    item?.provider_name,
+    item?.providerName,
+    item?.vendor,
+    item?.vendor_id,
+    item?.vendorId,
+    item?.owner,
+    item?.owned_by,
+    item?.ownedBy,
+    item?.publisher,
+    item?.organization,
+    item?.org,
+    item?.family,
+    item?.model_family,
+    item?.modelFamily,
+    item?.top_provider,
+    item?.topProvider,
+    item?.metadata?.provider,
+    item?.metadata?.vendor,
+    item?.meta?.provider,
+    item?.meta?.vendor,
+    item?.architecture?.provider,
+    item?.details?.family
+  ));
+}
+
+function firstWorkbenchModelVendorValue(...values) {
+  for (const value of values) {
+    const candidate = workbenchModelVendorValue(value);
+    if (candidate) return candidate;
+  }
+  return "";
+}
+
+function workbenchModelVendorValue(value) {
+  if (typeof value === "string" || typeof value === "number") return String(value).trim();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  return workbenchStringField(
+    value.display_name,
+    value.displayName,
+    value.label,
+    value.title,
+    value.name,
+    value.id,
+    value.slug,
+    value.key,
+    value.value
+  );
+}
+
+function canonicalWorkbenchModelVendorLabel(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (typeof zmsModelVendorForProviderModel === "function") {
+    const inferred = zmsModelVendorForProviderModel("", raw, raw);
+    if (inferred) return inferred;
+  }
+  return raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function workbenchModelFeaturesFromModelListItem(item) {
+  const features = [];
+  collectWorkbenchModelFeatureHints(features, item?.features);
+  collectWorkbenchModelFeatureHints(features, item?.featureHints);
+  collectWorkbenchModelFeatureHints(features, item?.traits);
+  collectWorkbenchModelFeatureHints(features, item?.modalities);
+  collectWorkbenchModelFeatureHints(features, item?.input_modalities);
+  collectWorkbenchModelFeatureHints(features, item?.inputModalities);
+  collectWorkbenchModelFeatureHints(features, item?.supported_modalities);
+  collectWorkbenchModelFeatureHints(features, item?.supportedModalities);
+  collectWorkbenchModelFeatureHints(features, item?.capabilities);
+  collectWorkbenchModelFeatureHints(features, item?.architecture);
+  collectWorkbenchModelFeatureHints(features, item?.metadata?.capabilities);
+  collectWorkbenchModelFeatureHints(features, item?.metadata?.modalities);
+  collectWorkbenchModelFeatureHints(features, item?.meta?.capabilities);
+  collectWorkbenchModelFeatureHints(features, item?.details?.families);
+  return normalizeModelFeatureList(features);
+}
+
+function collectWorkbenchModelFeatureHints(features, value) {
+  if (value === undefined || value === null) return;
+  if (typeof value === "string" || typeof value === "number") {
+    pushWorkbenchModelFeatureHintsFromText(features, String(value));
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectWorkbenchModelFeatureHints(features, item);
+    return;
+  }
+  if (typeof value !== "object") return;
+  for (const [key, entry] of Object.entries(value)) {
+    const keyText = String(key || "");
+    if (entry === true || entry === "true" || entry === 1 || entry === "1") {
+      pushWorkbenchModelFeatureHintsFromText(features, keyText);
+    }
+    if (typeof entry === "string" || typeof entry === "number" || Array.isArray(entry)) {
+      collectWorkbenchModelFeatureHints(features, entry);
+    }
+  }
+}
+
+function pushWorkbenchModelFeatureHintsFromText(features, value) {
+  const text = String(value || "").toLowerCase();
+  if (!text) return;
+  if (/image|vision|visual|multimodal|input_image|\bvl\b|pixtral/.test(text)) features.push("image");
+  if (/pdf|document|file/.test(text)) features.push("pdf");
+  if (/reason|thinking|chain-of-thought|\bo\d\b|\bo\d-|r1/.test(text)) features.push("reasoning");
+  if (/fast|flash|mini|nano|lite|highspeed|turbo|instant|small/.test(text)) features.push("fast");
+  if (/local|ollama|lm studio/.test(text)) features.push("local");
+}
+
+function mergeWorkbenchModelFeatureHints(left, right) {
+  return normalizeModelFeatureList([...(left || []), ...(right || [])]);
 }
 
 function isOllamaProfile(profile) {
