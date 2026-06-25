@@ -3264,6 +3264,51 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model").hidden).toBe(true);
   });
 
+  it("localizes settings model vendor display labels without changing filter values", async () => {
+    const { controller, elements } = loadPreferencesController({ noZmsMessage: true });
+    elements.get("zms-uiLanguage").value = "zh-CN";
+    elements.get("zms-provider").value = "openrouter";
+    elements.get("zms-activeProfileId").value = "openrouter";
+    elements.get("zms-profileName").value = "OpenRouter";
+    elements.get("zms-profileProtocol").value = "openai_chat";
+    elements.get("zms-baseURL").value = "https://openrouter.ai/api/v1";
+    elements.get("zms-apiKey").value = "";
+    elements.get("zms-model").value = "";
+
+    await controller.loadModels();
+
+    const vendorSelect = elements.get("zms-model-vendor-select");
+    expect(selectOptionValues(vendorSelect)).toEqual([
+      "",
+      "OpenAI",
+      "Anthropic",
+      "Google Gemini",
+      "DeepSeek",
+      "xAI",
+      "Mistral",
+      "Qwen",
+      "MiniMax"
+    ]);
+    expect(selectOptions(vendorSelect).map((option: any) => option.textContent)).toEqual([
+      "全部模型厂商",
+      "OpenAI",
+      "Anthropic",
+      "Google Gemini",
+      "DeepSeek",
+      "xAI",
+      "Mistral",
+      "通义千问",
+      "MiniMax"
+    ]);
+
+    vendorSelect.value = "Qwen";
+    controller.renderModelOptionsFromCache({ selectFirstVisible: true });
+
+    expect(selectOptionValues(elements.get("zms-model-select"))).toContain("qwen/qwen-max");
+    expect(selectGroupLabels(elements.get("zms-model-select"))).toEqual(["通义千问 · 推荐模型"]);
+    expect(elements.get("zms-model-select").children[0].textContent).toBe("选择 OpenRouter 推荐模型");
+  });
+
   it("updates the model field from the recommended model dropdown", () => {
     const { controller, elements } = loadPreferencesController();
     elements.get("zms-provider").value = "deepseek";

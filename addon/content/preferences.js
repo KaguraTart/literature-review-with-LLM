@@ -3998,7 +3998,7 @@ function renderModelVendorFilter(select, entries, translate = (key) => key, opti
   for (const vendor of vendors) {
     const option = document.createElement("option");
     option.value = vendor;
-    option.textContent = vendor;
+    option.textContent = modelVendorDisplayLabel(vendor, translate);
     select.appendChild(option);
   }
   select.value = !options.reset && vendors.includes(previous) ? previous : "";
@@ -4019,6 +4019,13 @@ function modelVendorNames(entries) {
 
 function selectedModelVendor(select) {
   return String(select?.value || "").trim();
+}
+
+function modelVendorDisplayLabel(vendor, translate = (key) => key) {
+  if (typeof zmsLocalizedModelVendorLabel === "function") {
+    return zmsLocalizedModelVendorLabel(vendor, translate);
+  }
+  return String(vendor || "");
 }
 
 function filterModelOptionsByVendor(entries, vendor) {
@@ -4149,7 +4156,7 @@ function recommendedModelOptionsForProvider(provider) {
 function providerModelSelectPlaceholderForPreferences(entries) {
   const lang = resolveUiLanguage(document.getElementById("zms-uiLanguage")?.value, runtimeLocale());
   const provider = providerFromProfile(profileDraftFromEditor().profile) || document.getElementById("zms-provider")?.value || "";
-  const providerLabel = providerModelSelectProviderLabel(provider, entries);
+  const providerLabel = providerModelSelectProviderLabel(provider, entries, lang);
   return providerModelSelectPlaceholder(providerLabel, lang, (key) => prefFallbackMessage(key, lang));
 }
 
@@ -4160,13 +4167,13 @@ function providerModelSelectPlaceholder(providerLabel, lang, translate = (key) =
   return zh ? `选择 ${label} 推荐模型` : `Choose ${label} model`;
 }
 
-function providerModelSelectProviderLabel(provider, entries = []) {
+function providerModelSelectProviderLabel(provider, entries = [], language = "") {
   const key = String(provider || "").trim();
   if (key && typeof zmsProviderModelCatalogLabel === "function") {
-    return zmsProviderModelCatalogLabel(key);
+    return zmsProviderModelCatalogLabel(key, language);
   }
   const vendor = normalizeModelOptions(entries)[0]?.vendor || "";
-  return vendor || key;
+  return modelVendorDisplayLabel(vendor, (messageKey) => prefFallbackMessage(messageKey, language)) || key;
 }
 
 function renderProfileOptions(list, profileOptions) {
@@ -4322,7 +4329,7 @@ function modelSelectGroupLabel(groupInfo, translate = (key) => key) {
   const suffix = groupInfo.source === "online"
     ? translate("onlineModels")
     : (groupInfo.source === "recommended" ? translate("recommendedModels") : translate("modelSelectCustom"));
-  return groupInfo.vendor ? `${groupInfo.vendor} · ${suffix}` : suffix;
+  return groupInfo.vendor ? `${modelVendorDisplayLabel(groupInfo.vendor, translate)} · ${suffix}` : suffix;
 }
 
 function inferredModelVendor(entry) {
