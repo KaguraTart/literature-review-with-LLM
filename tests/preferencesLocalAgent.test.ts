@@ -3069,10 +3069,10 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-model-label").value).toBe("模型");
     expect(elements.get("zms-model-vendor-filter-label").value).toBe("模型厂商");
     expect(elements.get("zms-model-select-label").value).toBe("具体模型");
-    expect(elements.get("zms-model-help").value).toContain("加载模型列表");
+    expect(elements.get("zms-model-help").value).toContain("加载在线模型");
     expect(elements.get("zms-advancedSettings-summary").textContent).toBe("高级设置");
     expect(elements.get("zms-advancedSettings-help").textContent).toContain("通常不需要修改");
-    expect(elements.get("zms-load-models-button").label).toBe("加载模型列表");
+    expect(elements.get("zms-load-models-button").label).toBe("加载在线模型");
     expect(elements.get("zms-test-button").label).toBe("保存并测试");
     expect(elements.get("zms-temperature-label").value).toBe("温度");
     expect(elements.get("zms-profileProtocol-label").value).toBe("接口协议");
@@ -3140,6 +3140,11 @@ describe("preferences local-agent config helpers", () => {
       "Anthropic · Recommended",
       "Google Gemini · Recommended",
       "DeepSeek · Recommended",
+      "Qwen · Recommended",
+      "Mistral · Recommended",
+      "Moonshot · Recommended",
+      "Z.AI · Recommended",
+      "Meta Llama · Recommended",
       "xAI · Recommended",
       "MiniMax · Recommended",
       "Ollama · Recommended"
@@ -3148,7 +3153,7 @@ describe("preferences local-agent config helpers", () => {
     expect(selectOptionByValue(elements.get("zms-model-select"), "anthropic/claude-sonnet-4-6").textContent).toContain("image");
     expect(elements.get("zms-model").value).toBe("openai/gpt-4o-mini");
     expect(elements.get("zms-model").hidden).toBe(true);
-    expect(elements.get("zms-status").value).toBe("Recommended models loaded: 11");
+    expect(elements.get("zms-status").value).toBe("Recommended models loaded: 17");
   });
 
   it("lets Cline API users choose and save a model vendor before choosing a model", async () => {
@@ -3169,6 +3174,11 @@ describe("preferences local-agent config helpers", () => {
       "Google Gemini",
       "OpenAI",
       "DeepSeek",
+      "Qwen",
+      "Mistral",
+      "Moonshot",
+      "Z.AI",
+      "Meta Llama",
       "xAI",
       "MiniMax"
     ]);
@@ -3243,6 +3253,11 @@ describe("preferences local-agent config helpers", () => {
       "Anthropic",
       "Google Gemini",
       "DeepSeek",
+      "Qwen",
+      "Mistral",
+      "Moonshot",
+      "Z.AI",
+      "Meta Llama",
       "xAI",
       "MiniMax",
       "Ollama"
@@ -3284,9 +3299,12 @@ describe("preferences local-agent config helpers", () => {
       "Anthropic",
       "Google Gemini",
       "DeepSeek",
-      "xAI",
-      "Mistral",
       "Qwen",
+      "Mistral",
+      "Moonshot",
+      "Z.AI",
+      "Meta Llama",
+      "xAI",
       "MiniMax"
     ]);
     expect(selectOptions(vendorSelect).map((option: any) => option.textContent)).toEqual([
@@ -3295,9 +3313,12 @@ describe("preferences local-agent config helpers", () => {
       "Anthropic",
       "Google Gemini",
       "DeepSeek",
-      "xAI",
-      "Mistral",
       "通义千问",
+      "Mistral",
+      "Moonshot / Kimi",
+      "Z.AI",
+      "Meta Llama",
+      "xAI",
       "MiniMax"
     ]);
 
@@ -4248,6 +4269,11 @@ describe("preferences local-agent config helpers", () => {
       "Google Gemini",
       "OpenAI",
       "DeepSeek",
+      "Qwen",
+      "Mistral",
+      "Moonshot",
+      "Z.AI",
+      "Meta Llama",
       "xAI",
       "MiniMax"
     ]);

@@ -987,8 +987,8 @@ function prefFallbackMessage(key, lang) {
     modelSelectPlaceholder: zh ? "选择接口厂商推荐模型" : "Choose provider model",
     modelSelectCustom: zh ? "自定义/私有部署模型..." : "Custom/private model...",
     modelPickerHelp: zh
-      ? "先选接口厂商，推荐模型会自动显示；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商。有 API Key 时点“加载模型列表”会追加厂商实时返回的在线模型。"
-      : "Choose a provider first; recommended models appear automatically. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Load model list appends provider-returned models when an API key is available.",
+      ? "先选接口厂商，推荐模型会自动显示；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商。只有私有部署或列表里没有的模型才需要自定义；有 API Key 时点“加载在线模型”会追加厂商实时返回的模型。"
+      : "Choose a provider first; recommended models appear automatically. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Use custom only for private deployments or missing models; Load online models appends provider-returned models when an API key is available.",
     onlineModels: zh ? "在线模型" : "Online",
     recommendedModels: zh ? "推荐模型" : "Recommended",
     providerEnv: zh ? "粘贴环境变量配置" : "Paste env config",
@@ -1036,7 +1036,7 @@ function prefFallbackMessage(key, lang) {
     test: zh ? "测试连接" : "Test connection",
     saveAndTest: zh ? "保存并测试" : "Save and Test",
     testing: zh ? "正在测试连接" : "Testing connection",
-    loadModels: zh ? "加载模型列表" : "Load model list",
+    loadModels: zh ? "加载在线模型" : "Load online models",
     loadProfile: zh ? "加载档案" : "Load profile",
     saveProfile: zh ? "保存档案" : "Save profile",
     deleteProfile: zh ? "删除档案" : "Delete profile",
@@ -1234,8 +1234,8 @@ function applyPreferenceTextLabels(lang) {
     "zms-model-vendor-filter-label": zh ? "模型厂商" : "Model vendor",
     "zms-model-select-label": zh ? "具体模型" : "Concrete model",
     "zms-model-help": zh
-      ? "先选接口厂商，推荐模型会自动显示；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商。有 API Key 时点“加载模型列表”会追加厂商实时返回的在线模型。"
-      : "Choose a provider first; recommended models appear automatically. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Load model list appends provider-returned models when an API key is available.",
+      ? "先选接口厂商，推荐模型会自动显示；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商。只有私有部署或列表里没有的模型才需要自定义；有 API Key 时点“加载在线模型”会追加厂商实时返回的模型。"
+      : "Choose a provider first; recommended models appear automatically. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Use custom only for private deployments or missing models; Load online models appends provider-returned models when an API key is available.",
     "zms-advancedSettings-summary": zh ? "高级设置" : "Advanced settings",
     "zms-advancedSettings-help": zh
       ? "通常不需要修改；用于自定义接口协议、请求头、提示词和技能模板。"
@@ -2167,7 +2167,7 @@ function providerSetupGuide(profile, language = "en-US") {
       `基础地址：${profile.baseURL || defaults.baseURL || "未填写"}`,
       `请求地址：${endpoint || "未配置"}`,
       `鉴权：${auth}`,
-      `模型：${profile.model || "请先从“具体模型”下拉选择，必要时加载模型列表"}`,
+      `模型：${profile.model || "请先从“具体模型”下拉选择，必要时加载在线模型"}`,
       `能力：${capabilities || "文本"}`,
       `模型列表：${modelList || "当前档案不支持在线模型刷新"}`,
       `保存后测试：点击“测试连接”；失败信息会隐藏完整 API Key。`,
