@@ -14,6 +14,7 @@ class FakeElement {
   hidden = false;
   namespaceURI = "";
   eventListeners = new Map<string, Array<(event?: any) => void>>();
+  rect: { width: number; height: number } | null = null;
   style: any = {
     position: "",
     removeProperty: (name: string) => {
@@ -59,6 +60,15 @@ class FakeElement {
     for (const child of children) this.appendChild(child);
   }
 
+  replaceChildren(...children: FakeElement[]) {
+    for (const child of this.children) {
+      child.parentNode = null;
+    }
+    this.children = [];
+    this.textContent = "";
+    this.append(...children);
+  }
+
   remove() {
     if (!this.parentNode) return;
     this.parentNode.children = this.parentNode.children.filter((child) => child !== this);
@@ -94,10 +104,15 @@ class FakeElement {
     }
     return null;
   }
+
+  getBoundingClientRect() {
+    return this.rect || { width: 0, height: 0 };
+  }
 }
 
 class FakeDocument {
   documentElement = new FakeElement("window");
+  defaultView: any = null;
 
   createXULElement(name: string) {
     return this.attachOwner(new FakeElement(name));
@@ -127,11 +142,13 @@ class FakeDocument {
 
 function loadBootstrapUi(doc = new FakeDocument(), overrides: Record<string, any> = {}) {
   const code = readFileSync(resolve(process.cwd(), "addon/content/bootstrap-ui.js"), "utf8");
+  const itemPaneSections: any[] = [];
   const win = {
     document: doc,
     setTimeout: (callback: () => void) => callback(),
-    getComputedStyle: () => ({ position: "static" })
+    getComputedStyle: overrides.getComputedStyle || (() => ({ display: "block", visibility: "visible", opacity: "1", position: "static" }))
   };
+  doc.defaultView = win;
   doc.documentElement.ownerDocument = doc;
   doc.documentElement.ownerGlobal = win;
   const sandbox: any = {
@@ -142,6 +159,8 @@ function loadBootstrapUi(doc = new FakeDocument(), overrides: Record<string, any
     WORKBENCH_PANEL_ID: "zotero-markdown-summary-workbench-panel",
     WORKBENCH_FRAME_ID: "zotero-markdown-summary-workbench-frame",
     WORKBENCH_STYLE_ID: "zotero-markdown-summary-workbench-style",
+    ITEM_PANE_SECTION_ID: "zotero-markdown-summary-workbench-section",
+    pluginID: "zotero-markdown-summary@diantao.local",
     Services: {
       wm: {
         getMostRecentWindow: () => win,
@@ -161,7 +180,17 @@ function loadBootstrapUi(doc = new FakeDocument(), overrides: Record<string, any
       }
     },
     Zotero: {
-      debug() {}
+      debug() {},
+      ItemPaneManager: {
+        registerSection(options: any) {
+          itemPaneSections.push(options);
+          return `${options.paneID}-registered`;
+        },
+        unregisterSection(paneID: string) {
+          return paneID === "zotero-markdown-summary-workbench-section-registered"
+            || paneID === "zotero-markdown-summary-workbench-section";
+        }
+      }
     },
     t: (key: string) => key,
     selectedRegularItems: () => [{ id: 7, key: "ITEM7" }],
@@ -186,7 +215,7 @@ function loadBootstrapUi(doc = new FakeDocument(), overrides: Record<string, any
   };
   const context = createContext(sandbox);
   runInContext(code, context, { filename: "bootstrap-ui.js" });
-  return { helpers: context as any, doc, win };
+  return { helpers: context as any, doc, win, itemPaneSections };
 }
 
 describe("bootstrap UI runtime wiring", () => {
@@ -311,6 +340,58 @@ describe("bootstrap UI runtime wiring", () => {
     expect(button?.eventListeners.get("click")?.length).toBe(1);
   });
 
+  it("registers a Zotero item pane section as a stable right-pane entry", () => {
+    const doc = new FakeDocument();
+    const host = doc.createElementNS(HTML_NS, "section");
+    host.id = "zotero-context-pane";
+    doc.documentElement.appendChild(host);
+    const { helpers, itemPaneSections } = loadBootstrapUi(doc);
+
+    expect(helpers.registerItemPaneSection()).toBe(true);
+    expect(itemPaneSections).toHaveLength(1);
+    expect(itemPaneSections[0].paneID).toBe("zotero-markdown-summary-workbench-section");
+    expect(itemPaneSections[0].pluginID).toBe("zotero-markdown-summary@diantao.local");
+    expect(itemPaneSections[0].header.l10nID).toBe("workbench-open-title");
+    expect(itemPaneSections[0].sidenav.icon).toBe("chrome://zotero-markdown-summary/content/logo.svg");
+
+    let enabled = false;
+    const item = { id: 42, key: "ITEM42", isRegularItem: () => true };
+    itemPaneSections[0].onItemChange({ item, setEnabled: (value: boolean) => { enabled = value; } });
+    expect(enabled).toBe(true);
+
+    const body = doc.createElementNS(HTML_NS, "div");
+    itemPaneSections[0].onRender({ doc, body, item });
+    const button = body.find((element) => String(element.getAttribute("class")).includes("zms-item-pane-open-workbench"));
+    expect(button?.textContent).toBe("openWorkbench");
+    button?.eventListeners.get("click")?.[0]?.({
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const panel = doc.getElementById("zotero-markdown-summary-workbench-panel");
+    const frame = doc.getElementById("zotero-markdown-summary-workbench-frame");
+    expect(panel?.parentNode).toBe(host);
+    expect(frame?.getAttribute("src")).toContain("itemID=42");
+    expect(helpers.unregisterItemPaneSection()).toBe(true);
+  });
+
+  it("does not duplicate the manual side button after the Zotero pane section is registered", () => {
+    const doc = new FakeDocument();
+    const sidenav = doc.createElementNS(HTML_NS, "item-pane-sidenav");
+    sidenav.id = "zotero-view-item-sidenav";
+    const group = doc.createElementNS(HTML_NS, "div");
+    group.setAttribute("class", "inherit-flex");
+    sidenav.appendChild(group);
+    doc.documentElement.appendChild(sidenav);
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    expect(helpers.registerItemPaneSection()).toBe(true);
+    helpers.ensureWorkbenchButtons(win);
+
+    expect(doc.getElementById("zotero-markdown-summary-sidenav-button")).toBeNull();
+    expect(group.children).toHaveLength(0);
+  });
+
   it("opens the embedded workbench when the HTML side-nav button is clicked", () => {
     const doc = new FakeDocument();
     const sidenav = doc.createElementNS(HTML_NS, "nav");
@@ -420,6 +501,31 @@ describe("bootstrap UI runtime wiring", () => {
     expect(button).toBeTruthy();
     expect(button?.parentNode).toBe(currentToolbar);
     expect(staleButton.parentNode).toBeNull();
+  });
+
+  it("skips Zotero toolbar hosts hidden by computed CSS", () => {
+    const doc = new FakeDocument();
+    const cssHiddenToolbar = doc.createXULElement("toolbar");
+    cssHiddenToolbar.id = "zotero-items-toolbar";
+    cssHiddenToolbar.rect = { width: 300, height: 32 };
+    const visibleToolbar = doc.createXULElement("toolbar");
+    visibleToolbar.id = "zotero-toolbar-item-tree";
+    visibleToolbar.rect = { width: 400, height: 34 };
+    doc.documentElement.append(cssHiddenToolbar, visibleToolbar);
+    const { helpers, win } = loadBootstrapUi(doc, {
+      getComputedStyle: (element: FakeElement) => {
+        if (element === cssHiddenToolbar) {
+          return { display: "none", visibility: "visible", opacity: "1", position: "static" };
+        }
+        return { display: "block", visibility: "visible", opacity: "1", position: "static" };
+      }
+    });
+
+    helpers.ensureWorkbenchButtons(win);
+
+    const button = doc.getElementById("zotero-markdown-summary-toolbar-button");
+    expect(button).toBeTruthy();
+    expect(button?.parentNode).toBe(visibleToolbar);
   });
 
   it("moves the side button out of hidden stale Zotero side-nav hosts", () => {
