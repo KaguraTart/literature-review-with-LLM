@@ -10518,6 +10518,55 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls).toHaveLength(2);
   });
 
+  it("honors provider retry headers for workbench rate-limit retries", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    const delayCalls: number[] = [];
+    loaded.window.Zotero.Promise.delay = async (ms: number) => {
+      delayCalls.push(ms);
+    };
+    loaded.fetch = async (url: string, init: any) => {
+      fetchCalls.push({ url, init });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 429,
+          headers: {
+            get: (name: string) => name.toLowerCase() === "retry-after-ms" ? "1250" : null
+          },
+          text: async () => JSON.stringify({
+            error: {
+              code: "rate_limit_exceeded",
+              message: "Too many requests for sk-test-secret"
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ output_text: "ok" })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry(providerProfile(), [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "text", text: "context" }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(delayCalls).toEqual([1250]);
+  });
+
+  it("parses and bounds provider retry header variants", () => {
+    const loaded: any = loadWorkbenchHelpers();
+
+    expect(loaded.providerRetryAfterMs({ "Retry-After": "2" })).toBe(2000);
+    expect(loaded.providerRetryAfterMs(new Map([["retry-after-ms", "750"]]))).toBe(750);
+    expect(loaded.providerRetryAfterMs({ "Retry-After-Ms": "999999" })).toBe(10000);
+    expect(loaded.providerRetryAfterMs({ get: (name: string) => name.toLowerCase() === "retry-after" ? "0.25" : null })).toBe(250);
+  });
+
   it("downgrades unsupported OpenAI Chat stream options once in the workbench request path", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: any[] = [];
