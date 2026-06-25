@@ -3944,6 +3944,86 @@ describe("workbench writeback helpers", () => {
     expect(dom.getElementById("zms-profile-model").hidden).toBe(true);
   });
 
+  it("syncs workbench image and PDF capabilities from the selected model", () => {
+    const prefs: Record<string, any> = {};
+    const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);
+    const dom = fakeDocument({
+      "zms-profile-name": "OpenAI",
+      "zms-profile-base-url": "https://api.openai.com/v1",
+      "zms-profile-api-key": "sk-test",
+      "zms-profile-model": ""
+    });
+    (loaded as any).document = dom;
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      modelSelectPlaceholder: "Choose provider model",
+      modelSelectCustom: "Custom model...",
+      recommendedModels: "Recommended",
+      saved: "Saved"
+    }[key] || key);
+    const profile = {
+      id: "openai",
+      name: "OpenAI",
+      protocol: "openai_responses",
+      endpointMode: "base_url",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-test",
+      model: "",
+      capabilities: { text: true, imageBase64: false, pdfBase64: false, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = profile;
+    workbench.state.profiles = [profile];
+    dom.getElementById("zms-profile-image-input").checked = false;
+    dom.getElementById("zms-profile-pdf-input").checked = false;
+
+    workbench.renderWorkbenchModelRecommendations();
+    dom.getElementById("zms-profile-model-select").value = "gpt-4.1";
+    workbench.selectWorkbenchModelFromDropdown();
+
+    expect(dom.getElementById("zms-profile-image-input").checked).toBe(true);
+    expect(dom.getElementById("zms-profile-pdf-input").checked).toBe(true);
+    expect(JSON.parse(prefs.profilesJson)[0].capabilities).toMatchObject({
+      imageBase64: true,
+      pdfBase64: true
+    });
+
+    const deepseek = {
+      id: "deepseek",
+      name: "DeepSeek",
+      protocol: "openai_chat",
+      endpointMode: "base_url",
+      baseURL: "https://api.deepseek.com",
+      apiKey: "deepseek-secret",
+      model: "",
+      capabilities: { text: true, imageBase64: true, pdfBase64: true, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: {},
+      isDefault: true
+    };
+    workbench.state.profile = deepseek;
+    workbench.state.profiles = [deepseek];
+    dom.getElementById("zms-profile-name").value = "DeepSeek";
+    dom.getElementById("zms-profile-base-url").value = "https://api.deepseek.com";
+    dom.getElementById("zms-profile-api-key").value = "deepseek-secret";
+    dom.getElementById("zms-profile-model").value = "";
+    dom.getElementById("zms-profile-image-input").checked = true;
+    dom.getElementById("zms-profile-pdf-input").checked = true;
+
+    workbench.renderWorkbenchModelRecommendations({ resetVendor: true });
+    dom.getElementById("zms-profile-model-select").value = "deepseek-reasoner";
+    workbench.selectWorkbenchModelFromDropdown();
+
+    expect(dom.getElementById("zms-profile-image-input").checked).toBe(false);
+    expect(dom.getElementById("zms-profile-pdf-input").checked).toBe(false);
+    expect(JSON.parse(prefs.profilesJson)[0].capabilities).toMatchObject({
+      imageBase64: false,
+      pdfBase64: false
+    });
+  });
+
   it("saves a workbench model dropdown selection immediately", () => {
     const prefs: Record<string, any> = {};
     const loaded: any = loadWorkbenchHelpers(new Map(), {}, prefs);

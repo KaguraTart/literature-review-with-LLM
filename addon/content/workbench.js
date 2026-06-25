@@ -838,6 +838,12 @@ var ZoteroMarkdownSummaryWorkbench = {
 
   profileFromSettingsPanel() {
     if (!this.state.profile) return null;
+    syncWorkbenchCapabilityCheckboxesFromModelPicker(this.state.profile, {
+      imageCheckboxId: "zms-profile-image-input",
+      pdfCheckboxId: "zms-profile-pdf-input",
+      selectId: "zms-profile-model-select",
+      inputId: "zms-profile-model"
+    });
     const pdfInput = document.getElementById("zms-profile-pdf-input");
     const nextProtocol = this.state.profile.protocol;
     const next = hydrateProfile({
@@ -1121,6 +1127,12 @@ var ZoteroMarkdownSummaryWorkbench = {
     if (selected && selected !== "__custom") {
       modelInput.value = selected;
       setWorkbenchCustomModelInputVisible(modelInput, false);
+      syncWorkbenchCapabilityCheckboxesFromModelPicker(this.state.profile, {
+        imageCheckboxId: "zms-profile-image-input",
+        pdfCheckboxId: "zms-profile-pdf-input",
+        selectId: "zms-profile-model-select",
+        inputId: "zms-profile-model"
+      });
       this.commitWorkbenchModelPickerSelection();
       return;
     }
@@ -5971,6 +5983,37 @@ function workbenchModelPickerSelectedOption(selectId, model) {
   const value = String(model || "").trim();
   if (!select || !value) return null;
   return flattenedWorkbenchOptionChildren(select).find((option) => String(option?.value || "").trim() === value) || null;
+}
+
+function syncWorkbenchCapabilityCheckboxesFromModelPicker(profile, options = {}) {
+  const model = workbenchModelValueFromPicker(options.selectId, options.inputId);
+  const option = workbenchModelPickerSelectedOption(options.selectId, model);
+  if (!option) return { imageChanged: false, pdfChanged: false };
+  const features = normalizeModelFeatureList(
+    optionAttribute(option, "data-features")
+    || option?.dataset?.features
+    || ""
+  );
+  const provider = workbenchProviderFromProfile(profile, profile?.id || "");
+  const textOnly = typeof zmsModelLikelyTextOnlyForProviderModel === "function"
+    && zmsModelLikelyTextOnlyForProviderModel(provider, model, option.textContent || option.label || model);
+  const hasFeatureHints = features.length > 0 || textOnly;
+  if (!hasFeatureHints) return { imageChanged: false, pdfChanged: false };
+  const image = document.getElementById(options.imageCheckboxId);
+  const pdf = document.getElementById(options.pdfCheckboxId);
+  let imageChanged = false;
+  let pdfChanged = false;
+  if (image) {
+    const next = features.includes("image") && !textOnly;
+    imageChanged = image.checked !== next;
+    image.checked = next;
+  }
+  if (pdf) {
+    const next = profile?.protocol !== "openai_chat" && features.includes("pdf") && !textOnly;
+    pdfChanged = pdf.checked !== next;
+    pdf.checked = next;
+  }
+  return { imageChanged, pdfChanged };
 }
 
 function flattenedWorkbenchOptionChildren(element) {

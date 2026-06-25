@@ -394,6 +394,14 @@ var ZoteroMarkdownSummaryPrefs = {
   },
 
   profileFromEditor() {
+    syncCapabilityCheckboxesFromModelPicker({
+      providerId: document.getElementById("zms-provider")?.value || "",
+      protocol: document.getElementById("zms-profileProtocol")?.value || "",
+      imageCheckboxId: "zms-cap-imageBase64",
+      pdfCheckboxId: "zms-cap-pdfBase64",
+      selectId: "zms-model-select",
+      inputId: "zms-model"
+    });
     const id = normalizeProfileId(document.getElementById("zms-activeProfileId").value || document.getElementById("zms-profileName").value) || "custom";
     document.getElementById("zms-activeProfileId").value = id;
     const name = (document.getElementById("zms-profileName").value || id).trim();
@@ -846,6 +854,14 @@ var ZoteroMarkdownSummaryPrefs = {
     if (selected && selected !== "__custom") {
       model.value = selected;
       setCustomModelInputVisible(model, false);
+      syncCapabilityCheckboxesFromModelPicker({
+        providerId: document.getElementById("zms-provider")?.value || "",
+        protocol: document.getElementById("zms-profileProtocol")?.value || "",
+        imageCheckboxId: "zms-cap-imageBase64",
+        pdfCheckboxId: "zms-cap-pdfBase64",
+        selectId: "zms-model-select",
+        inputId: "zms-model"
+      });
       this.refreshProfileStatus();
       this.refreshProviderGuide();
       if (options.commit === true) this.commitModelPickerSelection();
@@ -4103,6 +4119,36 @@ function modelPickerSelectedOption(selectId, model) {
   const value = String(model || "").trim();
   if (!select || !value) return null;
   return flattenedOptionChildren(select).find((option) => String(option?.value || "").trim() === value) || null;
+}
+
+function syncCapabilityCheckboxesFromModelPicker(options = {}) {
+  const model = modelValueFromPicker(options.selectId, options.inputId);
+  const option = modelPickerSelectedOption(options.selectId, model);
+  if (!option) return { imageChanged: false, pdfChanged: false };
+  const features = normalizeModelFeatureList(
+    optionAttribute(option, "data-features")
+    || option?.dataset?.features
+    || ""
+  );
+  const textOnly = typeof zmsModelLikelyTextOnlyForProviderModel === "function"
+    && zmsModelLikelyTextOnlyForProviderModel(options.providerId || "", model, option.textContent || option.label || model);
+  const hasFeatureHints = features.length > 0 || textOnly;
+  if (!hasFeatureHints) return { imageChanged: false, pdfChanged: false };
+  const image = document.getElementById(options.imageCheckboxId);
+  const pdf = document.getElementById(options.pdfCheckboxId);
+  let imageChanged = false;
+  let pdfChanged = false;
+  if (image) {
+    const next = features.includes("image") && !textOnly;
+    imageChanged = image.checked !== next;
+    image.checked = next;
+  }
+  if (pdf) {
+    const next = String(options.protocol || "") !== "openai_chat" && features.includes("pdf") && !textOnly;
+    pdfChanged = pdf.checked !== next;
+    pdf.checked = next;
+  }
+  return { imageChanged, pdfChanged };
 }
 
 function flattenedOptionChildren(element) {
