@@ -6141,7 +6141,20 @@ describe("workbench writeback helpers", () => {
                   pages: [
                     { page: 2, pageLabel: "2", text: "The proposed method uses graph attention to model route conflicts." },
                     { page: 6, pageLabel: "6", text: "Experiments evaluate benchmark scenarios with delay and throughput metrics." }
-                  ]
+                  ],
+                  quality: {
+                    status: "warning",
+                    engine: "pdftotext+ocr",
+                    pageCount: 2,
+                    expectedPageCount: 4,
+                    pagesWithText: 2,
+                    emptyPageCount: 2,
+                    totalTextChars: 132,
+                    averageTextCharsPerPage: 66,
+                    minTextChars: 40,
+                    ocrFallbackUsed: true,
+                    warnings: ["ocr_fallback_used", "empty_or_unread_pages"]
+                  }
                 })
               }
             ]
@@ -6198,6 +6211,26 @@ describe("workbench writeback helpers", () => {
     });
     expect(enriched[0].review.fullTextEvidence[0].locator).toContain("page:2");
     expect(enriched[0].review.fullTextEvidence[0].locator).not.toContain("indexed-text:");
+    expect(enriched[0].review.pdfExtractionQuality).toMatchObject({
+      status: "warning",
+      engine: "pdftotext+ocr",
+      pagesWithText: 2,
+      expectedPageCount: 4,
+      emptyPageCount: 2,
+      ocrFallbackUsed: true,
+      warnings: ["ocr_fallback_used", "empty_or_unread_pages"]
+    });
+    const report = loaded.renderCandidateReviewMarkdown(enriched, {
+      outputLanguage: "zh-CN",
+      item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+    expect(report).toContain("[candidate:doi:10.1000:bridge-pages:pdf-extraction-quality]");
+    expect(report).toContain("PDF 抽取质量");
+    expect(report).toContain("状态: warning");
+    expect(report).toContain("可读页: 2/4");
+    expect(report).toContain("OCR fallback: 是");
+    expect(report).toContain("ocr_fallback_used, empty_or_unread_pages");
   });
 
   it("uses base64 PDF bridge extraction when no local attachment path is available", async () => {

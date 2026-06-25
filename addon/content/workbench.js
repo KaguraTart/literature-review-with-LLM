@@ -14238,6 +14238,17 @@ function candidateSourceEvidenceForRecord(record, labels) {
       followUp: labels.sourceEvidenceFollowFullText
     });
   }
+  const pdfQuality = candidateReviewPdfExtractionQuality(record);
+  if (pdfQuality) {
+    rows.push({
+      title,
+      label: candidateSourceEvidenceLabel(record, "pdf-extraction-quality"),
+      type: labels.sourceEvidenceTypePdfQuality,
+      locator: candidatePdfExtractionQualityLocator(record, pdfQuality),
+      snippet: candidatePdfExtractionQualitySummary(pdfQuality, labels),
+      followUp: labels.sourceEvidenceFollowPdfQuality
+    });
+  }
   const abstract = candidateReviewAbstract(record);
   if (abstract) {
     rows.push(candidateSourceEvidenceRow(record, title, "abstract", labels.sourceEvidenceTypeAbstract, truncateText(abstract, 260), labels.sourceEvidenceFollowAbstract));
@@ -14307,6 +14318,34 @@ function candidateReviewAbstract(record) {
   return mdText(record?.abstract || record?.abstractNote || record?.summary || "");
 }
 
+function candidateReviewPdfExtractionQuality(record) {
+  return candidatePdfExtractionQualityFromResult({
+    quality: record?.review?.pdfExtractionQuality || record?.pdfExtractionQuality || null,
+    name: record?.review?.pdfExtractionQuality?.name || record?.pdfExtractionQuality?.name || ""
+  }, []);
+}
+
+function candidatePdfExtractionQualityLocator(record, quality) {
+  const parts = ["pdf-extraction-quality"];
+  if (quality?.status) parts.push(`status:${candidateLocatorValue(quality.status)}`);
+  if (quality?.engine) parts.push(`engine:${candidateLocatorValue(quality.engine)}`);
+  if (record?.pdfAttachmentKey) parts.push(`attachment:${candidateLocatorValue(record.pdfAttachmentKey)}`);
+  return parts.join("; ");
+}
+
+function candidatePdfExtractionQualitySummary(quality, labels) {
+  const warnings = (quality?.warnings || []).join(", ") || labels.pdfQualityNoWarnings;
+  return [
+    `${labels.pdfQualityStatus}: ${quality?.status || labels.unknown || "unknown"}`,
+    quality?.engine ? `${labels.pdfQualityEngine}: ${quality.engine}` : "",
+    `${labels.pdfQualityPagesWithText}: ${quality?.pagesWithText || 0}/${quality?.expectedPageCount || quality?.pageCount || 0}`,
+    `${labels.pdfQualityEmptyPages}: ${quality?.emptyPageCount || 0}`,
+    `${labels.pdfQualityTotalText}: ${quality?.totalTextChars || 0}`,
+    `${labels.pdfQualityOcrFallback}: ${quality?.ocrFallbackUsed ? labels.pdfQualityYes : labels.pdfQualityNo}`,
+    `${labels.pdfQualityWarnings}: ${warnings}`
+  ].filter(Boolean).join("; ");
+}
+
 function candidateReviewFullTextEvidence(record) {
   const values = record?.review?.fullTextEvidence ?? record?.fullTextEvidence ?? [];
   const items = Array.isArray(values) ? values : [values];
@@ -14365,14 +14404,17 @@ async function enrichCandidateWithFullTextEvidence(record, contextItem, now) {
     const pdf = await findPdfAttachment(item);
     const source = await candidatePdfEvidenceSource(pdf, record);
     const snippets = candidateFullTextEvidenceSnippets(source, record, pdf);
-    if (!snippets.length) return record;
+    const pdfExtractionQuality = candidatePdfExtractionQualityFromSource(source);
+    if (!snippets.length && !pdfExtractionQuality) return record;
+    const review = {
+      ...(record.review || {}),
+      fullTextEvidenceUpdatedAt: now
+    };
+    if (snippets.length) review.fullTextEvidence = snippets;
+    if (pdfExtractionQuality) review.pdfExtractionQuality = pdfExtractionQuality;
     return {
       ...record,
-      review: {
-        ...(record.review || {}),
-        fullTextEvidence: snippets,
-        fullTextEvidenceUpdatedAt: now
-      }
+      review
     };
   } catch (_err) {
     return record;
@@ -14494,16 +14536,22 @@ async function candidatePdfEvidenceSource(pdf, record = {}) {
     }
   }
   const bridgePages = await candidatePdfTextPagesFromLocalBridge(pdf, record);
-  if (bridgePages.length) return { sourceType: "pdf-page-text", pages: bridgePages };
+  if (bridgePages?.pages?.length || bridgePages?.quality) return {
+    sourceType: "pdf-page-text",
+    pages: bridgePages.pages || [],
+    quality: bridgePages.quality || null,
+    engine: bridgePages.engine || "",
+    name: bridgePages.name || ""
+  };
   return String((await pdf?.attachmentText) || "").trim();
 }
 
 async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
-  if (!pdf || typeof fetch !== "function") return [];
+  if (!pdf || typeof fetch !== "function") return null;
   const bridgeArguments = await candidatePdfBridgeArguments(pdf);
-  if (!bridgeArguments) return [];
+  if (!bridgeArguments) return null;
   const endpoint = candidatePdfTextBridgeEndpoint(record);
-  if (!endpoint) return [];
+  if (!endpoint) return null;
   const [signal, clearPdfTextTimeout] = typeof setTimeout === "function"
     ? createAbortController(null, 50000)
     : [undefined, () => {}];
@@ -14529,12 +14577,52 @@ async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
       }
     });
     const result = localOcrResultFromPayload(payload);
-    return normalizePdfTextPagesForEvidence(result?.pages || result);
+    const pages = normalizePdfTextPagesForEvidence(result?.pages || result);
+    return {
+      pages,
+      quality: candidatePdfExtractionQualityFromResult(result, pages),
+      engine: mdText(result?.engine || ""),
+      name: mdText(result?.name || bridgeArguments.name || "")
+    };
   } catch (_err) {
-    return [];
+    return null;
   } finally {
     clearPdfTextTimeout();
   }
+}
+
+function candidatePdfExtractionQualityFromSource(source) {
+  if (!source || typeof source !== "object" || Array.isArray(source)) return null;
+  return candidatePdfExtractionQualityFromResult(source, source.pages || []);
+}
+
+function candidatePdfExtractionQualityFromResult(result, pages = []) {
+  const quality = result?.quality && typeof result.quality === "object" && !Array.isArray(result.quality)
+    ? result.quality
+    : null;
+  if (!quality && !Array.isArray(pages)) return null;
+  const normalizedPages = Array.isArray(pages) ? pages : [];
+  const pageCount = Number(quality?.pageCount ?? result?.pageCount ?? normalizedPages.length);
+  const pagesWithText = Number(quality?.pagesWithText ?? normalizedPages.filter((page) => mdText(page?.text || "")).length);
+  const expectedPageCount = Number(quality?.expectedPageCount ?? result?.expectedPageCount ?? Math.max(pageCount, normalizedPages.length));
+  const totalTextChars = Number(quality?.totalTextChars ?? normalizedPages.reduce((sum, page) => sum + mdText(page?.text || "").length, 0));
+  const warnings = Array.isArray(quality?.warnings) ? quality.warnings.map((item) => mdText(item)).filter(Boolean).slice(0, 8) : [];
+  const status = mdText(quality?.status || (pagesWithText ? (warnings.length ? "warning" : "pass") : "fail"));
+  if (!quality && !warnings.length && !totalTextChars && !pagesWithText) return null;
+  return {
+    status,
+    engine: mdText(quality?.engine || result?.engine || ""),
+    name: mdText(result?.name || ""),
+    pageCount: Number.isFinite(pageCount) ? pageCount : normalizedPages.length,
+    expectedPageCount: Number.isFinite(expectedPageCount) ? expectedPageCount : normalizedPages.length,
+    pagesWithText: Number.isFinite(pagesWithText) ? pagesWithText : 0,
+    emptyPageCount: Number.isFinite(Number(quality?.emptyPageCount)) ? Number(quality.emptyPageCount) : Math.max((Number.isFinite(expectedPageCount) ? expectedPageCount : 0) - (Number.isFinite(pagesWithText) ? pagesWithText : 0), 0),
+    totalTextChars: Number.isFinite(totalTextChars) ? totalTextChars : 0,
+    averageTextCharsPerPage: Number.isFinite(Number(quality?.averageTextCharsPerPage)) ? Number(quality.averageTextCharsPerPage) : 0,
+    minTextChars: Number.isFinite(Number(quality?.minTextChars)) ? Number(quality.minTextChars) : 0,
+    ocrFallbackUsed: quality?.ocrFallbackUsed === true || quality?.ocrFallbackUsed === "true" || warnings.includes("ocr_fallback_used"),
+    warnings
+  };
 }
 
 async function candidatePdfBridgeArguments(pdf) {
@@ -15240,17 +15328,29 @@ function candidateReviewLabels(outputLanguage) {
       sourceEvidenceSnippet: "摘录",
       sourceEvidenceFollowUp: "下一步核验",
       sourceEvidenceTypeFullText: "全文索引",
+      sourceEvidenceTypePdfQuality: "PDF 抽取质量",
       sourceEvidenceTypeAbstract: "摘要",
       sourceEvidenceTypePdf: "PDF",
       sourceEvidenceTypeNetwork: "引用网络",
       sourceEvidenceTypeSource: "来源页",
       sourceEvidenceTypeIdentifier: "标识符",
       sourceEvidenceFollowFullText: "回到 PDF 原文核对页码、上下文和表格/图示位置，再决定是否纳入综述证据。",
+      sourceEvidenceFollowPdfQuality: "检查 PDF 抽取质量告警；如果文本稀疏、存在空页或使用 OCR fallback，请人工打开原文复核。",
       sourceEvidenceFollowAbstract: "对照全文确认研究问题、方法、实验和局限是否被摘要充分覆盖。",
       sourceEvidenceFollowPdf: "打开 PDF 或已附加文件，摘录方法、实验指标和关键结论位置。",
       sourceEvidenceFollowNetwork: "回到种子论文上下文核对引用或被引关系是否真的支撑相关性。",
       sourceEvidenceFollowSource: "打开来源页核对元数据、开放获取状态和版本。",
       sourceEvidenceFollowIdentifier: "用稳定标识符去重，并与 Zotero 已有条目核对。",
+      pdfQualityStatus: "状态",
+      pdfQualityEngine: "引擎",
+      pdfQualityPagesWithText: "可读页",
+      pdfQualityEmptyPages: "空页",
+      pdfQualityTotalText: "文本字符",
+      pdfQualityOcrFallback: "OCR fallback",
+      pdfQualityWarnings: "告警",
+      pdfQualityNoWarnings: "无",
+      pdfQualityYes: "是",
+      pdfQualityNo: "否",
       checklist: "人工复核清单",
       checkIdentifiers: "核对 DOI、arXiv、Semantic Scholar ID 是否对应同一篇论文。",
       checkFullText: "优先确认是否有 PDF 或开放获取全文。",
@@ -15389,17 +15489,29 @@ function candidateReviewLabels(outputLanguage) {
     sourceEvidenceSnippet: "Snippet",
     sourceEvidenceFollowUp: "Next check",
     sourceEvidenceTypeFullText: "Full-text index",
+    sourceEvidenceTypePdfQuality: "PDF extraction quality",
     sourceEvidenceTypeAbstract: "Abstract",
     sourceEvidenceTypePdf: "PDF",
     sourceEvidenceTypeNetwork: "Citation network",
     sourceEvidenceTypeSource: "Source page",
     sourceEvidenceTypeIdentifier: "Identifier",
     sourceEvidenceFollowFullText: "Return to the PDF and verify page, context, and table/figure location before using it as review evidence.",
+    sourceEvidenceFollowPdfQuality: "Inspect PDF extraction warnings; if text is sparse, pages are empty, or OCR fallback was used, open the original PDF for manual verification.",
     sourceEvidenceFollowAbstract: "Check full text to confirm whether the abstract covers question, method, experiments, and limitations.",
     sourceEvidenceFollowPdf: "Open the PDF or attached file and extract method, metric, and key-finding locations.",
     sourceEvidenceFollowNetwork: "Return to seed-paper context and verify whether the citation relation actually supports relevance.",
     sourceEvidenceFollowSource: "Open the source page and verify metadata, open-access status, and version.",
     sourceEvidenceFollowIdentifier: "Use stable identifiers for deduplication and compare against existing Zotero items.",
+    pdfQualityStatus: "status",
+    pdfQualityEngine: "engine",
+    pdfQualityPagesWithText: "pages with text",
+    pdfQualityEmptyPages: "empty pages",
+    pdfQualityTotalText: "text chars",
+    pdfQualityOcrFallback: "OCR fallback",
+    pdfQualityWarnings: "warnings",
+    pdfQualityNoWarnings: "none",
+    pdfQualityYes: "yes",
+    pdfQualityNo: "no",
     checklist: "Manual Review Checklist",
     checkIdentifiers: "Confirm DOI, arXiv, and Semantic Scholar IDs refer to the same paper.",
     checkFullText: "Prefer papers with PDF or open-access full text.",
