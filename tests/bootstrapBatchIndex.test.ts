@@ -298,6 +298,7 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合综合地图");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("Collection");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合缺口看板");
+    expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合综述写作包");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("支持强度");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("冲突审查清单");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("综合路线图");
@@ -311,6 +312,9 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.reviewReportPath)).toContain("论文清单与证据地图");
     expect(writes.get(artifacts.reviewReportPath)).toContain("有证据支持的综合主张");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合冲突与证据缺口");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("综合写作包");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("写作任务");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("模型深化提示");
     expect(writes.get(artifacts.reviewReportPath)).toContain("风险核查清单");
     expect(writes.get(artifacts.ideaListPath)).toContain("研究想法列表");
     expect(writes.get(artifacts.ideaListPath)).toContain("推翻条件");
@@ -396,6 +400,8 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.reviewReportPath)).toContain("No field data or ablation");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合冲突与证据缺口");
     expect(writes.get(artifacts.reviewReportPath)).toContain("Stress-test under mixed priority flights");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("综合写作包");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("基于已引用的总结深化");
   });
 
   it("builds heuristic collection topic clusters from summary insights", async () => {
@@ -540,6 +546,8 @@ describe("batch papers index", () => {
     expect(synthesis).toContain("Cross-Collection Bridge Board");
     expect(synthesis).toContain("Cross-Collection Gap Board");
     expect(synthesis).toContain("Cross-Collection Priority Board");
+    expect(synthesis).toContain("Cross-Collection Review Pack");
+    expect(synthesis).toContain("Model Deepening Prompt");
     expect(synthesis).toContain("How should Transportation / Urban Airspace connect evidence across 2 collections");
     expect(synthesis).toContain("Recurring gap: No deployment evidence");
     expect(synthesis).toContain("Old Collection");
@@ -569,9 +577,11 @@ describe("batch papers index", () => {
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Cross-theme Evidence Map");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Bridge Board");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Priority Board");
+    expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Review Pack");
     expect(writes.get(english.reviewReportPath)).toContain("Formal Review Report");
     expect(writes.get(english.reviewReportPath)).toContain("Evidence-backed Synthesis Claims");
     expect(writes.get(english.reviewReportPath)).toContain("Synthesis Conflicts and Evidence Gaps");
+    expect(writes.get(english.reviewReportPath)).toContain("Synthesis Writing Pack");
     expect(writes.get(english.reviewReportPath)).toContain("Risk Checklist");
     expect(writes.get(english.ideaListPath)).toContain("Reject condition");
 
@@ -592,9 +602,11 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("テーマ横断エビデンスマップ");
     expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("Collection 横断ブリッジボード");
     expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("Collection 横断優先度ボード");
+    expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("Collection 横断レビュー執筆パック");
     expect(writes.get(japanese.reviewReportPath)).toContain("正式レビュー報告書");
     expect(writes.get(japanese.reviewReportPath)).toContain("証拠に基づく統合主張");
     expect(writes.get(japanese.reviewReportPath)).toContain("統合コンフリクトと証拠ギャップ");
+    expect(writes.get(japanese.reviewReportPath)).toContain("統合執筆パック");
     expect(writes.get(japanese.reviewReportPath)).toContain("リスク確認リスト");
     expect(writes.get(japanese.ideaListPath)).toContain("棄却条件");
   });

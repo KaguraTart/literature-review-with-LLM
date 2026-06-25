@@ -1535,11 +1535,75 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
     "",
     renderCrossCollectionPriorityRows(indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels), labels),
     "",
+    `## ${labels.crossCollectionReviewPack}`,
+    "",
+    renderCrossCollectionReviewPack(indexPayload, labels),
+    "",
     `## ${labels.reportNextActions}`,
     "",
     labels.crossCollectionNextActions,
     ""
   ].join("\n");
+}
+
+function renderCrossCollectionReviewPack(indexPayload, labels) {
+  const collections = Array.isArray(indexPayload?.collections) ? indexPayload.collections : [];
+  const priorityBoard = indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels);
+  const bridgeBoard = indexPayload?.themeBridgeBoard || crossCollectionThemeBridgeEntries(collections, labels);
+  const gapBoard = indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels);
+  const rows = [];
+  for (const entry of (priorityBoard || []).slice(0, 6)) {
+    const scope = entry.priority || labels.crossCollectionPriorityPending;
+    const gap = entry.reason || labels.crossCollectionPriorityReasonPending;
+    rows.push(crossCollectionReviewPackRow({
+      scope,
+      collections: entry.collections || [],
+      evidence: entry.evidence || [],
+      gap,
+      prompt: labels.crossCollectionReviewPrompt(scope, gap),
+      manualReview: entry.nextAction || labels.crossCollectionReviewAction(scope)
+    }, labels));
+  }
+  for (const entry of (bridgeBoard || []).slice(0, 4)) {
+    const scope = entry.theme || labels.clusterOther;
+    const gap = uniqueInsightLines(entry.gapSignals || []).slice(0, 3).join("; ") || labels.gapMatrixPendingEvidence;
+    rows.push(crossCollectionReviewPackRow({
+      scope,
+      collections: entry.collections || [],
+      evidence: uniqueInsightLines([...(entry.methodSignals || []), `papers: ${entry.paperCount || 0}`]).slice(0, 5),
+      gap,
+      prompt: entry.bridgeQuestion || labels.crossCollectionReviewPrompt(scope, gap),
+      manualReview: entry.nextAction || labels.crossCollectionReviewAction(scope)
+    }, labels));
+  }
+  for (const entry of (gapBoard || []).slice(0, 4)) {
+    const scope = entry.gap || labels.gapMatrixPendingEvidence;
+    rows.push(crossCollectionReviewPackRow({
+      scope,
+      collections: entry.collections || [],
+      evidence: uniqueInsightLines([...(entry.themes || []), ...(entry.candidateQueries || [])]).slice(0, 5),
+      gap: entry.gap || labels.gapMatrixPendingEvidence,
+      prompt: labels.crossCollectionGapWritingPrompt(entry.gap || labels.gapMatrixPendingEvidence),
+      manualReview: entry.nextAction || labels.crossCollectionReviewAction(scope)
+    }, labels));
+  }
+  const uniqueRows = uniqueInsightLines(rows).slice(0, 12);
+  return [
+    `| ${labels.crossCollectionScopeColumn} | ${labels.collectionColumn} | ${labels.evidenceAnchorColumn} | ${labels.gapSignalColumn} | ${labels.modelDeepeningPromptColumn} | ${labels.manualReviewColumn} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    uniqueRows.join("\n") || "|  |  |  |  |  |  |"
+  ].join("\n");
+}
+
+function crossCollectionReviewPackRow(entry, labels) {
+  return `| ${[
+    escapeMarkdownTable(entry.scope || labels.clusterOther),
+    escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
+    escapeMarkdownTable((entry.evidence || []).join("; ") || labels.pendingSummaryPath),
+    escapeMarkdownTable(entry.gap || labels.gapMatrixPendingEvidence),
+    escapeMarkdownTable(entry.prompt || labels.crossCollectionReviewPrompt(entry.scope || labels.clusterOther, entry.gap || labels.gapMatrixPendingEvidence)),
+    escapeMarkdownTable(entry.manualReview || labels.crossCollectionReviewAction(entry.scope || labels.clusterOther))
+  ].join(" | ")} |`;
 }
 
 function renderCrossCollectionBridgeRows(bridgeEntries, labels) {
@@ -2407,6 +2471,10 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     "",
     reportDraftOutline(clusters, labels),
     "",
+    `## ${labels.reportSynthesisWritingPack}`,
+    "",
+    renderCollectionSynthesisWritingPack(collectionContext, clusters, synthesisClaims, synthesisConflicts, gapSignals, labels),
+    "",
     `## ${labels.reportRiskChecklist}`,
     "",
     labels.reportRiskChecklistItems,
@@ -2415,6 +2483,47 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     "",
     labels.reportNextActionItems,
     ""
+  ].join("\n");
+}
+
+function renderCollectionSynthesisWritingPack(collectionContext, clusters, synthesisClaims, synthesisConflicts, gapSignals, labels) {
+  const claimByCluster = new Map((synthesisClaims || []).map((entry) => [entry.cluster, entry]));
+  const conflictByCluster = new Map((synthesisConflicts || []).map((entry) => [entry.cluster, entry]));
+  const rows = (clusters || []).slice(0, 8).map((cluster) => {
+    const claim = claimByCluster.get(cluster.label) || {};
+    const conflict = conflictByCluster.get(cluster.label) || {};
+    const methods = uniqueInsightLines(cluster.items.map(({ insight }) => insight.method).filter(Boolean)).slice(0, 3);
+    const gaps = uniqueInsightLines(cluster.items.flatMap(({ insight }) => insightValues(insight.limitations, insight.missingEvidence, insight.validationNeeds))).slice(0, 3);
+    const papers = cluster.items.map(({ item }) => `${item.title || item.itemKey} (${item.year || "n.d."})`).slice(0, 5);
+    const evidence = uniqueInsightLines([
+      ...(claim.supportingPapers || []),
+      ...(claim.evidence || []),
+      ...cluster.items.map(({ item }) => item.summaryPath).filter(Boolean)
+    ]).slice(0, 6);
+    const method = methods[0] || labels.pendingInsight;
+    const gap = gaps[0] || claim.gaps?.[0] || gapSignals?.[0] || labels.gapMatrixPendingEvidence;
+    const draftClaim = claim.claim || labels.synthesisClaimText(cluster.label, method, gap);
+    return [
+      escapeMarkdownTable(cluster.label),
+      escapeMarkdownTable(labels.synthesisWritingTask(cluster.label, method, gap)),
+      escapeMarkdownTable(evidence.join("; ") || papers.join("; ") || labels.pendingSummaryPath),
+      escapeMarkdownTable(conflict.reviewAction || labels.synthesisConflictCheck(draftClaim, gap)),
+      escapeMarkdownTable(labels.synthesisModelPrompt(cluster.label, method, gap, draftClaim)),
+      escapeMarkdownTable(labels.synthesisManualReview(collectionContext?.name || collectionContext?.key || "", cluster.label, papers.join("; ") || labels.noSummary))
+    ].join(" | ");
+  }).map((row) => `| ${row} |`);
+  const fallback = [
+    escapeMarkdownTable(labels.clusterOther),
+    escapeMarkdownTable(labels.synthesisWritingTask(labels.clusterOther, labels.pendingInsight, labels.gapMatrixPendingEvidence)),
+    escapeMarkdownTable(labels.pendingSummaryPath),
+    escapeMarkdownTable(labels.synthesisConflictCheck(labels.pendingInsight, labels.gapMatrixPendingEvidence)),
+    escapeMarkdownTable(labels.synthesisModelPrompt(labels.clusterOther, labels.pendingInsight, labels.gapMatrixPendingEvidence, labels.pendingInsight)),
+    escapeMarkdownTable(labels.synthesisManualReview(collectionContext?.name || collectionContext?.key || "", labels.clusterOther, labels.noSummary))
+  ].join(" | ");
+  return [
+    `| ${labels.clusterColumn} | ${labels.writingTaskColumn} | ${labels.evidenceAnchorColumn} | ${labels.conflictCheckColumn} | ${labels.modelDeepeningPromptColumn} | ${labels.manualReviewColumn} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    rows.join("\n") || `| ${fallback} |`
   ].join("\n");
 }
 
@@ -2526,8 +2635,10 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionBridgeBoard: "Cross-Collection Bridge Board",
       crossCollectionGapBoard: "Cross-Collection Gap Board",
       crossCollectionPriorityBoard: "Cross-Collection Priority Board",
+      crossCollectionReviewPack: "Cross-Collection Review Pack",
       crossCollectionPriorityColumn: "Priority",
       crossCollectionReasonColumn: "Reason",
+      crossCollectionScopeColumn: "Review Scope",
       crossCollectionPriorityPending: "Pending priority review",
       crossCollectionPriorityReasonPending: "Pending reason",
       crossCollectionPriorityRecurringReason: (count) => `Gap repeats across ${count} collections`,
@@ -2549,6 +2660,9 @@ function collectionTemplateLabels(outputLanguage) {
         : `Check whether this gap is collection-specific before broadening: ${gap}`,
       crossCollectionBridgeQuestion: (theme, count) => `How should ${theme} connect evidence across ${count} collections without merging incompatible scopes?`,
       crossCollectionBridgeAction: (theme) => `Compare methods and gaps for ${theme}; promote only evidence-backed common claims.`,
+      crossCollectionReviewPrompt: (scope, gap) => `Compare ${scope} across collections, separate shared evidence from scope-specific evidence, and list what papers or checks are still needed for ${gap}.`,
+      crossCollectionGapWritingPrompt: (gap) => `Turn the recurring gap "${gap}" into a review subsection plan with evidence needed, candidate searches, and exclusion criteria.`,
+      crossCollectionReviewAction: (scope) => `Open the linked collection reports, verify ${scope}, and cite only source-backed claims.`,
       crossCollectionNextActions: [
         "- [ ] Use the bridge board to decide which recurring themes can become cross-collection review sections.",
         "- [ ] Check whether similar clusters across collections should be merged or kept as separate review scopes.",
@@ -2575,9 +2689,14 @@ function collectionTemplateLabels(outputLanguage) {
       claimColumn: "Draft Claim",
       supportingPapersColumn: "Supporting Papers",
       evidenceColumn: "Evidence Sources",
+      evidenceAnchorColumn: "Evidence Anchors",
       counterGapColumn: "Counter-evidence / Gap",
       supportLevelColumn: "Support Level",
       reviewActionColumn: "Review Action",
+      writingTaskColumn: "Writing Task",
+      conflictCheckColumn: "Conflict Check",
+      manualReviewColumn: "Manual Review",
+      modelDeepeningPromptColumn: "Model Deepening Prompt",
       methodSignalColumn: "Method Signal",
       gapSignalColumn: "Gap / Validation Signal",
       limitationColumn: "Observed Limitation",
@@ -2671,6 +2790,7 @@ function collectionTemplateLabels(outputLanguage) {
       reportSynthesisConflicts: "Synthesis Conflicts and Evidence Gaps",
       reportResearchGaps: "Research Gaps and Validation Needs",
       reportDraftOutline: "Review Draft Outline",
+      reportSynthesisWritingPack: "Synthesis Writing Pack",
       reportRiskChecklist: "Risk Checklist",
       reportRiskChecklistItems: [
         "- [ ] Check whether every cross-paper claim can be traced to a summary path or original PDF.",
@@ -2684,7 +2804,11 @@ function collectionTemplateLabels(outputLanguage) {
         "- Move stable paragraphs into `manual-review-draft` or a manuscript draft.",
         "- Run candidate-paper search for clusters with weak evidence."
       ].join("\n"),
-      reportOutlineEntry: (cluster, method, gap) => `Section ${cluster}: compare ${method}; discuss evidence gap ${gap}.`
+      reportOutlineEntry: (cluster, method, gap) => `Section ${cluster}: compare ${method}; discuss evidence gap ${gap}.`,
+      synthesisWritingTask: (cluster, method, gap) => `Draft a review subsection for ${cluster}: compare ${method}; keep ${gap} explicit.`,
+      synthesisConflictCheck: (claim, gap) => `Check whether "${claim}" is still valid when ${gap} remains unresolved.`,
+      synthesisModelPrompt: (cluster, method, gap, claim) => `Use the cited summaries to deepen ${cluster}: compare ${method}, test the claim "${claim}", and list evidence still needed for ${gap}.`,
+      synthesisManualReview: (collection, cluster, papers) => `Open ${collection || "this collection"} summaries and original PDFs for ${cluster}; verify ${papers}.`
     };
   }
   if (outputLanguage === "ja-JP") {
@@ -2712,8 +2836,10 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionBridgeBoard: "Collection 横断ブリッジボード",
       crossCollectionGapBoard: "Collection 横断ギャップボード",
       crossCollectionPriorityBoard: "Collection 横断優先度ボード",
+      crossCollectionReviewPack: "Collection 横断レビュー執筆パック",
       crossCollectionPriorityColumn: "優先項目",
       crossCollectionReasonColumn: "理由",
+      crossCollectionScopeColumn: "レビュー範囲",
       crossCollectionPriorityPending: "優先度確認待ち",
       crossCollectionPriorityReasonPending: "理由の確認待ち",
       crossCollectionPriorityRecurringReason: (count) => `${count} 件の collection に反復するギャップ`,
@@ -2735,6 +2861,9 @@ function collectionTemplateLabels(outputLanguage) {
         : `範囲を広げる前に、このギャップが collection 固有か確認する: ${gap}`,
       crossCollectionBridgeQuestion: (theme, count) => `${count} 件の collection にまたがる ${theme} の証拠を、互換しない範囲を混ぜずにどう接続するか。`,
       crossCollectionBridgeAction: (theme) => `${theme} の手法とギャップを比較し、証拠で支えられる共通主張だけを昇格する。`,
+      crossCollectionReviewPrompt: (scope, gap) => `${scope} を collection 横断で比較し、共通証拠と範囲固有の証拠を分け、${gap} に必要な追加論文または確認を列挙する。`,
+      crossCollectionGapWritingPrompt: (gap) => `反復ギャップ「${gap}」を、必要証拠、候補検索、除外条件を含むレビュー小節計画へ変換する。`,
+      crossCollectionReviewAction: (scope) => `リンクされた collection 報告書を開き、${scope} を確認し、根拠に追跡できる主張だけを引用する。`,
       crossCollectionNextActions: [
         "- [ ] ブリッジボードを使い、反復テーマを横断レビュー節にできるか判断する。",
         "- [ ] Collection 間で似たクラスタを統合すべきか、別々のレビュー範囲として残すべきか確認する。",
@@ -2761,9 +2890,14 @@ function collectionTemplateLabels(outputLanguage) {
       claimColumn: "主張草案",
       supportingPapersColumn: "支持する論文",
       evidenceColumn: "証拠ソース",
+      evidenceAnchorColumn: "証拠アンカー",
       counterGapColumn: "反証・ギャップ",
       supportLevelColumn: "支持レベル",
       reviewActionColumn: "レビューアクション",
+      writingTaskColumn: "執筆タスク",
+      conflictCheckColumn: "コンフリクト確認",
+      manualReviewColumn: "手動確認",
+      modelDeepeningPromptColumn: "モデル深化プロンプト",
       methodSignalColumn: "手法の手がかり",
       gapSignalColumn: "ギャップ・検証の手がかり",
       limitationColumn: "観察された限界",
@@ -2857,6 +2991,7 @@ function collectionTemplateLabels(outputLanguage) {
       reportSynthesisConflicts: "統合コンフリクトと証拠ギャップ",
       reportResearchGaps: "研究ギャップと検証ニーズ",
       reportDraftOutline: "レビュー草稿アウトライン",
+      reportSynthesisWritingPack: "統合執筆パック",
       reportRiskChecklist: "リスク確認リスト",
       reportRiskChecklistItems: [
         "- [ ] 横断的主張が要約パスまたは原 PDF に追跡できるか確認する。",
@@ -2870,7 +3005,11 @@ function collectionTemplateLabels(outputLanguage) {
         "- 安定した段落を `manual-review-draft` または原稿草稿へ移す。",
         "- 証拠が弱いクラスタに対して候補論文検索を実行する。"
       ].join("\n"),
-      reportOutlineEntry: (cluster, method, gap) => `${cluster} 節: ${method} を比較し、証拠ギャップ ${gap} を論じる。`
+      reportOutlineEntry: (cluster, method, gap) => `${cluster} 節: ${method} を比較し、証拠ギャップ ${gap} を論じる。`,
+      synthesisWritingTask: (cluster, method, gap) => `${cluster} のレビュー小節を書く: ${method} を比較し、${gap} を明示する。`,
+      synthesisConflictCheck: (claim, gap) => `${gap} が未解決のままでも「${claim}」が妥当か確認する。`,
+      synthesisModelPrompt: (cluster, method, gap, claim) => `引用された要約に基づいて ${cluster} を深める。${method} を比較し、主張「${claim}」を検討し、${gap} にまだ必要な証拠を列挙する。`,
+      synthesisManualReview: (collection, cluster, papers) => `${collection || "この collection"} の要約と原 PDF を開き、${cluster} について ${papers} を確認する。`
     };
   }
   return {
@@ -2897,8 +3036,10 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionBridgeBoard: "跨集合主题桥接板",
     crossCollectionGapBoard: "跨集合缺口看板",
     crossCollectionPriorityBoard: "跨集合优先级看板",
+    crossCollectionReviewPack: "跨集合综述写作包",
     crossCollectionPriorityColumn: "优先项",
     crossCollectionReasonColumn: "原因",
+    crossCollectionScopeColumn: "综述范围",
     crossCollectionPriorityPending: "待确定优先级",
     crossCollectionPriorityReasonPending: "待补充原因",
     crossCollectionPriorityRecurringReason: (count) => `缺口在 ${count} 个集合中重复出现`,
@@ -2920,6 +3061,9 @@ function collectionTemplateLabels(outputLanguage) {
       : `扩大为跨集合主张前，先确认该缺口是否仅属于单个集合：${gap}`,
     crossCollectionBridgeQuestion: (theme, count) => `如何把“${theme}”在 ${count} 个集合中的证据连接起来，同时避免混合不兼容的综述范围？`,
     crossCollectionBridgeAction: (theme) => `比较“${theme}”下的方法与缺口，只把有证据支撑的共同主张提升为跨集合小节。`,
+    crossCollectionReviewPrompt: (scope, gap) => `跨集合比较“${scope}”，区分共性证据与单集合特有证据，并列出围绕“${gap}”仍需补充的论文或核查。`,
+    crossCollectionGapWritingPrompt: (gap) => `把重复缺口“${gap}”整理成综述小节计划，列出所需证据、候选检索词和排除条件。`,
+    crossCollectionReviewAction: (scope) => `打开已链接的集合报告核对“${scope}”，只引用能追溯到来源的主张。`,
     crossCollectionNextActions: [
       "- [ ] 使用主题桥接板判断重复主题是否可以升级为跨集合综述小节。",
       "- [ ] 判断不同集合中的相似主题应合并，还是保留为独立综述范围。",
@@ -2946,9 +3090,14 @@ function collectionTemplateLabels(outputLanguage) {
     claimColumn: "主张草稿",
     supportingPapersColumn: "支持论文",
     evidenceColumn: "证据来源",
+    evidenceAnchorColumn: "证据锚点",
     counterGapColumn: "反证/缺口",
     supportLevelColumn: "支持强度",
     reviewActionColumn: "审查动作",
+    writingTaskColumn: "写作任务",
+    conflictCheckColumn: "冲突检查",
+    manualReviewColumn: "人工复核",
+    modelDeepeningPromptColumn: "模型深化提示",
     methodSignalColumn: "方法线索",
     gapSignalColumn: "空白/验证线索",
     limitationColumn: "已观察局限",
@@ -3042,6 +3191,7 @@ function collectionTemplateLabels(outputLanguage) {
     reportSynthesisConflicts: "综合冲突与证据缺口",
     reportResearchGaps: "研究空白与验证需求",
     reportDraftOutline: "综述正文大纲",
+    reportSynthesisWritingPack: "综合写作包",
     reportRiskChecklist: "风险核查清单",
     reportRiskChecklistItems: [
       "- [ ] 检查每条跨论文结论是否能追溯到总结路径或原始 PDF。",
@@ -3055,7 +3205,11 @@ function collectionTemplateLabels(outputLanguage) {
       "- 将稳定段落迁移到 `manual-review-draft` 或正式稿件。",
       "- 对证据薄弱的主题聚类继续运行候选论文检索。"
     ].join("\n"),
-    reportOutlineEntry: (cluster, method, gap) => `“${cluster}”小节：比较 ${method}，讨论证据缺口 ${gap}。`
+    reportOutlineEntry: (cluster, method, gap) => `“${cluster}”小节：比较 ${method}，讨论证据缺口 ${gap}。`,
+    synthesisWritingTask: (cluster, method, gap) => `撰写“${cluster}”综述小节：比较 ${method}，并明确标注 ${gap}。`,
+    synthesisConflictCheck: (claim, gap) => `核对“${claim}”在 ${gap} 尚未解决时是否仍然成立。`,
+    synthesisModelPrompt: (cluster, method, gap, claim) => `基于已引用的总结深化“${cluster}”：比较 ${method}，检验主张“${claim}”，并列出围绕 ${gap} 仍需补齐的证据。`,
+    synthesisManualReview: (collection, cluster, papers) => `打开 ${collection || "当前集合"} 的总结和原始 PDF，围绕“${cluster}”核对 ${papers}。`
   };
 }
 
