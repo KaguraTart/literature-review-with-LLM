@@ -12,7 +12,7 @@ import {
   headersFor,
   modelsEndpointFor,
   omitProviderRequestBodyFields,
-  parseStreamChunk,
+  parseStreamChunkResult,
   parseStreamUsage,
   providerCompatibilityFallbackFields,
   providerRequestHeadersWithFallback
@@ -917,8 +917,8 @@ function parseResponseBody(text) {
 function streamTextFromBody(protocol, rawText) {
   let text = "";
   for (const record of streamRecords(rawText)) {
-    const delta = parseStreamChunk(protocol, record);
-    if (delta) text += delta;
+    const delta = parseStreamChunkResult(protocol, record);
+    if (delta.text && (!delta.snapshot || !text)) text += delta.text;
   }
   if (!text.trim()) throw new Error("No text returned from model");
   return text.trim();
@@ -1060,7 +1060,7 @@ function mockProviderStreamResponse(path) {
       "{\"type\":\"response.output_text.delta\",\"delta\":\"\"}",
       "",
       "event: response.completed",
-      "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":1,\"total_tokens\":3}}}",
+      "data: {\"type\":\"response.completed\",\"response\":{\"output_text\":\"OK responses\",\"usage\":{\"input_tokens\":2,\"output_tokens\":1,\"total_tokens\":3}}}",
       "",
       "data: [DONE]",
       ""

@@ -52,6 +52,11 @@ export interface ProviderUsage {
   reasoningTokens?: number;
 }
 
+export interface ProviderStreamChunkResult {
+  text: string;
+  snapshot: boolean;
+}
+
 const PROVIDER_RESPONSE_WRAPPER_KEYS = ["data", "result", "payload", "response", "message", "body", "completion"] as const;
 const MODEL_TEXT_CONTAINER_KEYS = [
   "content",
@@ -205,7 +210,20 @@ export function extractResponseText(protocol: ProviderProtocol, data: unknown): 
 }
 
 export function parseStreamChunk(protocol: ProviderProtocol, rawLine: string): string {
-  return streamPayloads(rawLine).map((payload) => parseStreamPayload(protocol, payload)).filter(Boolean).join("");
+  return parseStreamChunkResult(protocol, rawLine).text;
+}
+
+export function parseStreamChunkResult(protocol: ProviderProtocol, rawLine: string): ProviderStreamChunkResult {
+  const payloads = streamPayloads(rawLine);
+  if (!payloads.length) return { text: "", snapshot: false };
+  let text = "";
+  let snapshot = false;
+  for (const payload of payloads) {
+    const parsed = parseStreamPayloadResult(protocol, payload);
+    if (parsed.snapshot) snapshot = true;
+    if (parsed.text && (!parsed.snapshot || !text)) text += parsed.text;
+  }
+  return { text, snapshot };
 }
 
 export function parseStreamUsage(rawLine: string): ProviderUsage | null {
@@ -221,11 +239,14 @@ export function extractProviderUsage(data: unknown): ProviderUsage | null {
   return providerUsageFromValue(data);
 }
 
-function parseStreamPayload(protocol: ProviderProtocol, payload: string): string {
-  if (!payload || payload === "[DONE]") return "";
+function parseStreamPayloadResult(protocol: ProviderProtocol, payload: string): ProviderStreamChunkResult {
+  if (!payload || payload === "[DONE]") return { text: "", snapshot: false };
   const data = safeParseJSON(payload) as any;
-  if (!data) return "";
-  return streamTextFromParsedPayload(protocol, data);
+  if (!data) return { text: "", snapshot: false };
+  return {
+    text: streamTextFromParsedPayload(protocol, data),
+    snapshot: isProviderStreamSnapshot(protocol, data)
+  };
 }
 
 function streamTextFromParsedPayload(protocol: ProviderProtocol, data: any, depth = 0): string {
@@ -545,6 +566,25 @@ function isNonAnswerStreamEvent(record: unknown): boolean {
   if (type.includes("tool_call") || type.includes("function_call")) return true;
   return [data.type, data.delta?.type, data.content_block?.type]
     .some((type) => isNonAnswerContentPart({ type }));
+}
+
+function isProviderStreamSnapshot(protocol: ProviderProtocol, value: any, depth = 0): boolean {
+  if (protocol === "anthropic_messages") return false;
+  const type = String(value?.type || "");
+  const direct = type === "response.output_text.done"
+    || type === "response.content_part.done"
+    || type === "response.output_item.done"
+    || type === "response.completed"
+    || !!value?.part
+    || !!value?.item
+    || !!value?.message
+    || !!value?.response;
+  if (direct) return true;
+  if (depth >= 2 || !value || typeof value !== "object") return false;
+  return PROVIDER_RESPONSE_WRAPPER_KEYS.some((key) => {
+    const wrapped = value?.[key];
+    return !!wrapped && typeof wrapped === "object" && isProviderStreamSnapshot(protocol, wrapped, depth + 1);
+  });
 }
 
 function anthropicDeltaText(delta: any): string {
