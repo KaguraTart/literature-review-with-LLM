@@ -6671,6 +6671,12 @@ function renderComparisonReportMarkdown(context, options = {}) {
     "| --- | --- | --- | --- | --- |",
     ...comparisonSynthesisRows(contexts, dimensions, labels),
     "",
+    `### ${labels.claimLedger}`,
+    "",
+    `| ${labels.claimSeed} | ${labels.supportingPapers} | ${labels.evidenceStrengthColumn} | ${labels.counterEvidenceGaps} | ${labels.writingPriority} |`,
+    "| --- | --- | --- | --- | --- |",
+    ...comparisonClaimLedgerRows(contexts, dimensions, labels),
+    "",
     `### ${labels.pairwiseContrasts}`,
     "",
     `| ${labels.comparisonPaper} | ${labels.method} | ${labels.dataExperiment} | ${labels.finding} | ${labels.limitation} | ${labels.followUp} |`,
@@ -6763,6 +6769,57 @@ function comparisonSynthesisRows(contexts, dimensions, labels) {
       comparisonCoverageFollowUp(covered.length, contexts.length, labels)
     ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |");
   });
+}
+
+function comparisonClaimLedgerRows(contexts, dimensions, labels) {
+  const rows = dimensions.map((dimension) => {
+    const evidenceByContext = contexts.map((entry) => ({
+      entry,
+      evidence: comparisonEvidenceForContext(entry, dimension, labels, 2)
+    }));
+    const covered = evidenceByContext.filter((item) => item.evidence.length);
+    const missing = evidenceByContext.filter((item) => !item.evidence.length);
+    const evidenceTexts = covered.map((item) => item.evidence.map((evidence) => evidence.text).join(" "));
+    const sharedSignals = comparisonSharedSignals(evidenceTexts, labels);
+    const claimSeed = comparisonClaimSeed(dimension, sharedSignals, covered.length, labels);
+    const support = covered.length
+      ? covered.map((item) => `${item.entry.role}: ${item.evidence.map((evidence) => evidence.label).join("<br>")}`).join("<br>")
+      : labels.noEvidence;
+    const gaps = missing.length
+      ? missing.map((item) => `${item.entry.role}: ${item.entry.metadata?.title || item.entry.itemKey || labels.unknown}`).join("<br>")
+      : labels.noObviousCounterEvidence;
+    return [
+      claimSeed,
+      support,
+      comparisonEvidenceStrengthLabel(covered.length, contexts.length, labels),
+      gaps,
+      comparisonClaimPriority(covered.length, missing.length, labels)
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |");
+  });
+  return rows.length ? rows : [`| ${labels.noEvidence} | ${labels.noEvidence} | ${labels.evidenceStrengthMissing} | ${labels.selectComparisonPapers} | ${labels.claimPriorityEvidenceFirst} |`];
+}
+
+function comparisonClaimSeed(dimension, sharedSignals, coveredCount, labels) {
+  const signals = sharedSignals && sharedSignals !== labels.noSharedSignals ? sharedSignals : "";
+  if (coveredCount >= 2 && signals) return `${dimension.label}: ${labels.claimSeedShared} ${signals}`;
+  if (coveredCount >= 2) return `${dimension.label}: ${labels.claimSeedCompare}`;
+  if (coveredCount === 1) return `${dimension.label}: ${labels.claimSeedSingle}`;
+  return `${dimension.label}: ${labels.claimSeedMissing}`;
+}
+
+function comparisonEvidenceStrengthLabel(coveredCount, totalCount, labels) {
+  if (!totalCount || !coveredCount) return labels.evidenceStrengthMissing;
+  const ratio = coveredCount / totalCount;
+  if (coveredCount >= 3 && ratio >= 0.6) return labels.evidenceStrengthStrong;
+  if (coveredCount >= 2) return labels.evidenceStrengthModerate;
+  return labels.evidenceStrengthWeak;
+}
+
+function comparisonClaimPriority(coveredCount, missingCount, labels) {
+  if (!coveredCount) return labels.claimPriorityEvidenceFirst;
+  if (coveredCount >= 2 && missingCount === 0) return labels.claimPriorityHigh;
+  if (coveredCount >= 2) return labels.claimPriorityMedium;
+  return labels.claimPriorityLow;
 }
 
 function comparisonPairwiseContrastRows(focal, comparisons, labels) {
@@ -6905,12 +6962,18 @@ function comparisonReportLabels(outputLanguage) {
       matrix: "对比矩阵",
       synthesis: "跨文献综合",
       coverageMap: "证据覆盖图",
+      claimLedger: "综合主张台账",
       pairwiseContrasts: "两两对比",
       gapLedger: "缺口台账",
       dimension: "维度",
       coverage: "覆盖",
       sharedSignals: "共同信号",
       evidenceLabels: "证据标签",
+      claimSeed: "候选主张",
+      supportingPapers: "支持论文与证据",
+      evidenceStrengthColumn: "证据强度",
+      counterEvidenceGaps: "反证/缺失",
+      writingPriority: "写作优先级",
       followUp: "下一步",
       comparisonPaper: "对比论文",
       gap: "缺口",
@@ -6945,6 +7008,19 @@ function comparisonReportLabels(outputLanguage) {
       coverageAllFollowUp: "可提炼共同主张、差异条件和综述段落。",
       coveragePartialFollowUp: "先补齐缺失论文证据，再做结论比较。",
       coverageMissingFollowUp: "需要回到 PDF、摘要或笔记补充证据。",
+      claimSeedShared: "可先写为共同线索，关键词：",
+      claimSeedCompare: "可写为跨论文对比主张，需补充解释条件。",
+      claimSeedSingle: "只有单篇证据，先作为低置信观察。",
+      claimSeedMissing: "缺少可支撑证据，暂不写成主张。",
+      evidenceStrengthStrong: "强：多篇论文有证据，仍需核对可比性。",
+      evidenceStrengthModerate: "中：至少两篇论文有证据，可形成草稿主张。",
+      evidenceStrengthWeak: "弱：仅单篇论文有证据。",
+      evidenceStrengthMissing: "缺失：暂无可用证据。",
+      noObviousCounterEvidence: "当前抽取范围内未发现明显缺失；仍需人工检查反例。",
+      claimPriorityHigh: "高：可进入综述草稿，但需人工复核。",
+      claimPriorityMedium: "中：补齐缺失论文后再定稿。",
+      claimPriorityLow: "低：先作为单篇观察。",
+      claimPriorityEvidenceFirst: "先补证据，不建议写入正文。",
       allDimensions: "所有维度",
       allPapers: "所有论文",
       noMajorGap: "当前抽取范围内未发现明显缺口。",
@@ -6976,12 +7052,18 @@ function comparisonReportLabels(outputLanguage) {
     matrix: "Comparison Matrix",
     synthesis: "Cross-paper Synthesis",
     coverageMap: "Evidence Coverage Map",
+    claimLedger: "Synthesis Claim Ledger",
     pairwiseContrasts: "Pairwise Contrasts",
     gapLedger: "Gap Ledger",
     dimension: "Dimension",
     coverage: "Coverage",
     sharedSignals: "Shared signals",
     evidenceLabels: "Evidence labels",
+    claimSeed: "Claim seed",
+    supportingPapers: "Supporting papers and evidence",
+    evidenceStrengthColumn: "Evidence strength",
+    counterEvidenceGaps: "Counter-evidence / gaps",
+    writingPriority: "Writing priority",
     followUp: "Follow-up",
     comparisonPaper: "Comparison paper",
     gap: "Gap",
@@ -7016,6 +7098,19 @@ function comparisonReportLabels(outputLanguage) {
     coverageAllFollowUp: "Ready to draft shared claims, boundary conditions, and review paragraphs.",
     coveragePartialFollowUp: "Fill missing paper evidence before making a comparative conclusion.",
     coverageMissingFollowUp: "Return to PDFs, abstracts, or notes to add evidence.",
+    claimSeedShared: "Draft as a shared signal around:",
+    claimSeedCompare: "Draft as a cross-paper comparative claim; add boundary conditions.",
+    claimSeedSingle: "Only one paper has evidence; keep it as a low-confidence observation.",
+    claimSeedMissing: "Do not draft a claim until evidence is added.",
+    evidenceStrengthStrong: "Strong: multiple papers have evidence; still verify comparability.",
+    evidenceStrengthModerate: "Moderate: at least two papers have evidence and can seed a draft claim.",
+    evidenceStrengthWeak: "Weak: only one paper has evidence.",
+    evidenceStrengthMissing: "Missing: no usable evidence yet.",
+    noObviousCounterEvidence: "No obvious extracted gap; still check counterexamples manually.",
+    claimPriorityHigh: "High: can enter the review draft after human review.",
+    claimPriorityMedium: "Medium: fill missing paper evidence before finalizing.",
+    claimPriorityLow: "Low: keep as a single-paper observation for now.",
+    claimPriorityEvidenceFirst: "Add evidence first; do not use in body text yet.",
     allDimensions: "All dimensions",
     allPapers: "All papers",
     noMajorGap: "No obvious gap found in the extracted context.",
