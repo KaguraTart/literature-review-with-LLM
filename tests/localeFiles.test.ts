@@ -21,6 +21,29 @@ function loadSharedMessages() {
   };
 }
 
+function assertBalancedMarkup(path: string) {
+  const source = readFileSync(path, "utf8");
+  const stack: Array<{ name: string; line: number }> = [];
+  const tagPattern = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<![^>]*>|<([/]?)([A-Za-z][\w:.-]*)([^>]*)>/g;
+  let match: RegExpExecArray | null;
+  while ((match = tagPattern.exec(source))) {
+    if (!match[2]) continue;
+    const closing = match[1] === "/";
+    const name = match[2];
+    const raw = match[0];
+    const line = 1 + source.slice(0, match.index).split(/\r?\n/).length - 1;
+    if (!closing && /\/\s*>$/.test(raw)) continue;
+    if (!closing) {
+      stack.push({ name, line });
+      continue;
+    }
+    const last = stack.pop();
+    expect(last, `${path}:${line} closes </${name}> without a matching opener`).toBeTruthy();
+    expect(last?.name, `${path}:${line} expected </${last?.name}> but found </${name}>`).toBe(name);
+  }
+  expect(stack, `${path} has unclosed tag(s): ${stack.map((entry) => `<${entry.name}> at line ${entry.line}`).join(", ")}`).toEqual([]);
+}
+
 describe("locale files", () => {
   it("keeps Chinese and English message ids aligned", () => {
     expect(ids("addon/locale/zh-CN/zotero-markdown-summary.ftl")).toEqual(ids("addon/locale/en-US/zotero-markdown-summary.ftl"));
@@ -131,5 +154,15 @@ describe("locale files", () => {
     expect(workbenchXhtml).toContain('id="zms-load-models-workbench" class="zms-load-models-button" type="button" title="加载当前接口厂商的在线模型">加载在线模型</html:button>');
     expect(workbenchXhtml).toContain('id="zms-status" class="zms-status">就绪</html:div>');
     expect(workbenchXhtml).not.toContain("</html:footer>\n      </html:footer>");
+  });
+
+  it("keeps Zotero XHTML templates structurally balanced", () => {
+    for (const path of [
+      "addon/content/preferences.xhtml",
+      "addon/content/reader.xhtml",
+      "addon/content/workbench.xhtml"
+    ]) {
+      assertBalancedMarkup(path);
+    }
   });
 });
