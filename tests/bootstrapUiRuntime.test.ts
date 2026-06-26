@@ -235,12 +235,15 @@ describe("bootstrap UI runtime wiring", () => {
     expect(button?.getAttribute("label")).toBe("openWorkbench");
     expect(button?.getAttribute("aria-label")).toBe("openWorkbench");
     expect(button?.getAttribute("title")).toBe("openWorkbench");
+    expect(button?.getAttribute("image")).toBe("chrome://zotero-markdown-summary/content/logo.svg");
     expect(button?.getAttribute("style")).toContain("background-image:url('chrome://zotero-markdown-summary/content/logo.svg')");
+    expect(button?.getAttribute("style")).toContain("list-style-image: url('chrome://zotero-markdown-summary/content/logo.svg')");
     expect(button?.getAttribute("style")).toContain("max-width: 32px");
     expect(button?.getAttribute("style")).toContain("min-width: 32px");
     expect(button?.eventListeners.get("command")?.length).toBe(1);
     expect(button?.eventListeners.get("click")?.length).toBe(1);
     expect(doc.getElementById("zotero-markdown-summary-button-style")?.textContent).toContain("background-size: 20px 20px");
+    expect(doc.getElementById("zotero-markdown-summary-button-style")?.textContent).toContain("list-style-image: url('chrome://zotero-markdown-summary/content/logo.svg')");
     const popup = button?.children.find((child) => child.localName === "menupopup");
     expect(popup?.children.map((child) => child.getAttribute("label"))).toEqual([
       "openWorkbench",
@@ -523,9 +526,27 @@ describe("bootstrap UI runtime wiring", () => {
     const button = doc.getElementById("zotero-markdown-summary-fallback-button");
     expect(button).toBeTruthy();
     expect(button?.localName).toBe("toolbarbutton");
+    expect(button?.getAttribute("image")).toBe("chrome://zotero-markdown-summary/content/logo.svg");
     expect(button?.getAttribute("tooltiptext")).toBe("openWorkbench");
     expect(button?.eventListeners.get("command")?.length).toBe(1);
     expect(button?.eventListeners.get("click")?.length).toBe(1);
+  });
+
+  it("gives XUL side-nav buttons an explicit toolbar image", () => {
+    const doc = new FakeDocument();
+    const sidenav = doc.createXULElement("vbox");
+    sidenav.id = "zotero-context-pane-sidenav";
+    sidenav.rect = { width: 34, height: 260 };
+    doc.documentElement.appendChild(sidenav);
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+
+    const button = doc.getElementById("zotero-markdown-summary-sidenav-button");
+    expect(button).toBeTruthy();
+    expect(button?.localName).toBe("toolbarbutton");
+    expect(button?.getAttribute("image")).toBe("chrome://zotero-markdown-summary/content/logo.svg");
+    expect(button?.getAttribute("style")).toContain("list-style-image:url('chrome://zotero-markdown-summary/content/logo.svg')");
   });
 
   it("keeps the fallback button when Zotero only exposes a zero-size toolbar host", () => {

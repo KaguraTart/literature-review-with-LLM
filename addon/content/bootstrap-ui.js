@@ -85,6 +85,7 @@ function createToolbarButton(doc, toolbar) {
   button.id = TOOLBAR_BUTTON_ID;
   button.setAttribute("type", "menu-button");
   button.setAttribute("class", "zotero-tb-button toolbarbutton-1");
+  button.setAttribute("image", imageURL);
   button.setAttribute("tabindex", "-1");
   button.setAttribute("label", label);
   button.setAttribute("aria-label", label);
@@ -105,7 +106,7 @@ function createToolbarButton(doc, toolbar) {
     "-moz-appearance: none",
     "background-color: transparent",
     iconBackground,
-    "list-style-image: none"
+    `list-style-image: url('${imageURL}')`
   ].join("; "));
   button.addEventListener("command", () => openWorkbenchForContext());
   button.addEventListener("click", (event) => {
@@ -339,8 +340,9 @@ function createSidenavButton(doc, host) {
   const button = createXULElement(doc, "toolbarbutton");
   button.id = SIDENAV_BUTTON_ID;
   button.setAttribute("class", "toolbarbutton-1");
+  button.setAttribute("image", imageURL);
   button.setAttribute("tooltiptext", label);
-  button.setAttribute("style", `width:32px;height:32px;max-width:32px;max-height:32px;overflow:hidden;list-style-image:none;-moz-context-properties:fill;fill:#ef6f98;min-width:32px;min-height:32px;margin:2px 0;background-color:transparent;${iconBackground};`);
+  button.setAttribute("style", `width:32px;height:32px;max-width:32px;max-height:32px;overflow:hidden;list-style-image:url('${imageURL}');-moz-context-properties:fill;fill:#ef6f98;min-width:32px;min-height:32px;margin:2px 0;background-color:transparent;${iconBackground};`);
   button.addEventListener("command", () => openWorkbenchForContext());
   return button;
 }
@@ -356,6 +358,7 @@ function workbenchButtonIconBackgroundStyle(imageURL, size = "20px") {
 
 function ensureWorkbenchButtonStyle(doc) {
   if (!doc?.documentElement || doc.getElementById?.(WORKBENCH_BUTTON_STYLE_ID)) return;
+  const imageURL = `chrome://${CHROME_NAME}/content/logo.svg`;
   const style = doc.createElementNS(HTML_NS, "style");
   style.id = WORKBENCH_BUTTON_STYLE_ID;
   style.textContent = `
@@ -364,6 +367,9 @@ function ensureWorkbenchButtonStyle(doc) {
     #${FALLBACK_WORKBENCH_BUTTON_ID} {
       background-repeat: no-repeat !important;
       background-position: center !important;
+      list-style-image: url('${imageURL}') !important;
+      -moz-context-properties: fill, fill-opacity !important;
+      fill: #ef6f98 !important;
       overflow: hidden !important;
     }
     #${TOOLBAR_BUTTON_ID} {
@@ -1138,6 +1144,7 @@ function createFallbackWorkbenchButton(doc, host) {
   } else {
     button.setAttribute("label", label);
     button.setAttribute("type", "button");
+    button.setAttribute("image", imageURL);
     button.setAttribute("orient", "horizontal");
     button.setAttribute("appearance", "none");
     button.addEventListener("command", () => openWorkbenchForContext());
