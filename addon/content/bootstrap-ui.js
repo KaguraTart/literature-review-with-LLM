@@ -1006,7 +1006,7 @@ function ensureFallbackWorkbenchButton(win) {
   const host = fallbackWorkbenchButtonHost(doc);
   if (workbenchButtonLooksUsable(existing) && existing.parentNode === host) return false;
   existing?.remove?.();
-  const button = createFallbackWorkbenchButton(doc);
+  const button = createFallbackWorkbenchButton(doc, host);
   host.appendChild(button);
   return true;
 }
@@ -1019,14 +1019,14 @@ function workbenchToolbarButtonLooksReliable(button) {
   if (!workbenchButtonLooksUsable(button)) return false;
   const host = closestWorkbenchToolbarHost(button);
   if (!host || elementLooksHidden(host)) return false;
-  return elementHasUsableLayoutBox(host);
+  return elementHasUsableLayoutBox(host) && elementHasUsableLayoutBox(button);
 }
 
 function workbenchSidenavButtonLooksReliable(button) {
   if (!workbenchButtonLooksUsable(button)) return false;
   const host = closestWorkbenchSidenavHost(button);
   if (!host || elementLooksHidden(host)) return false;
-  return elementHasUsableLayoutBox(host) || elementHasUsableLayoutBox(button);
+  return elementHasUsableLayoutBox(host) && elementHasUsableLayoutBox(button);
 }
 
 function closestWorkbenchToolbarHost(button) {
@@ -1063,7 +1063,22 @@ function elementHasUsableLayoutBox(element) {
   if (!rect) return true;
   const width = Number(rect.width || 0);
   const height = Number(rect.height || 0);
+  if (width > 0 && height > 0) return true;
+  return elementHasDeclaredUsableSize(element);
+}
+
+function elementHasDeclaredUsableSize(element) {
+  const style = String(element?.getAttribute?.("style") || "").toLowerCase();
+  const width = cssPixelLengthFromStyle(style, "width") || cssPixelLengthFromStyle(style, "min-width");
+  const height = cssPixelLengthFromStyle(style, "height") || cssPixelLengthFromStyle(style, "min-height");
   return width > 0 && height > 0;
+}
+
+function cssPixelLengthFromStyle(style, property) {
+  if (!style) return 0;
+  const pattern = new RegExp(`${property}\\s*:\\s*([0-9.]+)px`);
+  const match = pattern.exec(style);
+  return match ? Number(match[1]) || 0 : 0;
 }
 
 function fallbackWorkbenchButtonHost(doc) {
@@ -1087,15 +1102,16 @@ function elementAttachedToDocument(element) {
   return elementContains(doc.documentElement, element);
 }
 
-function createFallbackWorkbenchButton(doc) {
+function createFallbackWorkbenchButton(doc, host) {
   const label = t("openWorkbench");
   const imageURL = `chrome://${CHROME_NAME}/content/logo.svg`;
   const iconBackground = workbenchButtonIconBackgroundStyle(imageURL, "22px");
-  const button = doc.createElementNS(HTML_NS, "button");
+  const htmlHost = usesHTMLChildren(host);
+  const button = htmlHost ? doc.createElementNS(HTML_NS, "button") : createXULElement(doc, "toolbarbutton");
   button.id = FALLBACK_WORKBENCH_BUTTON_ID;
-  button.type = "button";
   button.setAttribute("aria-label", label);
   button.setAttribute("title", label);
+  button.setAttribute("tooltiptext", label);
   button.setAttribute("class", "zms-fallback-workbench-button");
   button.setAttribute("style", [
     "position:fixed",
@@ -1117,6 +1133,15 @@ function createFallbackWorkbenchButton(doc) {
     "justify-content:center",
     "cursor:default"
   ].join("; "));
+  if (htmlHost) {
+    button.type = "button";
+  } else {
+    button.setAttribute("label", label);
+    button.setAttribute("type", "button");
+    button.setAttribute("orient", "horizontal");
+    button.setAttribute("appearance", "none");
+    button.addEventListener("command", () => openWorkbenchForContext());
+  }
 
   button.addEventListener("click", (event) => {
     if (event?.button && event.button !== 0) return;
