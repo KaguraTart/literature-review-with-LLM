@@ -803,13 +803,15 @@ function openEmbeddedReader(payload) {
 }
 
 function findWorkbenchHost(doc) {
-  for (const id of ["zotero-pane-stack", "zotero-items-pane", "zotero-pane"]) {
+  const dockIds = ["zotero-context-pane", "zotero-context-pane-inner", "zotero-item-pane"];
+  for (const id of dockIds) {
     const host = doc.getElementById(id);
-    if (host) return { host, mode: "fixed" };
+    if (host && !elementLooksHidden(host)) return { host, mode: "dock" };
   }
-  for (const id of ["zotero-context-pane", "zotero-context-pane-inner", "zotero-item-pane"]) {
+  const fixedIds = ["zotero-pane-stack", "zotero-items-pane", "zotero-pane"];
+  for (const id of fixedIds) {
     const host = doc.getElementById(id);
-    if (host) return { host, mode: "dock" };
+    if (host && !elementLooksHidden(host)) return { host, mode: "fixed" };
   }
   return { host: doc.documentElement, mode: "fixed" };
 }
@@ -893,20 +895,41 @@ function usesHTMLChildren(host) {
 function applyEmbeddedWorkbenchLayout(panel, frame, mode) {
   const base = [
     "box-sizing:border-box",
-    "min-width:360px",
-    "min-height:460px",
     "display:flex",
     "flex-direction:column",
-    "overflow:hidden",
     "background:#f7f8fa",
-    "border-inline-start:1px solid #d7dce2",
-    "box-shadow:0 0 18px rgba(15,23,42,0.16)",
     "color:#1f2933",
     "z-index:40"
   ];
   const layout = mode === "dock"
-    ? ["position:absolute", "inset:0"]
-    : ["position:fixed", "top:92px", "right:0", "bottom:0", "width:min(520px,44vw)", "z-index:2147483000"];
+    ? [
+      "position:absolute",
+      "inset:0",
+      "width:100%",
+      "height:100%",
+      "min-width:0",
+      "min-height:0",
+      "overflow:hidden",
+      "border-inline-start:0",
+      "box-shadow:none",
+      "resize:none"
+    ]
+    : [
+      "position:fixed",
+      "top:92px",
+      "right:12px",
+      "width:min(680px,48vw)",
+      "height:min(760px,calc(100vh - 112px))",
+      "max-width:calc(100vw - 24px)",
+      "max-height:calc(100vh - 104px)",
+      "min-width:360px",
+      "min-height:420px",
+      "overflow:auto",
+      "border-inline-start:1px solid #d7dce2",
+      "box-shadow:0 0 18px rgba(15,23,42,0.16)",
+      "resize:both",
+      "z-index:2147483000"
+    ];
   panel.setAttribute("style", `${base.concat(layout).join(";")};`);
   frame?.setAttribute("style", "width:100%;min-width:0;min-height:0;border:0;background:#ffffff;display:block;flex:1 1 auto;");
 }

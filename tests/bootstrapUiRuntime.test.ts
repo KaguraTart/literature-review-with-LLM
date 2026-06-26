@@ -887,7 +887,7 @@ describe("bootstrap UI runtime wiring", () => {
     expect(panel?.getAttribute("style")).toContain("display:flex");
   });
 
-  it("prefers a fixed pane-stack host over the Zotero detail pane", () => {
+  it("prefers the Zotero detail pane over a fixed pane-stack overlay", () => {
     const doc = new FakeDocument();
     const stack = doc.createXULElement("vbox");
     stack.id = "zotero-pane-stack";
@@ -899,8 +899,30 @@ describe("bootstrap UI runtime wiring", () => {
     helpers.openEmbeddedWorkbench({ id: 44, key: "ITEM44" });
 
     const panel = doc.getElementById("zotero-markdown-summary-workbench-panel");
+    expect(panel?.parentNode).toBe(detailPane);
+    expect(panel?.getAttribute("data-mode")).toBe("dock");
+    expect(panel?.getAttribute("style")).toContain("position:absolute");
+    expect(panel?.getAttribute("style")).toContain("width:100%");
+    expect(panel?.getAttribute("style")).toContain("height:100%");
+  });
+
+  it("keeps the fixed fallback panel resizable when no detail pane is available", () => {
+    const doc = new FakeDocument();
+    const stack = doc.createXULElement("vbox");
+    stack.id = "zotero-pane-stack";
+    doc.documentElement.appendChild(stack);
+    const { helpers } = loadBootstrapUi(doc);
+
+    helpers.openEmbeddedWorkbench({ id: 45, key: "ITEM45" });
+
+    const panel = doc.getElementById("zotero-markdown-summary-workbench-panel");
+    const style = panel?.getAttribute("style") || "";
     expect(panel?.parentNode).toBe(stack);
     expect(panel?.getAttribute("data-mode")).toBe("fixed");
-    expect(panel?.getAttribute("style")).toContain("position:fixed");
+    expect(style).toContain("position:fixed");
+    expect(style).toContain("resize:both");
+    expect(style).toContain("width:min(680px,48vw)");
+    expect(style).toContain("height:min(760px,calc(100vh - 112px))");
+    expect(style).toContain("max-width:calc(100vw - 24px)");
   });
 });
