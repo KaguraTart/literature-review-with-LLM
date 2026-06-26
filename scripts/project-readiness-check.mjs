@@ -522,9 +522,9 @@ const SOURCE_MARKERS = [
   },
   {
     id: "ui.embedded-surfaces",
-    description: "Toolbar, side pane, fallback button, embedded workbench, and embedded reader entry points are present",
+    description: "Toolbar, side pane, embedded workbench, and embedded reader entry points are present",
     files: ["addon/bootstrap.js", "addon/content/bootstrap-ui.js"],
-    markers: ["registerToolbarButton", "registerSidenavButton", "ensureFallbackWorkbenchButton", "zotero-markdown-summary-fallback-button", "openEmbeddedWorkbench", "openEmbeddedReader"]
+    markers: ["registerToolbarButton", "registerSidenavButton", "openEmbeddedWorkbench", "openEmbeddedReader", "removeFallbackWorkbenchButton"]
   },
   {
     id: "ui.runtime-wiring",
@@ -533,8 +533,9 @@ const SOURCE_MARKERS = [
     markers: [
       "registerToolbarButton",
       "registerSidenavButton",
-      "shows a fallback workbench button when Zotero has no visible button host yet",
-      "removes the fallback button after a normal side-nav entry becomes available",
+      "does not create a floating fallback button when Zotero has no visible button host yet",
+      "does not create a floating fallback button when only a side-nav icon is available",
+      "removes a stale floating fallback button during button refresh",
       "openEmbeddedWorkbench",
       "opens the embedded workbench when the HTML side-nav button is clicked",
       "closes the embedded workbench and restores the dock host layout",

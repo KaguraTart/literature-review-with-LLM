@@ -167,11 +167,45 @@ export function headersFor(profile: ProviderProfile): Record<string, string> {
 }
 
 export function providerRequestHeadersWithFallback(headers: Record<string, string>, fields: string[]): Record<string, string> {
-  if (!Array.isArray(fields) || !fields.includes("headers.anthropic-version")) return headers;
+  if (!Array.isArray(fields)) return headers;
+  const authHeader = providerFallbackAuthHeaderName(fields);
+  if (!fields.includes("headers.anthropic-version") && !authHeader) return headers;
   const next = { ...(headers || {}) };
-  const key = headerKey(next, "anthropic-version");
-  if (key) delete next[key];
+  if (fields.includes("headers.anthropic-version")) {
+    const key = headerKey(next, "anthropic-version");
+    if (key) delete next[key];
+  }
+  if (authHeader) switchProviderAuthHeader(next, authHeader);
   return next;
+}
+
+function providerFallbackAuthHeaderName(fields: string[]): "authorization" | "x-api-key" | "api-key" | "" {
+  for (const field of fields || []) {
+    if (field === "headers.authorization") return "authorization";
+    if (field === "headers.x-api-key") return "x-api-key";
+    if (field === "headers.api-key") return "api-key";
+  }
+  return "";
+}
+
+function switchProviderAuthHeader(headers: Record<string, string>, target: "authorization" | "x-api-key" | "api-key"): void {
+  const credential = providerAuthCredentialValue(headers);
+  if (!credential) return;
+  for (const name of ["authorization", "x-api-key", "api-key"]) {
+    const key = headerKey(headers, name);
+    if (key) delete headers[key];
+  }
+  headers[target] = target === "authorization" ? `Bearer ${credential}` : credential;
+}
+
+function providerAuthCredentialValue(headers: Record<string, string>): string {
+  for (const name of ["authorization", "x-api-key", "api-key"]) {
+    const key = headerKey(headers, name);
+    const value = key ? String(headers[key] || "").trim() : "";
+    if (!value) continue;
+    return value.replace(/^Bearer\s+/i, "").trim();
+  }
+  return "";
 }
 
 export function bodyFor(request: ModelRequest): Record<string, unknown> {
@@ -1510,6 +1544,10 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
   if (protocol === "anthropic_messages" && rejectedAnthropicVersionHeader(detail)) {
     fields.push("headers.anthropic-version");
   }
+  const rejectedAnthropicAuthField = rejectedAnthropicAuthHeaderField(detail);
+  if (protocol === "anthropic_messages" && rejectedAnthropicAuthField) {
+    fields.push(rejectedAnthropicAuthField);
+  }
   const rejectedAnthropicContentField = rejectedAnthropicMessagesContentField(body, detail);
   if (protocol === "anthropic_messages" && rejectedAnthropicContentField) {
     fields.push(rejectedAnthropicContentField);
@@ -1547,6 +1585,7 @@ export function providerCompatibilityFallbackFields(protocol: string, body: Reco
 
 function providerFallbackEligibleStatus(body: Record<string, unknown>, status: number, text: string, protocol = ""): boolean {
   const numericStatus = Number(status);
+  if ((numericStatus === 401 || numericStatus === 403) && protocol === "anthropic_messages" && rejectedAnthropicAuthHeaderField(String(text || "").toLowerCase())) return true;
   if (numericStatus === 400 || numericStatus === 422) return true;
   if (numericStatus !== 200) return false;
   return providerOkResponseLooksLikeFallbackError(body, text, protocol);
@@ -1557,6 +1596,7 @@ function providerOkResponseLooksLikeFallbackError(body: Record<string, unknown>,
   if (!parsed) return false;
   if (streamErrorText(parsed)) return true;
   if (protocol === "anthropic_messages" && rejectedAnthropicVersionHeader(String(text || "").toLowerCase())) return true;
+  if (protocol === "anthropic_messages" && rejectedAnthropicAuthHeaderField(String(text || "").toLowerCase())) return true;
   if (
     !providerStructuredUnsupportedFields(body, text, protocol).length
     && !providerUnsupportedCustomBodyFields(body, String(text || "").toLowerCase()).length
@@ -1805,6 +1845,9 @@ function normalizeProviderFieldHint(value: string): string {
     .replace(/^(?:(?:body|request|payload|params?|parameters?|input|data|attributes|json|root)\.)+/i, "")
     .replace(/\[[^\]]+\]/g, "");
   const normalizedLower = normalized.toLowerCase();
+  if (/headers?.*(?:x[-_\s]?api[-_\s]?key)|x[-_\s]?api[-_\s]?key/.test(normalizedLower)) return "headers.x-api-key";
+  if (/headers?.*(?:authorization|bearer)|(?:^|[^a-z0-9_])authorization(?:[^a-z0-9_]|$)|(?:^|[^a-z0-9_])bearer(?:[^a-z0-9_]|$)/.test(normalizedLower)) return "headers.authorization";
+  if (/headers?.*(?:api[-_\s]?key)|(?:^|[^a-z0-9_])api[-_\s]?key(?:[^a-z0-9_]|$)/.test(normalizedLower)) return "headers.api-key";
   if (/\bfile_data\b/.test(normalizedLower)) return "input_file.file_data";
   if (/\bfile_url\b/.test(normalizedLower)) return "input_file.file_url";
   if (/input(?:\.\d+|\[\d+\])?\.content.*input_image|inputcontent.*inputimage|(?:^|[^a-z0-9_])input_image(?:[^a-z0-9_]|$)|(?:^|[^a-z0-9_])inputimage(?:[^a-z0-9_]|$)/.test(normalizedLower)) return "input.content.input_image";
@@ -1874,12 +1917,20 @@ function canonicalProviderFieldHint(value: string): string {
     fileurl: "input_file.file_url",
     imageurlurl: "image_url.url",
     imageurl: "image_url.url",
-    inputimage: "input.content.input_image"
+    inputimage: "input.content.input_image",
+    headersxapikey: "headers.x-api-key",
+    xapikey: "headers.x-api-key",
+    headersauthorization: "headers.authorization",
+    authorization: "headers.authorization",
+    bearer: "headers.authorization",
+    headersapikey: "headers.api-key",
+    apikey: "headers.api-key"
   };
   return aliases[compact] || "";
 }
 
 function providerFallbackFieldPresent(body: Record<string, unknown>, field: string, protocol = ""): boolean {
+  if (isProviderHeaderFallbackField(field)) return true;
   if (field === "text.format") return providerTextFieldPresent(body, "format");
   if (field === "text.verbosity") return providerTextFieldPresent(body, "verbosity");
   if (field === "messages.content") {
@@ -1900,6 +1951,7 @@ function providerFallbackFieldPresent(body: Record<string, unknown>, field: stri
 
 function providerFallbackFieldSupported(body: Record<string, unknown>, field: string, protocol = ""): boolean {
   if (!field) return false;
+  if (isProviderHeaderFallbackField(field)) return protocol === "anthropic_messages";
   if (field === "text.format" || field === "text.verbosity") return protocol === "openai_responses";
   if (field === "messages.content") return protocol === "anthropic_messages" || protocol === "openai_chat";
   if (field === "messages.content.image") return protocol === "anthropic_messages";
@@ -1933,6 +1985,23 @@ function rejectedAnthropicMessagesContentField(body: Record<string, unknown>, de
 function rejectedAnthropicVersionHeader(detail: string): boolean {
   return /anthropic[-_\s]?version|headers?[.\s_-]*anthropic[-_\s]?version|unknown header|unsupported header|invalid header|not allowed header|forbidden header/.test(detail)
     && /anthropic[-_\s]?version/.test(detail);
+}
+
+function rejectedAnthropicAuthHeaderField(detail: string): string {
+  const text = String(detail || "").toLowerCase();
+  const asksForHeader = /(?:missing|required|requires?|expected|expects?|use|using|pass(?:ed)?|provide|provided|must include|should include|send|sent|via|instead)/.test(text);
+  if (!asksForHeader) return "";
+  if (/x[-_\s]?api[-_\s]?key/.test(text)) return "headers.x-api-key";
+  if (/\bauthorization\b|\bbearer\b|auth[-_\s]?token|access[-_\s]?token/.test(text)) return "headers.authorization";
+  if (/(?:^|[^a-z0-9])api[-_\s]?key(?:[^a-z0-9]|$)/.test(text)) return "headers.api-key";
+  return "";
+}
+
+function isProviderHeaderFallbackField(field: string): boolean {
+  return field === "headers.authorization"
+    || field === "headers.x-api-key"
+    || field === "headers.api-key"
+    || field === "headers.anthropic-version";
 }
 
 function anthropicMessagesHaveStringContent(body: Record<string, unknown>): boolean {

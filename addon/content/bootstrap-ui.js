@@ -44,6 +44,7 @@ function ensureToolbarButton(win) {
 
 function createToolbarButton(doc, toolbar) {
   const label = t("openWorkbench");
+  const shortLabel = t("openWorkbenchShort");
   const imageURL = `chrome://${CHROME_NAME}/content/logo.svg`;
   const iconBackground = workbenchButtonIconBackgroundStyle(imageURL, "20px");
   if (usesHTMLChildren(toolbar)) {
@@ -51,24 +52,30 @@ function createToolbarButton(doc, toolbar) {
     button.id = TOOLBAR_BUTTON_ID;
     button.type = "button";
     button.setAttribute("class", "zms-toolbar-button");
+    button.setAttribute("data-zms-discoverable", "1");
     button.setAttribute("aria-label", label);
     button.setAttribute("title", label);
     button.setAttribute("label", label);
+    button.textContent = shortLabel;
     button.setAttribute("style", [
-      "width:32px",
+      "width:auto",
       "height:28px",
-      "min-width:32px",
+      "min-width:88px",
       "min-height:28px",
       "margin:0 2px",
-      "padding:4px",
-      "border:0",
+      "padding:4px 10px 4px 30px",
+      "border:1px solid rgba(148,163,184,0.45)",
       "border-radius:6px",
-      "background-color:transparent",
+      "background-color:rgba(255,255,255,0.82)",
       iconBackground,
+      "background-position:8px center",
       "display:inline-flex",
       "align-items:center",
       "justify-content:center",
       "vertical-align:middle",
+      "font:600 12px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+      "color:var(--fill-primary, #223040)",
+      "white-space:nowrap",
       "cursor:default"
     ].join("; "));
 
@@ -87,7 +94,7 @@ function createToolbarButton(doc, toolbar) {
   button.setAttribute("class", "zotero-tb-button toolbarbutton-1");
   button.setAttribute("image", imageURL);
   button.setAttribute("tabindex", "-1");
-  button.setAttribute("label", label);
+  button.setAttribute("label", shortLabel);
   button.setAttribute("aria-label", label);
   button.setAttribute("title", label);
   button.setAttribute("tooltiptext", label);
@@ -373,13 +380,15 @@ function ensureWorkbenchButtonStyle(doc) {
       overflow: hidden !important;
     }
     #${TOOLBAR_BUTTON_ID} {
-      width: 32px !important;
-      max-width: 32px !important;
-      min-width: 32px !important;
+      width: auto !important;
+      max-width: none !important;
+      min-width: 88px !important;
       height: 28px !important;
-      max-height: 28px !important;
       min-height: 28px !important;
       background-size: 20px 20px !important;
+    }
+    #${TOOLBAR_BUTTON_ID}[data-zms-discoverable="1"] {
+      background-position: 8px center !important;
     }
     #${SIDENAV_BUTTON_ID} {
       width: 32px !important;
@@ -391,13 +400,13 @@ function ensureWorkbenchButtonStyle(doc) {
       background-size: 20px 20px !important;
     }
     #${FALLBACK_WORKBENCH_BUTTON_ID} {
-      width: 36px !important;
-      max-width: 36px !important;
-      min-width: 36px !important;
-      height: 36px !important;
-      max-height: 36px !important;
-      min-height: 36px !important;
+      width: auto !important;
+      max-width: none !important;
+      min-width: 104px !important;
+      height: 38px !important;
+      min-height: 38px !important;
       background-size: 22px 22px !important;
+      background-position: 12px center !important;
     }
     #${TOOLBAR_BUTTON_ID} image,
     #${TOOLBAR_BUTTON_ID} img,
@@ -994,169 +1003,12 @@ function removeWorkbenchButtonWatcher(windowOrDocument) {
 function ensureWorkbenchButtons(win) {
   const toolbar = ensureToolbarButton(win);
   const sidenav = ensureSidenavButton(win);
-  const fallback = ensureFallbackWorkbenchButton(win);
-  return { toolbar, sidenav, fallback };
+  removeFallbackWorkbenchButton(win?.document);
+  return { toolbar, sidenav, fallback: false };
 }
 
-function ensureFallbackWorkbenchButton(win) {
-  const doc = win?.document;
-  if (!doc?.documentElement) return false;
-  ensureWorkbenchButtonStyle(doc);
-  const toolbarButton = doc.getElementById(TOOLBAR_BUTTON_ID);
-  const sidenavButton = doc.getElementById(SIDENAV_BUTTON_ID);
-  if (workbenchSidenavButtonLooksReliable(sidenavButton) || workbenchToolbarButtonLooksReliable(toolbarButton)) {
-    doc.getElementById(FALLBACK_WORKBENCH_BUTTON_ID)?.remove?.();
-    return false;
-  }
-  const existing = doc.getElementById(FALLBACK_WORKBENCH_BUTTON_ID);
-  const host = fallbackWorkbenchButtonHost(doc);
-  if (workbenchButtonLooksUsable(existing) && existing.parentNode === host) return false;
-  existing?.remove?.();
-  const button = createFallbackWorkbenchButton(doc, host);
-  host.appendChild(button);
-  return true;
-}
-
-function workbenchButtonLooksUsable(button) {
-  return !!button && !elementLooksHidden(button) && elementAttachedToDocument(button);
-}
-
-function workbenchToolbarButtonLooksReliable(button) {
-  if (!workbenchButtonLooksUsable(button)) return false;
-  const host = closestWorkbenchToolbarHost(button);
-  if (!host || elementLooksHidden(host)) return false;
-  return elementHasUsableLayoutBox(host) && elementHasUsableLayoutBox(button);
-}
-
-function workbenchSidenavButtonLooksReliable(button) {
-  if (!workbenchButtonLooksUsable(button)) return false;
-  const host = closestWorkbenchSidenavHost(button);
-  if (!host || elementLooksHidden(host)) return false;
-  return elementHasUsableLayoutBox(host) && elementHasUsableLayoutBox(button);
-}
-
-function closestWorkbenchToolbarHost(button) {
-  for (let node = button?.parentNode; node; node = node.parentNode) {
-    const id = String(node.id || node.getAttribute?.("id") || "");
-    if ([
-      "zotero-items-toolbar",
-      "zotero-toolbar-item-tree",
-      "zotero-toolbar",
-      "zotero-collections-toolbar",
-      "zotero-item-pane-toolbar"
-    ].includes(id)) return node;
-    if (String(node.localName || "").toLowerCase() === "toolbar") return node;
-  }
-  return null;
-}
-
-function closestWorkbenchSidenavHost(button) {
-  for (let node = button?.parentNode; node; node = node.parentNode) {
-    const id = String(node.id || node.getAttribute?.("id") || "");
-    if ([
-      "zotero-context-pane-sidenav",
-      "zotero-context-pane-side-nav",
-      "zotero-context-sidenav",
-      "zotero-view-item-sidenav"
-    ].includes(id)) return node;
-    if (String(node.localName || "").toLowerCase().includes("sidenav")) return node;
-  }
-  return null;
-}
-
-function elementHasUsableLayoutBox(element) {
-  const rect = safeElementRect(element);
-  if (!rect) return true;
-  const width = Number(rect.width || 0);
-  const height = Number(rect.height || 0);
-  if (width > 0 && height > 0) return true;
-  return elementHasDeclaredUsableSize(element);
-}
-
-function elementHasDeclaredUsableSize(element) {
-  const style = String(element?.getAttribute?.("style") || "").toLowerCase();
-  const width = cssPixelLengthFromStyle(style, "width") || cssPixelLengthFromStyle(style, "min-width");
-  const height = cssPixelLengthFromStyle(style, "height") || cssPixelLengthFromStyle(style, "min-height");
-  return width > 0 && height > 0;
-}
-
-function cssPixelLengthFromStyle(style, property) {
-  if (!style) return 0;
-  const pattern = new RegExp(`${property}\\s*:\\s*([0-9.]+)px`);
-  const match = pattern.exec(style);
-  return match ? Number(match[1]) || 0 : 0;
-}
-
-function fallbackWorkbenchButtonHost(doc) {
-  const preferredIDs = [
-    "zotero-pane-stack",
-    "zotero-pane",
-    "zotero-items-pane-content",
-    "zotero-items-pane",
-    "zotero-context-pane"
-  ];
-  for (const id of preferredIDs) {
-    const element = doc.getElementById?.(id);
-    if (element && !elementLooksHidden(element)) return element;
-  }
-  return doc.body || doc.documentElement;
-}
-
-function elementAttachedToDocument(element) {
-  const doc = element?.ownerDocument;
-  if (!doc?.documentElement) return !!element?.parentNode;
-  return elementContains(doc.documentElement, element);
-}
-
-function createFallbackWorkbenchButton(doc, host) {
-  const label = t("openWorkbench");
-  const imageURL = `chrome://${CHROME_NAME}/content/logo.svg`;
-  const iconBackground = workbenchButtonIconBackgroundStyle(imageURL, "22px");
-  const htmlHost = usesHTMLChildren(host);
-  const button = htmlHost ? doc.createElementNS(HTML_NS, "button") : createXULElement(doc, "toolbarbutton");
-  button.id = FALLBACK_WORKBENCH_BUTTON_ID;
-  button.setAttribute("aria-label", label);
-  button.setAttribute("title", label);
-  button.setAttribute("tooltiptext", label);
-  button.setAttribute("class", "zms-fallback-workbench-button");
-  button.setAttribute("style", [
-    "position:fixed",
-    "top:96px",
-    "right:12px",
-    "z-index:2147483001",
-    "width:36px",
-    "height:36px",
-    "min-width:36px",
-    "min-height:36px",
-    "padding:6px",
-    "border:1px solid rgba(148,163,184,0.55)",
-    "border-radius:10px",
-    "background-color:rgba(255,255,255,0.94)",
-    iconBackground,
-    "box-shadow:0 8px 24px rgba(15,23,42,0.22)",
-    "display:flex",
-    "align-items:center",
-    "justify-content:center",
-    "cursor:default"
-  ].join("; "));
-  if (htmlHost) {
-    button.type = "button";
-  } else {
-    button.setAttribute("label", label);
-    button.setAttribute("type", "button");
-    button.setAttribute("image", imageURL);
-    button.setAttribute("orient", "horizontal");
-    button.setAttribute("appearance", "none");
-    button.addEventListener("command", () => openWorkbenchForContext());
-  }
-
-  button.addEventListener("click", (event) => {
-    if (event?.button && event.button !== 0) return;
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    openWorkbenchForContext();
-  });
-  return button;
+function removeFallbackWorkbenchButton(doc) {
+  doc?.getElementById?.(FALLBACK_WORKBENCH_BUTTON_ID)?.remove?.();
 }
 
 function refreshEmbeddedWorkbenchForSelection(win) {

@@ -3961,6 +3961,59 @@ describe("bootstrap provider helpers", () => {
     expect(prefs.model).toBe("claude-compatible");
   });
 
+  it("persists direct Anthropic-compatible auth header fallbacks to the active profile", async () => {
+    const profile = {
+      id: "anthropic-compatible",
+      name: "Anthropic Compatible Messages",
+      protocol: "anthropic_messages",
+      endpointMode: "base_url",
+      baseURL: "https://router.example",
+      apiKey: "routed-secret",
+      model: "claude-compatible",
+      capabilities: { text: true, imageBase64: true, streaming: true, modelList: true },
+      customHeaders: {},
+      bodyExtra: { authHeader: "authorization" },
+      isDefault: true
+    };
+    const { fetchCalls, helpers, prefs } = loadBootstrapProviderHelpers({
+      __responses: [
+        {
+          __status: 401,
+          error: { message: "Missing x-api-key header. Pass the API key via x-api-key." }
+        },
+        {
+          content: [{ type: "text", text: "anthropic auth fallback summary" }]
+        }
+      ]
+    }, {
+      activeProfileId: "anthropic-compatible",
+      profilesJson: JSON.stringify([profile])
+    });
+
+    const result = await helpers.callAnthropic({
+      ...profile,
+      provider: "anthropic-compatible",
+      request: {
+        system: "system",
+        prompt: "prompt",
+        input: { type: "text", text: "paper text" },
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        stream: false
+      }
+    }, "hash");
+
+    const savedProfile = JSON.parse(prefs.profilesJson)[0];
+    expect(result.markdown).toBe("anthropic auth fallback summary");
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].headers).toMatchObject({ authorization: "Bearer routed-secret" });
+    expect(fetchCalls[1].headers).toMatchObject({ "x-api-key": "routed-secret" });
+    expect(fetchCalls[1].headers).not.toHaveProperty("authorization");
+    expect(savedProfile.bodyExtra.authHeader).toBe("x-api-key");
+    expect(prefs.provider).toBe("anthropic_compatible");
+    expect(prefs.model).toBe("claude-compatible");
+  });
+
   it("extracts wrapped Anthropic usage metadata in direct summaries", async () => {
     const { helpers } = loadBootstrapProviderHelpers({
       payload: {
