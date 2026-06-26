@@ -514,6 +514,20 @@ describe("bootstrap UI runtime wiring", () => {
     expect(doc.getElementById("zotero-markdown-summary-workbench-panel")).toBeTruthy();
   });
 
+  it("uses a XUL fallback button when the Zotero window has no HTML host", () => {
+    const doc = new FakeDocument();
+    const { helpers, win } = loadBootstrapUi(doc);
+
+    helpers.ensureWorkbenchButtons(win);
+
+    const button = doc.getElementById("zotero-markdown-summary-fallback-button");
+    expect(button).toBeTruthy();
+    expect(button?.localName).toBe("toolbarbutton");
+    expect(button?.getAttribute("tooltiptext")).toBe("openWorkbench");
+    expect(button?.eventListeners.get("command")?.length).toBe(1);
+    expect(button?.eventListeners.get("click")?.length).toBe(1);
+  });
+
   it("keeps the fallback button when Zotero only exposes a zero-size toolbar host", () => {
     const doc = new FakeDocument();
     const toolbar = doc.createXULElement("toolbar");
