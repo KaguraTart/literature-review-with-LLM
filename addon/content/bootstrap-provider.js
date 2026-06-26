@@ -1223,6 +1223,7 @@ function providerCompatibilityFallbackFields(protocol, body, status, text, usedF
   if (body?.max_tokens !== undefined && (/max_tokens|max tokens|max token/.test(detail) || providerDetailMentionsCanonicalField(detail, "max_tokens"))) {
     fields.push("max_tokens");
   }
+  fields.push(...providerTokenLimitFallbackFields(body, detail));
   if (providerTextFieldPresent(body, "format") && (/text\.format|text format|json mode|json_schema|json schema/.test(detail) || providerDetailMentionsCanonicalField(detail, "text.format"))) {
     fields.push("text.format");
   }
@@ -1386,6 +1387,34 @@ function providerUnsupportedOptionalBodyFields(body, detail) {
   return PROVIDER_OPTIONAL_BODY_FIELD_PATTERNS
     .filter(([field, pattern]) => body?.[field] !== undefined && (pattern.test(detail) || providerDetailMentionsCanonicalField(detail, field)))
     .map(([field]) => field);
+}
+
+function providerTokenLimitFallbackFields(body, detail) {
+  const fields = [];
+  if (
+    body?.max_tokens !== undefined
+    && body?.max_completion_tokens === undefined
+    && providerDetailSuggestsTokenLimitField(detail, "max_completion_tokens")
+  ) {
+    fields.push("max_tokens");
+  }
+  if (
+    body?.max_completion_tokens !== undefined
+    && body?.max_tokens === undefined
+    && providerDetailSuggestsTokenLimitField(detail, "max_tokens")
+  ) {
+    fields.push("max_completion_tokens");
+  }
+  return fields;
+}
+
+function providerDetailSuggestsTokenLimitField(detail, field) {
+  const text = normalizeProviderFieldWords(detail);
+  const target = field === "max_completion_tokens"
+    ? /(?:max completion tokens?|completion tokens?)/
+    : /(?:max tokens?|max token limit)/;
+  const directive = /\b(?:use|using|instead|required|expected|replace|replaced|should|must|accepts?|only accepts?|only supports?)\b/;
+  return target.test(text) && directive.test(text);
 }
 
 function providerUnsupportedCustomBodyFields(body, detail) {

@@ -1521,6 +1521,41 @@ describe("bootstrap provider helpers", () => {
     });
   });
 
+  it("switches OpenAI-compatible token limit fields when a router asks for the other field", () => {
+    const { helpers } = loadBootstrapProviderHelpers();
+    const legacyBody = {
+      model: "router-model",
+      messages: [{ role: "user", content: "ping" }],
+      max_tokens: 1024
+    };
+    const legacyFields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      legacyBody,
+      400,
+      "This model requires max_completion_tokens. Use maxCompletionTokens instead."
+    );
+    expect(legacyFields).toEqual(["max_tokens"]);
+    expect((helpers as any).omitProviderRequestBodyFields(legacyBody, legacyFields)).toMatchObject({
+      max_completion_tokens: 1024
+    });
+
+    const completionBody = {
+      model: "router-model",
+      messages: [{ role: "user", content: "ping" }],
+      max_completion_tokens: 1024
+    };
+    const completionFields = (helpers as any).providerCompatibilityFallbackFields(
+      "openai_chat",
+      completionBody,
+      400,
+      "This route only accepts max_tokens for token limits."
+    );
+    expect(completionFields).toEqual(["max_completion_tokens"]);
+    expect((helpers as any).omitProviderRequestBodyFields(completionBody, completionFields)).toMatchObject({
+      max_tokens: 1024
+    });
+  });
+
   it("converts OpenAI Chat image URL objects to strings in bootstrap fallback helpers", () => {
     const { helpers } = loadBootstrapProviderHelpers();
     const body = {
