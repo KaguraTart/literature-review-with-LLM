@@ -532,9 +532,31 @@ describe("provider adapters", () => {
       messages: [],
       max_completion_tokens: 1024
     });
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      legacyTokenBody,
+      400,
+      "This model requires max_completion_tokens. Use maxCompletionTokens instead."
+    )).toEqual(["max_tokens"]);
     expect(omitProviderRequestBodyFields(legacyTokenBody, ["max_tokens"], ["max_completion_tokens"])).toEqual({
       model: "router-model",
       messages: []
+    });
+    const completionTokenBody = {
+      model: "router-model",
+      messages: [],
+      max_completion_tokens: 1024
+    };
+    expect(providerCompatibilityFallbackFields(
+      "openai_chat",
+      completionTokenBody,
+      400,
+      "This route only accepts max_tokens for token limits."
+    )).toEqual(["max_completion_tokens"]);
+    expect(omitProviderRequestBodyFields(completionTokenBody, ["max_completion_tokens"])).toEqual({
+      model: "router-model",
+      messages: [],
+      max_tokens: 1024
     });
     expect(omitProviderRequestBodyFields(body, ["max_completion_tokens"], ["max_tokens"])).toEqual({
       model: "router-model",

@@ -10911,6 +10911,52 @@ describe("workbench writeback helpers", () => {
     expect(fetchCalls[2].body).not.toHaveProperty("max_tokens");
   });
 
+  it("switches OpenAI Chat token limit fields in the workbench request path when the router asks for the other field", async () => {
+    const loaded: any = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    loaded.fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ body });
+      if (fetchCalls.length === 1) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({
+            error: {
+              code: "invalid_request_error",
+              message: "This model requires max_completion_tokens. Use maxCompletionTokens instead."
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "ok" } }] })
+      };
+    };
+
+    const response = await loaded.requestModelWithRetry({
+      ...providerProfile(),
+      protocol: "openai_chat",
+      model: "router-chat-model",
+      capabilities: { ...providerProfile().capabilities, jsonMode: false }
+    }, [
+      { role: "user", content: "hello" }
+    ], "zh-CN", "system", { type: "text", text: "context" }, false);
+
+    expect(response.ok).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].body).toMatchObject({ max_tokens: 8192 });
+    expect(fetchCalls[0].body).not.toHaveProperty("max_completion_tokens");
+    expect(fetchCalls[1].body).toMatchObject({ max_completion_tokens: 8192 });
+    expect(fetchCalls[1].body).not.toHaveProperty("max_tokens");
+    expect(response.zmsCompatibilityFallbackFields).toEqual(["max_tokens"]);
+    expect(response.zmsEffectiveProfile.bodyExtra).toMatchObject({
+      tokenLimitField: "max_completion_tokens"
+    });
+  });
+
   it("downgrades structured unsupported-parameter errors in the workbench request path", async () => {
     const loaded: any = loadWorkbenchHelpers();
     const fetchCalls: any[] = [];
