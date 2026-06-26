@@ -232,7 +232,7 @@ describe("bootstrap UI runtime wiring", () => {
     expect(button).toBeTruthy();
     expect(button?.parentNode).toBe(toolbar);
     expect(button?.getAttribute("type")).toBe("menu-button");
-    expect(button?.getAttribute("label")).toBe("openWorkbench");
+    expect(button?.getAttribute("label")).toBe("openWorkbenchShort");
     expect(button?.getAttribute("aria-label")).toBe("openWorkbench");
     expect(button?.getAttribute("title")).toBe("openWorkbench");
     expect(button?.getAttribute("image")).toBe("chrome://zotero-markdown-summary/content/logo.svg");
@@ -269,9 +269,12 @@ describe("bootstrap UI runtime wiring", () => {
     expect(button?.parentNode).toBe(toolbar);
     expect(button?.localName).toBe("button");
     expect(button?.getAttribute("class")).toContain("zms-toolbar-button");
+    expect(button?.getAttribute("data-zms-discoverable")).toBe("1");
     expect(button?.getAttribute("aria-label")).toBe("openWorkbench");
     expect(button?.getAttribute("title")).toBe("openWorkbench");
+    expect(button?.textContent).toBe("openWorkbenchShort");
     expect(button?.getAttribute("style")).toContain("display:inline-flex");
+    expect(button?.getAttribute("style")).toContain("min-width:88px");
     expect(button?.getAttribute("style")).toContain("background-image:url('chrome://zotero-markdown-summary/content/logo.svg')");
 
     const event = {
@@ -563,9 +566,9 @@ describe("bootstrap UI runtime wiring", () => {
     expect(doc.getElementById("zotero-markdown-summary-fallback-button")).toBeTruthy();
   });
 
-  it("removes the fallback button when the normal toolbar entry is visibly measurable", () => {
+  it("removes the fallback button when the normal toolbar entry is visibly discoverable", () => {
     const doc = new FakeDocument();
-    const toolbar = doc.createXULElement("toolbar");
+    const toolbar = doc.createElementNS(HTML_NS, "div");
     toolbar.id = "zotero-items-toolbar";
     toolbar.rect = { width: 420, height: 34 };
     doc.documentElement.appendChild(toolbar);
@@ -596,7 +599,7 @@ describe("bootstrap UI runtime wiring", () => {
     expect(button?.parentNode).toBe(paneStack);
   });
 
-  it("removes the fallback button after a normal side-nav entry becomes available", () => {
+  it("keeps the fallback button when only a side-nav icon is available", () => {
     const doc = new FakeDocument();
     const { helpers, win } = loadBootstrapUi(doc);
 
@@ -614,7 +617,7 @@ describe("bootstrap UI runtime wiring", () => {
     helpers.ensureWorkbenchButtons(win);
 
     expect(doc.getElementById("zotero-markdown-summary-sidenav-button")).toBeTruthy();
-    expect(doc.getElementById("zotero-markdown-summary-fallback-button")).toBeNull();
+    expect(doc.getElementById("zotero-markdown-summary-fallback-button")).toBeTruthy();
   });
 
   it("keeps the fallback button when the side-nav entry exists only in a zero-size host", () => {
@@ -636,7 +639,7 @@ describe("bootstrap UI runtime wiring", () => {
 
   it("reports existing visible toolbar and side-nav entries as ensured", () => {
     const doc = new FakeDocument();
-    const toolbar = doc.createXULElement("toolbar");
+    const toolbar = doc.createElementNS(HTML_NS, "div");
     toolbar.id = "zotero-items-toolbar";
     toolbar.rect = { width: 420, height: 34 };
     const sidenav = doc.createElementNS(HTML_NS, "item-pane-sidenav");

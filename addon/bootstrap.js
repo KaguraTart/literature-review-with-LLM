@@ -941,6 +941,13 @@ function mergeProviderFallbackBodyExtra(bodyExtra, body, fields, usedFallback = 
     nextExtra.omitAnthropicImage = true;
     removeFromArray(omitFields, "messages.content.image");
   }
+  const authHeader = typeof providerFallbackAuthHeaderName === "function" ? providerFallbackAuthHeaderName(fields) : "";
+  if (authHeader) {
+    nextExtra.authHeader = authHeader;
+    removeFromArray(omitFields, "headers.authorization");
+    removeFromArray(omitFields, "headers.x-api-key");
+    removeFromArray(omitFields, "headers.api-key");
+  }
   if (fields.includes("headers.anthropic-version")) {
     nextExtra.omitAnthropicVersion = true;
     removeFromArray(omitFields, "headers.anthropic-version");

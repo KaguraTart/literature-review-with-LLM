@@ -1031,6 +1031,31 @@ describe("provider adapters", () => {
     expect(providerCompatibilityFallbackFields(
       "anthropic_messages",
       anthropicBody,
+      401,
+      JSON.stringify({ error: { message: "Missing x-api-key header. Pass the API key via x-api-key." } })
+    )).toEqual(["headers.x-api-key"]);
+    const xAPIKeyRetry = providerRequestHeadersWithFallback(anthropicHeaders, ["headers.x-api-key"]);
+    expect(xAPIKeyRetry).toEqual({
+      "content-type": "application/json",
+      "Anthropic-Version": "2023-06-01",
+      "x-api-key": "anthropic-compatible-secret"
+    });
+    expect(providerRequestHeadersWithFallback({
+      "content-type": "application/json",
+      "x-api-key": "anthropic-compatible-secret"
+    }, ["headers.authorization"])).toEqual({
+      "content-type": "application/json",
+      authorization: "Bearer anthropic-compatible-secret"
+    });
+    expect(providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      anthropicBody,
+      401,
+      JSON.stringify({ error: { message: "Invalid API key" } })
+    )).toEqual([]);
+    expect(providerCompatibilityFallbackFields(
+      "anthropic_messages",
+      anthropicBody,
       422,
       JSON.stringify({
         detail: [

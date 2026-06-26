@@ -44,6 +44,7 @@ function ensureToolbarButton(win) {
 
 function createToolbarButton(doc, toolbar) {
   const label = t("openWorkbench");
+  const shortLabel = t("openWorkbenchShort");
   const imageURL = `chrome://${CHROME_NAME}/content/logo.svg`;
   const iconBackground = workbenchButtonIconBackgroundStyle(imageURL, "20px");
   if (usesHTMLChildren(toolbar)) {
@@ -51,24 +52,30 @@ function createToolbarButton(doc, toolbar) {
     button.id = TOOLBAR_BUTTON_ID;
     button.type = "button";
     button.setAttribute("class", "zms-toolbar-button");
+    button.setAttribute("data-zms-discoverable", "1");
     button.setAttribute("aria-label", label);
     button.setAttribute("title", label);
     button.setAttribute("label", label);
+    button.textContent = shortLabel;
     button.setAttribute("style", [
-      "width:32px",
+      "width:auto",
       "height:28px",
-      "min-width:32px",
+      "min-width:88px",
       "min-height:28px",
       "margin:0 2px",
-      "padding:4px",
-      "border:0",
+      "padding:4px 10px 4px 30px",
+      "border:1px solid rgba(148,163,184,0.45)",
       "border-radius:6px",
-      "background-color:transparent",
+      "background-color:rgba(255,255,255,0.82)",
       iconBackground,
+      "background-position:8px center",
       "display:inline-flex",
       "align-items:center",
       "justify-content:center",
       "vertical-align:middle",
+      "font:600 12px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+      "color:var(--fill-primary, #223040)",
+      "white-space:nowrap",
       "cursor:default"
     ].join("; "));
 
@@ -87,7 +94,7 @@ function createToolbarButton(doc, toolbar) {
   button.setAttribute("class", "zotero-tb-button toolbarbutton-1");
   button.setAttribute("image", imageURL);
   button.setAttribute("tabindex", "-1");
-  button.setAttribute("label", label);
+  button.setAttribute("label", shortLabel);
   button.setAttribute("aria-label", label);
   button.setAttribute("title", label);
   button.setAttribute("tooltiptext", label);
@@ -373,13 +380,15 @@ function ensureWorkbenchButtonStyle(doc) {
       overflow: hidden !important;
     }
     #${TOOLBAR_BUTTON_ID} {
-      width: 32px !important;
-      max-width: 32px !important;
-      min-width: 32px !important;
+      width: auto !important;
+      max-width: none !important;
+      min-width: 88px !important;
       height: 28px !important;
-      max-height: 28px !important;
       min-height: 28px !important;
       background-size: 20px 20px !important;
+    }
+    #${TOOLBAR_BUTTON_ID}[data-zms-discoverable="1"] {
+      background-position: 8px center !important;
     }
     #${SIDENAV_BUTTON_ID} {
       width: 32px !important;
@@ -391,13 +400,13 @@ function ensureWorkbenchButtonStyle(doc) {
       background-size: 20px 20px !important;
     }
     #${FALLBACK_WORKBENCH_BUTTON_ID} {
-      width: 36px !important;
-      max-width: 36px !important;
-      min-width: 36px !important;
-      height: 36px !important;
-      max-height: 36px !important;
-      min-height: 36px !important;
+      width: auto !important;
+      max-width: none !important;
+      min-width: 104px !important;
+      height: 38px !important;
+      min-height: 38px !important;
       background-size: 22px 22px !important;
+      background-position: 12px center !important;
     }
     #${TOOLBAR_BUTTON_ID} image,
     #${TOOLBAR_BUTTON_ID} img,
@@ -1003,8 +1012,7 @@ function ensureFallbackWorkbenchButton(win) {
   if (!doc?.documentElement) return false;
   ensureWorkbenchButtonStyle(doc);
   const toolbarButton = doc.getElementById(TOOLBAR_BUTTON_ID);
-  const sidenavButton = doc.getElementById(SIDENAV_BUTTON_ID);
-  if (workbenchSidenavButtonLooksReliable(sidenavButton) || workbenchToolbarButtonLooksReliable(toolbarButton)) {
+  if (workbenchToolbarButtonLooksReliable(toolbarButton) && workbenchButtonLooksDiscoverable(toolbarButton)) {
     doc.getElementById(FALLBACK_WORKBENCH_BUTTON_ID)?.remove?.();
     return false;
   }
@@ -1019,6 +1027,10 @@ function ensureFallbackWorkbenchButton(win) {
 
 function workbenchButtonLooksUsable(button) {
   return !!button && !elementLooksHidden(button) && elementAttachedToDocument(button);
+}
+
+function workbenchButtonLooksDiscoverable(button) {
+  return button?.getAttribute?.("data-zms-discoverable") === "1";
 }
 
 function workbenchToolbarButtonLooksReliable(button) {
@@ -1110,6 +1122,7 @@ function elementAttachedToDocument(element) {
 
 function createFallbackWorkbenchButton(doc, host) {
   const label = t("openWorkbench");
+  const shortLabel = t("openWorkbenchShort");
   const imageURL = `chrome://${CHROME_NAME}/content/logo.svg`;
   const iconBackground = workbenchButtonIconBackgroundStyle(imageURL, "22px");
   const htmlHost = usesHTMLChildren(host);
@@ -1122,27 +1135,32 @@ function createFallbackWorkbenchButton(doc, host) {
   button.setAttribute("style", [
     "position:fixed",
     "top:96px",
-    "right:12px",
+    "right:16px",
     "z-index:2147483001",
-    "width:36px",
-    "height:36px",
-    "min-width:36px",
-    "min-height:36px",
-    "padding:6px",
+    "width:auto",
+    "height:38px",
+    "min-width:104px",
+    "min-height:38px",
+    "padding:6px 14px 6px 40px",
     "border:1px solid rgba(148,163,184,0.55)",
-    "border-radius:10px",
+    "border-radius:999px",
     "background-color:rgba(255,255,255,0.94)",
     iconBackground,
+    "background-position:12px center",
     "box-shadow:0 8px 24px rgba(15,23,42,0.22)",
     "display:flex",
     "align-items:center",
     "justify-content:center",
+    "font:700 12px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+    "color:#223040",
+    "white-space:nowrap",
     "cursor:default"
   ].join("; "));
   if (htmlHost) {
     button.type = "button";
+    button.textContent = shortLabel;
   } else {
-    button.setAttribute("label", label);
+    button.setAttribute("label", shortLabel);
     button.setAttribute("type", "button");
     button.setAttribute("image", imageURL);
     button.setAttribute("orient", "horizontal");
