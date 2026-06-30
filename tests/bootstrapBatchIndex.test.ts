@@ -379,6 +379,7 @@ describe("batch papers index", () => {
       modelReviewPath: "/out/collections/COL/writing/model-literature-review.zh-CN.md",
       collectionReviewPath: "/out/collections/COL/writing/collection-literature-review.zh-CN.md",
       ideaListPath: "/out/collections/COL/writing/idea-list.zh-CN.md",
+      chartReviewBatchIndexPath: "/out/collections/COL/writing/chart-review-batch-index.zh-CN.md",
       crossCollectionIndexPath: "/out/collections/index.json",
       crossCollectionSynthesisPath: "/out/collections/cross-collection-synthesis.zh-CN.md"
     });
@@ -406,11 +407,14 @@ describe("batch papers index", () => {
           key: "COL",
           name: "Collection",
           artifacts: expect.objectContaining({
-            reviewReportPath: "/out/collections/COL/writing/formal-review-report.zh-CN.md"
+            reviewReportPath: "/out/collections/COL/writing/formal-review-report.zh-CN.md",
+            chartReviewBatchIndexPath: "/out/collections/COL/writing/chart-review-batch-index.zh-CN.md"
           })
         })
       ]
     });
+    expect(writes.get(artifacts.chartReviewBatchIndexPath)).toContain("图表复核批量索引");
+    expect(writes.get(artifacts.chartReviewBatchIndexPath)).toContain("当前批量条目没有找到对应的 visual-extraction JSON 报告");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合综合地图");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("Collection");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合聚类图谱");
@@ -440,6 +444,80 @@ describe("batch papers index", () => {
     expect(writes.has(artifacts.modelReviewPath)).toBe(false);
     expect(writes.has(artifacts.collectionReviewPath)).toBe(false);
     expect(writes.has(artifacts.literatureSearchEvidencePath)).toBe(false);
+  });
+
+  it("aggregates chart review tasks from visual extraction reports into a collection batch index", async () => {
+    const files = new Map<string, string>([
+      ["/out/collections/COL/writing/visual-extraction-A.json", JSON.stringify({
+        templateVersion: "visual-extraction-report-v2",
+        itemKey: "A",
+        generatedAt: "2026-06-20T00:00:00.000Z",
+        reportPath: "/out/collections/COL/writing/visual-extraction-A.md",
+        metadata: { title: "A Chart Paper" },
+        chartQualityReview: { status: "needs-review" },
+        chartReviewActions: [{ queueId: "review-1" }, { queueId: "review-2" }],
+        chartBatchReviewBoard: [{
+          priority: "high",
+          reviewState: "todo",
+          count: 2,
+          blockingIssue: "missing anchors",
+          batchAction: "Add axis anchors",
+          doneCriteria: "Anchors verified"
+        }]
+      })],
+      ["/out/collections/COL/writing/visual-extraction-B.json", JSON.stringify({
+        templateVersion: "visual-extraction-report-v2",
+        itemKey: "B",
+        generatedAt: "2026-06-21T00:00:00.000Z",
+        reportPath: "/out/collections/COL/writing/visual-extraction-B.md",
+        metadata: { title: "B Chart Paper" },
+        chartQualityReview: { status: "needs-review" },
+        chartReviewActions: [{ queueId: "review-1" }, { queueId: "review-2" }],
+        chartBatchReviewBoard: [
+          {
+            priority: "high",
+            reviewState: "todo",
+            count: 1,
+            blockingIssue: "lower segment",
+            batchAction: "Add axis anchors",
+            doneCriteria: "Anchors verified"
+          },
+          {
+            priority: "medium",
+            reviewState: "blocked",
+            count: 1,
+            blockingIssue: "image too blurry",
+            batchAction: "Regenerate crop",
+            doneCriteria: "Readable figure crop exists"
+          }
+        ]
+      })]
+    ]);
+    const { helpers, writes } = loadBootstrapHelpers(files);
+    const results = [
+      { status: "generated", itemKey: "A", title: "A Chart Paper", year: "2026", summaryPath: "/out/a.md" },
+      { status: "generated", itemKey: "B", title: "B Chart Paper", year: "2026", summaryPath: "/out/b.md" }
+    ];
+
+    const artifacts = await helpers.writeCollectionWorkspace(
+      { outputLanguage: "zh-CN", summaryVersion: "1", outputDir: "/out" },
+      { key: "COL", name: "Collection", type: "collection", parentLibraryID: 1, outputDir: "/out/collections/COL" },
+      results
+    );
+
+    const chartIndex = writes.get(artifacts.chartReviewBatchIndexPath) || "";
+    expect(chartIndex).toContain("templateVersion: \"collection-chart-review-batch-index-v1\"");
+    expect(chartIndex).toContain("visualReportCount: 2");
+    expect(chartIndex).toContain("chartReviewActionCount: 4");
+    expect(chartIndex).toContain("openChartReviewActionCount: 4");
+    expect(chartIndex).toContain("## 跨报告批量复核看板");
+    expect(chartIndex).toContain("| high | todo | 3 | A Chart Paper; B Chart Paper | missing anchors; lower segment | Add axis anchors | Anchors verified | /out/collections/COL/writing/visual-extraction-A.md; /out/collections/COL/writing/visual-extraction-B.md |");
+    expect(chartIndex).toContain("| medium | blocked | 1 | B Chart Paper | image too blurry | Regenerate crop | Readable figure crop exists | /out/collections/COL/writing/visual-extraction-B.md |");
+    expect(chartIndex).toContain("## 来源图表报告");
+    expect(chartIndex).toContain("| A Chart Paper | needs-review | 1 | 2 | /out/collections/COL/writing/visual-extraction-A.md | /out/collections/COL/writing/visual-extraction-A.json |");
+    expect(chartIndex).toContain("先处理高优先级和阻塞状态的行");
+    expect(JSON.parse(writes.get(artifacts.crossCollectionIndexPath) || "{}").collections[0].artifacts)
+      .toMatchObject({ chartReviewBatchIndexPath: artifacts.chartReviewBatchIndexPath });
   });
 
   it("writes an optional model-generated collection literature review from paper summaries", async () => {

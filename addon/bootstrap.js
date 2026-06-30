@@ -1631,6 +1631,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results, op
   const modelReviewPath = artifacts.modelReviewPath;
   const collectionReviewPath = artifacts.collectionReviewPath;
   const ideaListPath = artifacts.ideaListPath;
+  const chartReviewBatchIndexPath = artifacts.chartReviewBatchIndexPath;
   await writeText(paperNotesIndexPath, renderPaperNotesIndex(collectionContext, results, outputLanguage));
   await writeText(methodMatrixPath, renderMethodMatrix(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(gapMatrixPath, renderResearchGapMatrix(collectionContext, results, outputLanguage, summaryInsights));
@@ -1655,6 +1656,13 @@ async function writeCollectionWorkspace(settings, collectionContext, results, op
     }, literatureSearchEvidence);
   }
   await writeText(ideaListPath, renderIdeaList(collectionContext, results, outputLanguage, summaryInsights));
+  const chartReviewBatchIndex = await loadCollectionChartReviewBatchIndex(
+    { ...collectionContext, outputDir: baseDir },
+    results,
+    artifacts,
+    outputLanguage
+  );
+  await writeText(chartReviewBatchIndexPath, renderCollectionChartReviewBatchIndex(chartReviewBatchIndex, outputLanguage));
   const crossCollectionArtifacts = await writeCrossCollectionSynthesisIndex(
     settings,
     { ...collectionContext, outputDir: baseDir },
@@ -1678,7 +1686,8 @@ async function writeCollectionWorkspace(settings, collectionContext, results, op
       literatureSearchRecordsPath,
       modelReviewPath,
       collectionReviewPath,
-      ideaListPath
+      ideaListPath,
+      chartReviewBatchIndexPath
     }
   );
   return {
@@ -1699,6 +1708,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results, op
     modelReviewPath,
     collectionReviewPath,
     ideaListPath,
+    chartReviewBatchIndexPath,
     ...crossCollectionArtifacts
   };
 }
@@ -1729,7 +1739,394 @@ function collectionWorkspaceArtifactPaths(dirs, outputLanguage) {
     reviewReportPath: PathUtils.join(dirs.writing, `formal-review-report.${language}.md`),
     modelReviewPath: PathUtils.join(dirs.writing, `model-literature-review.${language}.md`),
     collectionReviewPath: PathUtils.join(dirs.writing, `collection-literature-review.${language}.md`),
-    ideaListPath: PathUtils.join(dirs.writing, `idea-list.${language}.md`)
+    ideaListPath: PathUtils.join(dirs.writing, `idea-list.${language}.md`),
+    chartReviewBatchIndexPath: PathUtils.join(dirs.writing, `chart-review-batch-index.${language}.md`)
+  };
+}
+
+async function loadCollectionChartReviewBatchIndex(collectionContext, results, artifacts = {}, outputLanguage = "zh-CN") {
+  const reports = await loadCollectionVisualExtractionReports(collectionContext, results, artifacts);
+  const rows = collectionChartReviewBatchRows(reports);
+  return {
+    templateVersion: "collection-chart-review-batch-index-v1",
+    generatedAt: new Date().toISOString(),
+    outputLanguage: collectionOutputLanguage({ outputLanguage }),
+    collection: {
+      key: collectionContext.key || "",
+      name: collectionContext.name || collectionContext.key || "",
+      type: collectionContext.type || "collection",
+      parentLibraryID: collectionContext.parentLibraryID || null
+    },
+    stats: collectionChartReviewBatchStats(reports, rows),
+    reports,
+    rows
+  };
+}
+
+async function loadCollectionVisualExtractionReports(collectionContext, results, artifacts = {}) {
+  const reports = [];
+  const seen = new Set();
+  for (const item of batchReportItems(results)) {
+    const itemKey = item.itemKey || "";
+    if (!itemKey || seen.has(itemKey)) continue;
+    seen.add(itemKey);
+    const jsonPath = collectionVisualExtractionJsonPath(collectionContext, itemKey);
+    try {
+      if (!await IOUtils.exists(jsonPath)) continue;
+      const parsed = JSON.parse(await readText(jsonPath));
+      reports.push(normalizeCollectionVisualExtractionReport(parsed, item, jsonPath));
+    } catch (err) {
+      reports.push(collectionVisualExtractionReportFailure(item, jsonPath, err));
+    }
+  }
+  if (artifacts?.chartReviewBatchIndexPath) {
+    reports.sort((left, right) => String(left.itemKey || "").localeCompare(String(right.itemKey || "")));
+  }
+  return reports;
+}
+
+function collectionVisualExtractionJsonPath(collectionContext, itemKey) {
+  const baseDir = collectionContext.outputDir || "";
+  return PathUtils.join(baseDir, "writing", `visual-extraction-${sanitizeFilename(itemKey || "paper")}.json`);
+}
+
+function normalizeCollectionVisualExtractionReport(parsed, item, jsonPath) {
+  const actions = Array.isArray(parsed?.chartReviewActions) ? parsed.chartReviewActions : [];
+  const batchRows = Array.isArray(parsed?.chartBatchReviewBoard)
+    ? parsed.chartBatchReviewBoard
+    : collectionChartReviewRowsFromActions(actions);
+  return {
+    itemKey: parsed?.itemKey || item.itemKey || "",
+    title: parsed?.metadata?.title || item.title || parsed?.itemKey || item.itemKey || "",
+    generatedAt: parsed?.generatedAt || "",
+    reportPath: parsed?.reportPath || jsonPath.replace(/\.json$/i, ".md"),
+    jsonPath,
+    chartQualityStatus: parsed?.chartQualityReview?.status || "",
+    chartReviewActionCount: actions.length,
+    chartReviewBatchCount: batchRows.length,
+    batchRows: batchRows.map((row) => ({
+      priority: row.priority || "medium",
+      reviewState: normalizeCollectionChartReviewState(row.reviewState || "todo"),
+      count: Number(row.count) || 0,
+      blockingIssue: row.blockingIssue || "",
+      batchAction: row.batchAction || row.nextStep || "",
+      doneCriteria: row.doneCriteria || ""
+    }))
+  };
+}
+
+function collectionVisualExtractionReportFailure(item, jsonPath, err) {
+  return {
+    itemKey: item.itemKey || "",
+    title: item.title || item.itemKey || "",
+    generatedAt: "",
+    reportPath: jsonPath.replace(/\.json$/i, ".md"),
+    jsonPath,
+    chartQualityStatus: "unreadable-report",
+    chartReviewActionCount: 1,
+    chartReviewBatchCount: 1,
+    batchRows: [{
+      priority: "high",
+      reviewState: "blocked",
+      count: 1,
+      blockingIssue: safeError(err),
+      batchAction: "Repair or regenerate the visual extraction JSON before chart review.",
+      doneCriteria: "The visual extraction JSON opens and exposes chart review rows."
+    }]
+  };
+}
+
+function collectionChartReviewRowsFromActions(actions = []) {
+  const groups = new Map();
+  for (const action of actions || []) {
+    const priority = action?.priority || "medium";
+    const reviewState = normalizeCollectionChartReviewState(action?.reviewState || "todo");
+    const actionId = action?.actionId || "manual-review";
+    const batchAction = action?.nextStep || actionId;
+    const doneCriteria = action?.doneCriteria || "";
+    const key = [priority, reviewState, actionId, batchAction, doneCriteria].join("::");
+    if (!groups.has(key)) {
+      groups.set(key, {
+        priority,
+        reviewState,
+        count: 0,
+        blockingIssues: [],
+        batchAction,
+        doneCriteria
+      });
+    }
+    const group = groups.get(key);
+    group.count += 1;
+    const relatedCheck = `${action?.checkId || ""}${action?.status ? ` (${action.status})` : ""}`;
+    const issue = [actionId, relatedCheck, action?.detail || ""].filter(Boolean).join(" - ");
+    if (issue && !group.blockingIssues.includes(issue)) group.blockingIssues.push(issue);
+  }
+  return Array.from(groups.values()).map((group) => ({
+    priority: group.priority,
+    reviewState: group.reviewState,
+    count: group.count,
+    blockingIssue: collectionChartReviewIssueSummary(group.blockingIssues),
+    batchAction: group.batchAction,
+    doneCriteria: group.doneCriteria
+  }));
+}
+
+function collectionChartReviewBatchRows(reports = []) {
+  const groups = new Map();
+  for (const report of reports || []) {
+    for (const row of report.batchRows || []) {
+      const priority = row.priority || "medium";
+      const reviewState = normalizeCollectionChartReviewState(row.reviewState || "todo");
+      const batchAction = row.batchAction || "";
+      const doneCriteria = row.doneCriteria || "";
+      const key = [priority, reviewState, batchAction, doneCriteria].join("::");
+      if (!groups.has(key)) {
+        groups.set(key, {
+          priority,
+          reviewState,
+          count: 0,
+          paperKeys: new Set(),
+          papers: [],
+          sourceReports: [],
+          blockingIssues: [],
+          batchAction,
+          doneCriteria
+        });
+      }
+      const group = groups.get(key);
+      const count = Number(row.count) || 1;
+      group.count += count;
+      if (report.itemKey && !group.paperKeys.has(report.itemKey)) {
+        group.paperKeys.add(report.itemKey);
+        group.papers.push(report.title || report.itemKey);
+      }
+      if (report.reportPath && !group.sourceReports.includes(report.reportPath)) group.sourceReports.push(report.reportPath);
+      if (row.blockingIssue && !group.blockingIssues.includes(row.blockingIssue)) group.blockingIssues.push(row.blockingIssue);
+    }
+  }
+  return Array.from(groups.values()).map((group) => ({
+    priority: group.priority,
+    reviewState: group.reviewState,
+    count: group.count,
+    paperCount: group.paperKeys.size,
+    papers: group.papers.slice(0, 8),
+    blockingIssue: collectionChartReviewIssueSummary(group.blockingIssues),
+    batchAction: group.batchAction,
+    doneCriteria: group.doneCriteria,
+    sourceReports: group.sourceReports.slice(0, 8)
+  })).sort(collectionChartReviewBatchSort);
+}
+
+function collectionChartReviewIssueSummary(issues = []) {
+  const visible = (issues || []).filter(Boolean).slice(0, 3);
+  const hidden = Math.max(0, (issues || []).filter(Boolean).length - visible.length);
+  return hidden ? `${visible.join("; ")}; +${hidden} more` : visible.join("; ");
+}
+
+function collectionChartReviewBatchSort(left, right) {
+  const priorityRank = { high: 0, medium: 1, low: 2 };
+  const stateRank = { todo: 0, blocked: 1, "in-review": 2, done: 3, discarded: 4 };
+  const priorityDelta = (priorityRank[left?.priority] ?? 9) - (priorityRank[right?.priority] ?? 9);
+  if (priorityDelta) return priorityDelta;
+  const stateDelta = (stateRank[left?.reviewState] ?? 9) - (stateRank[right?.reviewState] ?? 9);
+  if (stateDelta) return stateDelta;
+  return (Number(right?.count) || 0) - (Number(left?.count) || 0);
+}
+
+function normalizeCollectionChartReviewState(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "in_review" || normalized === "in review" || normalized === "reviewing") return "in-review";
+  if (normalized === "complete" || normalized === "completed") return "done";
+  if (["todo", "in-review", "done", "blocked", "discarded"].includes(normalized)) return normalized;
+  return "todo";
+}
+
+function collectionChartReviewBatchStats(reports = [], rows = []) {
+  const actionCount = rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+  const openActionCount = rows
+    .filter((row) => !["done", "discarded"].includes(normalizeCollectionChartReviewState(row.reviewState)))
+    .reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+  return {
+    visualReports: reports.length,
+    batchRows: rows.length,
+    chartReviewActions: actionCount,
+    openChartReviewActions: openActionCount,
+    highPriorityActions: rows.filter((row) => row.priority === "high").reduce((sum, row) => sum + (Number(row.count) || 0), 0),
+    blockedActions: rows.filter((row) => normalizeCollectionChartReviewState(row.reviewState) === "blocked").reduce((sum, row) => sum + (Number(row.count) || 0), 0)
+  };
+}
+
+function renderCollectionChartReviewBatchIndex(index, outputLanguage = "zh-CN") {
+  const labels = collectionChartReviewBatchLabels(outputLanguage);
+  const stats = index?.stats || collectionChartReviewBatchStats(index?.reports || [], index?.rows || []);
+  const rows = Array.isArray(index?.rows) ? index.rows : [];
+  const reports = Array.isArray(index?.reports) ? index.reports : [];
+  return [
+    "---",
+    `templateVersion: ${frontmatterScalar(index?.templateVersion || "collection-chart-review-batch-index-v1")}`,
+    `collectionKey: ${frontmatterScalar(index?.collection?.key || "")}`,
+    `outputLanguage: ${frontmatterScalar(collectionOutputLanguage({ outputLanguage }))}`,
+    `generatedAt: ${frontmatterScalar(index?.generatedAt || "")}`,
+    `visualReportCount: ${stats.visualReports || 0}`,
+    `chartReviewActionCount: ${stats.chartReviewActions || 0}`,
+    `openChartReviewActionCount: ${stats.openChartReviewActions || 0}`,
+    "---",
+    "",
+    `# ${index?.collection?.name || index?.collection?.key || ""} ${labels.title}`,
+    "",
+    labels.note,
+    "",
+    `- ${labels.visualReports}: ${stats.visualReports || 0}`,
+    `- ${labels.batchRows}: ${stats.batchRows || 0}`,
+    `- ${labels.chartReviewActions}: ${stats.chartReviewActions || 0}`,
+    `- ${labels.openChartReviewActions}: ${stats.openChartReviewActions || 0}`,
+    `- ${labels.highPriorityActions}: ${stats.highPriorityActions || 0}`,
+    `- ${labels.blockedActions}: ${stats.blockedActions || 0}`,
+    "",
+    `## ${labels.batchBoard}`,
+    "",
+    rows.length ? collectionChartReviewBatchTable(rows, labels) : `- ${labels.noBatchRows}`,
+    "",
+    `## ${labels.sourceReports}`,
+    "",
+    reports.length ? collectionChartReviewSourceReportsTable(reports, labels) : `- ${labels.noReports}`,
+    "",
+    `## ${labels.reviewChecklist}`,
+    "",
+    labels.reviewChecklistItems,
+    ""
+  ].join("\n");
+}
+
+function collectionChartReviewBatchTable(rows, labels) {
+  return [
+    `| ${labels.priority} | ${labels.reviewState} | ${labels.count} | ${labels.papers} | ${labels.blockingIssue} | ${labels.batchAction} | ${labels.doneCriteria} | ${labels.sourceReports} |`,
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      escapeMarkdownTable(row.priority),
+      escapeMarkdownTable(row.reviewState),
+      Number(row.count) || 0,
+      escapeMarkdownTable((row.papers || []).join("; ")),
+      escapeMarkdownTable(row.blockingIssue || ""),
+      escapeMarkdownTable(row.batchAction || ""),
+      escapeMarkdownTable(row.doneCriteria || ""),
+      escapeMarkdownTable((row.sourceReports || []).join("; "))
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
+function collectionChartReviewSourceReportsTable(reports, labels) {
+  return [
+    `| ${labels.paper} | ${labels.qualityStatus} | ${labels.batchRows} | ${labels.chartReviewActions} | ${labels.reportFile} | ${labels.jsonFile} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    ...reports.map((report) => [
+      escapeMarkdownTable(report.title || report.itemKey || ""),
+      escapeMarkdownTable(report.chartQualityStatus || ""),
+      Number(report.chartReviewBatchCount) || 0,
+      Number(report.chartReviewActionCount) || 0,
+      escapeMarkdownTable(report.reportPath || ""),
+      escapeMarkdownTable(report.jsonPath || "")
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
+function collectionChartReviewBatchLabels(outputLanguage) {
+  if (outputLanguage === "en-US") {
+    return {
+      title: "Chart Review Batch Index",
+      note: "This index aggregates chart review tasks from visual-extraction JSON reports in this collection. Use it to batch similar chart checks before reusing extracted values.",
+      visualReports: "visual reports",
+      batchRows: "batch rows",
+      chartReviewActions: "chart review actions",
+      openChartReviewActions: "open chart review actions",
+      highPriorityActions: "high-priority actions",
+      blockedActions: "blocked actions",
+      batchBoard: "Cross-Report Batch Review Board",
+      sourceReports: "Source Visual Reports",
+      noBatchRows: "No chart review action was found in the current collection visual reports.",
+      noReports: "No visual-extraction JSON report was found for the current batch items.",
+      priority: "Priority",
+      reviewState: "Review state",
+      count: "Actions",
+      papers: "Papers",
+      blockingIssue: "Blocking issue",
+      batchAction: "Batch action",
+      doneCriteria: "Done criteria",
+      paper: "Paper",
+      qualityStatus: "Quality status",
+      reportFile: "Report",
+      jsonFile: "JSON",
+      reviewChecklist: "Batch Review Checklist",
+      reviewChecklistItems: [
+        "- [ ] Work through high-priority and blocked rows before reusing chart data.",
+        "- [ ] Open every source visual report listed in a row and check the original figure.",
+        "- [ ] Mark completed rows back in each visual report before exporting again."
+      ].join("\n")
+    };
+  }
+  if (outputLanguage === "ja-JP") {
+    return {
+      title: "図表レビュー一括インデックス",
+      note: "このインデックスは collection 内の visual-extraction JSON レポートから図表レビュータスクを集約します。抽出値を再利用する前に類似タスクをまとめて確認してください。",
+      visualReports: "図表レポート数",
+      batchRows: "一括行数",
+      chartReviewActions: "図表レビュータスク数",
+      openChartReviewActions: "未完了タスク数",
+      highPriorityActions: "高優先度タスク数",
+      blockedActions: "ブロック中タスク数",
+      batchBoard: "レポート横断一括レビューボード",
+      sourceReports: "元図表レポート",
+      noBatchRows: "現在の collection 図表レポートにレビュータスクはありません。",
+      noReports: "現在のバッチ項目に対応する visual-extraction JSON レポートは見つかりません。",
+      priority: "優先度",
+      reviewState: "レビュー状態",
+      count: "タスク数",
+      papers: "論文",
+      blockingIssue: "阻害要因",
+      batchAction: "一括処理",
+      doneCriteria: "完了条件",
+      paper: "論文",
+      qualityStatus: "品質状態",
+      reportFile: "レポート",
+      jsonFile: "JSON",
+      reviewChecklist: "一括レビュー確認リスト",
+      reviewChecklistItems: [
+        "- [ ] 図表データを再利用する前に高優先度・ブロック中の行を処理する。",
+        "- [ ] 各行の元図表レポートを開き、原図を確認する。",
+        "- [ ] 完了した状態を各図表レポートに戻してから再エクスポートする。"
+      ].join("\n")
+    };
+  }
+  return {
+    title: "图表复核批量索引",
+    note: "本索引汇总当前 collection 内 visual-extraction JSON 报告里的图表复核任务，用于在复用抽取数值前批量处理相似问题。",
+    visualReports: "图表报告数",
+    batchRows: "批量行数",
+    chartReviewActions: "图表复核任务数",
+    openChartReviewActions: "未完成复核任务数",
+    highPriorityActions: "高优先级任务数",
+    blockedActions: "阻塞任务数",
+    batchBoard: "跨报告批量复核看板",
+    sourceReports: "来源图表报告",
+    noBatchRows: "当前 collection 的图表报告里没有检测到复核任务。",
+    noReports: "当前批量条目没有找到对应的 visual-extraction JSON 报告。",
+    priority: "优先级",
+    reviewState: "复核状态",
+    count: "任务数",
+    papers: "论文",
+    blockingIssue: "阻塞问题",
+    batchAction: "批量处理动作",
+    doneCriteria: "完成条件",
+    paper: "论文",
+    qualityStatus: "质量状态",
+    reportFile: "报告",
+    jsonFile: "JSON",
+    reviewChecklist: "批量复核清单",
+    reviewChecklistItems: [
+      "- [ ] 先处理高优先级和阻塞状态的行，再复用图表数据。",
+      "- [ ] 打开每一行列出的来源图表报告，并回到原图核对。",
+      "- [ ] 在各图表报告里回填完成状态后再重新导出。"
+    ].join("\n")
   };
 }
 
@@ -2226,7 +2623,8 @@ const COLLECTION_MARKDOWN_ARTIFACT_KEYS = [
   "synthesisConflictsPath",
   "synthesisRoadmapPath",
   "gapMatrixPath",
-  "ideaListPath"
+  "ideaListPath",
+  "chartReviewBatchIndexPath"
 ];
 
 async function linkCollectionWorkspaceMarkdownArtifacts(collectionContext, artifacts) {
@@ -2391,7 +2789,8 @@ function crossCollectionEntry(collectionContext, results, outputLanguage, summar
       reviewReportPath: artifacts.reviewReportPath || "",
       modelReviewPath: artifacts.modelReviewPath || "",
       collectionReviewPath: artifacts.collectionReviewPath || "",
-      ideaListPath: artifacts.ideaListPath || ""
+      ideaListPath: artifacts.ideaListPath || "",
+      chartReviewBatchIndexPath: artifacts.chartReviewBatchIndexPath || ""
     },
     clusters,
     claims,
