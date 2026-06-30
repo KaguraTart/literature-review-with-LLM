@@ -980,6 +980,11 @@ describe("batch papers index", () => {
         gap: "No deployment evidence",
         collectionCount: 2,
         collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        gapPriorityScore: expect.any(Number),
+        gapPrioritySignals: expect.arrayContaining([
+          expect.stringContaining("coverage: 2 collections"),
+          expect.stringContaining("candidate queries:")
+        ]),
         candidateQueries: expect.arrayContaining(["Safety / Risk Bayesian risk model No deployment evidence"])
       })
     ]));
@@ -1045,7 +1050,11 @@ describe("batch papers index", () => {
         kind: "recurring_gap",
         priority: "Recurring gap: No deployment evidence",
         reason: "Gap repeats across 2 collections",
-        collections: expect.arrayContaining(["Old Collection", "New Collection"])
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        evidence: expect.arrayContaining([
+          expect.stringContaining("Gap Priority Score:"),
+          expect.stringContaining("Gap Priority Signals:")
+        ])
       })
     ]));
     const synthesis = writes.get(artifacts.crossCollectionSynthesisPath) || "";
@@ -1063,6 +1072,9 @@ describe("batch papers index", () => {
     expect(synthesis).toContain("Theme Merge Review Board");
     expect(synthesis).toContain("Cross-Collection Bridge Board");
     expect(synthesis).toContain("Cross-Collection Gap Board");
+    expect(synthesis).toContain("Gap Priority Score");
+    expect(synthesis).toContain("Gap Priority Signals");
+    expect(synthesis).toContain("coverage: 2 collections");
     expect(synthesis).toContain("Cross-Collection Priority Board");
     expect(synthesis).toContain("Cross-Collection Chart Review Triage");
     expect(synthesis).toContain("| high | todo | 3 | 2 | 2 | New Collection; Old Collection | new anchors; old anchors | Add axis anchors | Anchors verified | /out/collections/NEW/writing/chart-review-batch-index.en-US.md; /out/collections/OLD/writing/chart-review-batch-index.en-US.md |");

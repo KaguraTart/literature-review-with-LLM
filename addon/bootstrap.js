@@ -3407,6 +3407,8 @@ function renderCrossCollectionGapRows(gapEntries, labels) {
   const rows = (gapEntries || []).slice(0, 12)
     .map((entry) => [
       escapeMarkdownTable(entry.gap || labels.gapMatrixPendingEvidence),
+      escapeMarkdownTable(entry.gapPriorityScore || 0),
+      escapeMarkdownTable((entry.gapPrioritySignals || []).join("; ") || labels.crossCollectionGapPriorityPending),
       escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
       escapeMarkdownTable((entry.themes || []).join("; ") || labels.clusterOther),
       escapeMarkdownTable((entry.candidateQueries || []).slice(0, 3).join("; ") || labels.roadmapCandidateQueryColumn),
@@ -3414,9 +3416,9 @@ function renderCrossCollectionGapRows(gapEntries, labels) {
     ].join(" | "))
     .map((row) => `| ${row} |`);
   return [
-    `| ${labels.gapSignalColumn} | ${labels.collectionColumn} | ${labels.clusterColumn} | ${labels.roadmapCandidateQueryColumn} | ${labels.reviewActionColumn} |`,
-    "| --- | --- | --- | --- | --- |",
-    rows.join("\n") || "|  |  |  |  |  |"
+    `| ${labels.gapSignalColumn} | ${labels.crossCollectionGapPriorityColumn} | ${labels.crossCollectionGapPrioritySignalsColumn} | ${labels.collectionColumn} | ${labels.clusterColumn} | ${labels.roadmapCandidateQueryColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    rows.join("\n") || "|  |  |  |  |  |  |  |"
   ].join("\n");
 }
 
@@ -3447,17 +3449,48 @@ function crossCollectionGapEntries(collections = [], labels = collectionTemplate
       const collections = uniqueInsightLines(entry.collections).slice(0, 8);
       const themes = uniqueInsightLines(entry.themes).slice(0, 8);
       const candidateQueries = uniqueInsightLines(entry.candidateQueries).slice(0, 5);
+      const priorityRanking = crossCollectionGapPriorityRanking({
+        ...entry,
+        collectionCount: collections.length,
+        collections,
+        themes,
+        candidateQueries
+      }, labels);
       return {
         gap: entry.gap,
         collectionCount: collections.length,
         collections,
         themes,
         candidateQueries,
+        gapPriorityScore: priorityRanking.score,
+        gapPrioritySignals: priorityRanking.signals,
         nextAction: labels.crossCollectionGapAction(collections.length, entry.gap)
       };
     })
-    .sort((left, right) => right.collectionCount - left.collectionCount || left.gap.localeCompare(right.gap))
+    .sort((left, right) => (right.gapPriorityScore || 0) - (left.gapPriorityScore || 0) || right.collectionCount - left.collectionCount || left.gap.localeCompare(right.gap))
     .slice(0, 20);
+}
+
+function crossCollectionGapPriorityRanking(gap = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const collectionCount = Number(gap.collectionCount || (gap.collections || []).length || 0);
+  const themeCount = uniqueInsightLines(gap.themes || []).length;
+  const queryCount = uniqueInsightLines(gap.candidateQueries || []).length;
+  const recurringBonus = collectionCount >= 2 ? 12 : 0;
+  const score = Math.min(100, Math.round(
+    Math.min(collectionCount, 6) * 28
+    + Math.min(themeCount, 8) * 4
+    + Math.min(queryCount, 5) * 4
+    + recurringBonus
+  ));
+  return {
+    score,
+    signals: uniqueInsightLines([
+      labels.crossCollectionGapPriorityCoverage(collectionCount),
+      labels.crossCollectionGapPriorityThemes(themeCount),
+      labels.crossCollectionGapPriorityQueries(queryCount),
+      collectionCount >= 2 ? labels.crossCollectionGapPriorityRecurring(collectionCount) : labels.crossCollectionGapPrioritySingle
+    ]).filter(Boolean)
+  };
 }
 
 function crossCollectionThemeBridgeEntries(collections = [], labels = collectionTemplateLabels("zh-CN")) {
@@ -3883,13 +3916,18 @@ function crossCollectionPriorityEntries(collections = [], gapEntries = [], label
   }
   for (const gap of gapEntries || []) {
     const count = Number(gap?.collectionCount || 0);
+    const priorityRanking = gap?.gapPriorityScore
+      ? { score: gap.gapPriorityScore, signals: gap.gapPrioritySignals || [] }
+      : crossCollectionGapPriorityRanking(gap, labels);
     const evidence = uniqueInsightLines([
+      priorityRanking.score ? `${labels.crossCollectionGapPriorityColumn}: ${priorityRanking.score}` : "",
+      ...(priorityRanking.signals || []).map((signal) => `${labels.crossCollectionGapPrioritySignalsColumn}: ${signal}`),
       ...(gap?.themes || []).map((theme) => `${labels.clusterColumn}: ${theme}`),
       ...(gap?.candidateQueries || []).map((query) => `${labels.roadmapCandidateQueryColumn}: ${query}`)
-    ]).slice(0, 5);
+    ]).slice(0, 8);
     entries.push({
       kind: "recurring_gap",
-      score: count * 100 + evidence.length,
+      score: 70 + Number(priorityRanking.score || 0),
       priority: labels.crossCollectionPriorityGap(count, gap?.gap || labels.gapMatrixPendingEvidence),
       reason: count >= 2 ? labels.crossCollectionPriorityRecurringReason(count) : labels.crossCollectionPrioritySingleReason,
       collections: gap?.collections || [],
@@ -4779,6 +4817,9 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionClusterScoreColumn: "Cluster Score",
       crossCollectionEvidenceRankColumn: "Evidence Card Rank",
       crossCollectionEvidenceRankSignalsColumn: "Rank Signals",
+      crossCollectionGapPriorityColumn: "Gap Priority Score",
+      crossCollectionGapPrioritySignalsColumn: "Gap Priority Signals",
+      crossCollectionGapPriorityPending: "gap priority pending",
       crossCollectionClusterThresholdColumn: "Threshold Evidence",
       crossCollectionClusterRecommendationColumn: "Calibration Recommendation",
       crossCollectionClusterLinkColumn: "Link Evidence",
@@ -4819,6 +4860,11 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionEvidenceRankLinks: (links) => `link signals: ${links || 0}`,
       crossCollectionEvidenceRankCalibration: (recommendation) => `calibration: ${recommendation || "pending"}`,
       crossCollectionEvidenceRankRisk: (risk) => `risk: ${risk || "pending"}`,
+      crossCollectionGapPriorityCoverage: (count) => `coverage: ${count || 0} collections`,
+      crossCollectionGapPriorityThemes: (count) => `themes: ${count || 0}`,
+      crossCollectionGapPriorityQueries: (count) => `candidate queries: ${count || 0}`,
+      crossCollectionGapPriorityRecurring: (count) => `recurring gap across ${count || 0} collections`,
+      crossCollectionGapPrioritySingle: "single-collection gap",
       crossCollectionClusterPrompt: (cluster, count) => `Turn ${cluster} into a review section plan across ${count || "the relevant"} collections; separate shared claims, scope-specific claims, and missing evidence.`,
       crossCollectionClusterReviewAction: (cluster) => `Verify the source collection reports for ${cluster}; keep only evidence-backed shared claims.`,
       crossCollectionClusterNoEvidence: "No cluster evidence cards are available yet.",
@@ -5067,6 +5113,9 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionClusterScoreColumn: "クラスタスコア",
       crossCollectionEvidenceRankColumn: "証拠カード順位",
       crossCollectionEvidenceRankSignalsColumn: "順位シグナル",
+      crossCollectionGapPriorityColumn: "ギャップ優先度スコア",
+      crossCollectionGapPrioritySignalsColumn: "ギャップ優先度シグナル",
+      crossCollectionGapPriorityPending: "ギャップ優先度未確認",
       crossCollectionClusterThresholdColumn: "しきい値根拠",
       crossCollectionClusterRecommendationColumn: "校正提案",
       crossCollectionClusterLinkColumn: "接続根拠",
@@ -5107,6 +5156,11 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionEvidenceRankLinks: (links) => `接続根拠: ${links || 0} 件`,
       crossCollectionEvidenceRankCalibration: (recommendation) => `校正提案: ${recommendation || "未確認"}`,
       crossCollectionEvidenceRankRisk: (risk) => `リスク: ${risk || "未確認"}`,
+      crossCollectionGapPriorityCoverage: (count) => `カバレッジ: collection ${count || 0} 件`,
+      crossCollectionGapPriorityThemes: (count) => `テーマ: ${count || 0} 件`,
+      crossCollectionGapPriorityQueries: (count) => `候補検索クエリ: ${count || 0} 件`,
+      crossCollectionGapPriorityRecurring: (count) => `${count || 0} 件の collection に反復`,
+      crossCollectionGapPrioritySingle: "単一 collection ギャップ",
       crossCollectionClusterPrompt: (cluster, count) => `${cluster} を ${count || "関連する"} 件の collection にまたがるレビュー節計画に変換し、共通主張、範囲固有の主張、不足証拠を分ける。`,
       crossCollectionClusterReviewAction: (cluster) => `${cluster} の元 collection 報告書を確認し、証拠で支えられる共通主張だけを残す。`,
       crossCollectionClusterNoEvidence: "利用できるクラスタ証拠カードはまだありません。",
@@ -5354,6 +5408,9 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionClusterScoreColumn: "聚类评分",
     crossCollectionEvidenceRankColumn: "证据卡排序分",
     crossCollectionEvidenceRankSignalsColumn: "排序线索",
+    crossCollectionGapPriorityColumn: "缺口优先级分",
+    crossCollectionGapPrioritySignalsColumn: "缺口排序线索",
+    crossCollectionGapPriorityPending: "待补充缺口优先级",
     crossCollectionClusterThresholdColumn: "阈值证据",
     crossCollectionClusterRecommendationColumn: "校准建议",
     crossCollectionClusterLinkColumn: "连接证据",
@@ -5394,6 +5451,11 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionEvidenceRankLinks: (links) => `连接证据：${links || 0} 条`,
     crossCollectionEvidenceRankCalibration: (recommendation) => `校准建议：${recommendation || "待复核"}`,
     crossCollectionEvidenceRankRisk: (risk) => `风险：${risk || "待复核"}`,
+    crossCollectionGapPriorityCoverage: (count) => `覆盖：${count || 0} 个集合`,
+    crossCollectionGapPriorityThemes: (count) => `主题：${count || 0} 个`,
+    crossCollectionGapPriorityQueries: (count) => `候选检索词：${count || 0} 条`,
+    crossCollectionGapPriorityRecurring: (count) => `在 ${count || 0} 个集合中重复出现`,
+    crossCollectionGapPrioritySingle: "单集合缺口",
     crossCollectionClusterPrompt: (cluster, count) => `把“${cluster}”整理成横跨 ${count || "相关"} 个集合的综述小节计划，区分共同主张、范围特有主张和缺失证据。`,
     crossCollectionClusterReviewAction: (cluster) => `核对“${cluster}”对应的集合报告，只保留有证据支撑的共同主张。`,
     crossCollectionClusterNoEvidence: "暂时没有可用的聚类证据卡。",
