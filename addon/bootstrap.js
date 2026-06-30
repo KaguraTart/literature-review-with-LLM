@@ -2871,6 +2871,7 @@ function crossCollectionChartReviewTriageEntries(collections = []) {
           collections: [],
           sourceIndexes: [],
           blockingIssues: [],
+          details: [],
           batchAction,
           doneCriteria
         });
@@ -2885,6 +2886,18 @@ function crossCollectionChartReviewTriageEntries(collections = []) {
       }
       if (chartReview.path && !group.sourceIndexes.includes(chartReview.path)) group.sourceIndexes.push(chartReview.path);
       if (row.blockingIssue && !group.blockingIssues.includes(row.blockingIssue)) group.blockingIssues.push(row.blockingIssue);
+      group.details.push({
+        collectionKey: collection?.key || "",
+        collectionName: collection?.name || collection?.key || "",
+        count,
+        paperCount: Number(row.paperCount) || 0,
+        papers: Array.isArray(row.papers) ? row.papers.slice(0, 8) : [],
+        blockingIssue: row.blockingIssue || "",
+        batchAction,
+        doneCriteria,
+        sourceReports: Array.isArray(row.sourceReports) ? row.sourceReports.slice(0, 8) : [],
+        sourceIndex: chartReview.path || ""
+      });
     }
   }
   return Array.from(groups.values()).map((group) => ({
@@ -2897,7 +2910,8 @@ function crossCollectionChartReviewTriageEntries(collections = []) {
     blockingIssue: collectionChartReviewIssueSummary(group.blockingIssues),
     batchAction: group.batchAction,
     doneCriteria: group.doneCriteria,
-    sourceIndexes: group.sourceIndexes.slice(0, 8)
+    sourceIndexes: group.sourceIndexes.slice(0, 8),
+    details: group.details.slice(0, 16)
   })).sort(collectionChartReviewBatchSort);
 }
 
@@ -2919,6 +2933,42 @@ function renderCrossCollectionChartReviewTriageRows(entries, labels) {
     "| --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- |",
     rows.join("\n") || `|  |  | 0 | 0 | 0 |  | ${escapeMarkdownTable(labels.crossCollectionChartReviewEmpty)} |  |  |  |`
   ].join("\n");
+}
+
+function renderCrossCollectionChartReviewDrilldown(entries, labels) {
+  const visible = (entries || []).slice(0, 10);
+  if (!visible.length) return `- ${labels.crossCollectionChartReviewEmpty}`;
+  return visible.map((entry, index) => {
+    const title = labels.crossCollectionChartReviewDrilldownSummary?.(index + 1, entry) || `${index + 1}. ${entry.priority || ""} ${entry.reviewState || ""}`;
+    const details = Array.isArray(entry.details) ? entry.details : [];
+    const detailRows = details.map((detail) => [
+      escapeMarkdownTable(detail.collectionName || detail.collectionKey || ""),
+      Number(detail.count) || 0,
+      Number(detail.paperCount) || 0,
+      escapeMarkdownTable((detail.papers || []).join("; ") || labels.noSummary),
+      escapeMarkdownTable(detail.blockingIssue || labels.crossCollectionChartReviewNoIssue),
+      escapeMarkdownTable((detail.sourceReports || []).join("; ") || labels.pendingSummaryPath),
+      escapeMarkdownTable(detail.sourceIndex || labels.crossCollectionChartReviewIndexPending)
+    ].join(" | ")).map((row) => `| ${row} |`);
+    return [
+      "<details>",
+      `<summary>${escapeHtmlText(title)}</summary>`,
+      "",
+      `- ${labels.crossCollectionChartReviewBatchActionColumn}: ${entry.batchAction || labels.crossCollectionChartReviewActionPending}`,
+      `- ${labels.crossCollectionChartReviewDoneColumn}: ${entry.doneCriteria || labels.crossCollectionChartReviewDonePending}`,
+      `- ${labels.crossCollectionChartReviewBlockingColumn}: ${entry.blockingIssue || labels.crossCollectionChartReviewNoIssue}`,
+      "",
+      `| ${labels.collectionColumn} | ${labels.crossCollectionChartReviewActionCountColumn} | ${labels.crossCollectionChartReviewPaperCountColumn || labels.paperColumn} | ${labels.paperColumn} | ${labels.crossCollectionChartReviewBlockingColumn} | ${labels.reportColumn} | ${labels.crossCollectionChartReviewIndexColumn} |`,
+      "| --- | ---: | ---: | --- | --- | --- | --- |",
+      detailRows.join("\n") || `|  | 0 | 0 |  | ${escapeMarkdownTable(labels.crossCollectionChartReviewEmpty)} |  |  |`,
+      "",
+      `- [ ] ${labels.crossCollectionChartReviewChecklistOpenIndexes}`,
+      `- [ ] ${labels.crossCollectionChartReviewChecklistVerifyPapers}`,
+      `- [ ] ${labels.crossCollectionChartReviewChecklistUpdateState}`,
+      "",
+      "</details>"
+    ].join("\n");
+  }).join("\n\n");
 }
 
 function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") {
@@ -2988,6 +3038,10 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
     `## ${labels.crossCollectionChartReviewTriage}`,
     "",
     renderCrossCollectionChartReviewTriageRows(indexPayload?.chartReviewTriage || crossCollectionChartReviewTriageEntries(collections), labels),
+    "",
+    `### ${labels.crossCollectionChartReviewDrilldown}`,
+    "",
+    renderCrossCollectionChartReviewDrilldown(indexPayload?.chartReviewTriage || crossCollectionChartReviewTriageEntries(collections), labels),
     "",
     `## ${labels.crossCollectionReviewPack}`,
     "",
@@ -4636,6 +4690,11 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionChartReviewDonePending: "Done criteria pending",
       crossCollectionChartReviewIndexPending: "chart review index pending",
       crossCollectionChartReviewEmpty: "No collection-level chart review tasks are available yet.",
+      crossCollectionChartReviewDrilldown: "Chart Review Drilldown",
+      crossCollectionChartReviewDrilldownSummary: (index, entry) => `${index}. ${entry.priority || "medium"} / ${entry.reviewState || "todo"} - ${entry.count || 0} action(s) across ${entry.collectionCount || 0} collection(s)`,
+      crossCollectionChartReviewChecklistOpenIndexes: "Open each linked chart review index and inspect the source visual reports.",
+      crossCollectionChartReviewChecklistVerifyPapers: "Verify the listed papers before reusing extracted chart values.",
+      crossCollectionChartReviewChecklistUpdateState: "Update reviewer, due date, notes, and review state in the source workbench/export.",
       collectionColumn: "Collection",
       reportColumn: "Report",
       crossCollectionStatsLine: (stats) => `Collections ${stats.collections}, papers ${stats.totalPapers}, available summaries ${stats.availableSummaries}, skipped without PDF ${stats.skippedNoPdf}, failed ${stats.failed}.`,
@@ -4908,6 +4967,11 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionChartReviewDonePending: "完了条件未設定",
       crossCollectionChartReviewIndexPending: "図表レビュー索引待ち",
       crossCollectionChartReviewEmpty: "Collection レベルの図表レビュータスクはまだありません。",
+      crossCollectionChartReviewDrilldown: "図表レビュードリルダウン",
+      crossCollectionChartReviewDrilldownSummary: (index, entry) => `${index}. ${entry.priority || "medium"} / ${entry.reviewState || "todo"} - ${entry.collectionCount || 0} 件の collection に ${entry.count || 0} タスク`,
+      crossCollectionChartReviewChecklistOpenIndexes: "リンクされた図表レビュー索引を開き、元の visual report を確認する。",
+      crossCollectionChartReviewChecklistVerifyPapers: "抽出値を再利用する前に対象論文を確認する。",
+      crossCollectionChartReviewChecklistUpdateState: "元の workbench/export で担当者、期限、メモ、レビュー状態を更新する。",
       collectionColumn: "Collection",
       reportColumn: "報告書",
       crossCollectionStatsLine: (stats) => `Collection ${stats.collections} 件、論文 ${stats.totalPapers} 件、利用可能な要約 ${stats.availableSummaries} 件、PDF なしスキップ ${stats.skippedNoPdf} 件、失敗 ${stats.failed} 件。`,
@@ -5179,6 +5243,11 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionChartReviewDonePending: "待补充完成条件",
     crossCollectionChartReviewIndexPending: "待生成图表复核索引",
     crossCollectionChartReviewEmpty: "暂无 collection 级图表复核任务。",
+    crossCollectionChartReviewDrilldown: "图表复核下钻",
+    crossCollectionChartReviewDrilldownSummary: (index, entry) => `${index}. ${entry.priority || "medium"} / ${entry.reviewState || "todo"} - ${entry.collectionCount || 0} 个集合中的 ${entry.count || 0} 个任务`,
+    crossCollectionChartReviewChecklistOpenIndexes: "打开每个已链接的图表复核索引，核对来源 visual report。",
+    crossCollectionChartReviewChecklistVerifyPapers: "复用抽取图表数值前，先核对明细中的论文。",
+    crossCollectionChartReviewChecklistUpdateState: "在来源工作台或重新导出时更新复核人、期限、备注和复核状态。",
     collectionColumn: "集合",
     reportColumn: "报告",
     crossCollectionStatsLine: (stats) => `集合 ${stats.collections} 个，论文 ${stats.totalPapers} 篇，可用总结 ${stats.availableSummaries} 篇，无 PDF 跳过 ${stats.skippedNoPdf} 篇，失败 ${stats.failed} 篇。`,
@@ -5345,6 +5414,13 @@ function collectionTemplateLabels(outputLanguage) {
 
 function escapeMarkdownTable(value) {
   return String(value || "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
+}
+
+function escapeHtmlText(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 async function writeBatchRunReport(settings, collectionContext, results, options = {}) {

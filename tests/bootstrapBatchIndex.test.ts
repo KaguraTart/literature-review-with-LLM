@@ -929,6 +929,26 @@ describe("batch papers index", () => {
       })
     ]));
     expect(payload.chartReviewTriage[0].blockingIssue).toContain("new anchors");
+    expect(payload.chartReviewTriage[0].details).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        collectionName: "New Collection",
+        count: 1,
+        paperCount: 1,
+        papers: ["New Chart Paper"],
+        blockingIssue: "new anchors",
+        sourceReports: ["/out/collections/NEW/writing/visual-extraction-N.md"],
+        sourceIndex: "/out/collections/NEW/writing/chart-review-batch-index.en-US.md"
+      }),
+      expect.objectContaining({
+        collectionName: "Old Collection",
+        count: 2,
+        paperCount: 1,
+        papers: ["Old Chart Paper"],
+        blockingIssue: "old anchors",
+        sourceReports: ["/out/collections/OLD/writing/visual-extraction-O.md"],
+        sourceIndex: "/out/collections/OLD/writing/chart-review-batch-index.en-US.md"
+      })
+    ]));
     expect(payload.gapBoard).toEqual(expect.arrayContaining([
       expect.objectContaining({
         gap: "No deployment evidence",
@@ -1016,6 +1036,11 @@ describe("batch papers index", () => {
     expect(synthesis).toContain("Cross-Collection Priority Board");
     expect(synthesis).toContain("Cross-Collection Chart Review Triage");
     expect(synthesis).toContain("| high | todo | 3 | 2 | 2 | New Collection; Old Collection | new anchors; old anchors | Add axis anchors | Anchors verified | /out/collections/NEW/writing/chart-review-batch-index.en-US.md; /out/collections/OLD/writing/chart-review-batch-index.en-US.md |");
+    expect(synthesis).toContain("### Chart Review Drilldown");
+    expect(synthesis).toContain("<details>");
+    expect(synthesis).toContain("<summary>1. high / todo - 3 action(s) across 2 collection(s)</summary>");
+    expect(synthesis).toContain("| New Collection | 1 | 1 | New Chart Paper | new anchors | /out/collections/NEW/writing/visual-extraction-N.md | /out/collections/NEW/writing/chart-review-batch-index.en-US.md |");
+    expect(synthesis).toContain("- [ ] Open each linked chart review index and inspect the source visual reports.");
     expect(synthesis).toContain("Cross-Collection Review Pack");
     expect(synthesis).toContain("Model Deepening Prompt");
     expect(synthesis).toContain("Review possible theme merge");
