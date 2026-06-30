@@ -250,6 +250,13 @@ function pdfPagesSchema() {
         type: "boolean",
         description: "When true, retry empty or failed OCR pages after a higher-DPI render. Enabled by default."
       },
+      ocrRepairPsms: {
+        anyOf: [
+          { type: "string" },
+          { type: "array", items: { type: "number" } }
+        ],
+        description: "Optional Tesseract page segmentation modes for OCR repair after high-DPI retry still returns no text. Defaults to 6,11."
+      },
       ocrPages: {
         anyOf: [
           { type: "string" },
@@ -462,6 +469,8 @@ async function extractPdfPages(args = {}) {
           ocrRepairAttemptedPageCount: ocrResult.repairAttemptedPageCount,
           ocrRepairRecoveredPageCount: ocrResult.repairRecoveredPageCount,
           ocrRepairFailedPageCount: ocrResult.repairFailedPageCount,
+          ocrRepairPsmAttemptedPageCount: ocrResult.repairPsmAttemptedPageCount,
+          ocrRepairPsmRecoveredPageCount: ocrResult.repairPsmRecoveredPageCount,
           textError: textError ? cleanPdfPageText(textError.message || String(textError)).slice(0, 500) : ""
         }));
       }
@@ -483,7 +492,9 @@ async function extractPdfPages(args = {}) {
       ocrFullDocumentUsed: Boolean(ocrResult?.fullDocumentOcr),
       ocrRepairAttemptedPageCount: ocrResult?.repairAttemptedPageCount || 0,
       ocrRepairRecoveredPageCount: ocrResult?.repairRecoveredPageCount || 0,
-      ocrRepairFailedPageCount: ocrResult?.repairFailedPageCount || 0
+      ocrRepairFailedPageCount: ocrResult?.repairFailedPageCount || 0,
+      ocrRepairPsmAttemptedPageCount: ocrResult?.repairPsmAttemptedPageCount || 0,
+      ocrRepairPsmRecoveredPageCount: ocrResult?.repairPsmRecoveredPageCount || 0
     }));
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true });
@@ -506,6 +517,8 @@ async function extractPdfOcrPages(sourcePath, args = {}) {
     let repairAttemptedPageCount = 0;
     let repairRecoveredPageCount = 0;
     let repairFailedPageCount = 0;
+    let repairPsmAttemptedPageCount = 0;
+    let repairPsmRecoveredPageCount = 0;
     const pageTimeout = pdfOcrPageTimeoutSeconds(args.timeoutSeconds, maxPages);
     for (const imagePath of rendered.slice(0, maxPages)) {
       const page = pdfRenderedImagePage(imagePath) || (pages.length + 1);
@@ -516,8 +529,14 @@ async function extractPdfOcrPages(sourcePath, args = {}) {
         const repaired = await repairPdfOcrPage(sourcePath, renderDir, page, language, pageTimeout, signal, args);
         signal = repaired.signal;
         result = { cleaned: repaired.cleaned, error: repaired.error };
+        if (signal.repairPsm || signal.repairPsmAttempted?.length) {
+          repairPsmAttemptedPageCount += 1;
+        }
         if (signal.status === "ok") {
           repairRecoveredPageCount += 1;
+          if (signal.repairPsm) {
+            repairPsmRecoveredPageCount += 1;
+          }
         } else {
           repairFailedPageCount += 1;
         }
@@ -547,6 +566,8 @@ async function extractPdfOcrPages(sourcePath, args = {}) {
       repairAttemptedPageCount,
       repairRecoveredPageCount,
       repairFailedPageCount,
+      repairPsmAttemptedPageCount,
+      repairPsmRecoveredPageCount,
       language
     };
   } finally {
@@ -563,11 +584,14 @@ async function renderPdfOcrPage(sourcePath, renderDir, pageNumber, prefixName, d
   });
 }
 
-async function runPdfOcrOnImage(imagePath, renderDir, language, pageTimeout) {
+async function runPdfOcrOnImage(imagePath, renderDir, language, pageTimeout, options = {}) {
   let cleaned = "";
   let error = "";
   try {
-    const text = await runCommand(TESSERACT_BIN, [imagePath, "stdout", "-l", language], {
+    const commandArgs = [imagePath, "stdout", "-l", language];
+    const psm = pdfOcrRepairPsmValue(options.psm);
+    if (psm) commandArgs.push("--psm", String(psm));
+    const text = await runCommand(TESSERACT_BIN, commandArgs, {
       cwd: renderDir,
       timeoutSeconds: pageTimeout,
       requireOutput: false
@@ -587,20 +611,66 @@ async function repairPdfOcrPage(sourcePath, renderDir, page, language, pageTimeo
     await renderPdfOcrPage(sourcePath, renderDir, page, `repair-page-${page}`, dpi, args);
     const imagePath = await pdfRenderedRepairImagePath(renderDir, page);
     const result = await runPdfOcrOnImage(imagePath, renderDir, language, pageTimeout);
+    if (result.cleaned) {
+      return {
+        ...result,
+        signal: pdfOcrPageSignal({
+          page,
+          text: result.cleaned,
+          error: result.error,
+          language,
+          repair: {
+            attempted: true,
+            dpi,
+            strategy: "high_dpi",
+            previousStatus,
+            previousError,
+            recovered: true
+          }
+        })
+      };
+    }
+    let lastResult = result;
+    for (const psm of pdfOcrRepairPsmModes(args.ocrRepairPsms)) {
+      const psmResult = await runPdfOcrOnImage(imagePath, renderDir, language, pageTimeout, { psm });
+      lastResult = psmResult;
+      if (psmResult.cleaned) {
+        return {
+          ...psmResult,
+          signal: pdfOcrPageSignal({
+            page,
+            text: psmResult.cleaned,
+            error: psmResult.error,
+            language,
+            repair: {
+              attempted: true,
+              dpi,
+              psm,
+              strategy: "high_dpi_psm",
+              previousStatus,
+              previousError,
+              recovered: true
+            }
+          })
+        };
+      }
+    }
     const signal = pdfOcrPageSignal({
       page,
-      text: result.cleaned,
-      error: result.error,
+      text: "",
+      error: lastResult.error,
       language,
       repair: {
         attempted: true,
         dpi,
+        psmAttempted: pdfOcrRepairPsmModes(args.ocrRepairPsms),
+        strategy: "high_dpi_psm",
         previousStatus,
         previousError,
-        recovered: Boolean(result.cleaned)
+        recovered: false
       }
     });
-    return { ...result, signal };
+    return { cleaned: "", error: lastResult.error, signal };
   } catch (err) {
     const error = cleanPdfPageText(err?.message || String(err)).slice(0, 500);
     const signal = pdfOcrPageSignal({
@@ -611,6 +681,7 @@ async function repairPdfOcrPage(sourcePath, renderDir, page, language, pageTimeo
       repair: {
         attempted: true,
         dpi,
+        strategy: "high_dpi",
         previousStatus,
         previousError,
         recovered: false
@@ -671,6 +742,7 @@ function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
   if (extra.textError) warnings.push("text_extraction_error");
   if (extra.ocrFallbackUsed) warnings.push("ocr_fallback_used");
   if (Number(extra.ocrRepairAttemptedPageCount) > 0) warnings.push("ocr_auto_repair_used");
+  if (Number(extra.ocrRepairPsmAttemptedPageCount) > 0) warnings.push("ocr_psm_repair_used");
   if (Number(extra.ocrRepairFailedPageCount) > 0) warnings.push("ocr_repair_failed_pages");
   if (extra.ocrFullDocumentUsed) warnings.push("ocr_full_document_used");
   if (Number(extra.ocrTruncatedPageCount) > 0) warnings.push("ocr_page_limit_reached");
@@ -699,6 +771,8 @@ function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
     ocrRepairAttemptedPageCount: Number(extra.ocrRepairAttemptedPageCount) || 0,
     ocrRepairRecoveredPageCount: Number(extra.ocrRepairRecoveredPageCount) || 0,
     ocrRepairFailedPageCount: Number(extra.ocrRepairFailedPageCount) || 0,
+    ocrRepairPsmAttemptedPageCount: Number(extra.ocrRepairPsmAttemptedPageCount) || 0,
+    ocrRepairPsmRecoveredPageCount: Number(extra.ocrRepairPsmRecoveredPageCount) || 0,
     ocrPageSignals,
     ocrReadablePageCount: ocrPageSignals.filter((signal) => signal.status === "ok").length,
     ocrLowConfidencePageCount,
@@ -728,6 +802,7 @@ function pdfOcrPageSignal({ page, text = "", error = "", language = "", repair =
   const repairAttempted = Boolean(repair?.attempted);
   if (repairAttempted && status === "ok") {
     warnings.push("ocr_page_repaired");
+    if (repair?.psm) warnings.push("ocr_page_repaired_psm");
   } else if (repairAttempted) {
     warnings.push("ocr_page_repair_failed");
   }
@@ -743,8 +818,11 @@ function pdfOcrPageSignal({ page, text = "", error = "", language = "", repair =
     ...(repairAttempted ? {
       repairAttempted: true,
       repairDpi: Number(repair?.dpi) || pdfOcrRepairDpi(),
+      repairStrategy: repair?.strategy || "high_dpi",
       repairStatus: status === "ok" ? "recovered" : "failed",
       previousStatus: repair?.previousStatus || "",
+      ...(repair?.psm ? { repairPsm: Number(repair.psm) } : {}),
+      ...(repair?.psmAttempted?.length ? { repairPsmAttempted: repair.psmAttempted } : {}),
       ...(repair?.previousError ? { previousError: repair.previousError } : {})
     } : {}),
     ...(error ? { error } : {})
@@ -794,6 +872,28 @@ function pdfOcrRepairDpi(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 300;
   return Math.min(Math.max(Math.round(parsed), 220), 450);
+}
+
+function pdfOcrRepairPsmModes(value) {
+  if (value === undefined || value === null) return [6, 11];
+  const rawValues = Array.isArray(value)
+    ? value
+    : String(value).trim().toLowerCase() === "none" || String(value).trim().toLowerCase() === "off"
+      ? []
+      : String(value).split(/[\s,;|]+/);
+  const modes = [];
+  for (const raw of rawValues) {
+    const psm = pdfOcrRepairPsmValue(raw);
+    if (psm && !modes.includes(psm)) modes.push(psm);
+    if (modes.length >= 4) break;
+  }
+  return modes;
+}
+
+function pdfOcrRepairPsmValue(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 13) return 0;
+  return parsed;
 }
 
 function shouldRunPdfOcrFallback(args = {}, pages = [], pageSlots = []) {

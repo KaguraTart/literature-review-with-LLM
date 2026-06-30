@@ -93,6 +93,7 @@ describe("local agent stdio MCP runtime", () => {
         type: "boolean"
       });
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrAutoRepair.description).toContain("higher-DPI render");
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrRepairPsms.description).toContain("page segmentation modes");
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPages.description).toContain("1,3-5");
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.minTextChars).toMatchObject({
         type: "number"
@@ -463,6 +464,102 @@ describe("local agent stdio MCP runtime", () => {
           repairStatus: "recovered",
           previousStatus: "empty",
           warnings: ["ocr_page_repaired"]
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs stubborn OCR pages with bounded Tesseract PSM retries", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", "");
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 1);
+      const tesseractBin = fakeRepairingTesseractByPageBin(
+        dir,
+        "tesseract",
+        {
+          1: ""
+        },
+        {
+          1: ""
+        },
+        {
+          "1:6": "page recovered only after psm six layout retry"
+        }
+      );
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 112,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF scanned psm repair").toString("base64"),
+              name: "psm-repair-scan.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              maxOcrPages: 1,
+              ocrRepairPsms: "6,11",
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "psm-repair-scan.pdf",
+          pageCount: 1,
+          ocrFallbackUsed: true,
+          ocrRenderedPageCount: 1,
+          ocrRepairAttemptedPageCount: 1,
+          ocrRepairRecoveredPageCount: 1,
+          ocrRepairFailedPageCount: 0,
+          ocrRepairPsmAttemptedPageCount: 1,
+          ocrRepairPsmRecoveredPageCount: 1,
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 1,
+            ocrFallbackUsed: true,
+            ocrRepairAttemptedPageCount: 1,
+            ocrRepairRecoveredPageCount: 1,
+            ocrRepairFailedPageCount: 0,
+            ocrRepairPsmAttemptedPageCount: 1,
+            ocrRepairPsmRecoveredPageCount: 1,
+            warnings: ["ocr_fallback_used", "ocr_auto_repair_used", "ocr_psm_repair_used"]
+          }
+        });
+        expect(parsed.pages[0]).toMatchObject({
+          page: 1,
+          text: "page recovered only after psm six layout retry",
+          ocr: {
+            status: "ok",
+            repairAttempted: true,
+            repairStrategy: "high_dpi_psm",
+            repairStatus: "recovered",
+            repairPsm: 6,
+            previousStatus: "empty",
+            warnings: ["ocr_page_repaired", "ocr_page_repaired_psm"]
+          }
+        });
+        expect(parsed.quality.ocrPageSignals[0]).toMatchObject({
+          page: 1,
+          status: "ok",
+          repairStrategy: "high_dpi_psm",
+          repairPsm: 6
         });
       } finally {
         runtime.stop();
@@ -1046,18 +1143,25 @@ function fakeRepairingTesseractByPageBin(
   dir: string,
   name: string,
   outputs: Record<number, string | { error: string; code?: number }>,
-  repairOutputs: Record<number, string | { error: string; code?: number }>
+  repairOutputs: Record<number, string | { error: string; code?: number }>,
+  psmRepairOutputs: Record<string, string | { error: string; code?: number }> = {}
 ) {
   const path = join(dir, name);
   writeFileSync(path, [
     "#!/usr/bin/env node",
+    "const args = process.argv.slice(2);",
     "const imagePath = process.argv[2] || '';",
     "const match = /-(\\d+)\\.[^.]+$/.exec(imagePath);",
     "const page = match ? Number(match[1]) : 0;",
+    "const psmIndex = args.indexOf('--psm');",
+    "const psm = psmIndex >= 0 ? Number(args[psmIndex + 1]) : 0;",
     `const outputs = ${JSON.stringify(outputs)};`,
     `const repairOutputs = ${JSON.stringify(repairOutputs)};`,
+    `const psmRepairOutputs = ${JSON.stringify(psmRepairOutputs)};`,
     "const source = imagePath.includes('/repair-page-') ? repairOutputs : outputs;",
-    "const output = source[page] ?? '';",
+    "const output = psm && imagePath.includes('/repair-page-')",
+    "  ? (psmRepairOutputs[`${page}:${psm}`] ?? source[page] ?? '')",
+    "  : (source[page] ?? '');",
     "if (output && typeof output === 'object') {",
     "  process.stderr.write(output.error || 'ocr failed');",
     "  process.exit(output.code || 1);",
