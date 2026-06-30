@@ -9289,7 +9289,7 @@ describe("workbench writeback helpers", () => {
       contextSourceHash: "sourcehash"
     });
 
-    expect(note).toContain("templateVersion: proposal-note-v1");
+    expect(note).toContain("templateVersion: proposal-note-v2");
     expect(note).toContain('promptPackId: "transportation"');
     expect(note).toContain("# 开题与课题申报笔记");
     expect(note).toContain("## 选题框架");
@@ -9304,6 +9304,12 @@ describe("workbench writeback helpers", () => {
     expect(note).toContain("场景边界段");
     expect(note).toContain("冲突/拥堵/调度");
     expect(note).toContain("是否说明空间范围");
+    expect(note).toContain("### 写作风格模板");
+    expect(note).toContain("| 写作动作 | 表达重点 | 不建议写法 | 更稳妥写法 | 证据核查 |");
+    expect(note).toContain("界定场景边界");
+    expect(note).toContain("提升交通效率");
+    expect(note).toContain("在{道路/空域/网络}约束下");
+    expect(note).toContain("检查 OD/需求流、规则约束和安全阈值");
     expect(note).toContain("### 写作清单");
     expect(note).toContain("明确道路/空域/网络约束");
     expect(note).toContain("### 技术路线与方法基础");
@@ -9356,6 +9362,11 @@ describe("workbench writeback helpers", () => {
     expect(files.get(notePath)).toContain("| Writing scenario | Reusable expression | Evidence anchor | Revision check |");
     expect(files.get(notePath)).toContain("Study-object paragraph");
     expect(files.get(notePath)).toContain("endpoint");
+    expect(files.get(notePath)).toContain("### Writing Style Templates");
+    expect(files.get(notePath)).toContain("| Writing move | Focus | Weak wording | Stronger wording | Evidence check |");
+    expect(files.get(notePath)).toContain("Define study object");
+    expect(files.get(notePath)).toContain("Study a disease mechanism");
+    expect(files.get(notePath)).toContain("Eligibility criteria, comparator, and endpoint");
     expect(files.get(notePath)).toContain("### Writing Checklist");
     expect(files.get(notePath)).toContain("Define study design, sample or cohort");
     expect(files.get(notePath)).toContain("Proposal Source Paper");
@@ -9412,7 +9423,7 @@ describe("workbench writeback helpers", () => {
       contextSourceHash: "sourcehash"
     });
 
-    expect(outline).toContain("templateVersion: journal-outline-v1");
+    expect(outline).toContain("templateVersion: journal-outline-v2");
     expect(outline).toContain('promptPackId: "ai-ml"');
     expect(outline).toContain("# 期刊/报告写作提纲");
     expect(outline).toContain("## 投稿/报告定位");
@@ -9430,6 +9441,11 @@ describe("workbench writeback helpers", () => {
     expect(outline).toContain("| 写作场景 | 可套用表达 | 证据锚点 | 修订检查 |");
     expect(outline).toContain("引言任务段");
     expect(outline).toContain("消融结果进一步表明");
+    expect(outline).toContain("### 写作风格模板");
+    expect(outline).toContain("| 写作动作 | 表达重点 | 不建议写法 | 更稳妥写法 | 证据核查 |");
+    expect(outline).toContain("定位贡献层级");
+    expect(outline).toContain("效果更好");
+    expect(outline).toContain("主结果、消融和协议必须能相互印证");
     expect(outline).toContain("### 写作清单");
     expect(outline).toContain("模型类别、数据与评价协议");
     expect(outline).toContain("## 正文提纲");
@@ -9503,6 +9519,11 @@ describe("workbench writeback helpers", () => {
     expect(files.get(outlinePath)).toContain("| Writing scenario | Reusable expression | Evidence anchor | Revision check |");
     expect(files.get(outlinePath)).toContain("Review introduction paragraph");
     expect(files.get(outlinePath)).toContain("Taxonomy body paragraph");
+    expect(files.get(outlinePath)).toContain("### Writing Style Templates");
+    expect(files.get(outlinePath)).toContain("| Writing move | Focus | Weak wording | Stronger wording | Evidence check |");
+    expect(files.get(outlinePath)).toContain("State synthesis claim");
+    expect(files.get(outlinePath)).toContain("This review summarizes related studies");
+    expect(files.get(outlinePath)).toContain("representative papers and evidence labels");
     expect(files.get(outlinePath)).toContain("### Writing Checklist");
     expect(files.get(outlinePath)).toContain("Organize related work by taxonomy dimensions");
     expect(files.get(outlinePath)).toContain("Comparison Evidence Paper");
