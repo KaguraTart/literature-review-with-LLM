@@ -8380,7 +8380,7 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("segmented Y calibration: upper 250px=10 ms, 100px=40 ms; lower 400px=0 ms, 250px=10 ms");
     expect(report).toContain("| 1 | axis-calibration-table | X | 50 | 1 | Hz | medium | [image] | log |");
     expect(report).toContain("| 3 | axis-calibration-table | Y | 400 | 0 | ms | medium | [image] | linear | lower |");
-    expect(report).toContain("| calibration-quality | pass | spans: X 400 px, Y 300 px; numeric anchors: 6/6; monotonic axes: X, Y; log axes: X; segmented axes: Y 2 |");
+    expect(report).toContain("| calibration-quality | pass | spans: X 400 px, Y lower 150 px, Y upper 150 px, Y 300 px; numeric anchors: 6/6; monotonic axes: X, Y; log axes: X; segmented axes: Y 2 (lower 2, upper 2) |");
 
     const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-LOGSEG.json";
     const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-LOGSEG.csv";
@@ -8402,6 +8402,58 @@ describe("workbench writeback helpers", () => {
     expect(files.get(csvPath)).toContain("pixel:1,1,axisY,25 ms,[image],assistant-log-segment,log-segment.png");
     expect(files.get(csvPath)).toContain("calibration:1,1,scale,log,[image],assistant-log-segment,log-segment.png");
     expect(files.get(csvPath)).toContain("calibration:3,3,segment,lower,[image],assistant-log-segment,log-segment.png");
+  });
+
+  it("flags under-calibrated broken-axis segments in visual extraction reports", () => {
+    const loaded = loadWorkbenchHelpers();
+    const item = {
+      key: "BROKENSEG",
+      getCollections: () => []
+    };
+    const report = loaded.renderVisualExtractionReportMarkdown({
+      item,
+      messages: [
+        {
+          id: "user-broken-segment",
+          role: "user",
+          content: "Extract chart points from the broken-axis figure",
+          images: [{ name: "broken-segment.png", mimeType: "image/png", size: 88 }]
+        },
+        {
+          id: "assistant-broken-segment",
+          role: "assistant",
+          profileName: "MiniMax",
+          content: [
+            "## Pixel / Coordinate Data Draft",
+            "| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| baseline | p1 | 250 | 175 |  |  | low | [image] |",
+            "",
+            "## Axis Calibration Anchors",
+            "| Axis | Pixel | Value | Unit | Scale | Segment | Source | Confidence |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| X | 50 | 0 | s | linear |  | [image] | medium |",
+            "| X | 450 | 10 | s | linear |  | [image] | medium |",
+            "| Y | 400 | 0 | ms | linear | lower | [image] | medium |",
+            "| Y | 250 | 10 | ms | linear | lower | [image] | medium |",
+            "| Y | 120 | 40 | ms | linear | upper | [image] | medium |"
+          ].join("\n")
+        }
+      ]
+    }, {
+      item,
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+
+    expect(report).toContain('chartQualityStatus: "needs-review"');
+    expect(report).toContain("| axis-calibration | pass | calibration anchors present: X 2, Y 3 |");
+    expect(report).toContain("| calibration-quality | fail |");
+    expect(report).toContain("segmented axes: Y 2 (lower 2, upper 1)");
+    expect(report).toContain("under-calibrated segment on Y upper: 1/2 numeric anchors");
+    expect(report).toContain("Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, segment coverage, and units");
+    expect(report).toContain("| high | todo | verify-calibration-quality | calibration-quality (fail) | Recheck anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units against the original chart before quantitative use.");
+    expect(report).toContain("Anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units have been manually checked with a reuse decision.");
   });
 
   it("flags low-quality axis calibration anchors in visual extraction reports", () => {
@@ -8453,10 +8505,10 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("| calibration-quality | fail |");
     expect(report).toContain("small pixel span on X: 12 px");
     expect(report).toContain("non-monotonic anchors on Y");
-    expect(report).toContain("Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, and units");
+    expect(report).toContain("Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, segment coverage, and units");
     expect(report).toContain("chartReviewActionCount: 4");
-    expect(report).toContain("| high | todo | verify-calibration-quality | calibration-quality (fail) | Recheck anchor span, monotonicity, duplicate values, and units against the original chart before quantitative use.");
-    expect(report).toContain("Anchor span, monotonicity, duplicate values, and units have been manually checked with a reuse decision.");
+    expect(report).toContain("| high | todo | verify-calibration-quality | calibration-quality (fail) | Recheck anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units against the original chart before quantitative use.");
+    expect(report).toContain("Anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units have been manually checked with a reuse decision.");
   });
 
   it("renders a formal review draft with evidence-backed writing sections", () => {

@@ -9306,12 +9306,19 @@ function visualExtractionCalibrationQualityCheck(calibrationAnchors = []) {
       }))
       .filter((anchor) => anchor.numericValue !== null);
     numericCount += numericAnchors.length;
-    const segments = Array.from(new Set(axisAnchors.map((anchor) => mdText(anchor.segment || "")).filter(Boolean)));
-    if (segments.length) segmentedAxes.push(`${axis} ${segments.length}`);
     if (numericAnchors.some((anchor) => anchor.scale === "log")) {
       logAxes.push(axis);
       const nonPositive = numericAnchors.filter((anchor) => Number(anchor.numericValue) <= 0);
       if (nonPositive.length) severeIssues.push(`non-positive log anchors on ${axis}`);
+    }
+    const segments = Array.from(new Set(axisAnchors.map((anchor) => mdText(anchor.segment || "")).filter(Boolean)));
+    const segmentedDiagnostics = visualExtractionSegmentedCalibrationDiagnostics(axis, axisAnchors, numericAnchors);
+    if (segmentedDiagnostics) {
+      segmentedAxes.push(segmentedDiagnostics.summary);
+      spans.push(...segmentedDiagnostics.spans);
+      issues.push(...segmentedDiagnostics.issues);
+      severeIssues.push(...segmentedDiagnostics.severeIssues);
+      if (segmentedDiagnostics.monotonic) monotonicAxes.push(axis);
     }
     const duplicatePixels = visualExtractionDuplicateCalibrationValues(axisAnchors, (anchor) => anchor.pixel);
     if (duplicatePixels.length) {
@@ -9326,6 +9333,9 @@ function visualExtractionCalibrationQualityCheck(calibrationAnchors = []) {
       const span = Math.max(...pixels) - Math.min(...pixels);
       spans.push(`${axis} ${span} px`);
       if (span > 0 && span < 24) issues.push(`small pixel span on ${axis}: ${span} px`);
+    }
+    if (segments.length) {
+      continue;
     }
     if (numericAnchors.length >= 3) {
       if (visualExtractionMonotonicCalibration(numericAnchors)) {
@@ -9349,6 +9359,45 @@ function visualExtractionCalibrationQualityCheck(calibrationAnchors = []) {
   if (severeIssues.length) return visualExtractionQualityCheck("calibration-quality", "fail", detailParts.join("; "));
   if (issues.length) return visualExtractionQualityCheck("calibration-quality", "warning", detailParts.join("; "));
   return visualExtractionQualityCheck("calibration-quality", "pass", detailParts.join("; "));
+}
+
+function visualExtractionSegmentedCalibrationDiagnostics(axis, axisAnchors = [], numericAnchors = []) {
+  const segmentNames = Array.from(new Set((axisAnchors || []).map((anchor) => mdText(anchor?.segment || "")).filter(Boolean)));
+  if (!segmentNames.length) return null;
+  const summaryParts = [];
+  const spans = [];
+  const issues = [];
+  const severeIssues = [];
+  let completeSegments = 0;
+  for (const segment of segmentNames) {
+    const segmentAnchors = (axisAnchors || []).filter((anchor) => mdText(anchor?.segment || "") === segment);
+    const segmentNumeric = (numericAnchors || []).filter((anchor) => mdText(anchor?.segment || "") === segment);
+    summaryParts.push(`${segment} ${segmentNumeric.length}`);
+    if (segmentNumeric.length < 2) {
+      severeIssues.push(`under-calibrated segment on ${axis} ${segment}: ${segmentNumeric.length}/2 numeric anchors`);
+      continue;
+    }
+    completeSegments += 1;
+    const pixels = segmentNumeric.map((anchor) => Number(anchor.pixel)).filter(Number.isFinite);
+    if (pixels.length >= 2) {
+      const span = Math.max(...pixels) - Math.min(...pixels);
+      spans.push(`${axis} ${segment} ${span} px`);
+      if (span > 0 && span < 24) issues.push(`small segment span on ${axis} ${segment}: ${span} px`);
+    }
+    if (segmentNumeric.length >= 3 && !visualExtractionMonotonicCalibration(segmentNumeric)) {
+      severeIssues.push(`non-monotonic anchors on ${axis} ${segment}`);
+    }
+    if (segmentAnchors.length > segmentNumeric.length) {
+      issues.push(`non-numeric segment anchors on ${axis} ${segment}: ${segmentAnchors.length - segmentNumeric.length}/${segmentAnchors.length}`);
+    }
+  }
+  return {
+    summary: `${axis} ${segmentNames.length} (${summaryParts.join(", ")})`,
+    spans,
+    issues,
+    severeIssues,
+    monotonic: completeSegments === segmentNames.length && !severeIssues.some((issue) => issue.includes(`non-monotonic anchors on ${axis}`))
+  };
 }
 
 function visualExtractionCalibrationAxisGroups(anchors = []) {
@@ -9872,14 +9921,14 @@ function visualExtractionReportLabels(outputLanguage) {
       noChartReviewActions: "当前质量审阅未生成强制复核任务；正式使用前仍建议回到原图抽查。",
       noQualityIssues: "未发现结构化质量风险；正式使用前仍建议回到原图核对。",
       recommendationAxisCalibration: "补充至少两个清晰坐标轴刻度/数值锚点，并对照原图核对 Pixel X/Y 到 Axis X/Y 的映射。",
-      recommendationCalibrationQuality: "重新核对校准锚点的像素跨度、单调性、重复刻度和数值单位；跨度太小或非单调时不要用于量化比较。",
+      recommendationCalibrationQuality: "重新核对校准锚点的像素跨度、单调性、重复刻度、分段覆盖和数值单位；跨度太小、断轴分段锚点不足或非单调时不要用于量化比较。",
       recommendationConfidence: "在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。",
       recommendationImageEvidence: "重新提问时要求模型用 [image] 标注直接视觉观察，并把文本上下文推断分开。",
       recommendationPointCount: "放大原图或要求模型输出更密集的点表后，再用于跨论文实验对比。",
       reviewActionReconstructChartData: "重新要求模型输出可复核的重建数据表，或人工从原图读取最少关键点。",
       reviewActionAddPixelCoordinates: "要求模型补充 Pixel X、Pixel Y、Axis X、Axis Y 表，并标注低置信点。",
       reviewActionAddAxisCalibration: "补充每个坐标轴至少两个清晰刻度锚点，再重新导出报告。",
-      reviewActionVerifyCalibrationQuality: "回到原图核对锚点跨度、单调性、重复值和单位，异常时不要用于量化比较。",
+      reviewActionVerifyCalibrationQuality: "回到原图核对锚点跨度、单调性、重复值、断轴分段覆盖和单位，异常时不要用于量化比较。",
       reviewActionConfirmConfidence: "人工确认低置信读数、单位和图例；确认前只作为草稿使用。",
       reviewActionSeparateImageEvidence: "重新提问时要求直接视觉观察都用 [image] 标注，推断内容单独列出。",
       reviewActionRequestMorePoints: "放大原图或重新提问，要求输出更密集但仍可复核的点表。",
@@ -9887,7 +9936,7 @@ function visualExtractionReportLabels(outputLanguage) {
       reviewDoneReconstructChartData: "已得到含单位、图例/系列和证据标签的可复核数据表。",
       reviewDoneAddPixelCoordinates: "已为关键点补齐 Pixel X、Pixel Y、Axis X、Axis Y 和置信度。",
       reviewDoneAddAxisCalibration: "每个坐标轴至少有两个清晰刻度锚点，并已重新导出报告。",
-      reviewDoneVerifyCalibrationQuality: "锚点跨度、单调性、重复值和单位已人工核对，可说明是否能量化使用。",
+      reviewDoneVerifyCalibrationQuality: "锚点跨度、单调性、重复值、断轴分段覆盖和单位已人工核对，可说明是否能量化使用。",
       reviewDoneConfirmConfidence: "低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。",
       reviewDoneSeparateImageEvidence: "直接视觉观察、文本上下文推断和低置信判断已分开标注。",
       reviewDoneRequestMorePoints: "已补充更密集且仍可复核的点表，或记录无法可靠抽取的原因。",
@@ -9988,14 +10037,14 @@ function visualExtractionReportLabels(outputLanguage) {
     noChartReviewActions: "No required review action was generated by the quality review; still spot-check the original figure before final use.",
     noQualityIssues: "No structured quality risk was detected; still verify against the original figure before final use.",
     recommendationAxisCalibration: "Add at least two visible axis tick/value anchors and verify Pixel X/Y to Axis X/Y mapping against the original chart.",
-    recommendationCalibrationQuality: "Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, and units; do not use small-span or non-monotonic anchors for quantitative comparison.",
+    recommendationCalibrationQuality: "Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, segment coverage, and units; do not use small-span, under-calibrated broken-axis segments, or non-monotonic anchors for quantitative comparison.",
     recommendationConfidence: "Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.",
     recommendationImageEvidence: "Ask the model to mark direct visual observations with [image] and keep text-context inferences separate.",
     recommendationPointCount: "Zoom the original figure or request a denser point table before using the data for cross-paper comparison.",
     reviewActionReconstructChartData: "Ask for a reviewable reconstructed data table again, or manually read the minimum key points from the original figure.",
     reviewActionAddPixelCoordinates: "Ask for a Pixel X, Pixel Y, Axis X, Axis Y table and mark low-confidence points explicitly.",
     reviewActionAddAxisCalibration: "Add at least two visible tick anchors per axis, then export the report again.",
-    reviewActionVerifyCalibrationQuality: "Recheck anchor span, monotonicity, duplicate values, and units against the original chart before quantitative use.",
+    reviewActionVerifyCalibrationQuality: "Recheck anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units against the original chart before quantitative use.",
     reviewActionConfirmConfidence: "Manually confirm low-confidence readings, units, and legends; treat them as draft values until then.",
     reviewActionSeparateImageEvidence: "Ask again with direct visual observations marked as [image] and inferred context separated.",
     reviewActionRequestMorePoints: "Zoom the figure or ask again for a denser but still reviewable point table.",
@@ -10003,7 +10052,7 @@ function visualExtractionReportLabels(outputLanguage) {
     reviewDoneReconstructChartData: "A reviewable data table with units, legend or series labels, and evidence labels is available.",
     reviewDoneAddPixelCoordinates: "Key points include Pixel X, Pixel Y, Axis X, Axis Y, and confidence.",
     reviewDoneAddAxisCalibration: "Each axis has at least two visible tick anchors, and the report has been exported again.",
-    reviewDoneVerifyCalibrationQuality: "Anchor span, monotonicity, duplicate values, and units have been manually checked with a reuse decision.",
+    reviewDoneVerifyCalibrationQuality: "Anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units have been manually checked with a reuse decision.",
     reviewDoneConfirmConfidence: "Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable.",
     reviewDoneSeparateImageEvidence: "Direct visual observations, text-context inference, and low-confidence judgments are separated.",
     reviewDoneRequestMorePoints: "A denser but still reviewable point table is added, or the extraction limit is recorded.",
