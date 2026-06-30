@@ -259,7 +259,14 @@ function pdfPagesSchema() {
       },
       ocrPreprocessRepair: {
         type: "boolean",
-        description: "When true, retry stubborn OCR repair pages with a grayscale preprocessed render. Enabled by default."
+        description: "When true, retry stubborn OCR repair pages with preprocessed renders. Enabled by default."
+      },
+      ocrPreprocessModes: {
+        anyOf: [
+          { type: "string" },
+          { type: "array", items: { type: "string" } }
+        ],
+        description: "Optional OCR preprocessing modes for stubborn repair pages. Defaults to grayscale,monochrome."
       },
       ocrPages: {
         anyOf: [
@@ -595,8 +602,8 @@ async function extractPdfOcrPages(sourcePath, args = {}) {
 
 async function renderPdfOcrPage(sourcePath, renderDir, pageNumber, prefixName, dpi, args = {}, options = {}) {
   const prefix = join(renderDir, prefixName);
-  const commandArgs = ["-png"];
-  if (options.colorMode === "gray") commandArgs.push("-gray");
+  const colorMode = pdfOcrRenderColorMode(options.colorMode);
+  const commandArgs = colorMode === "gray" ? ["-gray"] : colorMode === "mono" ? ["-mono"] : ["-png"];
   commandArgs.push("-r", String(dpi), "-f", String(pageNumber), "-l", String(pageNumber), sourcePath, prefix);
   await runCommand(PDFTOPPM_BIN, commandArgs, {
     cwd: renderDir,
@@ -680,58 +687,64 @@ async function repairPdfOcrPage(sourcePath, renderDir, page, language, pageTimeo
         };
       }
     }
+    let lastPreprocess = "";
     if (pdfOcrPreprocessRepairEnabled(args)) {
-      const grayPrefixName = `repair-gray-page-${page}`;
-      await renderPdfOcrPage(sourcePath, renderDir, page, grayPrefixName, dpi, args, { colorMode: "gray" });
-      const grayImagePath = await pdfRenderedRepairImagePath(renderDir, page, grayPrefixName);
-      const grayResult = await runPdfOcrOnImage(grayImagePath, renderDir, language, pageTimeout);
-      lastResult = grayResult;
-      if (grayResult.cleaned) {
-        return {
-          ...grayResult,
-          signal: pdfOcrPageSignal({
-            page,
-            text: grayResult.cleaned,
-            error: grayResult.error,
-            language,
-            repair: {
-              attempted: true,
-              dpi,
-              strategy: "grayscale",
-              preprocess: "grayscale",
-              psmAttempted,
-              previousStatus,
-              previousError,
-              recovered: true
-            }
-          })
-        };
-      }
-      for (const psm of psmModes) {
-        if (!psmAttempted.includes(psm)) psmAttempted.push(psm);
-        const grayPsmResult = await runPdfOcrOnImage(grayImagePath, renderDir, language, pageTimeout, { psm });
-        lastResult = grayPsmResult;
-        if (grayPsmResult.cleaned) {
+      for (const preprocess of pdfOcrPreprocessRepairModes(args.ocrPreprocessModes)) {
+        lastPreprocess = preprocess;
+        const prefixName = `repair-${preprocess}-page-${page}`;
+        await renderPdfOcrPage(sourcePath, renderDir, page, prefixName, dpi, args, {
+          colorMode: pdfOcrPreprocessColorMode(preprocess)
+        });
+        const preprocessedImagePath = await pdfRenderedRepairImagePath(renderDir, page, prefixName);
+        const preprocessedResult = await runPdfOcrOnImage(preprocessedImagePath, renderDir, language, pageTimeout);
+        lastResult = preprocessedResult;
+        if (preprocessedResult.cleaned) {
           return {
-            ...grayPsmResult,
+            ...preprocessedResult,
             signal: pdfOcrPageSignal({
               page,
-              text: grayPsmResult.cleaned,
-              error: grayPsmResult.error,
+              text: preprocessedResult.cleaned,
+              error: preprocessedResult.error,
               language,
               repair: {
                 attempted: true,
                 dpi,
-                psm,
+                strategy: preprocess,
+                preprocess,
                 psmAttempted,
-                strategy: "grayscale_psm",
-                preprocess: "grayscale",
                 previousStatus,
                 previousError,
                 recovered: true
               }
             })
           };
+        }
+        for (const psm of psmModes) {
+          if (!psmAttempted.includes(psm)) psmAttempted.push(psm);
+          const preprocessedPsmResult = await runPdfOcrOnImage(preprocessedImagePath, renderDir, language, pageTimeout, { psm });
+          lastResult = preprocessedPsmResult;
+          if (preprocessedPsmResult.cleaned) {
+            return {
+              ...preprocessedPsmResult,
+              signal: pdfOcrPageSignal({
+                page,
+                text: preprocessedPsmResult.cleaned,
+                error: preprocessedPsmResult.error,
+                language,
+                repair: {
+                  attempted: true,
+                  dpi,
+                  psm,
+                  psmAttempted,
+                  strategy: `${preprocess}_psm`,
+                  preprocess,
+                  previousStatus,
+                  previousError,
+                  recovered: true
+                }
+              })
+            };
+          }
         }
       }
     }
@@ -744,8 +757,8 @@ async function repairPdfOcrPage(sourcePath, renderDir, page, language, pageTimeo
         attempted: true,
         dpi,
         psmAttempted,
-        strategy: pdfOcrPreprocessRepairEnabled(args) ? "grayscale_psm" : "high_dpi_psm",
-        ...(pdfOcrPreprocessRepairEnabled(args) ? { preprocess: "grayscale" } : {}),
+        strategy: lastPreprocess ? `${lastPreprocess}_psm` : "high_dpi_psm",
+        ...(lastPreprocess ? { preprocess: lastPreprocess } : {}),
         previousStatus,
         previousError,
         recovered: false
@@ -986,6 +999,40 @@ function pdfOcrPreprocessRepairEnabled(args = {}) {
   return args.ocrPreprocessRepair !== false
     && args.ocrPreprocessRepair !== "false"
     && args.ocrPreprocessRepair !== 0;
+}
+
+function pdfOcrPreprocessRepairModes(value) {
+  if (value === undefined || value === null) return ["grayscale", "monochrome"];
+  const rawValues = Array.isArray(value)
+    ? value
+    : String(value).trim().toLowerCase() === "none" || String(value).trim().toLowerCase() === "off"
+      ? []
+      : String(value).split(/[\s,;|]+/);
+  const modes = [];
+  for (const raw of rawValues) {
+    const mode = pdfOcrPreprocessMode(raw);
+    if (mode && !modes.includes(mode)) modes.push(mode);
+    if (modes.length >= 3) break;
+  }
+  return modes;
+}
+
+function pdfOcrPreprocessMode(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[_\s-]+/g, "");
+  if (normalized === "gray" || normalized === "grey" || normalized === "grayscale" || normalized === "greyscale") return "grayscale";
+  if (normalized === "mono" || normalized === "monochrome" || normalized === "threshold" || normalized === "binarize" || normalized === "binarized") return "monochrome";
+  return "";
+}
+
+function pdfOcrPreprocessColorMode(preprocess) {
+  return preprocess === "monochrome" ? "mono" : preprocess === "grayscale" ? "gray" : "";
+}
+
+function pdfOcrRenderColorMode(colorMode) {
+  const normalized = String(colorMode || "").trim().toLowerCase();
+  if (normalized === "mono" || normalized === "monochrome") return "mono";
+  if (normalized === "gray" || normalized === "grey" || normalized === "grayscale" || normalized === "greyscale") return "gray";
+  return "png";
 }
 
 function shouldRunPdfOcrFallback(args = {}, pages = [], pageSlots = []) {
