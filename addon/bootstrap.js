@@ -4817,6 +4817,10 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     `- ${labels.summaryColumn}: ${labels.reportSourceFiles}`,
     labels.reportEvidenceWarning,
     "",
+    `## ${labels.reportWritingReadinessGate}`,
+    "",
+    renderFormalReportWritingReadinessGate(synthesisClaims, roadmapReadiness, gapSignals, stats, labels),
+    "",
     `## ${labels.reportPaperInventory}`,
     "",
     reportInventoryTable(generatedItems, summaryInsights, labels),
@@ -4870,6 +4874,99 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     labels.reportNextActionItems,
     ""
   ].join("\n");
+}
+
+function renderFormalReportWritingReadinessGate(synthesisClaims = [], roadmapReadiness = [], gapSignals = [], stats = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const summary = formalReportWritingReadinessSummary(synthesisClaims, roadmapReadiness, gapSignals, stats, labels);
+  const rows = (summary.checks || []).map((check) => [
+    escapeMarkdownTable(check.check),
+    escapeMarkdownTable(check.status),
+    escapeMarkdownTable(check.evidence),
+    escapeMarkdownTable(check.action)
+  ].join(" | ")).map((row) => `| ${row} |`);
+  return [
+    `- ${labels.reportWritingReadinessScore}: ${summary.score}/100`,
+    `- ${labels.reportWritingReadinessLevel}: ${summary.level}`,
+    `- ${labels.reportWritingReadinessBlockers}: ${summary.blockers.join("; ") || labels.reportWritingReadinessNoBlockers}`,
+    "",
+    `| ${labels.reportWritingReadinessCheckColumn} | ${labels.reportWritingReadinessStatusColumn} | ${labels.evidenceColumn} | ${labels.roadmapNextActionColumn} |`,
+    "| --- | --- | --- | --- |",
+    rows.join("\n") || `| ${escapeMarkdownTable(labels.reportWritingReadinessCheckColumn)} | ${escapeMarkdownTable(labels.reportReadinessBlocked)} | ${escapeMarkdownTable(labels.noSummary)} | ${escapeMarkdownTable(labels.reportReadinessDefaultAction(labels.reportReadinessBlocked))} |`
+  ].join("\n");
+}
+
+function formalReportWritingReadinessSummary(synthesisClaims = [], roadmapReadiness = [], gapSignals = [], stats = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const available = Number(stats.generated || 0) + Number(stats.skippedExisting || 0);
+  const skippedNoPdf = Number(stats.skippedNoPdf || 0);
+  const failed = Number(stats.failed || 0);
+  const scores = (synthesisClaims || []).map((entry) => Number(entry.claimSupportScore || 0)).filter((score) => Number.isFinite(score));
+  const averageClaimScore = scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : 0;
+  const highRiskClaims = (synthesisClaims || []).filter((entry) => formalReportRiskMatches(entry?.claimRisk, labels.claimRiskHigh, /high|高|高度|暫定|薄い/i)).length;
+  const mediumRiskClaims = (synthesisClaims || []).filter((entry) => formalReportRiskMatches(entry?.claimRisk, labels.claimRiskMedium, /medium|中/i)).length;
+  const readyRoutes = (roadmapReadiness || []).filter((entry) => entry?.roadmapReadinessLevel === labels.roadmapReadinessReady).length;
+  const evidenceThinRoutes = (roadmapReadiness || []).filter((entry) => entry?.roadmapReadinessLevel === labels.roadmapReadinessNeedsEvidence).length;
+  const validationRoutes = (roadmapReadiness || []).filter((entry) => entry?.roadmapReadinessLevel === labels.roadmapReadinessNeedsValidation).length;
+  const unresolvedGapCount = uniqueInsightLines(gapSignals || []).length;
+  const score = Math.max(0, Math.min(100, Math.round(
+    averageClaimScore * 0.45
+    + Math.min(available, 8) * 4
+    + readyRoutes * 8
+    + Math.min(unresolvedGapCount, 6) * 2
+    - highRiskClaims * 12
+    - mediumRiskClaims * 4
+    - evidenceThinRoutes * 6
+    - validationRoutes * 4
+    - skippedNoPdf * 3
+    - failed * 5
+  )));
+  const level = score >= 75 && highRiskClaims === 0 && readyRoutes > 0
+    ? labels.reportReadinessReady
+    : score >= 50
+      ? labels.reportReadinessRevise
+      : labels.reportReadinessBlocked;
+  const blockers = uniqueInsightLines([
+    highRiskClaims ? labels.reportReadinessHighRiskBlocker(highRiskClaims) : "",
+    evidenceThinRoutes ? labels.reportReadinessEvidenceBlocker(evidenceThinRoutes) : "",
+    validationRoutes ? labels.reportReadinessValidationBlocker(validationRoutes) : "",
+    skippedNoPdf || failed ? labels.reportReadinessCoverageBlocker(skippedNoPdf, failed) : "",
+    !unresolvedGapCount ? labels.reportReadinessGapBlocker : ""
+  ].filter(Boolean)).slice(0, 6);
+  return {
+    score,
+    level,
+    blockers,
+    checks: [
+      {
+        check: labels.reportReadinessEvidenceBase,
+        status: available >= 2 && skippedNoPdf === 0 ? labels.reportReadinessPass : available ? labels.reportReadinessReview : labels.reportReadinessFail,
+        evidence: labels.reportReadinessEvidenceBaseEvidence(available, skippedNoPdf, failed),
+        action: skippedNoPdf || failed ? labels.reportReadinessCoverageAction : labels.reportReadinessProceedAction
+      },
+      {
+        check: labels.reportReadinessClaimRisk,
+        status: highRiskClaims ? labels.reportReadinessFail : mediumRiskClaims ? labels.reportReadinessReview : labels.reportReadinessPass,
+        evidence: labels.reportReadinessClaimRiskEvidence(highRiskClaims, mediumRiskClaims, averageClaimScore),
+        action: highRiskClaims ? labels.reportReadinessClaimRiskAction : labels.reportReadinessProceedAction
+      },
+      {
+        check: labels.reportReadinessRoadmap,
+        status: readyRoutes ? labels.reportReadinessPass : roadmapReadiness.length ? labels.reportReadinessReview : labels.reportReadinessFail,
+        evidence: labels.reportReadinessRoadmapEvidence(readyRoutes, evidenceThinRoutes, validationRoutes),
+        action: labels.reportReadinessRoadmapAction
+      },
+      {
+        check: labels.reportReadinessGapTrace,
+        status: unresolvedGapCount ? labels.reportReadinessReview : labels.reportReadinessFail,
+        evidence: labels.reportReadinessGapTraceEvidence(unresolvedGapCount),
+        action: unresolvedGapCount ? labels.reportReadinessGapTraceAction : labels.reportReadinessGapBlocker
+      }
+    ]
+  };
+}
+
+function formalReportRiskMatches(value, localizedValue, pattern) {
+  const text = String(value || "");
+  return !!text && (text === localizedValue || pattern.test(text));
 }
 
 function renderCollectionSynthesisWritingPack(collectionContext, clusters, synthesisClaims, synthesisConflicts, gapSignals, labels) {
@@ -5327,6 +5424,38 @@ function collectionTemplateLabels(outputLanguage) {
       reportSynthesisConflicts: "Synthesis Conflicts and Evidence Gaps",
       reportResearchGaps: "Research Gaps and Validation Needs",
       reportDraftOutline: "Review Draft Outline",
+      reportWritingReadinessGate: "Writing Readiness Gate",
+      reportWritingReadinessScore: "Formal report readiness score",
+      reportWritingReadinessLevel: "Readiness level",
+      reportWritingReadinessBlockers: "Blocking items",
+      reportWritingReadinessNoBlockers: "No blocking item from current summaries",
+      reportWritingReadinessCheckColumn: "Gate Check",
+      reportWritingReadinessStatusColumn: "Status",
+      reportReadinessReady: "Ready for prose draft",
+      reportReadinessRevise: "Revise before prose draft",
+      reportReadinessBlocked: "Blocked until evidence is added",
+      reportReadinessPass: "pass",
+      reportReadinessReview: "review",
+      reportReadinessFail: "fail",
+      reportReadinessHighRiskBlocker: (count) => `${count || 0} high-risk claim(s) need evidence audit`,
+      reportReadinessEvidenceBlocker: (count) => `${count || 0} roadmap topic(s) still need evidence`,
+      reportReadinessValidationBlocker: (count) => `${count || 0} roadmap topic(s) still need validation design`,
+      reportReadinessCoverageBlocker: (skipped, failed) => `Coverage issue: skipped without PDF ${skipped || 0}, failed ${failed || 0}`,
+      reportReadinessGapBlocker: "No explicit gap trace is available; keep claims provisional",
+      reportReadinessEvidenceBase: "Evidence base coverage",
+      reportReadinessClaimRisk: "Claim risk calibration",
+      reportReadinessRoadmap: "Roadmap readiness",
+      reportReadinessGapTrace: "Gap traceability",
+      reportReadinessEvidenceBaseEvidence: (available, skipped, failed) => `${available || 0} available summary(s), ${skipped || 0} skipped without PDF, ${failed || 0} failed`,
+      reportReadinessClaimRiskEvidence: (high, medium, average) => `${high || 0} high-risk claim(s), ${medium || 0} medium-risk claim(s), average support ${average || 0}`,
+      reportReadinessRoadmapEvidence: (ready, evidence, validation) => `${ready || 0} ready route(s), ${evidence || 0} evidence-thin route(s), ${validation || 0} validation-needed route(s)`,
+      reportReadinessGapTraceEvidence: (count) => `${count || 0} explicit gap or validation signal(s)`,
+      reportReadinessCoverageAction: "Recover missing PDFs or mark exclusions before treating coverage as complete.",
+      reportReadinessClaimRiskAction: "Resolve high-risk claims in the claim evidence audit before writing final prose.",
+      reportReadinessRoadmapAction: "Use the roadmap board to promote ready topics and defer evidence-thin topics.",
+      reportReadinessGapTraceAction: "Keep each unresolved gap visible in the relevant subsection.",
+      reportReadinessProceedAction: "Can move into the writing pack after source summaries are checked.",
+      reportReadinessDefaultAction: (level) => `${level}: verify source summaries, claim risk, and roadmap blockers before prose writing.`,
       reportSynthesisWritingPack: "Synthesis Writing Pack",
       reportRiskChecklist: "Risk Checklist",
       reportRiskChecklistItems: [
@@ -5656,6 +5785,38 @@ function collectionTemplateLabels(outputLanguage) {
       reportSynthesisConflicts: "統合コンフリクトと証拠ギャップ",
       reportResearchGaps: "研究ギャップと検証ニーズ",
       reportDraftOutline: "レビュー草稿アウトライン",
+      reportWritingReadinessGate: "執筆準備度ゲート",
+      reportWritingReadinessScore: "正式報告書準備度スコア",
+      reportWritingReadinessLevel: "準備度レベル",
+      reportWritingReadinessBlockers: "阻害項目",
+      reportWritingReadinessNoBlockers: "現在の要約からは阻害項目なし",
+      reportWritingReadinessCheckColumn: "ゲート確認",
+      reportWritingReadinessStatusColumn: "状態",
+      reportReadinessReady: "本文草稿化可能",
+      reportReadinessRevise: "本文化前に修正",
+      reportReadinessBlocked: "証拠追加まで保留",
+      reportReadinessPass: "合格",
+      reportReadinessReview: "要確認",
+      reportReadinessFail: "不合格",
+      reportReadinessHighRiskBlocker: (count) => `${count || 0} 件の高リスク主張に証拠監査が必要`,
+      reportReadinessEvidenceBlocker: (count) => `${count || 0} 件のロードマップ項目で証拠追加が必要`,
+      reportReadinessValidationBlocker: (count) => `${count || 0} 件のロードマップ項目で検証設計が必要`,
+      reportReadinessCoverageBlocker: (skipped, failed) => `カバレッジ問題: PDF なしでスキップ ${skipped || 0}、失敗 ${failed || 0}`,
+      reportReadinessGapBlocker: "明示的なギャップ追跡がないため、主張は暫定扱いにする",
+      reportReadinessEvidenceBase: "証拠ベースのカバレッジ",
+      reportReadinessClaimRisk: "主張リスク校正",
+      reportReadinessRoadmap: "ロードマップ準備度",
+      reportReadinessGapTrace: "ギャップ追跡性",
+      reportReadinessEvidenceBaseEvidence: (available, skipped, failed) => `利用可能な要約 ${available || 0} 件、PDF なしスキップ ${skipped || 0} 件、失敗 ${failed || 0} 件`,
+      reportReadinessClaimRiskEvidence: (high, medium, average) => `高リスク主張 ${high || 0} 件、中リスク主張 ${medium || 0} 件、平均支持 ${average || 0}`,
+      reportReadinessRoadmapEvidence: (ready, evidence, validation) => `草稿化可能 ${ready || 0} 件、証拠不足 ${evidence || 0} 件、検証必要 ${validation || 0} 件`,
+      reportReadinessGapTraceEvidence: (count) => `明示的なギャップまたは検証シグナル ${count || 0} 件`,
+      reportReadinessCoverageAction: "不足 PDF を回収するか、範囲外として明記してからカバレッジ完了とする。",
+      reportReadinessClaimRiskAction: "最終本文を書く前に、主張証拠監査で高リスク主張を処理する。",
+      reportReadinessRoadmapAction: "ロードマップボードで準備済み項目を昇格し、証拠不足項目は保留する。",
+      reportReadinessGapTraceAction: "各未解決ギャップを該当小節で明示する。",
+      reportReadinessProceedAction: "元要約を確認した後、執筆パックへ移行可能。",
+      reportReadinessDefaultAction: (level) => `${level}: 本文化前に元要約、主張リスク、ロードマップ阻害要因を確認する。`,
       reportSynthesisWritingPack: "統合執筆パック",
       reportRiskChecklist: "リスク確認リスト",
       reportRiskChecklistItems: [
@@ -5984,6 +6145,38 @@ function collectionTemplateLabels(outputLanguage) {
     reportSynthesisConflicts: "综合冲突与证据缺口",
     reportResearchGaps: "研究空白与验证需求",
     reportDraftOutline: "综述正文大纲",
+    reportWritingReadinessGate: "写作就绪门禁",
+    reportWritingReadinessScore: "正式报告就绪分",
+    reportWritingReadinessLevel: "就绪状态",
+    reportWritingReadinessBlockers: "阻塞项",
+    reportWritingReadinessNoBlockers: "当前总结未发现阻塞项",
+    reportWritingReadinessCheckColumn: "门禁检查",
+    reportWritingReadinessStatusColumn: "状态",
+    reportReadinessReady: "可进入正文草稿",
+    reportReadinessRevise: "进入正文前需修订",
+    reportReadinessBlocked: "补齐证据前暂缓",
+    reportReadinessPass: "通过",
+    reportReadinessReview: "需复核",
+    reportReadinessFail: "未通过",
+    reportReadinessHighRiskBlocker: (count) => `${count || 0} 条高风险主张需要证据审计`,
+    reportReadinessEvidenceBlocker: (count) => `${count || 0} 个路线图主题仍需补证据`,
+    reportReadinessValidationBlocker: (count) => `${count || 0} 个路线图主题仍需验证设计`,
+    reportReadinessCoverageBlocker: (skipped, failed) => `覆盖问题：无 PDF 跳过 ${skipped || 0} 篇，失败 ${failed || 0} 篇`,
+    reportReadinessGapBlocker: "没有明确缺口轨迹，主张需保持暂定",
+    reportReadinessEvidenceBase: "证据基础覆盖",
+    reportReadinessClaimRisk: "主张风险校准",
+    reportReadinessRoadmap: "路线图就绪度",
+    reportReadinessGapTrace: "缺口可追溯性",
+    reportReadinessEvidenceBaseEvidence: (available, skipped, failed) => `${available || 0} 篇可用总结，${skipped || 0} 篇无 PDF 跳过，${failed || 0} 篇失败`,
+    reportReadinessClaimRiskEvidence: (high, medium, average) => `${high || 0} 条高风险主张，${medium || 0} 条中风险主张，平均支持分 ${average || 0}`,
+    reportReadinessRoadmapEvidence: (ready, evidence, validation) => `${ready || 0} 条可进入草稿，${evidence || 0} 条证据薄弱，${validation || 0} 条需验证`,
+    reportReadinessGapTraceEvidence: (count) => `${count || 0} 条明确缺口或验证线索`,
+    reportReadinessCoverageAction: "补齐缺失 PDF 或明确排除后，再把覆盖面视为完整。",
+    reportReadinessClaimRiskAction: "进入最终正文前，先在主张证据审计中处理高风险主张。",
+    reportReadinessRoadmapAction: "使用路线图看板提升可写主题，暂缓证据薄弱主题。",
+    reportReadinessGapTraceAction: "把每个未解决缺口保留在对应小节中。",
+    reportReadinessProceedAction: "核对来源总结后可进入写作包。",
+    reportReadinessDefaultAction: (level) => `${level}：进入正文前核对来源总结、主张风险和路线图阻塞项。`,
     reportSynthesisWritingPack: "综合写作包",
     reportRiskChecklist: "风险核查清单",
     reportRiskChecklistItems: [

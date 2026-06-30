@@ -796,6 +796,13 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合冲突与证据缺口");
     expect(writes.get(artifacts.reviewReportPath)).toContain("主张证据审计");
     expect(writes.get(artifacts.reviewReportPath)).toContain("审计主张");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("写作就绪门禁");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("正式报告就绪分");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("高风险主张需要证据审计");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("证据基础覆盖");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("主张风险校准");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("路线图就绪度");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("缺口可追溯性");
     expect(writes.get(artifacts.reviewReportPath)).toContain("路线图就绪度看板");
     expect(writes.get(artifacts.reviewReportPath)).toContain("下一步动作");
     expect(writes.get(artifacts.reviewReportPath)).toContain("Stress-test under mixed priority flights");
@@ -1241,6 +1248,8 @@ describe("batch papers index", () => {
     expect(writes.get(english.reviewReportPath)).toContain("Formal Review Report");
     expect(writes.get(english.reviewReportPath)).toContain("Evidence-backed Synthesis Claims");
     expect(writes.get(english.reviewReportPath)).toContain("Synthesis Conflicts and Evidence Gaps");
+    expect(writes.get(english.reviewReportPath)).toContain("Writing Readiness Gate");
+    expect(writes.get(english.reviewReportPath)).toContain("Formal report readiness score");
     expect(writes.get(english.reviewReportPath)).toContain("Synthesis Writing Pack");
     expect(writes.get(english.reviewReportPath)).toContain("Risk Checklist");
     expect(writes.get(english.ideaListPath)).toContain("Reject condition");
@@ -1269,6 +1278,8 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.reviewReportPath)).toContain("正式レビュー報告書");
     expect(writes.get(japanese.reviewReportPath)).toContain("証拠に基づく統合主張");
     expect(writes.get(japanese.reviewReportPath)).toContain("統合コンフリクトと証拠ギャップ");
+    expect(writes.get(japanese.reviewReportPath)).toContain("執筆準備度ゲート");
+    expect(writes.get(japanese.reviewReportPath)).toContain("正式報告書準備度スコア");
     expect(writes.get(japanese.reviewReportPath)).toContain("統合執筆パック");
     expect(writes.get(japanese.reviewReportPath)).toContain("リスク確認リスト");
     expect(writes.get(japanese.ideaListPath)).toContain("棄却条件");
