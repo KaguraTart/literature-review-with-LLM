@@ -167,9 +167,24 @@ function registerMenus() {
       menuItem(t("batchSelected"), () => batchGenerateSelected(false), { disableWithoutRegularItems: true }),
       menuItem(t("batchAll"), () => batchGenerateCurrentList(false)),
       menuItem(t("batchAllUpdate"), () => batchGenerateCurrentList(true)),
+      menuItem(t("collectionReview"), () => generateCollectionReview(false), { disableWithoutCollection: true }),
+      menuItem(t("collectionReviewUpdate"), () => generateCollectionReview(true), { disableWithoutCollection: true }),
       menuItem(t("settings"), () => openPreferences())
     ]
   }));
+  try {
+    registeredMenus.push(Zotero.MenuManager.registerMenu({
+      pluginID,
+      target: "main/library/collection",
+      menuID: "zotero-markdown-summary-collection-actions",
+      menus: [
+        menuItem(t("collectionReview"), (event, context) => generateCollectionReview(false, context), { requireCollection: true }),
+        menuItem(t("collectionReviewUpdate"), (event, context) => generateCollectionReview(true, context), { requireCollection: true })
+      ]
+    }));
+  } catch (err) {
+    Zotero.debug(`[Markdown Summary] Failed to register collection menu: ${safeError(err)}`);
+  }
 }
 
 async function runSelfCheckForContext(context) {
@@ -282,6 +297,28 @@ async function batchGenerateCurrentList(force) {
   await batchGenerateItems(items, force, context);
 }
 
+async function generateCollectionReview(force, context) {
+  const pane = Zotero.getActiveZoteroPane?.();
+  const collection = collectionFromContext(context, pane);
+  if (!collection) {
+    showAlert(t("collectionReviewNoCollection"));
+    return;
+  }
+  const items = await currentListRegularItems(collection);
+  const collectionContext = collectionContextFromItem(collection, pane);
+  await batchGenerateItems(items, force, collectionContext);
+}
+
+function collectionFromContext(context, pane = Zotero.getActiveZoteroPane?.()) {
+  const direct = context?.collection || context?.target?.collection;
+  if (direct) return direct;
+  const fromList = Array.isArray(context?.collections) ? context.collections.find(Boolean) : null;
+  if (fromList) return fromList;
+  const id = Number(context?.collectionID || context?.target?.collectionID || 0);
+  if (id && Zotero.Collections?.get) return Zotero.Collections.get(id);
+  return pane?.getSelectedCollection?.() || null;
+}
+
 async function batchGenerateItems(items, force, collectionContext) {
   const uniqueItems = uniqueRegularItems(items);
   if (!uniqueItems.length) {
@@ -321,8 +358,14 @@ async function batchGenerateItems(items, force, collectionContext) {
     }
   }
   const collectionArtifacts = collectionContext
-    ? await writeCollectionWorkspace(settings, collectionContext, results)
+    ? await writeCollectionWorkspace(settings, collectionContext, results, { modelReview: true })
     : null;
+  const linkedCollectionArtifacts = collectionContext && collectionArtifacts
+    ? await linkCollectionWorkspaceMarkdownArtifacts(collectionContext, collectionArtifacts).catch((err) => {
+      Zotero.debug(`[Markdown Summary] Failed to link collection artifacts: ${safeError(err)}`);
+      return [];
+    })
+    : [];
   const papersIndexPath = collectionArtifacts?.papersIndexPath || "";
   const batchReportPath = await writeBatchRunReport(settings, collectionContext, results, { force });
   const indexMessage = papersIndexPath ? `; papers.json: ${papersIndexPath}` : "";
@@ -332,13 +375,15 @@ async function batchGenerateItems(items, force, collectionContext) {
   const conflictMessage = collectionArtifacts?.synthesisConflictsPath ? `; synthesis-conflicts: ${collectionArtifacts.synthesisConflictsPath}` : "";
   const draftMessage = collectionArtifacts?.reviewDraftPath ? `; review-draft: ${collectionArtifacts.reviewDraftPath}` : "";
   const reviewReportMessage = collectionArtifacts?.reviewReportPath ? `; formal-report: ${collectionArtifacts.reviewReportPath}` : "";
+  const modelReviewMessage = collectionArtifacts?.modelReviewPath ? `; model-review: ${collectionArtifacts.modelReviewPath}` : "";
+  const linkedMessage = linkedCollectionArtifacts.length ? `; ${t("collectionArtifactsLinked")}: ${linkedCollectionArtifacts.length}` : "";
   const reportMessage = batchReportPath ? `; ${t("batchReport")}: ${batchReportPath}` : "";
   const skipped = skippedNoPdf + skippedExisting;
   const extraParts = [];
   if (skippedNoPdf > 0) extraParts.push(`${t("batchSkippedNoPdf")}: ${skippedNoPdf}`);
   if (skippedExisting > 0) extraParts.push(`${t("batchSkippedExisting")}: ${skippedExisting}`);
   const skippedSuffix = extraParts.length ? ` (${extraParts.join("; ")})` : "";
-  showProgress(`${t("batchDone")}: ${generated}; ${t("batchSkipped")}: ${skipped}${skippedSuffix}; ${t("batchFailed")}: ${failed}${indexMessage}${matrixMessage}${clusterMessage}${synthesisMessage}${conflictMessage}${draftMessage}${reviewReportMessage}${reportMessage}`);
+  showProgress(`${t("batchDone")}: ${generated}; ${t("batchSkipped")}: ${skipped}${skippedSuffix}; ${t("batchFailed")}: ${failed}${indexMessage}${matrixMessage}${clusterMessage}${synthesisMessage}${conflictMessage}${draftMessage}${reviewReportMessage}${modelReviewMessage}${linkedMessage}${reportMessage}`);
 }
 
 async function generateForItem(item, settings, force) {
@@ -1558,7 +1603,7 @@ async function writeBatchPapersIndex(settings, collectionContext, results) {
   return indexPath;
 }
 
-async function writeCollectionWorkspace(settings, collectionContext, results) {
+async function writeCollectionWorkspace(settings, collectionContext, results, options = {}) {
   const baseDir = collectionContext.outputDir || PathUtils.join(settings.outputDir, "collections", sanitizeFilename(collectionContext.key));
   const dirs = collectionWorkspaceDirs(baseDir);
   await Promise.all(Object.values(dirs).map((path) => ensureDirectory(path)));
@@ -1576,6 +1621,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
   const researchQuestionCardsPath = artifacts.researchQuestionCardsPath;
   const reviewDraftPath = artifacts.reviewDraftPath;
   const reviewReportPath = artifacts.reviewReportPath;
+  const modelReviewPath = artifacts.modelReviewPath;
   const ideaListPath = artifacts.ideaListPath;
   await writeText(paperNotesIndexPath, renderPaperNotesIndex(collectionContext, results, outputLanguage));
   await writeText(methodMatrixPath, renderMethodMatrix(collectionContext, results, outputLanguage, summaryInsights));
@@ -1587,6 +1633,9 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
   await writeText(researchQuestionCardsPath, renderResearchQuestionCards(collectionContext, results, outputLanguage));
   await writeText(reviewDraftPath, renderManualReviewDraft(collectionContext, results, outputLanguage));
   await writeText(reviewReportPath, renderFormalReviewReport(collectionContext, results, outputLanguage, summaryInsights));
+  if (options?.modelReview) {
+    await writeCollectionModelReview(settings, { ...collectionContext, outputDir: baseDir }, results, outputLanguage, summaryInsights, modelReviewPath);
+  }
   await writeText(ideaListPath, renderIdeaList(collectionContext, results, outputLanguage, summaryInsights));
   const crossCollectionArtifacts = await writeCrossCollectionSynthesisIndex(
     settings,
@@ -1607,6 +1656,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
       researchQuestionCardsPath,
       reviewDraftPath,
       reviewReportPath,
+      modelReviewPath,
       ideaListPath
     }
   );
@@ -1623,6 +1673,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results) {
     researchQuestionCardsPath,
     reviewDraftPath,
     reviewReportPath,
+    modelReviewPath,
     ideaListPath,
     ...crossCollectionArtifacts
   };
@@ -1650,8 +1701,294 @@ function collectionWorkspaceArtifactPaths(dirs, outputLanguage) {
     researchQuestionCardsPath: PathUtils.join(dirs.knowledge, `research-question-cards.${language}.md`),
     reviewDraftPath: PathUtils.join(dirs.writing, `manual-review-draft.${language}.md`),
     reviewReportPath: PathUtils.join(dirs.writing, `formal-review-report.${language}.md`),
+    modelReviewPath: PathUtils.join(dirs.writing, `model-literature-review.${language}.md`),
     ideaListPath: PathUtils.join(dirs.writing, `idea-list.${language}.md`)
   };
+}
+
+async function writeCollectionModelReview(settings, collectionContext, results, outputLanguage, summaryInsights, modelReviewPath) {
+  try {
+    if (!settingsHasUsableAuth(settings) || (settingsRequiresModel(settings) && !settings.model)) {
+      await writeText(modelReviewPath, renderCollectionModelReviewUnavailable(collectionContext, results, outputLanguage));
+      return modelReviewPath;
+    }
+    const inputText = await collectionModelReviewContext(collectionContext, results, outputLanguage, summaryInsights);
+    const sourceHash = hashString(`${collectionContext.key}:${outputLanguage}:${inputText}`);
+    const result = await callProvider({
+      id: settings.id,
+      name: settings.name,
+      provider: settings.provider,
+      endpointMode: settings.endpointMode,
+      customHeaders: settings.customHeaders,
+      bodyExtra: settings.bodyExtra,
+      fullURL: settings.fullURL,
+      protocol: settings.protocol,
+      baseURL: settings.baseURL,
+      apiKey: settings.apiKey,
+      model: settings.model,
+      capabilities: settings.capabilities,
+      request: {
+        system: collectionModelReviewSystemPrompt(outputLanguage),
+        prompt: collectionModelReviewSkillPrompt(outputLanguage),
+        input: { type: "text", text: inputText },
+        temperature: settings.temperature,
+        maxOutputTokens: settings.maxOutputTokens,
+        stream: settings.stream
+      }
+    }, sourceHash);
+    applyEffectiveProviderProfile(settings, result.effectiveProfile);
+    const markdown = stripThink(result.markdown || "");
+    if (!markdown) throw new Error("Collection review returned empty content");
+    await writeText(modelReviewPath, renderCollectionModelReviewFile(collectionContext, outputLanguage, result, markdown));
+    return modelReviewPath;
+  } catch (err) {
+    Zotero.debug(`[Markdown Summary] Collection model review failed: ${safeError(err)}`);
+    await writeText(modelReviewPath, renderCollectionModelReviewFailure(collectionContext, results, outputLanguage, err));
+    return modelReviewPath;
+  }
+}
+
+function collectionModelReviewSystemPrompt(outputLanguage) {
+  if (outputLanguage === "en-US") {
+    return "You are an academic literature-review assistant. Produce evidence-aware Markdown synthesis for a Zotero collection.";
+  }
+  if (outputLanguage === "ja-JP") {
+    return "あなたは学術文献レビュー支援者です。Zotero collection の論文群から、根拠を明示した Markdown の横断的レビューを作成してください。";
+  }
+  return "你是学术文献综述助手。请基于 Zotero 分类中的论文题录、单篇摘要和已抽取证据，生成可复核的 Markdown 跨论文综述。";
+}
+
+function collectionModelReviewSkillPrompt(outputLanguage) {
+  if (outputLanguage === "en-US") {
+    return [
+      "Use the collection inventory and summaries below to write a literature review synthesis.",
+      "Do not annotate papers one by one. Build a review structure by synthesis: theme, problem, method family, scenario, evidence strength, disagreement, and research gap.",
+      "Group papers with related but smaller different directions under a larger framework; split completely unrelated papers into independent review sections.",
+      "Explain research lineage and relationships: what each group inherits, extends, challenges, or leaves unresolved.",
+      "Every important claim must cite item keys, summary paths, or evidence labels from the input. Mark weak evidence as low-confidence.",
+      "Use Markdown sections: Review Scope, Synthesis Framework, Paper Groups And Lineage, Cross-Paper Comparison, Consensus And Disagreements, Critical Review, Research Gaps, Draft Review Paragraphs, Follow-up Search Plan."
+    ].join("\n");
+  }
+  if (outputLanguage === "ja-JP") {
+    return [
+      "下の collection 一覧と単一論文要約を使い、文献レビュー用の横断的統合を作成してください。",
+      "論文を 1 本ずつ要約するのではなく、テーマ、問題、手法ファミリー、シナリオ、証拠強度、相違点、研究ギャップで統合してください。",
+      "近いが小方向が異なる論文は大きな枠組みの下にまとめ、完全に無関係な論文は独立したレビュー節として分けてください。",
+      "研究系譜と関係を説明してください。何を継承、拡張、批判、未解決として残しているかを明示してください。",
+      "重要な判断には item key、要約パス、入力中の根拠ラベルを付け、根拠が弱い場合は低信頼と明記してください。"
+    ].join("\n");
+  }
+  return [
+    "请基于下面的分类论文清单和单篇总结，写一份可直接服务于 literature review 的跨论文综合与评论。",
+    "不要按论文逐篇流水账总结；请按主题、问题、方法族、应用场景、证据强弱、分歧和研究空白来综合。",
+    "小方向不一样但问题相近的论文，请放到一个更大的分析框架下讨论；完全不相关的论文，请明确拆成独立分点或独立小节，不要强行合并。",
+    "梳理论文关系和研究脉络：哪些工作继承了共同问题，哪些扩展了方法或场景，哪些相互冲突，哪些只是在相邻方向上提供背景。",
+    "输出 Markdown，并固定包含：综述范围、综合框架、论文分组与研究谱系、跨论文对比、共识与分歧、批判性评论、研究空白、可写入正文的综述段落、后续检索计划。",
+    "每个重要判断都要引用输入中的 item key、summaryPath 或证据标签；证据不足时标注低置信度，不要编造论文内容。"
+  ].join("\n");
+}
+
+async function collectionModelReviewContext(collectionContext, results, outputLanguage, summaryInsights) {
+  const labels = collectionTemplateLabels(outputLanguage);
+  const stats = batchStats(results);
+  const entries = await Promise.all(batchReportItems(results).map(async (item) => {
+    const markdown = await summaryMarkdownForBatchItem(item);
+    const insight = summaryInsights.get(item.itemKey) || extractSummaryInsights(markdown, item);
+    return collectionModelReviewEntry(item, markdown, insight);
+  }));
+  const header = [
+    `# ${collectionContext.name || collectionContext.key}`,
+    `collectionKey: ${collectionContext.key || ""}`,
+    labels.statsLine(stats),
+    "",
+    "## Papers"
+  ].join("\n");
+  return limitCollectionReviewContext([
+    header,
+    entries.join("\n\n---\n\n")
+  ].join("\n\n"));
+}
+
+function collectionModelReviewEntry(item, markdown, insight) {
+  const summary = truncateText(stripMarkdownFrontmatter(markdown), 2200);
+  return [
+    `### ${item.title || item.itemKey}`,
+    `- itemKey: ${item.itemKey || ""}`,
+    `- year: ${item.year || "n.d."}`,
+    `- status: ${item.status || ""}`,
+    `- summaryPath: ${item.summaryPath || ""}`,
+    `- methodSignal: ${insight.method || ""}`,
+    `- dataScenario: ${insight.dataScenario || ""}`,
+    `- metrics: ${insight.metrics || ""}`,
+    `- limitations: ${(insight.limitations || []).join("; ")}`,
+    `- missingEvidence: ${(insight.missingEvidence || []).join("; ")}`,
+    "",
+    summary ? `Summary excerpt:\n${summary}` : "Summary excerpt: unavailable; use metadata only and mark low-confidence."
+  ].join("\n");
+}
+
+function limitCollectionReviewContext(text, limit = 48000) {
+  const value = String(text || "");
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit)}\n\n[context truncated for collection-level synthesis]`;
+}
+
+function truncateText(value, limit) {
+  const text = String(value || "").replace(/\n{4,}/g, "\n\n\n").trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 32)).trim()}\n[excerpt truncated]`;
+}
+
+function renderCollectionModelReviewFile(collectionContext, outputLanguage, result, markdown) {
+  const title = outputLanguage === "en-US"
+    ? "Model Literature Review"
+    : outputLanguage === "ja-JP"
+      ? "モデル生成文献レビュー"
+      : "模型生成的分类文献综述";
+  return [
+    "---",
+    "summaryType: literature-review-synthesis",
+    "templateVersion: collection-model-review-v1",
+    `collectionKey: ${frontmatterScalar(collectionContext.key || "")}`,
+    `collectionName: ${frontmatterScalar(collectionContext.name || "")}`,
+    `provider: ${frontmatterScalar(result.provider || "")}`,
+    `model: ${frontmatterScalar(result.model || "")}`,
+    `sourceHash: ${frontmatterScalar(result.sourceHash || "")}`,
+    `generatedAt: ${new Date().toISOString()}`,
+    "---",
+    "",
+    `# ${collectionContext.name || collectionContext.key} ${title}`,
+    "",
+    markdown.trim(),
+    ""
+  ].join("\n");
+}
+
+function renderCollectionModelReviewUnavailable(collectionContext, results, outputLanguage) {
+  const title = outputLanguage === "en-US"
+    ? "Model review not generated"
+    : outputLanguage === "ja-JP"
+      ? "モデルレビュー未生成"
+      : "未生成模型综述";
+  return [
+    `# ${collectionContext.name || collectionContext.key} ${title}`,
+    "",
+    outputLanguage === "en-US"
+      ? "Provider authentication or model configuration is missing. Deterministic collection files were still generated."
+      : outputLanguage === "ja-JP"
+        ? "プロバイダー認証またはモデル設定が不足しています。決定的な collection ファイルは生成済みです。"
+        : "模型接口鉴权或模型配置不完整。确定性的分类矩阵、主题聚类和正式草稿仍已生成。",
+    "",
+    `- total: ${batchStats(results).total}`
+  ].join("\n");
+}
+
+function renderCollectionModelReviewFailure(collectionContext, results, outputLanguage, err) {
+  const title = outputLanguage === "en-US"
+    ? "Model review failed"
+    : outputLanguage === "ja-JP"
+      ? "モデルレビュー生成失敗"
+      : "模型综述生成失败";
+  return [
+    `# ${collectionContext.name || collectionContext.key} ${title}`,
+    "",
+    outputLanguage === "en-US"
+      ? "The model-generated collection review failed, but deterministic collection files were still generated."
+      : outputLanguage === "ja-JP"
+        ? "モデルによる collection レビュー生成に失敗しましたが、決定的な collection ファイルは生成済みです。"
+        : "模型生成分类综述失败，但确定性的分类矩阵、主题聚类和正式草稿仍已生成。",
+    "",
+    `- error: ${safeError(err)}`,
+    `- total: ${batchStats(results).total}`
+  ].join("\n");
+}
+
+function frontmatterScalar(value) {
+  return JSON.stringify(String(value || ""));
+}
+
+const COLLECTION_MARKDOWN_ARTIFACT_KEYS = [
+  "modelReviewPath",
+  "reviewReportPath",
+  "reviewDraftPath",
+  "topicClustersPath",
+  "synthesisClaimsPath",
+  "synthesisConflictsPath",
+  "synthesisRoadmapPath",
+  "gapMatrixPath",
+  "ideaListPath"
+];
+
+async function linkCollectionWorkspaceMarkdownArtifacts(collectionContext, artifacts) {
+  const linked = [];
+  for (const key of COLLECTION_MARKDOWN_ARTIFACT_KEYS) {
+    const path = artifacts?.[key];
+    if (!path || !await pathExists(path)) continue;
+    const title = collectionArtifactAttachmentTitle(collectionContext, path);
+    const existing = await findExistingCollectionMarkdownAttachment(collectionContext, title).catch(() => null);
+    const attachment = await linkOrUpdateCollectionMarkdownAttachment(collectionContext, path, title, existing);
+    if (attachment) linked.push(attachment);
+  }
+  return linked;
+}
+
+async function findExistingCollectionMarkdownAttachment(collectionContext, title) {
+  const collection = collectionContext?.collection || collectionByContext(collectionContext);
+  if (!collection) return null;
+  const childItems = await collectionChildItems(collection);
+  for (const item of childItems) {
+    if (item?.isRegularItem?.()) continue;
+    const itemTitle = item?.getField?.("title") || item?.title || "";
+    if (itemTitle === title) return item;
+  }
+  return null;
+}
+
+async function collectionChildItems(collection) {
+  if (typeof collection?.getChildItems === "function") {
+    const items = await collection.getChildItems();
+    return items.map((item) => typeof item === "number" ? Zotero.Items.get(item) : item).filter(Boolean);
+  }
+  if (typeof collection?.getChildItemsAsync === "function") {
+    const items = await collection.getChildItemsAsync();
+    return items.map((item) => typeof item === "number" ? Zotero.Items.get(item) : item).filter(Boolean);
+  }
+  return [];
+}
+
+function collectionByContext(collectionContext) {
+  const id = Number(collectionContext?.id || collectionContext?.collectionID || 0);
+  return id && Zotero.Collections?.get ? Zotero.Collections.get(id) : null;
+}
+
+async function linkOrUpdateCollectionMarkdownAttachment(collectionContext, path, title, existing) {
+  if (existing) {
+    if (typeof existing.setField === "function") existing.setField("title", title);
+    else existing.title = title;
+    existing.attachmentPath = path;
+    existing.attachmentContentType = existing.attachmentContentType || "text/markdown";
+    if (typeof existing.saveTx === "function") await existing.saveTx();
+    return existing;
+  }
+  const payload = {
+    file: path,
+    contentType: "text/markdown",
+    title
+  };
+  const libraryID = Number(collectionContext?.libraryID || collectionContext?.parentLibraryID || 0);
+  if (libraryID) payload.libraryID = libraryID;
+  const attachment = await Zotero.Attachments.linkFromFile(payload);
+  const collectionID = Number(collectionContext?.id || collectionContext?.collectionID || 0);
+  if (collectionID && typeof attachment?.addToCollection === "function") {
+    attachment.addToCollection(collectionID);
+    if (typeof attachment.saveTx === "function") await attachment.saveTx();
+  }
+  return attachment;
+}
+
+function collectionArtifactAttachmentTitle(collectionContext, path) {
+  const collectionName = sanitizeFilename(collectionContext?.name || collectionContext?.key || "collection");
+  return `Literature Review with LLM - ${collectionName} - ${leafName(path)}`;
 }
 
 async function writeCrossCollectionSynthesisIndex(settings, collectionContext, results, outputLanguage, summaryInsights, artifacts) {
@@ -1737,6 +2074,7 @@ function crossCollectionEntry(collectionContext, results, outputLanguage, summar
       synthesisConflictsPath: artifacts.synthesisConflictsPath || "",
       synthesisRoadmapPath: artifacts.synthesisRoadmapPath || "",
       reviewReportPath: artifacts.reviewReportPath || "",
+      modelReviewPath: artifacts.modelReviewPath || "",
       ideaListPath: artifacts.ideaListPath || ""
     },
     clusters,

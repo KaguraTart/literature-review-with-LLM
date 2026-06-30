@@ -251,7 +251,9 @@ describe("bootstrap UI runtime wiring", () => {
       "openMarkdownReader",
       "batchSelected",
       "batchAll",
-      "batchAllUpdate"
+      "batchAllUpdate",
+      "collectionReview",
+      "collectionReviewUpdate"
     ]);
   });
 
@@ -272,9 +274,11 @@ describe("bootstrap UI runtime wiring", () => {
     expect(button?.getAttribute("data-zms-discoverable")).toBe("1");
     expect(button?.getAttribute("aria-label")).toBe("openWorkbench");
     expect(button?.getAttribute("title")).toBe("openWorkbench");
-    expect(button?.textContent).toBe("openWorkbenchShort");
+    expect(button?.textContent).toBe("");
     expect(button?.getAttribute("style")).toContain("display:inline-flex");
-    expect(button?.getAttribute("style")).toContain("min-width:88px");
+    expect(button?.getAttribute("style")).toContain("min-width:32px");
+    expect(button?.getAttribute("style")).toContain("max-width:32px");
+    expect(button?.getAttribute("style")).toContain("background-position:center");
     expect(button?.getAttribute("style")).toContain("background-image:url('chrome://zotero-markdown-summary/content/logo.svg')");
 
     const event = {
@@ -300,6 +304,35 @@ describe("bootstrap UI runtime wiring", () => {
     expect(helpers.regularItemContextAvailable({})).toBe(true);
     expect(helpers.regularItemContextAvailable({ items: [] })).toBe(true);
     expect(helpers.regularItemContextAvailable({ items: [{ isRegularItem: () => false }] })).toBe(false);
+  });
+
+  it("enables collection review actions only when a collection is available", () => {
+    const { helpers } = loadBootstrapUi(new FakeDocument(), {
+      Zotero: {
+        debug() {},
+        getActiveZoteroPane: () => ({ getSelectedCollection: () => null })
+      }
+    });
+    const visibleCalls: boolean[] = [];
+    const enabledCalls: boolean[] = [];
+    helpers.menuItem("Collection Review", () => undefined, {
+      requireCollection: true,
+      disableWithoutCollection: true
+    }).onShowing(null, {
+      collection: { key: "COL" },
+      setVisible: (value: boolean) => visibleCalls.push(value),
+      setEnabled: (value: boolean) => enabledCalls.push(value)
+    });
+    helpers.menuItem("Collection Review", () => undefined, {
+      requireCollection: true,
+      disableWithoutCollection: true
+    }).onShowing(null, {
+      setVisible: (value: boolean) => visibleCalls.push(value),
+      setEnabled: (value: boolean) => enabledCalls.push(value)
+    });
+
+    expect(visibleCalls).toEqual([true, false]);
+    expect(enabledCalls).toEqual([true, false]);
   });
 
   it("allows the workbench entry for PDF attachments without enabling regular-item actions", () => {

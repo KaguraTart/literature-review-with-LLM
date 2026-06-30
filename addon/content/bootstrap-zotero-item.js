@@ -117,20 +117,30 @@ function isPdfAttachmentItem(item) {
 }
 
 async function currentListRegularItems(collection) {
+  const collectionItems = await regularItemsFromCollection(collection);
+  if (collectionItems.length) return collectionItems;
+
   const pane = Zotero.getActiveZoteroPane();
   const fromItemTree = itemsFromItemTree(pane?.itemsView || pane?.itemTreeView || pane?.itemTree);
   if (fromItemTree.length) return fromItemTree;
 
   const targetCollection = collection || pane?.getSelectedCollection?.();
-  if (targetCollection?.getChildItems) {
-    const childItems = await targetCollection.getChildItems();
-    return childItems.map((item) => typeof item === "number" ? Zotero.Items.get(item) : item).filter((item) => item?.isRegularItem?.());
-  }
-  if (targetCollection?.getChildItemsAsync) {
-    const childItems = await targetCollection.getChildItemsAsync();
-    return childItems.map((item) => typeof item === "number" ? Zotero.Items.get(item) : item).filter((item) => item?.isRegularItem?.());
-  }
+  const selectedCollectionItems = await regularItemsFromCollection(targetCollection);
+  if (selectedCollectionItems.length) return selectedCollectionItems;
   return selectedRegularItems();
+}
+
+async function regularItemsFromCollection(collection) {
+  if (!collection) return [];
+  if (collection?.getChildItems) {
+    const childItems = await collection.getChildItems();
+    return childItems.map((item) => typeof item === "number" ? Zotero.Items.get(item) : item).filter((item) => item?.isRegularItem?.());
+  }
+  if (collection?.getChildItemsAsync) {
+    const childItems = await collection.getChildItemsAsync();
+    return childItems.map((item) => typeof item === "number" ? Zotero.Items.get(item) : item).filter((item) => item?.isRegularItem?.());
+  }
+  return [];
 }
 
 function collectionContextFromItem(collection, pane) {
@@ -138,11 +148,14 @@ function collectionContextFromItem(collection, pane) {
   const collectionName = (collection.name || "").trim() || (collection.getName?.() || "").trim();
   const rawKey = collection.key || collection.id || collectionName || "collection";
   return {
+    id: Number(collection.id || collection.collectionID || 0),
     key: String(rawKey),
     name: collectionName || String(rawKey),
     type: collection.type || "collection",
     outputDir: PathUtils.join(getSettings().outputDir || pref("outputDir") || "", "collections", sanitizeFilename(String(rawKey))),
-    parentLibraryID: Number(pane?.view?.selectedLibraryID || pane?.libraryID || collection.libraryID || 0)
+    parentLibraryID: Number(pane?.view?.selectedLibraryID || pane?.libraryID || collection.libraryID || 0),
+    libraryID: Number(collection.libraryID || pane?.view?.selectedLibraryID || pane?.libraryID || 0),
+    collection
   };
 }
 

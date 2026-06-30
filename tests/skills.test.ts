@@ -32,6 +32,10 @@ describe("skills", () => {
     expect(builtInSkillTemplate("figure-table-extractor", "en-US")).toContain("[image]");
     expect(builtInSkillTemplate("literature-matrix-builder", "en-US")).toContain("[paper2:<id>]");
     expect(builtInSkillTemplate("literature-review-synthesis", "en-US")).toContain("cross-paper synthesis");
+    expect(builtInSkillTemplate("literature-review-synthesis", "en-US")).toContain("synthesis matrix");
+    expect(builtInSkillTemplate("literature-review-synthesis", "en-US")).toContain("split completely unrelated papers into independent sections");
+    expect(builtInSkillTemplate("literature-review-synthesis", "zh-CN")).toContain("更大的分析框架");
+    expect(builtInSkillTemplate("literature-review-synthesis", "zh-CN")).toContain("完全不相关的论文");
     expect(builtInSkillTemplate("paper-deep-summary", "ja-JP")).toContain("日本語");
   });
 

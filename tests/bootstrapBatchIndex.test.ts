@@ -7,6 +7,7 @@ function loadBootstrapHelpers(files = new Map<string, string>()) {
   const writes = new Map<string, string>();
   const directories: string[] = [];
   const linkedAttachments: any[] = [];
+  const fetchCalls: Array<{ url: string; body: any; headers: Record<string, string> }> = [];
   const providerCode = readFileSync(resolve(process.cwd(), "addon/content/bootstrap-provider.js"), "utf8");
   const settingsCode = readFileSync(resolve(process.cwd(), "addon/content/bootstrap-settings.js"), "utf8");
   const summaryStoreCode = readFileSync(resolve(process.cwd(), "addon/content/bootstrap-summary-store.js"), "utf8");
@@ -51,6 +52,30 @@ function loadBootstrapHelpers(files = new Map<string, string>()) {
         files.set(path, text);
       }
     },
+    fetch: async (url: string, init: any) => {
+      fetchCalls.push({
+        url,
+        body: JSON.parse(init.body),
+        headers: init.headers
+      });
+      const payload = {
+        choices: [
+          {
+            message: {
+              content: "## 综合框架\n- 相关方向放入一个大框架。\n\n## 独立方向\n- 完全不相关的论文分开讨论。"
+            }
+          }
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 }
+      };
+      return {
+        ok: true,
+        status: 200,
+        headers: {},
+        json: async () => payload,
+        text: async () => JSON.stringify(payload)
+      };
+    },
     URLSearchParams,
     TextEncoder,
     TextDecoder,
@@ -68,21 +93,36 @@ function loadBootstrapHelpers(files = new Map<string, string>()) {
     writes,
     directories,
     linkedAttachments,
+    fetchCalls,
     helpers: context as {
       batchStats: (results: any[]) => any;
       writeBatchPapersIndex: (settings: any, collectionContext: any, results: any[]) => Promise<string>;
-      writeCollectionWorkspace: (settings: any, collectionContext: any, results: any[]) => Promise<any>;
+      writeCollectionWorkspace: (settings: any, collectionContext: any, results: any[], options?: any) => Promise<any>;
       writeBatchRunReport: (settings: any, collectionContext: any, results: any[], options?: any) => Promise<string>;
       batchRunReportPayload: (settings: any, collectionContext: any, results: any[], options?: any) => any;
       crossCollectionIndexPath: (settings: any) => string;
       crossCollectionSynthesisPath: (settings: any, outputLanguage: string) => string;
       renderMarkdown: (item: any, pdf: any, settings: any, result: any) => string;
       linkOrUpdateAttachment: (item: any, outputPath: string, existing?: any) => Promise<any>;
+      linkCollectionWorkspaceMarkdownArtifacts: (collectionContext: any, artifacts: any) => Promise<any[]>;
+      currentListRegularItems: (collection?: any) => Promise<any[]>;
     }
   };
 }
 
 describe("batch papers index", () => {
+  it("prefers explicit collection children when building a collection batch", async () => {
+    const { helpers } = loadBootstrapHelpers();
+    const collectionItem = { id: 1, key: "COLITEM", isRegularItem: () => true };
+    const ignoredNote = { id: 2, key: "NOTE", isRegularItem: () => false };
+
+    await expect(helpers.currentListRegularItems({
+      async getChildItems() {
+        return [collectionItem, ignoredNote];
+      }
+    })).resolves.toEqual([collectionItem]);
+  });
+
   it("repairs stale summary attachments instead of linking duplicates", async () => {
     const { linkedAttachments, helpers } = loadBootstrapHelpers();
     let saved = false;
@@ -262,6 +302,7 @@ describe("batch papers index", () => {
       researchQuestionCardsPath: "/out/collections/COL/knowledge/research-question-cards.zh-CN.md",
       reviewDraftPath: "/out/collections/COL/writing/manual-review-draft.zh-CN.md",
       reviewReportPath: "/out/collections/COL/writing/formal-review-report.zh-CN.md",
+      modelReviewPath: "/out/collections/COL/writing/model-literature-review.zh-CN.md",
       ideaListPath: "/out/collections/COL/writing/idea-list.zh-CN.md",
       crossCollectionIndexPath: "/out/collections/index.json",
       crossCollectionSynthesisPath: "/out/collections/cross-collection-synthesis.zh-CN.md"
@@ -319,6 +360,101 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.reviewReportPath)).toContain("风险核查清单");
     expect(writes.get(artifacts.ideaListPath)).toContain("研究想法列表");
     expect(writes.get(artifacts.ideaListPath)).toContain("推翻条件");
+    expect(writes.has(artifacts.modelReviewPath)).toBe(false);
+  });
+
+  it("writes an optional model-generated collection literature review from paper summaries", async () => {
+    const { writes, fetchCalls, helpers } = loadBootstrapHelpers();
+    const results = [
+      {
+        status: "generated",
+        itemKey: "A",
+        title: "Safe UAV Routing",
+        year: "2026",
+        pdfKey: "PA",
+        summaryPath: "/out/a.md",
+        summaryText: [
+          "# Safe UAV Routing",
+          "## 方法",
+          "- Uses graph reinforcement learning.",
+          "## 局限",
+          "- Lacks field validation."
+        ].join("\n")
+      },
+      {
+        status: "generated",
+        itemKey: "B",
+        title: "Crowdsourced Traffic Data",
+        year: "2025",
+        pdfKey: "PB",
+        summaryPath: "/out/b.md",
+        summaryText: [
+          "# Crowdsourced Traffic Data",
+          "## 方法",
+          "- Builds a sensor-data pipeline.",
+          "## 缺失证据",
+          "- Lacks controlled comparison."
+        ].join("\n")
+      }
+    ];
+
+    const artifacts = await helpers.writeCollectionWorkspace(
+      {
+        outputLanguage: "zh-CN",
+        summaryVersion: "1",
+        outputDir: "/out",
+        provider: "openai",
+        protocol: "openai_chat",
+        baseURL: "https://api.example.test/v1",
+        apiKey: "test-key",
+        model: "model-a",
+        temperature: 0.2,
+        maxOutputTokens: 4096,
+        stream: false,
+        customHeaders: {},
+        bodyExtra: {},
+        capabilities: {}
+      },
+      { key: "COL", name: "Collection", type: "collection", parentLibraryID: 1, outputDir: "/out/collections/COL" },
+      results,
+      { modelReview: true }
+    );
+
+    expect(writes.get(artifacts.modelReviewPath)).toContain("summaryType: literature-review-synthesis");
+    expect(writes.get(artifacts.modelReviewPath)).toContain("模型生成的分类文献综述");
+    expect(writes.get(artifacts.modelReviewPath)).toContain("相关方向放入一个大框架");
+    expect(fetchCalls).toHaveLength(1);
+    expect(JSON.stringify(fetchCalls[0].body)).toContain("小方向不一样但问题相近");
+    expect(JSON.stringify(fetchCalls[0].body)).toContain("完全不相关的论文");
+    expect(JSON.stringify(fetchCalls[0].body)).toContain("Safe UAV Routing");
+  });
+
+  it("links key collection Markdown artifacts back to the selected collection when possible", async () => {
+    const { linkedAttachments, helpers } = loadBootstrapHelpers();
+    const collection = {
+      id: 10,
+      libraryID: 7,
+      async getChildItems() {
+        return [];
+      }
+    };
+    const artifacts = await helpers.writeCollectionWorkspace(
+      { outputLanguage: "zh-CN", summaryVersion: "1", outputDir: "/out" },
+      { id: 10, key: "COL", name: "Collection", type: "collection", parentLibraryID: 7, libraryID: 7, collection, outputDir: "/out/collections/COL" },
+      [
+        { status: "generated", itemKey: "A", title: "A Paper", year: "2026", summaryPath: "/out/a.md" }
+      ]
+    );
+
+    const linked = await helpers.linkCollectionWorkspaceMarkdownArtifacts(
+      { id: 10, key: "COL", name: "Collection", parentLibraryID: 7, libraryID: 7, collection },
+      artifacts
+    );
+
+    expect(linked.length).toBeGreaterThan(0);
+    expect(linkedAttachments.map((item) => item.title)).toContain("Literature Review with LLM - Collection - formal-review-report.zh-CN.md");
+    expect(linkedAttachments.every((item) => item.libraryID === 7)).toBe(true);
+    expect(linkedAttachments.every((item) => item.contentType === "text/markdown")).toBe(true);
   });
 
   it("extracts research gaps and ideas from existing single-paper summaries", async () => {

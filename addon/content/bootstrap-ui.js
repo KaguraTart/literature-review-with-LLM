@@ -56,19 +56,20 @@ function createToolbarButton(doc, toolbar) {
     button.setAttribute("aria-label", label);
     button.setAttribute("title", label);
     button.setAttribute("label", label);
-    button.textContent = shortLabel;
+    button.textContent = "";
     button.setAttribute("style", [
-      "width:auto",
+      "width:32px",
       "height:28px",
-      "min-width:88px",
+      "min-width:32px",
+      "max-width:32px",
       "min-height:28px",
       "margin:0 2px",
-      "padding:4px 10px 4px 30px",
+      "padding:4px",
       "border:1px solid rgba(148,163,184,0.45)",
       "border-radius:6px",
       "background-color:rgba(255,255,255,0.82)",
       iconBackground,
-      "background-position:8px center",
+      "background-position:center",
       "display:inline-flex",
       "align-items:center",
       "justify-content:center",
@@ -124,12 +125,14 @@ function createToolbarButton(doc, toolbar) {
   const popup = createXULElement(doc, "menupopup");
   popup.appendChild(toolbarMenuItem(doc, label, () => openWorkbenchForContext()));
   popup.appendChild(toolbarMenuItem(doc, t("selfCheck"), () => runSelfCheckForContext()));
-  popup.appendChild(toolbarMenuItem(doc, t("openMarkdownReader"), () => openMarkdownReaderForContext()));
-  popup.appendChild(toolbarMenuItem(doc, t("batchSelected"), () => batchGenerateSelected(false)));
-  popup.appendChild(toolbarMenuItem(doc, t("batchAll"), () => batchGenerateCurrentList(false)));
-  popup.appendChild(toolbarMenuItem(doc, t("batchAllUpdate"), () => batchGenerateCurrentList(true)));
-  button.appendChild(popup);
-  return button;
+    popup.appendChild(toolbarMenuItem(doc, t("openMarkdownReader"), () => openMarkdownReaderForContext()));
+    popup.appendChild(toolbarMenuItem(doc, t("batchSelected"), () => batchGenerateSelected(false)));
+    popup.appendChild(toolbarMenuItem(doc, t("batchAll"), () => batchGenerateCurrentList(false)));
+    popup.appendChild(toolbarMenuItem(doc, t("batchAllUpdate"), () => batchGenerateCurrentList(true)));
+    popup.appendChild(toolbarMenuItem(doc, t("collectionReview"), () => generateCollectionReview(false)));
+    popup.appendChild(toolbarMenuItem(doc, t("collectionReviewUpdate"), () => generateCollectionReview(true)));
+    button.appendChild(popup);
+    return button;
 }
 
 function unregisterToolbarButtons(documentOrWindow) {
@@ -380,15 +383,15 @@ function ensureWorkbenchButtonStyle(doc) {
       overflow: hidden !important;
     }
     #${TOOLBAR_BUTTON_ID} {
-      width: auto !important;
-      max-width: none !important;
-      min-width: 88px !important;
+      width: 32px !important;
+      max-width: 32px !important;
+      min-width: 32px !important;
       height: 28px !important;
       min-height: 28px !important;
       background-size: 20px 20px !important;
     }
     #${TOOLBAR_BUTTON_ID}[data-zms-discoverable="1"] {
-      background-position: 8px center !important;
+      background-position: center !important;
     }
     #${SIDENAV_BUTTON_ID} {
       width: 32px !important;
@@ -605,17 +608,24 @@ function menuItem(label, onCommand, options = {}) {
       context.menuElem?.setAttribute("label", label);
       const hasRegularItems = regularItemContextAvailable(context);
       const hasWorkbenchItems = workbenchItemContextAvailable(context);
+      const hasCollection = collectionContextAvailable(context);
       if (options.requireRegularItems) {
         context.setVisible?.(hasRegularItems);
       }
       if (options.requireWorkbenchItems) {
         context.setVisible?.(hasWorkbenchItems);
       }
+      if (options.requireCollection) {
+        context.setVisible?.(hasCollection);
+      }
       if (options.disableWithoutRegularItems) {
         context.setEnabled?.(hasRegularItems);
       }
       if (options.disableWithoutWorkbenchItems) {
         context.setEnabled?.(hasWorkbenchItems);
+      }
+      if (options.disableWithoutCollection) {
+        context.setEnabled?.(hasCollection);
       }
     },
     onCommand
@@ -640,6 +650,18 @@ function workbenchItemsForContext(context) {
 function workbenchItemContextAvailable(context) {
   try {
     return workbenchItemsForContext(context).length > 0;
+  } catch (_err) {
+    return false;
+  }
+}
+
+function collectionContextAvailable(context) {
+  if (context?.collection) return true;
+  if (Array.isArray(context?.collections) && context.collections.length) return true;
+  if (context?.target?.collection || context?.target?.collectionID) return true;
+  if (context?.collectionID) return true;
+  try {
+    return !!Zotero.getActiveZoteroPane?.().getSelectedCollection?.();
   } catch (_err) {
     return false;
   }
