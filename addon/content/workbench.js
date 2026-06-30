@@ -8511,6 +8511,8 @@ function visualExtractionReportData(payload, options = {}) {
       name: mdText(image.name || "image"),
       mimeType: mdText(image.mimeType || ""),
       size: Number(image.size) || 0,
+      width: visualExtractionImageDimension(image, "width"),
+      height: visualExtractionImageDimension(image, "height"),
       localOcr: visualExtractionLocalOcrMetadata(image.localOcr)
     })),
     sections,
@@ -8577,6 +8579,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `chartLayoutStatus: ${yamlScalar(chartLayoutDiagnostics.status || "")}`,
     `chartPanelCount: ${Number(chartLayoutDiagnostics.panelCount) || 0}`,
     `chartAxisSegmentCount: ${Number(chartLayoutDiagnostics.axisSegmentCount) || 0}`,
+    `chartPanelSplitCandidateCount: ${Number(chartLayoutDiagnostics.panelSplitCandidateCount) || 0}`,
     `pixelDataDraftCount: ${pixelDataDrafts.length}`,
     `calibrationAnchorCount: ${calibrationAnchors.length}`,
     `chartQualityStatus: ${yamlScalar(chartQualityReview.status || "")}`,
@@ -8785,6 +8788,17 @@ function visualExtractionLocalOcrSummary(localOcr, labels) {
   if (localOcr.status === "empty") return labels.localOcrEmpty;
   if (localOcr.status === "failed") return [labels.localOcrFailed, localOcr.error].filter(Boolean).join(": ");
   return localOcr.status;
+}
+
+function visualExtractionImageDimension(image, axis) {
+  const keys = axis === "width"
+    ? ["width", "imageWidth", "naturalWidth", "displayWidth"]
+    : ["height", "imageHeight", "naturalHeight", "displayHeight"];
+  for (const key of keys) {
+    const value = Number(image?.[key]);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return 0;
 }
 
 function visualExtractionTables(answer) {
@@ -9015,6 +9029,30 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
     ]) {
       if (value === "") continue;
       rows.push({ ...base, column, value: mdText(value) });
+    }
+  }
+  for (const [candidateIndex, candidate] of (chartLayoutDiagnostics?.panelSplitCandidates || []).entries()) {
+    for (const [boxIndex, box] of (candidate.boxes || []).entries()) {
+      const base = {
+        tableIndex: `layout-split:${candidate.imageName || candidateIndex + 1}:${box.panel || boxIndex + 1}`,
+        rowIndex: boxIndex + 1,
+        evidenceLabels: candidate.evidenceLabels || []
+      };
+      for (const [column, value] of [
+        ["imageName", candidate.imageName || ""],
+        ["layout", candidate.layout || ""],
+        ["panel", box.panel || ""],
+        ["x", box.x === null || box.x === undefined ? "" : box.x],
+        ["y", box.y === null || box.y === undefined ? "" : box.y],
+        ["width", box.width === null || box.width === undefined ? "" : box.width],
+        ["height", box.height === null || box.height === undefined ? "" : box.height],
+        ["unit", box.unit || ""],
+        ["confidence", box.confidence || ""],
+        ["basis", candidate.basis || ""]
+      ]) {
+        if (value === "") continue;
+        rows.push({ ...base, column, value: mdText(value) });
+      }
     }
   }
   for (const [actionIndex, action] of (chartReviewActions || []).entries()) {
@@ -9935,6 +9973,7 @@ function visualExtractionChartLayoutDiagnostics(answer, tables = [], chartDataDr
   const multiPanelMentioned = panels.length > 1 || (images || []).length > 1 || /multi[-\s]?panel|subplot|subfigure|分面|面板|子图|子圖|多图|多圖/i.test(text);
   const axisSegments = visualExtractionAxisSegmentDiagnostics(calibrationAnchors);
   const discontinuousAxisDetected = axisSegments.length > 0 || /broken[-\s]?axis|axis\s*break|discontinuous|segmented\s*axis|piecewise|断轴|斷軸|断裂轴|不连续|不連續|分段轴|区段|區段/i.test(text);
+  const panelSplitCandidates = visualExtractionPanelSplitCandidates(images, panels, text, multiPanelMentioned);
   const panelNeedsReview = multiPanelMentioned && (!panels.length || panels.some((panel) => panel.status !== "covered"));
   const segmentNeedsReview = discontinuousAxisDetected && (!axisSegments.length || axisSegments.some((segment) => segment.status !== "covered"));
   const status = panelNeedsReview
@@ -9948,11 +9987,125 @@ function visualExtractionChartLayoutDiagnostics(answer, tables = [], chartDataDr
     status,
     panelCount: panels.length,
     axisSegmentCount: axisSegments.length,
+    panelSplitCandidateCount: panelSplitCandidates.reduce((sum, candidate) => sum + (candidate.boxes || []).length, 0),
     multiPanelDetected: !!multiPanelMentioned,
     discontinuousAxisDetected: !!discontinuousAxisDetected,
     panels,
-    axisSegments
+    axisSegments,
+    panelSplitCandidates
   };
+}
+
+function visualExtractionPanelSplitCandidates(images = [], panels = [], answerText = "", multiPanelMentioned = false) {
+  const imageList = Array.isArray(images) ? images : [];
+  if (!imageList.length) return [];
+  const panelLabels = visualExtractionPanelSplitLabels(panels, answerText);
+  const hintedCount = panelLabels.length || visualExtractionPanelCountHint(answerText);
+  const panelCount = hintedCount > 1 ? Math.min(hintedCount, 12) : (multiPanelMentioned && imageList.length === 1 ? 2 : 0);
+  if (panelCount <= 1) return [];
+  const labels = panelLabels.length >= panelCount ? panelLabels.slice(0, panelCount) : visualExtractionDefaultPanelLabels(panelCount, panelLabels);
+  return imageList.slice(0, 6).map((image) => {
+    const width = Number(image?.width) || 0;
+    const height = Number(image?.height) || 0;
+    const layout = visualExtractionPanelSplitLayout(panelCount, width, height);
+    const unit = width > 0 && height > 0 ? "px" : "%";
+    return {
+      imageName: mdText(image?.name || "image"),
+      width,
+      height,
+      panelCount,
+      layout: layout.label,
+      source: "heuristic-panel-split",
+      status: "needs-review",
+      basis: width > 0 && height > 0
+        ? `even ${layout.rows}x${layout.columns} split from parsed panel labels; verify against figure gutters`
+        : `normalized even ${layout.rows}x${layout.columns} split from parsed panel labels; add image dimensions or crop panels for precise boxes`,
+      evidenceLabels: visualExtractionEvidenceLabels(answerText),
+      boxes: visualExtractionPanelSplitBoxes(labels, layout, width, height, unit)
+    };
+  });
+}
+
+function visualExtractionPanelSplitLabels(panels = [], answerText = "") {
+  const labels = [
+    ...(panels || []).map((panel) => panel?.label).filter(Boolean),
+    ...visualExtractionPanelLabelsFromText(answerText)
+  ];
+  return Array.from(new Set(labels.map(visualExtractionPanelLabel).filter(Boolean)));
+}
+
+function visualExtractionPanelCountHint(text = "") {
+  const source = String(text || "");
+  const digitMatch = source.match(/(?:^|\b)(\d{1,2})\s*(?:panels?|subplots?|subfigures?|parts?|面板|分面|子图|子圖)(?:\b|$)/i);
+  if (digitMatch) return Number(digitMatch[1]) || 0;
+  const englishNumbers = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12 };
+  const wordMatch = source.toLowerCase().match(/\b(two|three|four|five|six|seven|eight|nine|ten|twelve)\s+(?:panels?|subplots?|subfigures?|parts?)\b/);
+  if (wordMatch) return englishNumbers[wordMatch[1]] || 0;
+  if (/两个(?:面板|分面|子图)|兩個(?:面板|分面|子圖)/.test(source)) return 2;
+  if (/三个(?:面板|分面|子图)|三個(?:面板|分面|子圖)/.test(source)) return 3;
+  if (/四个(?:面板|分面|子图)|四個(?:面板|分面|子圖)/.test(source)) return 4;
+  return 0;
+}
+
+function visualExtractionDefaultPanelLabels(count, existing = []) {
+  const labels = [...existing];
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  for (let index = 0; labels.length < count; index += 1) {
+    const token = index < letters.length ? letters[index] : String(index + 1);
+    const label = `Panel ${token}`;
+    if (!labels.includes(label)) labels.push(label);
+  }
+  return labels.slice(0, count);
+}
+
+function visualExtractionPanelSplitLayout(count, width = 0, height = 0) {
+  const numericCount = Math.max(1, Number(count) || 1);
+  const aspect = width > 0 && height > 0 ? width / height : 1;
+  let columns = Math.ceil(Math.sqrt(numericCount * Math.max(aspect, 0.5)));
+  columns = Math.max(1, Math.min(numericCount, columns));
+  let rows = Math.ceil(numericCount / columns);
+  if (numericCount === 2) {
+    columns = aspect >= 1 ? 2 : 1;
+    rows = aspect >= 1 ? 1 : 2;
+  } else if (numericCount === 3) {
+    columns = aspect >= 1.2 ? 3 : 2;
+    rows = Math.ceil(numericCount / columns);
+  } else if (numericCount === 4 && aspect > 0.65 && aspect < 1.8) {
+    columns = 2;
+    rows = 2;
+  }
+  return { rows, columns, label: `${rows}x${columns}` };
+}
+
+function visualExtractionPanelSplitBoxes(labels = [], layout = { rows: 1, columns: 1 }, width = 0, height = 0, unit = "%") {
+  const numericWidth = Number(width) > 0 ? Number(width) : 100;
+  const numericHeight = Number(height) > 0 ? Number(height) : 100;
+  const columns = Math.max(1, Number(layout.columns) || 1);
+  const rows = Math.max(1, Number(layout.rows) || 1);
+  const cellWidth = numericWidth / columns;
+  const cellHeight = numericHeight / rows;
+  return (labels || []).map((label, index) => {
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    const x = visualExtractionRoundedCoordinate(column * cellWidth);
+    const y = visualExtractionRoundedCoordinate(row * cellHeight);
+    const boxWidth = visualExtractionRoundedCoordinate(column === columns - 1 ? numericWidth - column * cellWidth : cellWidth);
+    const boxHeight = visualExtractionRoundedCoordinate(row === rows - 1 ? numericHeight - row * cellHeight : cellHeight);
+    return {
+      panel: label,
+      x,
+      y,
+      width: boxWidth,
+      height: boxHeight,
+      unit,
+      confidence: "low",
+      status: "needs-review"
+    };
+  });
+}
+
+function visualExtractionRoundedCoordinate(value) {
+  return Number(Number(value).toFixed(2));
 }
 
 function visualExtractionAxisSegmentDiagnostics(calibrationAnchors = []) {
@@ -9989,14 +10142,20 @@ function visualExtractionAxisSegmentDiagnostics(calibrationAnchors = []) {
 function visualExtractionChartLayoutDiagnosticsMarkdown(diagnostics = {}, labels) {
   const panels = Array.isArray(diagnostics?.panels) ? diagnostics.panels : [];
   const segments = Array.isArray(diagnostics?.axisSegments) ? diagnostics.axisSegments : [];
+  const splitCandidates = Array.isArray(diagnostics?.panelSplitCandidates) ? diagnostics.panelSplitCandidates : [];
   return [
     `- ${labels.layoutStatus}: ${diagnostics?.status || labels.unknown}`,
     `- ${labels.panelCount}: ${Number(diagnostics?.panelCount) || 0}`,
     `- ${labels.axisSegmentCount}: ${Number(diagnostics?.axisSegmentCount) || 0}`,
+    `- ${labels.panelSplitCandidateCount}: ${Number(diagnostics?.panelSplitCandidateCount) || 0}`,
     "",
     `### ${labels.panelCoverage}`,
     "",
     panels.length ? visualExtractionPanelCoverageMarkdown(panels, labels) : `- ${labels.noPanelDiagnostics}`,
+    "",
+    `### ${labels.panelSplitCandidates}`,
+    "",
+    splitCandidates.length ? visualExtractionPanelSplitCandidatesMarkdown(splitCandidates, labels) : `- ${labels.noPanelSplitCandidates}`,
     "",
     `### ${labels.axisSegmentCoverage}`,
     "",
@@ -10018,6 +10177,30 @@ function visualExtractionPanelCoverageMarkdown(panels = [], labels) {
       markdownTableCell((panel.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
     ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
   ].join("\n");
+}
+
+function visualExtractionPanelSplitCandidatesMarkdown(candidates = [], labels) {
+  const lines = [
+    `| ${labels.imageName} | ${labels.splitLayout} | ${labels.panel} | X | Y | ${labels.width} | ${labels.height} | ${labels.unit} | ${labels.confidence} | ${labels.detail} |`,
+    "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |"
+  ];
+  for (const candidate of candidates || []) {
+    for (const box of candidate.boxes || []) {
+      lines.push([
+        markdownTableCell(candidate.imageName || ""),
+        markdownTableCell(candidate.layout || ""),
+        markdownTableCell(box.panel || ""),
+        box.x === null || box.x === undefined ? "" : box.x,
+        box.y === null || box.y === undefined ? "" : box.y,
+        box.width === null || box.width === undefined ? "" : box.width,
+        box.height === null || box.height === undefined ? "" : box.height,
+        markdownTableCell(box.unit || ""),
+        markdownTableCell(box.confidence || ""),
+        markdownTableCell(candidate.basis || "")
+      ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+    }
+  }
+  return lines.join("\n");
 }
 
 function visualExtractionAxisSegmentCoverageMarkdown(segments = [], labels) {
@@ -10892,7 +11075,9 @@ function visualExtractionReportLabels(outputLanguage) {
       layoutStatus: "布局状态",
       panelCount: "面板数",
       axisSegmentCount: "轴段数",
+      panelSplitCandidateCount: "候选分割框数",
       panelCoverage: "面板覆盖",
+      panelSplitCandidates: "自动 panel 分割候选",
       axisSegmentCoverage: "轴段覆盖",
       panel: "面板",
       chartPointCount: "图表点数",
@@ -10901,7 +11086,11 @@ function visualExtractionReportLabels(outputLanguage) {
       sourceTables: "来源表格",
       anchorCount: "锚点数",
       pixelSpan: "像素跨度",
+      splitLayout: "分割布局",
+      width: "宽度",
+      height: "高度",
       noPanelDiagnostics: "未检测到多面板结构；如原图包含多个 panel，请要求模型在点表和校准锚点中加入 Panel/Subplot 列。",
+      noPanelSplitCandidates: "没有生成 panel 分割候选；如原图包含多个 panel，请在回答中标注 Panel A/B/C 或提供图片宽高后重新导出。",
       noAxisSegmentDiagnostics: "未检测到断轴或分段轴；如原图存在视觉不连续轴段，请要求模型为每个 Segment 单独列出锚点。",
       chartBatchReviewBoard: "图表批量复核看板",
       chartReviewActions: "图表人工复核任务",
@@ -11035,7 +11224,9 @@ function visualExtractionReportLabels(outputLanguage) {
     layoutStatus: "Layout status",
     panelCount: "Panel count",
     axisSegmentCount: "Axis segment count",
+    panelSplitCandidateCount: "Panel split candidate boxes",
     panelCoverage: "Panel Coverage",
+    panelSplitCandidates: "Automatic Panel Split Candidates",
     axisSegmentCoverage: "Axis Segment Coverage",
     panel: "Panel",
     chartPointCount: "Chart points",
@@ -11044,7 +11235,11 @@ function visualExtractionReportLabels(outputLanguage) {
     sourceTables: "Source tables",
     anchorCount: "Anchors",
     pixelSpan: "Pixel span",
+    splitLayout: "Split layout",
+    width: "Width",
+    height: "Height",
     noPanelDiagnostics: "No multi-panel structure was detected. If the original figure has multiple panels, ask for a Panel/Subplot column in point tables and calibration anchors.",
+    noPanelSplitCandidates: "No panel split candidate was generated. If the original figure has multiple panels, label Panel A/B/C in the answer or include image dimensions and export again.",
     noAxisSegmentDiagnostics: "No broken or segmented axis was detected. If the original figure has visual discontinuities, ask for separate Segment anchors.",
     chartBatchReviewBoard: "Chart Batch Review Board",
     chartReviewActions: "Chart Review Action Queue",

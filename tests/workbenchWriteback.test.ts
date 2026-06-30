@@ -8319,7 +8319,7 @@ describe("workbench writeback helpers", () => {
           id: "user-panel",
           role: "user",
           content: "Extract multi-panel dense chart values",
-          images: [{ name: "multi-panel.png", mimeType: "image/png", size: 101 }]
+          images: [{ name: "multi-panel.png", mimeType: "image/png", size: 101, width: 900, height: 300 }]
         },
         {
           id: "assistant-panel",
@@ -8367,9 +8367,15 @@ describe("workbench writeback helpers", () => {
 
     expect(report).toContain('chartLayoutStatus: "needs-panel-review"');
     expect(report).toContain("chartPanelCount: 3");
+    expect(report).toContain("chartPanelSplitCandidateCount: 3");
     expect(report).toContain("## Chart Layout Diagnostics");
     expect(report).toContain("| Panel A | covered | 2 | 1 | 4 | 1, 2, 3 | [image] |");
     expect(report).toContain("| Panel C | needs-review | 0 | 0 | 0 |  | not labeled |");
+    expect(report).toContain("### Automatic Panel Split Candidates");
+    expect(report).toContain("| Image | Split layout | Panel | X | Y | Width | Height | Unit | Confidence | Detail |");
+    expect(report).toContain("| multi-panel.png | 1x3 | Panel A | 0 | 0 | 300 | 300 | px | low | even 1x3 split from parsed panel labels; verify against figure gutters |");
+    expect(report).toContain("| multi-panel.png | 1x3 | Panel B | 300 | 0 | 300 | 300 | px | low | even 1x3 split from parsed panel labels; verify against figure gutters |");
+    expect(report).toContain("| multi-panel.png | 1x3 | Panel C | 600 | 0 | 300 | 300 | px | low | even 1x3 split from parsed panel labels; verify against figure gutters |");
     expect(report).toContain("| layout-coverage | warning | panel coverage incomplete: Panel C |");
     expect(report).toContain("| dense-confidence | warning | dense points: 3; high/medium confidence: 1; low/needs-review: 2 |");
     expect(report).toContain("| medium | todo | verify-chart-layout-coverage | layout-coverage (warning)");
@@ -8378,7 +8384,7 @@ describe("workbench writeback helpers", () => {
     const data = (loaded as any).visualExtractionReportData({
       item,
       messages: [
-        { id: "user-panel", role: "user", images: [{ name: "multi-panel.png", mimeType: "image/png", size: 101 }] },
+        { id: "user-panel", role: "user", images: [{ name: "multi-panel.png", mimeType: "image/png", size: 101, width: 900, height: 300 }] },
         {
           id: "assistant-panel",
           role: "assistant",
@@ -8399,12 +8405,19 @@ describe("workbench writeback helpers", () => {
     expect(data.chartLayoutDiagnostics).toMatchObject({
       status: "needs-panel-review",
       panelCount: 3,
+      panelSplitCandidateCount: 3,
       multiPanelDetected: true
     });
     expect(data.chartLayoutDiagnostics.panels).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: "Panel C", status: "needs-review", chartPointCount: 0 })
     ]));
+    expect(data.chartLayoutDiagnostics.panelSplitCandidates[0].boxes).toEqual([
+      expect.objectContaining({ panel: "Panel A", x: 0, y: 0, width: 300, height: 300, unit: "px" }),
+      expect.objectContaining({ panel: "Panel B", x: 300, y: 0, width: 300, height: 300, unit: "px" }),
+      expect.objectContaining({ panel: "Panel C", x: 600, y: 0, width: 300, height: 300, unit: "px" })
+    ]);
     expect((loaded as any).renderVisualExtractionReportCsv(data)).toContain("layout-panel:Panel C,3,status,needs-review");
+    expect((loaded as any).renderVisualExtractionReportCsv(data)).toContain("layout-split:multi-panel.png:Panel C,3,x,600,[image],assistant-panel,multi-panel.png");
   });
 
   it("infers missing axis values from calibration anchors in pixel drafts", async () => {
