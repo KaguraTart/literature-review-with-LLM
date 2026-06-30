@@ -818,10 +818,24 @@ describe("batch papers index", () => {
         collections: expect.arrayContaining(["Old Collection", "New Collection"]),
         themes: expect.arrayContaining(["Safety / Risk", "Transportation / Urban Airspace"]),
         clusterScore: expect.any(Number),
+        thresholdBand: expect.stringContaining("score"),
+        calibrationRecommendation: expect.any(String),
         linkSignals: expect.arrayContaining([expect.stringContaining("same normalized theme")]),
         reviewRisk: expect.any(String),
         methodSignals: expect.arrayContaining(["Bayesian route planner", "PPO-based CTDE scheduler with safety constraints."]),
         gapSignals: expect.arrayContaining(["No field deployment", "No deployment evidence."])
+      })
+    ]));
+    expect(payload.clusterCalibrationBoard).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        cluster: expect.stringContaining("Transportation / Urban Airspace"),
+        recommendation: expect.stringContaining("review"),
+        thresholdBand: expect.stringContaining("score"),
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        evidence: expect.arrayContaining([
+          expect.stringContaining("Cluster Score:"),
+          expect.stringContaining("Threshold")
+        ])
       })
     ]));
     expect(payload.priorityBoard).toEqual(expect.arrayContaining([
@@ -832,6 +846,8 @@ describe("batch papers index", () => {
         collections: expect.arrayContaining(["Old Collection", "New Collection"]),
         evidence: expect.arrayContaining([
           expect.stringContaining("Cluster Score:"),
+          expect.stringContaining("Calibration Recommendation:"),
+          expect.stringContaining("Threshold Evidence:"),
           expect.stringContaining("Link Evidence:")
         ])
       }),
@@ -845,8 +861,11 @@ describe("batch papers index", () => {
     const synthesis = writes.get(artifacts.crossCollectionSynthesisPath) || "";
     expect(synthesis).toContain("Cross-Collection Synthesis Map");
     expect(synthesis).toContain("Cross-Collection Cluster Map");
+    expect(synthesis).toContain("Cluster Threshold Calibration Board");
     expect(synthesis).toContain("Cluster Evidence Cards");
     expect(synthesis).toContain("Cluster Score");
+    expect(synthesis).toContain("Calibration Recommendation");
+    expect(synthesis).toContain("Threshold Evidence");
     expect(synthesis).toContain("Link Evidence");
     expect(synthesis).toContain("Review Risk");
     expect(synthesis).toContain("Theme Merge Review Board");
