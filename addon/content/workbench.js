@@ -17950,12 +17950,14 @@ async function candidatePdfTextPagesFromRawBytes(pdf, previousQuality = null) {
   const name = attachmentDisplayName(pdf) || "paper.pdf";
   const rawText = await attachmentPdfRawByteText(pdf);
   if (!rawText) return null;
-  const pages = extractPdfRawByteTextPages(rawText);
+  const extraction = await extractPdfRawByteTextPages(rawText);
+  const pages = extraction.pages || [];
   if (!pages.length) return null;
   const inheritedWarnings = Array.isArray(previousQuality?.warnings) ? previousQuality.warnings : [];
   const warnings = uniquePdfQualityWarnings([
     ...inheritedWarnings,
     "raw_pdf_byte_text_fallback",
+    ...(extraction.warnings || []),
     ...(pages.length === 1 ? ["raw_pdf_page_boundary_uncertain"] : [])
   ]);
   const totalTextChars = pages.reduce((sum, page) => sum + mdText(page?.text || "").length, 0);
@@ -18412,18 +18414,118 @@ function pdfBase64ToByteString(value) {
   return "";
 }
 
-function extractPdfRawByteTextPages(rawText) {
+async function extractPdfRawByteTextPages(rawText) {
   const segments = rawText.split(/\f+|%%Page:\s*[^\r\n]+/g);
-  const pageTexts = (segments.length > 1 ? segments : [rawText])
+  const rawPageTexts = (segments.length > 1 ? segments : [rawText])
     .map((segment) => extractPdfReadableText(segment))
     .map(cleanPdfRawText)
     .filter((text) => text.length >= 24);
-  return pageTexts.slice(0, 40).map((text, index) => ({
-    page: index + 1,
-    pageLabel: String(index + 1),
-    text,
-    sourceType: "pdf-raw-bytes"
-  }));
+  const flateTexts = await extractPdfFlateStreamReadableTexts(rawText);
+  const pageTexts = uniquePdfRawPageTexts(flateTexts.length ? flateTexts : rawPageTexts);
+  return {
+    pages: pageTexts.slice(0, 40).map((text, index) => ({
+      page: index + 1,
+      pageLabel: String(index + 1),
+      text,
+      sourceType: "pdf-raw-bytes"
+    })),
+    warnings: flateTexts.length ? ["raw_pdf_flate_stream_fallback"] : []
+  };
+}
+
+function uniquePdfRawPageTexts(texts = []) {
+  const seen = new Set();
+  const unique = [];
+  for (const text of texts || []) {
+    const normalized = cleanPdfRawText(text);
+    if (normalized.length < 24) continue;
+    const key = normalized.toLowerCase().slice(0, 500);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(normalized);
+  }
+  return unique;
+}
+
+async function extractPdfFlateStreamReadableTexts(rawText) {
+  const entries = pdfFlateStreamEntries(rawText);
+  const texts = [];
+  for (const entry of entries.slice(0, 24)) {
+    const decompressed = await decompressPdfFlateByteString(entry.content);
+    if (!decompressed) continue;
+    const readable = cleanPdfRawText(extractPdfReadableText(decompressed));
+    if (readable.length >= 24) texts.push(readable);
+  }
+  return texts;
+}
+
+function pdfFlateStreamEntries(rawText) {
+  const text = String(rawText || "");
+  const entries = [];
+  const streamPattern = /(<<[\s\S]{0,2048}?\/Filter\s*(?:\/FlateDecode|\[[^\]]*\/FlateDecode[^\]]*\])[\s\S]{0,2048}?>>)\s*stream(?:\r?\n|\r)?/g;
+  let match;
+  while ((match = streamPattern.exec(text))) {
+    const streamStart = streamPattern.lastIndex;
+    const streamEnd = text.indexOf("endstream", streamStart);
+    if (streamEnd < 0) break;
+    const content = text.slice(streamStart, streamEnd).replace(/(?:\r?\n|\r)$/, "");
+    if (content) entries.push({ dictionary: match[1], content });
+    streamPattern.lastIndex = streamEnd + "endstream".length;
+  }
+  return entries;
+}
+
+async function decompressPdfFlateByteString(value) {
+  const bytes = byteStringToUint8Array(value);
+  if (!bytes.length) return "";
+  for (const format of ["deflate", "deflate-raw"]) {
+    const inflated = await decompressPdfBytes(bytes, format);
+    if (inflated?.length) return pdfBytesToByteString(inflated);
+  }
+  return "";
+}
+
+async function decompressPdfBytes(bytes, format) {
+  if (typeof DecompressionStream !== "function" || typeof ReadableStream !== "function") return null;
+  try {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      }
+    });
+    const reader = stream.pipeThrough(new DecompressionStream(format)).getReader();
+    const chunks = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = pdfBytesToUint8Array(value);
+      if (!chunk?.length) continue;
+      chunks.push(chunk);
+      total += chunk.length;
+      if (total > 5_000_000) break;
+    }
+    if (!total) return null;
+    const output = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      output.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return output;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function byteStringToUint8Array(value) {
+  const text = String(value || "");
+  const bytes = new Uint8Array(text.length);
+  for (let index = 0; index < text.length; index += 1) {
+    bytes[index] = text.charCodeAt(index) & 0xff;
+  }
+  return bytes;
 }
 
 function extractPdfReadableText(segment) {

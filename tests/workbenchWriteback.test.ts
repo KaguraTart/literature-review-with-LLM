@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
+import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
 function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Record<string, any> = {}, prefValues: Record<string, any> = {}) {
@@ -152,6 +153,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     TextDecoder,
     AbortController,
     ReadableStream,
+    DecompressionStream,
     URL,
     btoa: (value: string) => Buffer.from(value, "binary").toString("base64"),
     console
@@ -7061,6 +7063,80 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("engine: pdf-raw-bytes");
     expect(report).toContain("raw_pdf_byte_text_fallback");
     expect(report).toContain("Review raw-byte page text against the PDF");
+  });
+
+  it("extracts raw PDF evidence from FlateDecode streams when the local bridge is unavailable", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const compressed = deflateSync(Buffer.from([
+      "BT",
+      "(Compressed object-stream text reports route conflict resolution.) Tj",
+      "(Evaluation includes safety delay and throughput metrics from compressed PDF bytes.) Tj",
+      "ET"
+    ].join("\n"), "binary"));
+    const prefix = Buffer.from([
+      "%PDF-1.7",
+      "5 0 obj",
+      `<< /Length ${compressed.length} /Filter /FlateDecode >>`,
+      "stream\n"
+    ].join("\n"), "binary");
+    const suffix = Buffer.from("\nendstream\nendobj\n%%EOF", "binary");
+    const pdfBytes = new Uint8Array(Buffer.concat([prefix, compressed, suffix]));
+    loaded.__zoteroItems.set(70, {
+      id: 70,
+      key: "ITEM70",
+      getAttachments: () => [71]
+    });
+    loaded.__zoteroItems.set(71, {
+      id: 71,
+      key: "PDF71",
+      attachmentContentType: "application/pdf",
+      attachmentText: "Unpaged indexed text should not hide compressed raw byte stream evidence.",
+      getBytes: async () => pdfBytes,
+      getFilePathAsync: async () => "",
+      getField: (field: string) => field === "title" ? "compressed-raw-bytes.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/compressed-raw-bytes",
+        title: "Compressed Raw Byte Candidate",
+        decision: "include",
+        zoteroItemID: 70,
+        zoteroItemKey: "ITEM70",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      sourceType: "pdf-page-text",
+      page: 1,
+      pageLabel: "1",
+      locator: expect.stringContaining("pdf-page-text:"),
+      quote: expect.stringContaining("Evaluation includes safety delay and throughput metrics from compressed PDF bytes")
+    });
+    expect(enriched[0].review.fullTextEvidence[0].locator).not.toContain("indexed-text:");
+    expect(enriched[0].review.pdfExtractionQuality).toMatchObject({
+      status: "warning",
+      engine: "pdf-raw-bytes",
+      pagesWithText: 1,
+      expectedPageCount: 1,
+      warnings: [
+        "local_bridge_fetch_unavailable",
+        "raw_pdf_byte_text_fallback",
+        "raw_pdf_flate_stream_fallback",
+        "raw_pdf_page_boundary_uncertain"
+      ]
+    });
+
+    const report = loaded.renderCandidateReviewMarkdown(enriched, {
+      outputLanguage: "en-US",
+      item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+    expect(report).toContain("engine: pdf-raw-bytes");
+    expect(report).toContain("raw_pdf_flate_stream_fallback");
+    expect(report).toContain("Evaluation includes safety delay and throughput metrics from compressed PDF bytes");
   });
 
   it("keeps indexed text evidence visible when local bridge PDF extraction fails", async () => {
