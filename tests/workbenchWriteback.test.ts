@@ -7799,13 +7799,12 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("Visual OCR Text");
     expect(report).toContain("## Reconstructed Tables / Data");
     expect(report).toContain("| Delay | 12 ms | [image] |");
-    expect(report).toContain("chartDataDraftCount: 3");
+    expect(report).toContain("chartDataDraftCount: 2");
     expect(report).toContain('chartQualityStatus: "reviewable-with-cautions"');
     expect(report).toContain("chartQualityIssueCount: 1");
     expect(report).toContain("## Chart Data Drafts");
     expect(report).toContain("| 1 | reconstructed-table | Item | Value |");
-    expect(report).toContain("| 2 | reconstructed-table | Axis X | Axis Y | Series | 1 | needs-review | [image] |");
-    expect(report).toContain("| 3 | local-ocr | OCR line | recognized numeric value | image | 1 | needs-review | [image], [metadata] |");
+    expect(report).toContain("| 2 | local-ocr | OCR line | recognized numeric value | image | 1 | needs-review | [image], [metadata] |");
     expect(report).toContain("pixelDataDraftCount: 1");
     expect(report).toContain("calibrationAnchorCount: 4");
     expect(report).toContain("chartReviewActionCount: 1");
@@ -7819,14 +7818,14 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("- Quality status: reviewable-with-cautions");
     expect(report).toContain("| axis-calibration | pass | calibration anchors present: X 2, Y 2 |");
     expect(report).toContain("| calibration-quality | pass | spans: X 340 px, Y 240 px; numeric anchors: 4/4; monotonic axes: X, Y |");
-    expect(report).toContain("| confidence | warning | high 0, medium 0, low 3, needs-review 1 |");
+    expect(report).toContain("| confidence | warning | high 0, medium 0, low 2, needs-review 1 |");
     expect(report).toContain("Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.");
     expect(report).toContain("## Chart Batch Review Board");
     expect(report).toContain("| Priority | Review state | Count | Blocking issue | Batch action | Done criteria |");
-    expect(report).toContain("| medium | todo | 1 | confirm-low-confidence-readings - confidence (warning) - high 0, medium 0, low 3, needs-review 1 | Manually confirm low-confidence readings, units, and legends; treat them as draft values until then. | Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable. |");
+    expect(report).toContain("| medium | todo | 1 | confirm-low-confidence-readings - confidence (warning) - high 0, medium 0, low 2, needs-review 1 | Manually confirm low-confidence readings, units, and legends; treat them as draft values until then. | Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable. |");
     expect(report).toContain("## Chart Review Action Queue");
     expect(report).toContain("| Priority | Review state | Action | Related check | Next step | Done criteria | Reviewer | Due | Notes | Detail |");
-    expect(report).toContain("| medium | todo | confirm-low-confidence-readings | confidence (warning) | Manually confirm low-confidence readings, units, and legends; treat them as draft values until then. | Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable. |  |  |  | high 0, medium 0, low 3, needs-review 1 |");
+    expect(report).toContain("| medium | todo | confirm-low-confidence-readings | confidence (warning) | Manually confirm low-confidence readings, units, and legends; treat them as draft values until then. | Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable. |  |  |  | high 0, medium 0, low 2, needs-review 1 |");
     expect(report).toContain("## Machine-Readable Data");
     expect(report).toContain("| 1 | 1 | Value | 12 ms | not labeled |");
     expect(report).toContain("| chart:1 | 1 | yNumber | 12 | [image] |");
@@ -7884,7 +7883,7 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("## 像素/坐标数据草稿");
     expect(files.get(reportPath)).toContain("| 1 | pixel-coordinate-table | chart.png | 1 | needs-review | [image] |");
     expect(files.get(reportPath)).toContain("calibrationAnchorCount: 4");
-    expect(files.get(reportPath)).toContain("chartReviewActionCount: 1");
+    expect(files.get(reportPath)).toContain("chartReviewActionCount: 2");
     expect(files.get(reportPath)).toContain("## 坐标轴校准锚点");
     expect(files.get(reportPath)).toContain("| 1 | axis-calibration-table | X | 80 | 0 | s | medium | [image] |");
     expect(files.get(reportPath)).toContain("## 图表数据质量审阅");
@@ -7894,7 +7893,8 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。");
     expect(files.get(reportPath)).toContain("## 图表人工复核任务");
     expect(files.get(reportPath)).toContain("| 优先级 | 复核状态 | 任务 | 关联检查 | 下一步 | 完成条件 | 复核人 | 期限 | 备注 | 细节 |");
-    expect(files.get(reportPath)).toContain("| medium | todo | confirm-low-confidence-readings | confidence (warning) | 人工确认低置信读数、单位和图例；确认前只作为草稿使用。 | 低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。 |  |  |  | high 0, medium 0, low 2, needs-review 1 |");
+    expect(files.get(reportPath)).toContain("| medium | todo | confirm-low-confidence-readings | confidence (warning) | 人工确认低置信读数、单位和图例；确认前只作为草稿使用。 | 低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。 |  |  |  | high 0, medium 0, low 1, needs-review 1 |");
+    expect(files.get(reportPath)).toContain("| medium | todo | request-denser-point-table | point-count (warning) | 放大原图或重新提问，要求输出更密集但仍可复核的点表。 | 已补充更密集且仍可复核的点表，或记录无法可靠抽取的原因。 |  |  |  | only 2 point(s) parsed |");
     expect(files.get(reportPath)).toContain("## 机器可读数据");
     expect(files.get(reportPath)).toContain("| 1 | 1 | 指标 | delay | 未标注 |");
     const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.json";
@@ -7940,8 +7940,8 @@ describe("workbench writeback helpers", () => {
     ]);
     expect(parsed.chartQualityReview).toMatchObject({
       status: "reviewable-with-cautions",
-      issueCount: 1,
-      recommendations: [{ id: "confidence" }]
+      issueCount: 2,
+      recommendations: [{ id: "confidence" }, { id: "point-count" }]
     });
     expect(parsed.chartReviewActions).toMatchObject([
       {
@@ -7952,6 +7952,15 @@ describe("workbench writeback helpers", () => {
         checkId: "confidence",
         status: "warning",
         doneCriteria: "低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。"
+      },
+      {
+        queueId: "review-2",
+        actionId: "request-denser-point-table",
+        priority: "medium",
+        reviewState: "todo",
+        checkId: "point-count",
+        status: "warning",
+        doneCriteria: "已补充更密集且仍可复核的点表，或记录无法可靠抽取的原因。"
       }
     ]);
     expect(parsed.chartBatchReviewBoard).toMatchObject([
@@ -7959,8 +7968,15 @@ describe("workbench writeback helpers", () => {
         priority: "medium",
         reviewState: "todo",
         count: 1,
-        blockingIssue: "confirm-low-confidence-readings - confidence (warning) - high 0, medium 0, low 2, needs-review 1",
+        blockingIssue: "confirm-low-confidence-readings - confidence (warning) - high 0, medium 0, low 1, needs-review 1",
         doneCriteria: "低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。"
+      },
+      {
+        priority: "medium",
+        reviewState: "todo",
+        count: 1,
+        blockingIssue: "request-denser-point-table - point-count (warning) - only 2 point(s) parsed",
+        doneCriteria: "已补充更密集且仍可复核的点表，或记录无法可靠抽取的原因。"
       }
     ]);
     expect(files.get(csvPath)).toContain("tableIndex,rowIndex,column,value,evidenceLabels,sourceAssistantMessageId,imageNames");
@@ -8033,16 +8049,20 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("| medium | done | confirm-low-confidence-readings | confidence (warning)");
     expect(report).toContain("| Kagura | 2026-07-01 | axes and units checked |");
     const parsed = JSON.parse(files.get(jsonPath) || "{}");
-    expect(parsed.chartReviewActions).toMatchObject([
-      {
-        queueId: "review-1",
-        actionId: "confirm-low-confidence-readings",
-        reviewState: "done",
-        reviewer: "Kagura",
-        due: "2026-07-01",
-        notes: "axes and units checked"
-      }
-    ]);
+    expect(parsed.chartReviewActions).toHaveLength(2);
+    expect(parsed.chartReviewActions[0]).toMatchObject({
+      queueId: "review-1",
+      actionId: "confirm-low-confidence-readings",
+      reviewState: "done",
+      reviewer: "Kagura",
+      due: "2026-07-01",
+      notes: "axes and units checked"
+    });
+    expect(parsed.chartReviewActions[1]).toMatchObject({
+      queueId: "review-2",
+      actionId: "request-denser-point-table",
+      reviewState: "todo"
+    });
     const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.csv";
     expect(files.get(csvPath)).toContain("review-action:review-1,1,reviewState,done,,assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("review-action:review-1,1,reviewer,Kagura,,assistant-visual,chart.png");
@@ -8260,6 +8280,8 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("| 1 | dense-point-table | Axis X | Axis Y | Series | 3 | needs-review | [image] |");
     expect(report).toContain("| baseline | 0.1 | 12 | ms | low | [image] · visible point | [image] |");
     expect(report).toContain("| point-count | pass | points parsed: 3 |");
+    expect(report).toContain("| dense-confidence | warning | dense points: 3; high/medium confidence: 0; low/needs-review: 3 |");
+    expect(report).toContain("| medium | todo | improve-dense-point-confidence | dense-confidence (warning)");
     const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-DENSE.json";
     const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-DENSE.csv";
     const parsed = JSON.parse(files.get(jsonPath) || "{}");
@@ -8277,6 +8299,110 @@ describe("workbench writeback helpers", () => {
     });
     expect(files.get(csvPath)).toContain("chart:1,1,source,dense-point-table,[image],assistant-dense,curve.png");
     expect(files.get(csvPath)).toContain("chart:1,3,yNumber,10,[image],assistant-dense,curve.png");
+  });
+
+  it("flags incomplete multi-panel chart layout coverage in visual extraction exports", () => {
+    const loaded = loadWorkbenchHelpers();
+    const item = {
+      key: "PANEL",
+      getCollections: () => []
+    };
+    const report = loaded.renderVisualExtractionReportMarkdown({
+      item,
+      context: {
+        metadata: { title: "Multi-panel Chart Paper" }
+      },
+      messages: [
+        {
+          id: "user-panel",
+          role: "user",
+          content: "Extract multi-panel dense chart values",
+          images: [{ name: "multi-panel.png", mimeType: "image/png", size: 101 }]
+        },
+        {
+          id: "assistant-panel",
+          role: "assistant",
+          profileName: "MiniMax",
+          content: [
+            "## Visual OCR Text",
+            "- Multi-panel figure with Panel A, Panel B, and Panel C. Panel C is unreadable [image].",
+            "",
+            "## Dense Point Data Draft",
+            "| Panel | Series | Point | Axis X | Axis Y | Unit | Confidence | Source | Notes |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| A | baseline | p1 | 0.1 | 12 | ms | high | [image] | visible point |",
+            "| A | baseline | p2 | 0.2 | 14 | ms | low | [image] | visible point |",
+            "| B | proposed | p1 | 0.1 | 10 | ms | low | [image] | visible point |",
+            "",
+            "## Pixel / Coordinate Data Draft",
+            "| Panel | Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| A | baseline | p1 | 120 | 340 | 0.1 | 12 ms | high | [image] |",
+            "| B | proposed | p1 | 220 | 240 | 0.1 | 10 ms | low | [image] |",
+            "",
+            "## Axis Calibration Anchors",
+            "| Panel | Axis | Pixel | Value | Unit | Scale | Segment | Source | Confidence |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| A | X | 50 | 0 | s | linear |  | [image] | medium |",
+            "| A | X | 450 | 1 | s | linear |  | [image] | medium |",
+            "| A | Y | 400 | 0 | ms | linear |  | [image] | medium |",
+            "| A | Y | 100 | 30 | ms | linear |  | [image] | medium |",
+            "| B | X | 60 | 0 | s | linear |  | [image] | medium |",
+            "| B | X | 460 | 1 | s | linear |  | [image] | medium |",
+            "| B | Y | 410 | 0 | ms | linear |  | [image] | medium |",
+            "| B | Y | 110 | 30 | ms | linear |  | [image] | medium |"
+          ].join("\n")
+        }
+      ]
+    }, {
+      item,
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      reportPath: "/tmp/out/collections/PANEL/writing/visual-extraction-PANEL.md",
+      jsonPath: "/tmp/out/collections/PANEL/writing/visual-extraction-PANEL.json",
+      csvPath: "/tmp/out/collections/PANEL/writing/visual-extraction-PANEL.csv"
+    });
+
+    expect(report).toContain('chartLayoutStatus: "needs-panel-review"');
+    expect(report).toContain("chartPanelCount: 3");
+    expect(report).toContain("## Chart Layout Diagnostics");
+    expect(report).toContain("| Panel A | covered | 2 | 1 | 4 | 1, 2, 3 | [image] |");
+    expect(report).toContain("| Panel C | needs-review | 0 | 0 | 0 |  | not labeled |");
+    expect(report).toContain("| layout-coverage | warning | panel coverage incomplete: Panel C |");
+    expect(report).toContain("| dense-confidence | warning | dense points: 3; high/medium confidence: 1; low/needs-review: 2 |");
+    expect(report).toContain("| medium | todo | verify-chart-layout-coverage | layout-coverage (warning)");
+    expect(report).toContain("| medium | todo | improve-dense-point-confidence | dense-confidence (warning)");
+
+    const data = (loaded as any).visualExtractionReportData({
+      item,
+      messages: [
+        { id: "user-panel", role: "user", images: [{ name: "multi-panel.png", mimeType: "image/png", size: 101 }] },
+        {
+          id: "assistant-panel",
+          role: "assistant",
+          content: [
+            "## Visual OCR Text",
+            "- Multi-panel figure with Panel A, Panel B, and Panel C. Panel C is unreadable [image].",
+            "",
+            "## Dense Point Data Draft",
+            "| Panel | Series | Point | Axis X | Axis Y | Unit | Confidence | Source | Notes |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| A | baseline | p1 | 0.1 | 12 | ms | high | [image] | visible point |",
+            "| A | baseline | p2 | 0.2 | 14 | ms | low | [image] | visible point |",
+            "| B | proposed | p1 | 0.1 | 10 | ms | low | [image] | visible point |"
+          ].join("\n")
+        }
+      ]
+    }, { item, outputLanguage: "en-US" });
+    expect(data.chartLayoutDiagnostics).toMatchObject({
+      status: "needs-panel-review",
+      panelCount: 3,
+      multiPanelDetected: true
+    });
+    expect(data.chartLayoutDiagnostics.panels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Panel C", status: "needs-review", chartPointCount: 0 })
+    ]));
+    expect((loaded as any).renderVisualExtractionReportCsv(data)).toContain("layout-panel:Panel C,3,status,needs-review");
   });
 
   it("infers missing axis values from calibration anchors in pixel drafts", async () => {

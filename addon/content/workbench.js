@@ -8298,10 +8298,12 @@ function visualExtractionReportData(payload, options = {}) {
   const rawPixelDataDrafts = visualExtractionPixelDataDrafts(answer, tables, images);
   const calibrationAnchors = visualExtractionCalibrationAnchors(answer, tables, rawPixelDataDrafts, images);
   const pixelDataDrafts = visualExtractionApplyAxisCalibration(rawPixelDataDrafts, calibrationAnchors);
+  const chartLayoutDiagnostics = visualExtractionChartLayoutDiagnostics(answer, tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors, images);
   const chartQualityReview = visualExtractionChartQualityReview(chartDataDrafts, pixelDataDrafts, {
     evidenceLabels,
     images,
-    calibrationAnchors
+    calibrationAnchors,
+    chartLayoutDiagnostics
   });
   const chartReviewActions = visualExtractionMergeChartReviewActionState(
     visualExtractionChartReviewActions(chartQualityReview, labels),
@@ -8335,6 +8337,7 @@ function visualExtractionReportData(payload, options = {}) {
     chartDataDrafts,
     pixelDataDrafts,
     calibrationAnchors,
+    chartLayoutDiagnostics,
     chartQualityReview,
     chartReviewActions,
     chartBatchReviewBoard,
@@ -8352,10 +8355,12 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
   const chartDataDrafts = Array.isArray(data?.chartDataDrafts) ? data.chartDataDrafts : [];
   const pixelDataDrafts = Array.isArray(data?.pixelDataDrafts) ? data.pixelDataDrafts : [];
   const calibrationAnchors = Array.isArray(data?.calibrationAnchors) ? data.calibrationAnchors : [];
+  const chartLayoutDiagnostics = data?.chartLayoutDiagnostics || visualExtractionChartLayoutDiagnostics(data?.originalAnswer || "", tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors, images);
   const chartQualityReview = data?.chartQualityReview || visualExtractionChartQualityReview(chartDataDrafts, pixelDataDrafts, {
     evidenceLabels: data?.evidenceLabels || [],
     images,
-    calibrationAnchors
+    calibrationAnchors,
+    chartLayoutDiagnostics
   });
   const chartReviewActions = Array.isArray(data?.chartReviewActions)
     ? data.chartReviewActions
@@ -8363,7 +8368,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
   const chartBatchReviewBoard = Array.isArray(data?.chartBatchReviewBoard)
     ? data.chartBatchReviewBoard
     : visualExtractionChartBatchReviewBoardRows(chartReviewActions, labels);
-  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors, chartReviewActions, chartBatchReviewBoard);
+  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors, chartReviewActions, chartBatchReviewBoard, chartLayoutDiagnostics);
   const imageInventory = images.length
     ? [
       `| ${labels.imageName} | ${labels.imageType} | ${labels.imageSize} | ${labels.localOcr} |`,
@@ -8388,6 +8393,9 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `chartDataDraftCount: ${chartDataDrafts.length}`,
     `densePointDraftCount: ${visualExtractionDensePointDraftCount(chartDataDrafts)}`,
     `densePointCount: ${visualExtractionDensePointCount(chartDataDrafts)}`,
+    `chartLayoutStatus: ${yamlScalar(chartLayoutDiagnostics.status || "")}`,
+    `chartPanelCount: ${Number(chartLayoutDiagnostics.panelCount) || 0}`,
+    `chartAxisSegmentCount: ${Number(chartLayoutDiagnostics.axisSegmentCount) || 0}`,
     `pixelDataDraftCount: ${pixelDataDrafts.length}`,
     `calibrationAnchorCount: ${calibrationAnchors.length}`,
     `chartQualityStatus: ${yamlScalar(chartQualityReview.status || "")}`,
@@ -8435,6 +8443,10 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     "",
     visualExtractionChartQualityReviewMarkdown(chartQualityReview, labels),
     "",
+    `## ${labels.chartLayoutDiagnostics}`,
+    "",
+    visualExtractionChartLayoutDiagnosticsMarkdown(chartLayoutDiagnostics, labels),
+    "",
     `## ${labels.chartBatchReviewBoard}`,
     "",
     chartBatchReviewBoard.length ? visualExtractionChartBatchReviewBoardMarkdown(chartBatchReviewBoard, labels) : `- ${labels.noChartBatchReviewRows}`,
@@ -8459,6 +8471,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `- [ ] ${labels.checkTableNumbers}`,
     `- [ ] ${labels.checkChartDataDrafts}`,
     `- [ ] ${labels.checkPixelDataDrafts}`,
+    `- [ ] ${labels.checkChartLayoutDiagnostics}`,
     `- [ ] ${labels.checkImageEvidence}`,
     `- [ ] ${labels.checkPdfLocation}`,
     `- [ ] ${labels.checkReuse}`,
@@ -8483,7 +8496,8 @@ function renderVisualExtractionReportCsv(data) {
     data?.pixelDataDrafts || [],
     data?.calibrationAnchors || [],
     data?.chartReviewActions || [],
-    data?.chartBatchReviewBoard || visualExtractionChartBatchReviewBoardRows(data?.chartReviewActions || [], data?.labels || visualExtractionReportLabels())
+    data?.chartBatchReviewBoard || visualExtractionChartBatchReviewBoardRows(data?.chartReviewActions || [], data?.labels || visualExtractionReportLabels()),
+    data?.chartLayoutDiagnostics || {}
   );
   const header = ["tableIndex", "rowIndex", "column", "value", "evidenceLabels", "sourceAssistantMessageId", "imageNames"];
   const imageNames = (data?.images || []).map((image) => image.name).filter(Boolean).join("; ");
@@ -8687,7 +8701,7 @@ function visualExtractionDataRow(columns, cells) {
   return row;
 }
 
-function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataDrafts = [], calibrationAnchors = [], chartReviewActions = [], chartBatchReviewBoard = []) {
+function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataDrafts = [], calibrationAnchors = [], chartReviewActions = [], chartBatchReviewBoard = [], chartLayoutDiagnostics = {}) {
   const rows = [];
   for (const table of tables || []) {
     for (const [rowIndex, row] of (table.rows || []).entries()) {
@@ -8721,6 +8735,7 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       };
       for (const [column, value] of [
         ["source", chart.source || ""],
+        ["panel", point.panel || ""],
         ["series", point.series || ""],
         ["x", point.x || ""],
         ["y", point.y || ""],
@@ -8744,6 +8759,7 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       };
       for (const [column, value] of [
         ["source", draft.source || ""],
+        ["panel", point.panel || ""],
         ["series", point.series || ""],
         ["point", point.point || ""],
         ["pixelX", point.pixelX === null || point.pixelX === undefined ? "" : point.pixelX],
@@ -8770,6 +8786,7 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
     };
     for (const [column, value] of [
       ["source", anchor.source || ""],
+      ["panel", anchor.panel || ""],
       ["axis", anchor.axis || ""],
       ["pixel", anchor.pixel === null || anchor.pixel === undefined ? "" : anchor.pixel],
       ["value", anchor.value || ""],
@@ -8779,6 +8796,41 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       ["rangeEndpoint", anchor.rangeEndpoint || ""],
       ["confidence", anchor.confidence || ""],
       ["basis", anchor.basis || ""]
+    ]) {
+      if (value === "") continue;
+      rows.push({ ...base, column, value: mdText(value) });
+    }
+  }
+  for (const [panelIndex, panel] of (chartLayoutDiagnostics?.panels || []).entries()) {
+    const base = {
+      tableIndex: `layout-panel:${panel.label || panelIndex + 1}`,
+      rowIndex: panelIndex + 1,
+      evidenceLabels: panel.evidenceLabels || []
+    };
+    for (const [column, value] of [
+      ["status", panel.status || ""],
+      ["chartPointCount", panel.chartPointCount === null || panel.chartPointCount === undefined ? "" : panel.chartPointCount],
+      ["pixelPointCount", panel.pixelPointCount === null || panel.pixelPointCount === undefined ? "" : panel.pixelPointCount],
+      ["calibrationAnchorCount", panel.calibrationAnchorCount === null || panel.calibrationAnchorCount === undefined ? "" : panel.calibrationAnchorCount],
+      ["sourceTables", (panel.sourceTables || []).join("; ")]
+    ]) {
+      if (value === "") continue;
+      rows.push({ ...base, column, value: mdText(value) });
+    }
+  }
+  for (const [segmentIndex, segment] of (chartLayoutDiagnostics?.axisSegments || []).entries()) {
+    const base = {
+      tableIndex: `layout-segment:${segment.axis || ""}:${segment.segment || segmentIndex + 1}`,
+      rowIndex: segmentIndex + 1,
+      evidenceLabels: segment.evidenceLabels || []
+    };
+    for (const [column, value] of [
+      ["axis", segment.axis || ""],
+      ["segment", segment.segment || ""],
+      ["status", segment.status || ""],
+      ["anchorCount", segment.anchorCount === null || segment.anchorCount === undefined ? "" : segment.anchorCount],
+      ["pixelSpan", segment.pixelSpan === null || segment.pixelSpan === undefined ? "" : segment.pixelSpan],
+      ["detail", segment.detail || ""]
     ]) {
       if (value === "") continue;
       rows.push({ ...base, column, value: mdText(value) });
@@ -8851,6 +8903,13 @@ function visualExtractionChartDraftFromTable(table) {
   const rows = Array.isArray(table?.rows) ? table.rows : [];
   if (!rows.length) return null;
   const columns = Array.isArray(table?.columns) ? table.columns : [];
+  const pixelXColumn = visualExtractionFindColumn(columns, [
+    /^(pixel\s*x|x\s*pixel|px\s*x|image\s*x|screen\s*x|像素\s*x|x\s*像素)$/i
+  ]);
+  const pixelYColumn = visualExtractionFindColumn(columns, [
+    /^(pixel\s*y|y\s*pixel|px\s*y|image\s*y|screen\s*y|像素\s*y|y\s*像素)$/i
+  ]);
+  if (pixelXColumn && pixelYColumn) return null;
   const xColumn = visualExtractionFindColumn(columns, [
     /^(x|x[-_\s]?axis|axis\s*x)$/i,
     /^(item|name|category|condition|dataset|metric|method|model|scenario)$/i,
@@ -8863,6 +8922,8 @@ function visualExtractionChartDraftFromTable(table) {
   ]);
   if (!xColumn || !yColumn) return null;
   const unitColumn = visualExtractionFindColumn(columns, [/^(unit|单位)$/i]);
+  const panelColumn = visualExtractionPanelColumn(columns);
+  const headingPanel = visualExtractionPanelLabelFromText(table.heading || "");
   const seriesColumn = visualExtractionFindColumn(columns, [
     /^(series|legend|group|baseline)$/i,
     /^(图例|系列|分组|基线)$/i
@@ -8875,6 +8936,7 @@ function visualExtractionChartDraftFromTable(table) {
     const x = mdText(row[xColumn] || "");
     const basis = mdText([row[sourceColumn], row[notesColumn]].filter(Boolean).join(" · "));
     return {
+      panel: visualExtractionPanelLabel(row[panelColumn] || headingPanel),
       series: mdText(row[seriesColumn] || ""),
       x,
       y,
@@ -8892,6 +8954,7 @@ function visualExtractionChartDraftFromTable(table) {
     tableIndex: table.tableIndex,
     heading: table.heading || "",
     densePointTable,
+    panelLabels: Array.from(new Set(points.map((point) => point.panel).filter(Boolean))),
     xAxis: xColumn,
     yAxis: yColumn,
     seriesColumn: seriesColumn || "",
@@ -8998,6 +9061,8 @@ function visualExtractionPixelDraftFromTable(table, images = []) {
   const pointColumn = visualExtractionFindColumn(columns, [
     /^(point|point\s*label|label|item|category|点|点位|标签|项目)$/i
   ]);
+  const panelColumn = visualExtractionPanelColumn(columns);
+  const headingPanel = visualExtractionPanelLabelFromText(table.heading || "");
   const seriesColumn = visualExtractionFindColumn(columns, [
     /^(series|legend|group|baseline|line|bar|系列|图例|分组|基线|线|柱)$/i
   ]);
@@ -9007,6 +9072,7 @@ function visualExtractionPixelDraftFromTable(table, images = []) {
   const points = rows.map((row) => {
     const basis = mdText([row[sourceColumn], row[notesColumn]].filter(Boolean).join(" · "));
     return {
+      panel: visualExtractionPanelLabel(row[panelColumn] || headingPanel),
       series: mdText(row[seriesColumn] || ""),
       point: mdText(row[pointColumn] || ""),
       pixelX: visualExtractionNumber(row[pixelXColumn] || ""),
@@ -9023,6 +9089,7 @@ function visualExtractionPixelDraftFromTable(table, images = []) {
     source: "pixel-coordinate-table",
     tableIndex: table.tableIndex,
     imageName: visualExtractionPixelDraftImageName(images),
+    panelLabels: Array.from(new Set(points.map((point) => point.panel).filter(Boolean))),
     reviewStatus: "needs-review",
     evidenceLabels: table.evidenceLabels || [],
     points: points.slice(0, 200)
@@ -9037,6 +9104,7 @@ function visualExtractionPixelDraftFromText(answer, images = []) {
         || line.match(/x\s*[:=]?\s*(-?\d+(?:\.\d+)?)[^\d-]+y\s*[:=]?\s*(-?\d+(?:\.\d+)?)[^\n]*(?:pixel|px|像素)/i);
       if (!match) return null;
       return {
+        panel: visualExtractionPanelLabelFromText(line),
         series: "",
         point: truncateText(line.replace(/\[(?:image|metadata|abstract|chunk:[^\]\s]+|paper\d+:[^\]\s]+)[^\]]*\]/g, "").trim(), 80),
         pixelX: Number(match[1]),
@@ -9105,6 +9173,8 @@ function visualExtractionCalibrationAnchorsFromTable(table, images = []) {
   const valueEndColumn = visualExtractionFindColumn(columns, [
     /^(value\s*end|end\s*value|axis\s*value\s*end|tick\s*end|value\s*b|to\s*value|结束值|终点值|轴值终点|刻度终点)$/i
   ]);
+  const panelColumn = visualExtractionPanelColumn(columns);
+  const headingPanel = visualExtractionPanelLabelFromText(table.heading || "");
   if (axisColumn && pixelStartColumn && pixelEndColumn && valueStartColumn && valueEndColumn) {
     return rows.flatMap((row, rowIndex) => visualExtractionCalibrationRangeAnchorsFromRow({
       row,
@@ -9120,6 +9190,8 @@ function visualExtractionCalibrationAnchorsFromTable(table, images = []) {
       unitColumn,
       scaleColumn,
       segmentColumn,
+      panelColumn,
+      headingPanel,
       confidenceColumn,
       sourceColumn,
       notesColumn
@@ -9135,6 +9207,7 @@ function visualExtractionCalibrationAnchorsFromTable(table, images = []) {
       source: "axis-calibration-table",
       tableIndex: table.tableIndex,
       imageName: visualExtractionPixelDraftImageName(images),
+      panel: visualExtractionPanelLabel(row[panelColumn] || headingPanel),
       axis,
       pixel,
       value,
@@ -9163,6 +9236,8 @@ function visualExtractionCalibrationRangeAnchorsFromRow(options = {}) {
     unitColumn = "",
     scaleColumn = "",
     segmentColumn = "",
+    panelColumn = "",
+    headingPanel = "",
     confidenceColumn = "",
     sourceColumn = "",
     notesColumn = ""
@@ -9178,6 +9253,7 @@ function visualExtractionCalibrationRangeAnchorsFromRow(options = {}) {
     source: "axis-calibration-range-table",
     tableIndex: table.tableIndex,
     imageName: visualExtractionPixelDraftImageName(images),
+    panel: visualExtractionPanelLabel(row[panelColumn] || headingPanel),
     axis,
     unit: mdText(row[unitColumn] || ""),
     scale: visualExtractionAxisScaleName(row[scaleColumn] || ""),
@@ -9411,6 +9487,7 @@ function visualExtractionNumericTextPoints(text) {
       const unitMatch = line.match(/[-+]?\d+(?:\.\d+)?\s*([%a-zA-Z\u4e00-\u9fff/]+)?/);
       const label = line.replace(/[-+]?\d+(?:\.\d+)?\s*[%a-zA-Z\u4e00-\u9fff/]*.*/, "").replace(/[:：,，\-–—]+$/, "").trim() || line.slice(0, 80);
       return {
+        panel: visualExtractionPanelLabelFromText(line),
         series: "",
         x: label,
         y: unitMatch ? unitMatch[0].trim() : line,
@@ -9440,6 +9517,51 @@ function visualExtractionLooksLikeDataLine(line) {
   if (/(毫秒|秒|分钟|小时|像素|公里|米|厘米|毫米|样本|轮次|步|次|帧|点)/.test(token)) return true;
   if (/[:：]/.test(text)) return true;
   return visualExtractionEvidenceLabels(text).length > 0;
+}
+
+function visualExtractionPanelColumn(columns = []) {
+  return visualExtractionFindColumn(columns, [
+    /^(panel|subplot|subplot\s*id|subfigure|subfigure\s*id|figure\s*panel|part|分面|面板|子图|子圖|图板|圖板)$/i
+  ]);
+}
+
+function visualExtractionPanelLabel(value) {
+  const text = mdText(value || "");
+  if (!text) return "";
+  const match = text.match(/(?:panel|subplot|subfigure|part|子图|子圖|面板|分面)\s*[\(:：-]?\s*([A-Za-z0-9]+)\)?/i)
+    || text.match(/(?:fig(?:ure)?\.?|图|圖)\s*[\(:：-]\s*([A-Za-z0-9]+)\)?/i)
+    || text.match(/^\(?([A-Za-z])\)?$/)
+    || text.match(/^([A-Za-z0-9]+)$/);
+  const token = match ? String(match[1] || "") : "";
+  if (visualExtractionPanelLabelStopword(token)) return "";
+  return match ? `Panel ${token.toUpperCase()}` : truncateText(text, 40);
+}
+
+function visualExtractionPanelLabelStopword(value) {
+  return /^(fig|figure|chart|plot|table|image|photo|with|and|or|the|this|that|multi|panel|subplot|subfigure|part|图|圖|表|图片|圖片|图像|圖像)$/i.test(String(value || "").trim());
+}
+
+function visualExtractionPanelLabelFromText(value) {
+  return visualExtractionPanelLabelsFromText(value)[0] || "";
+}
+
+function visualExtractionPanelLabelsFromText(value) {
+  const text = String(value || "");
+  const labels = [];
+  const patterns = [
+    /(?:panel|subplot|subfigure|part)\s*[\(:：-]?\s*([A-Za-z0-9]+)\)?/gi,
+    /fig(?:ure)?\.?\s*[\(:：-]\s*([A-Za-z0-9]+)\)?/gi,
+    /(?:子图|子圖|面板|分面)\s*[\(:：-]?\s*([A-Za-z0-9]+)\)?/g,
+    /(?:图|圖)\s*[\(:：-]\s*([A-Za-z0-9]+)\)?/g
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text))) {
+      const label = visualExtractionPanelLabel(match[1]);
+      if (label && !labels.includes(label)) labels.push(label);
+    }
+  }
+  return labels.slice(0, 24);
 }
 
 function visualExtractionFindColumn(columns, patterns) {
@@ -9557,9 +9679,186 @@ function visualExtractionCalibrationAnchorsMarkdown(anchors, labels) {
   return lines.join("\n");
 }
 
+function visualExtractionChartLayoutDiagnostics(answer, tables = [], chartDataDrafts = [], pixelDataDrafts = [], calibrationAnchors = [], images = []) {
+  const panelMap = new Map();
+  const ensurePanel = (label) => {
+    const normalized = visualExtractionPanelLabel(label);
+    if (!normalized) return null;
+    if (!panelMap.has(normalized)) {
+      panelMap.set(normalized, {
+        label: normalized,
+        chartPointCount: 0,
+        pixelPointCount: 0,
+        calibrationAnchorCount: 0,
+        sourceTables: [],
+        evidenceLabels: []
+      });
+    }
+    return panelMap.get(normalized);
+  };
+  for (const label of visualExtractionPanelLabelsFromText(answer)) ensurePanel(label);
+  for (const table of tables || []) {
+    const tableLabels = visualExtractionPanelLabelsFromText(table?.heading || "");
+    const panelColumn = visualExtractionPanelColumn(table?.columns || []);
+    if (panelColumn) {
+      for (const row of table?.rows || []) {
+        const panel = ensurePanel(row[panelColumn]);
+        if (panel) {
+          if (!panel.sourceTables.includes(table.tableIndex)) panel.sourceTables.push(table.tableIndex);
+          panel.evidenceLabels.push(...(table.evidenceLabels || []));
+        }
+      }
+    }
+    for (const label of tableLabels) {
+      const panel = ensurePanel(label);
+      if (panel && !panel.sourceTables.includes(table.tableIndex)) panel.sourceTables.push(table.tableIndex);
+    }
+  }
+  for (const draft of chartDataDrafts || []) {
+    for (const label of draft.panelLabels || []) ensurePanel(label);
+    for (const point of draft.points || []) {
+      const panel = ensurePanel(point.panel);
+      if (!panel) continue;
+      panel.chartPointCount += 1;
+      panel.evidenceLabels.push(...(draft.evidenceLabels || []), ...(point.evidenceLabels || []));
+      if (draft.tableIndex && !panel.sourceTables.includes(draft.tableIndex)) panel.sourceTables.push(draft.tableIndex);
+    }
+  }
+  for (const draft of pixelDataDrafts || []) {
+    for (const label of draft.panelLabels || []) ensurePanel(label);
+    for (const point of draft.points || []) {
+      const panel = ensurePanel(point.panel);
+      if (!panel) continue;
+      panel.pixelPointCount += 1;
+      panel.evidenceLabels.push(...(draft.evidenceLabels || []), ...(point.evidenceLabels || []));
+      if (draft.tableIndex && !panel.sourceTables.includes(draft.tableIndex)) panel.sourceTables.push(draft.tableIndex);
+    }
+  }
+  for (const anchor of calibrationAnchors || []) {
+    const panel = ensurePanel(anchor.panel);
+    if (!panel) continue;
+    panel.calibrationAnchorCount += 1;
+    panel.evidenceLabels.push(...(anchor.evidenceLabels || []));
+    if (anchor.tableIndex && !panel.sourceTables.includes(anchor.tableIndex)) panel.sourceTables.push(anchor.tableIndex);
+  }
+  const panels = Array.from(panelMap.values()).map((panel) => {
+    const hasData = panel.chartPointCount > 0 || panel.pixelPointCount > 0 || panel.calibrationAnchorCount > 0;
+    return {
+      ...panel,
+      sourceTables: panel.sourceTables.sort((left, right) => Number(left) - Number(right)),
+      evidenceLabels: Array.from(new Set(panel.evidenceLabels.filter(Boolean))),
+      status: hasData ? "covered" : "needs-review"
+    };
+  }).sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }));
+  const text = String(answer || "");
+  const multiPanelMentioned = panels.length > 1 || (images || []).length > 1 || /multi[-\s]?panel|subplot|subfigure|分面|面板|子图|子圖|多图|多圖/i.test(text);
+  const axisSegments = visualExtractionAxisSegmentDiagnostics(calibrationAnchors);
+  const discontinuousAxisDetected = axisSegments.length > 0 || /broken[-\s]?axis|axis\s*break|discontinuous|segmented\s*axis|piecewise|断轴|斷軸|断裂轴|不连续|不連續|分段轴|区段|區段/i.test(text);
+  const panelNeedsReview = multiPanelMentioned && (!panels.length || panels.some((panel) => panel.status !== "covered"));
+  const segmentNeedsReview = discontinuousAxisDetected && (!axisSegments.length || axisSegments.some((segment) => segment.status !== "covered"));
+  const status = panelNeedsReview
+    ? "needs-panel-review"
+    : segmentNeedsReview
+      ? "needs-segment-review"
+      : multiPanelMentioned || discontinuousAxisDetected
+        ? "layout-reviewable"
+        : "layout-clear";
+  return {
+    status,
+    panelCount: panels.length,
+    axisSegmentCount: axisSegments.length,
+    multiPanelDetected: !!multiPanelMentioned,
+    discontinuousAxisDetected: !!discontinuousAxisDetected,
+    panels,
+    axisSegments
+  };
+}
+
+function visualExtractionAxisSegmentDiagnostics(calibrationAnchors = []) {
+  const grouped = new Map();
+  for (const anchor of calibrationAnchors || []) {
+    const axis = visualExtractionAxisName(anchor?.axis || "");
+    const segment = mdText(anchor?.segment || "");
+    if (!axis || !segment) continue;
+    const key = `${axis}::${segment}`;
+    if (!grouped.has(key)) grouped.set(key, { axis, segment, anchors: [] });
+    grouped.get(key).anchors.push(anchor);
+  }
+  return Array.from(grouped.values()).map((group) => {
+    const numericAnchors = group.anchors
+      .map((anchor) => ({ ...anchor, numericValue: visualExtractionNumber(anchor.value) }))
+      .filter((anchor) => anchor.numericValue !== null && Number.isFinite(Number(anchor.pixel)));
+    const pixels = numericAnchors.map((anchor) => Number(anchor.pixel));
+    const pixelSpan = pixels.length >= 2 ? Math.max(...pixels) - Math.min(...pixels) : 0;
+    const covered = numericAnchors.length >= 2 && pixelSpan > 0;
+    return {
+      axis: group.axis,
+      segment: group.segment,
+      anchorCount: numericAnchors.length,
+      pixelSpan,
+      status: covered ? "covered" : "needs-review",
+      detail: covered
+        ? `${numericAnchors.length} numeric anchor(s), ${pixelSpan} px span`
+        : `${numericAnchors.length}/2 numeric anchors; segment needs visible start/end anchors`,
+      evidenceLabels: Array.from(new Set(group.anchors.flatMap((anchor) => anchor.evidenceLabels || [])))
+    };
+  }).sort((left, right) => `${left.axis}:${left.segment}`.localeCompare(`${right.axis}:${right.segment}`, undefined, { numeric: true }));
+}
+
+function visualExtractionChartLayoutDiagnosticsMarkdown(diagnostics = {}, labels) {
+  const panels = Array.isArray(diagnostics?.panels) ? diagnostics.panels : [];
+  const segments = Array.isArray(diagnostics?.axisSegments) ? diagnostics.axisSegments : [];
+  return [
+    `- ${labels.layoutStatus}: ${diagnostics?.status || labels.unknown}`,
+    `- ${labels.panelCount}: ${Number(diagnostics?.panelCount) || 0}`,
+    `- ${labels.axisSegmentCount}: ${Number(diagnostics?.axisSegmentCount) || 0}`,
+    "",
+    `### ${labels.panelCoverage}`,
+    "",
+    panels.length ? visualExtractionPanelCoverageMarkdown(panels, labels) : `- ${labels.noPanelDiagnostics}`,
+    "",
+    `### ${labels.axisSegmentCoverage}`,
+    "",
+    segments.length ? visualExtractionAxisSegmentCoverageMarkdown(segments, labels) : `- ${labels.noAxisSegmentDiagnostics}`
+  ].join("\n");
+}
+
+function visualExtractionPanelCoverageMarkdown(panels = [], labels) {
+  return [
+    `| ${labels.panel} | ${labels.reviewStatus} | ${labels.chartPointCount} | ${labels.pixelPointCount} | ${labels.calibrationAnchorCount} | ${labels.sourceTables} | ${labels.evidenceLabels} |`,
+    "| --- | --- | ---: | ---: | ---: | --- | --- |",
+    ...panels.map((panel) => [
+      markdownTableCell(panel.label || ""),
+      markdownTableCell(panel.status || ""),
+      Number(panel.chartPointCount) || 0,
+      Number(panel.pixelPointCount) || 0,
+      Number(panel.calibrationAnchorCount) || 0,
+      markdownTableCell((panel.sourceTables || []).join(", ")),
+      markdownTableCell((panel.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
+function visualExtractionAxisSegmentCoverageMarkdown(segments = [], labels) {
+  return [
+    `| ${labels.axis} | ${labels.segment} | ${labels.reviewStatus} | ${labels.anchorCount} | ${labels.pixelSpan} | ${labels.detail} | ${labels.evidenceLabels} |`,
+    "| --- | --- | --- | ---: | ---: | --- | --- |",
+    ...segments.map((segment) => [
+      markdownTableCell(segment.axis || ""),
+      markdownTableCell(segment.segment || ""),
+      markdownTableCell(segment.status || ""),
+      Number(segment.anchorCount) || 0,
+      Number(segment.pixelSpan) || 0,
+      markdownTableCell(segment.detail || ""),
+      markdownTableCell((segment.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
 function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDrafts = [], options = {}) {
   const chartPoints = (chartDataDrafts || []).flatMap((draft) => draft?.points || []);
   const pixelPoints = (pixelDataDrafts || []).flatMap((draft) => draft?.points || []);
+  const axisValuedPixelPointCount = pixelPoints.filter((point) => mdText(point?.axisX || "") || mdText(point?.axisY || "")).length;
   const calibrationAnchors = Array.isArray(options.calibrationAnchors) ? options.calibrationAnchors : [];
   const evidenceLabels = Array.from(new Set([
     ...(options.evidenceLabels || []),
@@ -9572,8 +9871,12 @@ function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDraft
   const checks = [
     visualExtractionQualityCheck(
       "chart-data",
-      chartPoints.length ? "pass" : "warning",
-      chartPoints.length ? `chart points: ${chartPoints.length}` : "no chart-data points parsed"
+      chartPoints.length || axisValuedPixelPointCount ? "pass" : "warning",
+      chartPoints.length
+        ? `chart points: ${chartPoints.length}`
+        : axisValuedPixelPointCount
+          ? `axis-valued pixel points: ${axisValuedPixelPointCount}`
+          : "no chart-data points parsed"
     ),
     visualExtractionQualityCheck(
       "pixel-coordinates",
@@ -9582,6 +9885,8 @@ function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDraft
     ),
     visualExtractionAxisCalibrationCheck(pixelPoints, calibrationAnchors),
     ...(calibrationAnchors.length ? [visualExtractionCalibrationQualityCheck(calibrationAnchors)] : []),
+    ...visualExtractionLayoutQualityChecks(options.chartLayoutDiagnostics || {}),
+    ...visualExtractionOptionalQualityChecks([visualExtractionDenseConfidenceCheck(chartDataDrafts)]),
     visualExtractionConfidenceCheck([...chartPoints, ...pixelPoints]),
     visualExtractionEvidenceCheck(evidenceLabels),
     visualExtractionPointCountCheck(chartPoints.length + pixelPoints.length)
@@ -9609,6 +9914,52 @@ function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDraft
 
 function visualExtractionQualityCheck(id, status, detail) {
   return { id, status, detail: mdText(detail || "") };
+}
+
+function visualExtractionOptionalQualityChecks(checks = []) {
+  return (checks || []).filter(Boolean);
+}
+
+function visualExtractionLayoutQualityChecks(diagnostics = {}) {
+  const checks = [];
+  const panels = Array.isArray(diagnostics?.panels) ? diagnostics.panels : [];
+  const segments = Array.isArray(diagnostics?.axisSegments) ? diagnostics.axisSegments : [];
+  if (diagnostics?.multiPanelDetected) {
+    const uncovered = panels.filter((panel) => panel.status !== "covered");
+    if (!panels.length) {
+      checks.push(visualExtractionQualityCheck("layout-coverage", "warning", "multi-panel layout mentioned but no panel labels or panel-specific rows were parsed"));
+    } else if (uncovered.length) {
+      checks.push(visualExtractionQualityCheck("layout-coverage", "warning", `panel coverage incomplete: ${uncovered.map((panel) => panel.label).join(", ")}`));
+    } else {
+      checks.push(visualExtractionQualityCheck("layout-coverage", "pass", `panel coverage: ${panels.length} panel(s)`));
+    }
+  }
+  if (diagnostics?.discontinuousAxisDetected) {
+    const incomplete = segments.filter((segment) => segment.status !== "covered");
+    if (!segments.length) {
+      checks.push(visualExtractionQualityCheck("layout-coverage", "warning", "broken or discontinuous axis mentioned but no axis segment anchors were parsed"));
+    } else if (incomplete.length) {
+      checks.push(visualExtractionQualityCheck("layout-coverage", "fail", `axis segment coverage incomplete: ${incomplete.map((segment) => `${segment.axis} ${segment.segment}`).join(", ")}`));
+    } else {
+      checks.push(visualExtractionQualityCheck("layout-coverage", "pass", `axis segment coverage: ${segments.length} segment(s)`));
+    }
+  }
+  return checks;
+}
+
+function visualExtractionDenseConfidenceCheck(chartDataDrafts = []) {
+  const densePoints = (chartDataDrafts || [])
+    .filter((draft) => draft?.densePointTable || draft?.source === "dense-point-table")
+    .flatMap((draft) => draft?.points || []);
+  if (!densePoints.length) return null;
+  const strong = densePoints.filter((point) => ["high", "medium"].includes(String(point?.confidence || "").toLowerCase())).length;
+  const weak = densePoints.length - strong;
+  const status = densePoints.length >= 6 && strong >= Math.ceil(densePoints.length / 2) ? "pass" : "warning";
+  return visualExtractionQualityCheck(
+    "dense-confidence",
+    status,
+    `dense points: ${densePoints.length}; high/medium confidence: ${strong}; low/needs-review: ${weak}`
+  );
 }
 
 function visualExtractionAxisCalibrationCheck(pixelPoints = [], calibrationAnchors = []) {
@@ -9844,6 +10195,12 @@ function visualExtractionQualityRecommendations(checks = []) {
   if (byId.get("calibration-quality") && byId.get("calibration-quality")?.status !== "pass") {
     recommendations.push({ id: "calibration-quality" });
   }
+  if (byId.get("layout-coverage") && byId.get("layout-coverage")?.status !== "pass") {
+    recommendations.push({ id: "layout-coverage" });
+  }
+  if (byId.get("dense-confidence") && byId.get("dense-confidence")?.status !== "pass") {
+    recommendations.push({ id: "dense-confidence" });
+  }
   if (byId.get("confidence")?.status !== "pass") {
     recommendations.push({ id: "confidence" });
   }
@@ -9880,6 +10237,8 @@ function visualExtractionQualityRecommendationText(item, labels) {
   const id = typeof item === "string" ? item : item?.id || "";
   if (id === "axis-calibration") return labels.recommendationAxisCalibration;
   if (id === "calibration-quality") return labels.recommendationCalibrationQuality;
+  if (id === "layout-coverage") return labels.recommendationLayoutCoverage;
+  if (id === "dense-confidence") return labels.recommendationDenseConfidence;
   if (id === "confidence") return labels.recommendationConfidence;
   if (id === "image-evidence") return labels.recommendationImageEvidence;
   if (id === "point-count") return labels.recommendationPointCount;
@@ -9944,8 +10303,7 @@ function visualExtractionChartReviewActionStableKey(action) {
   const parts = [
     action?.actionId,
     action?.checkId,
-    action?.status,
-    action?.detail
+    action?.status
   ].map((part) => mdText(part || "").toLowerCase());
   return parts.some(Boolean) ? parts.join("::") : "";
 }
@@ -10126,6 +10484,24 @@ function visualExtractionChartReviewActionForCheck(check, labels) {
       priority: severe ? "high" : "medium",
       nextStep: labels.reviewActionVerifyCalibrationQuality,
       doneCriteria: labels.reviewDoneVerifyCalibrationQuality
+    };
+  }
+  if (id === "layout-coverage") {
+    return {
+      ...base,
+      actionId: "verify-chart-layout-coverage",
+      priority: severe ? "high" : "medium",
+      nextStep: labels.reviewActionVerifyLayoutCoverage,
+      doneCriteria: labels.reviewDoneVerifyLayoutCoverage
+    };
+  }
+  if (id === "dense-confidence") {
+    return {
+      ...base,
+      actionId: "improve-dense-point-confidence",
+      priority: "medium",
+      nextStep: labels.reviewActionImproveDenseConfidence,
+      doneCriteria: labels.reviewDoneImproveDenseConfidence
     };
   }
   if (id === "confidence") {
@@ -10331,6 +10707,21 @@ function visualExtractionReportLabels(outputLanguage) {
       noPixelDataDrafts: "未能从回答中抽取像素/坐标数据草稿；需要使用多模态模型重新输出 Pixel X、Pixel Y、轴值和置信度。",
       noCalibrationAnchors: "未检测到坐标轴校准锚点表；如需后续量化复用，请让模型补充 Axis、Pixel、Value、Unit、Scale、Segment、Source 和 Confidence。",
       chartQualityReview: "图表数据质量审阅",
+      chartLayoutDiagnostics: "图表布局诊断",
+      layoutStatus: "布局状态",
+      panelCount: "面板数",
+      axisSegmentCount: "轴段数",
+      panelCoverage: "面板覆盖",
+      axisSegmentCoverage: "轴段覆盖",
+      panel: "面板",
+      chartPointCount: "图表点数",
+      pixelPointCount: "像素点数",
+      calibrationAnchorCount: "校准锚点数",
+      sourceTables: "来源表格",
+      anchorCount: "锚点数",
+      pixelSpan: "像素跨度",
+      noPanelDiagnostics: "未检测到多面板结构；如原图包含多个 panel，请要求模型在点表和校准锚点中加入 Panel/Subplot 列。",
+      noAxisSegmentDiagnostics: "未检测到断轴或分段轴；如原图存在视觉不连续轴段，请要求模型为每个 Segment 单独列出锚点。",
       chartBatchReviewBoard: "图表批量复核看板",
       chartReviewActions: "图表人工复核任务",
       qualityStatus: "质量状态",
@@ -10355,6 +10746,8 @@ function visualExtractionReportLabels(outputLanguage) {
       noQualityIssues: "未发现结构化质量风险；正式使用前仍建议回到原图核对。",
       recommendationAxisCalibration: "补充至少两个清晰坐标轴刻度/数值锚点，并对照原图核对 Pixel X/Y 到 Axis X/Y 的映射。",
       recommendationCalibrationQuality: "重新核对校准锚点的像素跨度、单调性、重复刻度、分段覆盖和数值单位；跨度太小、断轴分段锚点不足或非单调时不要用于量化比较。",
+      recommendationLayoutCoverage: "多面板或断轴图必须逐个 panel/segment 标注点位和校准锚点；不要把不同面板或不连续轴段混成同一组数据。",
+      recommendationDenseConfidence: "密集点位表需要足够数量的高/中置信点和可追溯视觉依据；低置信密集点只能作为复核草稿。",
       recommendationConfidence: "在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。",
       recommendationImageEvidence: "重新提问时要求模型用 [image] 标注直接视觉观察，并把文本上下文推断分开。",
       recommendationPointCount: "放大原图或要求模型输出更密集的点表后，再用于跨论文实验对比。",
@@ -10362,6 +10755,8 @@ function visualExtractionReportLabels(outputLanguage) {
       reviewActionAddPixelCoordinates: "要求模型补充 Pixel X、Pixel Y、Axis X、Axis Y 表，并标注低置信点。",
       reviewActionAddAxisCalibration: "补充每个坐标轴至少两个清晰刻度锚点，再重新导出报告。",
       reviewActionVerifyCalibrationQuality: "回到原图核对锚点跨度、单调性、重复值、断轴分段覆盖和单位，异常时不要用于量化比较。",
+      reviewActionVerifyLayoutCoverage: "逐个 panel/segment 核对是否都有数据点、像素点和校准锚点，缺失项先补齐或标记不可读。",
+      reviewActionImproveDenseConfidence: "放大原图或裁剪单个 panel，重新生成更高置信的密集点位表，并保留不可读区域说明。",
       reviewActionConfirmConfidence: "人工确认低置信读数、单位和图例；确认前只作为草稿使用。",
       reviewActionSeparateImageEvidence: "重新提问时要求直接视觉观察都用 [image] 标注，推断内容单独列出。",
       reviewActionRequestMorePoints: "放大原图或重新提问，要求输出更密集但仍可复核的点表。",
@@ -10370,6 +10765,8 @@ function visualExtractionReportLabels(outputLanguage) {
       reviewDoneAddPixelCoordinates: "已为关键点补齐 Pixel X、Pixel Y、Axis X、Axis Y 和置信度。",
       reviewDoneAddAxisCalibration: "每个坐标轴至少有两个清晰刻度锚点，并已重新导出报告。",
       reviewDoneVerifyCalibrationQuality: "锚点跨度、单调性、重复值、断轴分段覆盖和单位已人工核对，可说明是否能量化使用。",
+      reviewDoneVerifyLayoutCoverage: "每个 panel/segment 的数据点、像素点和校准锚点已核对，缺失或不可读部分已有明确说明。",
+      reviewDoneImproveDenseConfidence: "密集点位表中高/中置信点达到可复核要求，低置信或不可读点已单独标记。",
       reviewDoneConfirmConfidence: "低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。",
       reviewDoneSeparateImageEvidence: "直接视觉观察、文本上下文推断和低置信判断已分开标注。",
       reviewDoneRequestMorePoints: "已补充更密集且仍可复核的点表，或记录无法可靠抽取的原因。",
@@ -10384,6 +10781,7 @@ function visualExtractionReportLabels(outputLanguage) {
       checkTableNumbers: "核对重建表格中的数字、单位、指标和数据集名称。",
       checkChartDataDrafts: "核对图表数据草稿的轴、系列、单位、读数、质量审阅结果和置信度，不能直接作为最终数据。",
       checkPixelDataDrafts: "核对像素/坐标草稿中的点位、像素坐标、轴值映射和置信度；必要时回到原图校准坐标轴。",
+      checkChartLayoutDiagnostics: "核对多面板、断轴和分段轴的 panel/segment 覆盖，不要混合不同面板或不连续轴段。",
       checkImageEvidence: "区分直接视觉观察、论文上下文推断和低置信判断。",
       checkPdfLocation: "回到 PDF 原图位置核对页码、图号/表号和上下文。",
       checkReuse: "标记可复用于综述、实验对比、方法复现或后续检索的条目。",
@@ -10452,6 +10850,21 @@ function visualExtractionReportLabels(outputLanguage) {
     noPixelDataDrafts: "No pixel / coordinate data draft could be extracted; ask a multimodal model to return Pixel X, Pixel Y, axis values, and confidence.",
     noCalibrationAnchors: "No axis calibration anchor table was detected. For reusable quantitative exports, ask for Axis, Pixel, Value, Unit, Scale, Segment, Source, and Confidence.",
     chartQualityReview: "Chart Data Quality Review",
+    chartLayoutDiagnostics: "Chart Layout Diagnostics",
+    layoutStatus: "Layout status",
+    panelCount: "Panel count",
+    axisSegmentCount: "Axis segment count",
+    panelCoverage: "Panel Coverage",
+    axisSegmentCoverage: "Axis Segment Coverage",
+    panel: "Panel",
+    chartPointCount: "Chart points",
+    pixelPointCount: "Pixel points",
+    calibrationAnchorCount: "Calibration anchors",
+    sourceTables: "Source tables",
+    anchorCount: "Anchors",
+    pixelSpan: "Pixel span",
+    noPanelDiagnostics: "No multi-panel structure was detected. If the original figure has multiple panels, ask for a Panel/Subplot column in point tables and calibration anchors.",
+    noAxisSegmentDiagnostics: "No broken or segmented axis was detected. If the original figure has visual discontinuities, ask for separate Segment anchors.",
     chartBatchReviewBoard: "Chart Batch Review Board",
     chartReviewActions: "Chart Review Action Queue",
     qualityStatus: "Quality status",
@@ -10476,6 +10889,8 @@ function visualExtractionReportLabels(outputLanguage) {
     noQualityIssues: "No structured quality risk was detected; still verify against the original figure before final use.",
     recommendationAxisCalibration: "Add at least two visible axis tick/value anchors and verify Pixel X/Y to Axis X/Y mapping against the original chart.",
     recommendationCalibrationQuality: "Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, segment coverage, and units; do not use small-span, under-calibrated broken-axis segments, or non-monotonic anchors for quantitative comparison.",
+    recommendationLayoutCoverage: "For multi-panel or discontinuous-axis figures, label every panel/segment and keep data points plus calibration anchors separate.",
+    recommendationDenseConfidence: "Dense point tables need enough high/medium-confidence points with traceable visual evidence; low-confidence dense points are review drafts only.",
     recommendationConfidence: "Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.",
     recommendationImageEvidence: "Ask the model to mark direct visual observations with [image] and keep text-context inferences separate.",
     recommendationPointCount: "Zoom the original figure or request a denser point table before using the data for cross-paper comparison.",
@@ -10483,6 +10898,8 @@ function visualExtractionReportLabels(outputLanguage) {
     reviewActionAddPixelCoordinates: "Ask for a Pixel X, Pixel Y, Axis X, Axis Y table and mark low-confidence points explicitly.",
     reviewActionAddAxisCalibration: "Add at least two visible tick anchors per axis, then export the report again.",
     reviewActionVerifyCalibrationQuality: "Recheck anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units against the original chart before quantitative use.",
+    reviewActionVerifyLayoutCoverage: "Check every panel/segment for data points, pixel points, and calibration anchors; fill gaps or mark unreadable regions.",
+    reviewActionImproveDenseConfidence: "Zoom or crop one panel at a time, regenerate a higher-confidence dense point table, and record unreadable regions.",
     reviewActionConfirmConfidence: "Manually confirm low-confidence readings, units, and legends; treat them as draft values until then.",
     reviewActionSeparateImageEvidence: "Ask again with direct visual observations marked as [image] and inferred context separated.",
     reviewActionRequestMorePoints: "Zoom the figure or ask again for a denser but still reviewable point table.",
@@ -10491,6 +10908,8 @@ function visualExtractionReportLabels(outputLanguage) {
     reviewDoneAddPixelCoordinates: "Key points include Pixel X, Pixel Y, Axis X, Axis Y, and confidence.",
     reviewDoneAddAxisCalibration: "Each axis has at least two visible tick anchors, and the report has been exported again.",
     reviewDoneVerifyCalibrationQuality: "Anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units have been manually checked with a reuse decision.",
+    reviewDoneVerifyLayoutCoverage: "Each panel/segment has checked data points, pixel points, and calibration anchors, with missing or unreadable regions documented.",
+    reviewDoneImproveDenseConfidence: "The dense point table has reviewable high/medium-confidence points, and low-confidence or unreadable points are marked separately.",
     reviewDoneConfirmConfidence: "Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable.",
     reviewDoneSeparateImageEvidence: "Direct visual observations, text-context inference, and low-confidence judgments are separated.",
     reviewDoneRequestMorePoints: "A denser but still reviewable point table is added, or the extraction limit is recorded.",
@@ -10505,6 +10924,7 @@ function visualExtractionReportLabels(outputLanguage) {
     checkTableNumbers: "Verify reconstructed numbers, units, metrics, and dataset names.",
     checkChartDataDrafts: "Verify chart-data draft axes, series, units, readings, quality-review flags, and confidence before reuse.",
     checkPixelDataDrafts: "Verify pixel / coordinate drafts, point labels, pixel coordinates, axis-value mapping, and confidence; recalibrate against the original image when needed.",
+    checkChartLayoutDiagnostics: "Verify panel/segment coverage for multi-panel, broken-axis, and segmented-axis layouts before merging extracted values.",
     checkImageEvidence: "Separate direct visual observations, paper-context inference, and low-confidence judgments.",
     checkPdfLocation: "Return to the PDF figure/table location and verify page, label, and context.",
     checkReuse: "Mark items reusable for review writing, experiment comparison, reproduction, or follow-up search.",
@@ -10773,17 +11193,18 @@ function figureTableTemplate(common, outputLanguage) {
     "- If reconstruction is unreliable, say so explicitly instead of filling missing values.",
     "",
     "## Dense Point Data Draft",
-    "- For line, bar, or scatter charts with multiple readable points, add a denser but still reviewable Markdown table with: Series, Point, Axis X, Axis Y, Unit, Confidence, Source, Notes.",
+    "- For line, bar, or scatter charts with multiple readable points, add a denser but still reviewable Markdown table with: Panel, Series, Point, Axis X, Axis Y, Unit, Confidence, Source, Notes.",
     "- Include only points directly visible, read from the chart, or explicitly estimated from the visual. If a region cannot be read, say so instead of interpolating missing values.",
+    "- For multi-panel figures, keep each panel/subplot in separate rows using Panel labels such as Panel A or Panel B; mark unreadable panels explicitly.",
     "",
     "## Pixel / Coordinate Data Draft",
-    "- For visible line, bar, or scatter charts, add a reviewable Markdown table when possible with: Series, Point, Pixel X, Pixel Y, Axis X, Axis Y, Confidence, Source, Notes.",
+    "- For visible line, bar, or scatter charts, add a reviewable Markdown table when possible with: Panel, Series, Point, Pixel X, Pixel Y, Axis X, Axis Y, Confidence, Source, Notes.",
     "- Pixel X/Y are estimated image coordinates; Axis X/Y are values read from the chart scale. Leave fields blank or mark low-confidence when unsure.",
     "- Include only directly visible or explicitly estimated points; do not fabricate a complete series.",
     "",
     "## Axis Calibration Anchors",
-    "- For charts with X/Y axes, add a visible tick-anchor table with: Axis, Pixel, Value, Unit, Scale, Segment, Source, Confidence, Notes.",
-    "- For broken axes where a visible range is easier to read, add one row per readable segment with: Axis, Segment, Pixel Start, Pixel End, Value Start, Value End, Unit, Scale, Source, Confidence, Notes.",
+    "- For charts with X/Y axes, add a visible tick-anchor table with: Panel, Axis, Pixel, Value, Unit, Scale, Segment, Source, Confidence, Notes.",
+    "- For broken axes where a visible range is easier to read, add one row per readable segment with: Panel, Axis, Segment, Pixel Start, Pixel End, Value Start, Value End, Unit, Scale, Source, Confidence, Notes.",
     "- Use Scale=linear by default; use Scale=log for logarithmic axes. Use Segment labels for broken axes, piecewise axes, or visibly separated axis ranges.",
     "- Provide at least two clear anchors per axis, and at least two anchors per segment when segmented axes are readable; if the ticks are unreadable, state that calibration is unreliable.",
     "",
