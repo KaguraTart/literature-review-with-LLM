@@ -153,8 +153,8 @@ const SOURCE_MARKERS = [
   {
     id: "release.auto-update-opt-out",
     description: "XPI installs default to automatic update sync and expose an opt-out setting",
-    files: ["addon/prefs.js", "addon/bootstrap.js", "addon/content/auto-update.js", "addon/content/preferences.xhtml", "addon/content/preferences.js", "README.md", "README.zh-CN.md", "tests/preferencesLocalAgent.test.ts"],
-    markers: ["autoUpdateEnabled", "zms-autoUpdateEnabled", "zmsApplyAddonAutoUpdatePreference", "applyConfiguredAddonAutoUpdatePolicy", "Automatically sync updates", "自动同步更新", "mode: 0"]
+    files: ["addon/prefs.js", "addon/bootstrap.js", "addon/content/auto-update.js", "addon/content/preferences.xhtml", "addon/content/preferences.js", "addon/content/workbench.xhtml", "addon/content/workbench.js", "README.md", "README.zh-CN.md", "tests/preferencesLocalAgent.test.ts", "tests/workbenchWriteback.test.ts"],
+    markers: ["autoUpdateEnabled", "zms-autoUpdateEnabled", "zms-workbench-auto-update-input", "zmsApplyAddonAutoUpdatePreference", "applyConfiguredAddonAutoUpdatePolicy", "Automatically sync updates", "自动同步更新", "mode: 0"]
   },
   {
     id: "provider.endpoint-normalization",
@@ -742,6 +742,12 @@ const SOURCE_MARKERS = [
       "layout-axis-break:",
       "panelSplitCandidates",
       "chartPanelSplitCandidateCount",
+      "panelSplitValidationStatus",
+      "panelSplitValidationScore",
+      "Split validation score",
+      "分割校验分",
+      "panel-split-validation",
+      "validate-panel-split-candidates",
       "Automatic Panel Split Candidates",
       "layout-split:",
       "heuristic-panel-split",

@@ -5051,6 +5051,37 @@ describe("workbench writeback helpers", () => {
     expect(dom.elements.get("zms-status").textContent).toContain("outputDirSaved");
   });
 
+  it("saves the workbench automatic update setting and applies the add-on policy", async () => {
+    const prefValues: Record<string, any> = { autoUpdateEnabled: true };
+    const loaded = loadWorkbenchHelpers(new Map(), {}, prefValues);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    const applied: boolean[] = [];
+    (loaded as any).zmsApplyAddonAutoUpdatePreference = async (enabled: boolean) => {
+      applied.push(enabled);
+      return { ok: true, enabled };
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      autoUpdateOn: "Automatic update sync enabled",
+      autoUpdateOff: "Automatic update sync disabled",
+      autoUpdateSavedButNotApplied: "Setting saved, but not applied",
+      autoUpdateUnavailable: "Auto update unavailable"
+    }[key] || key);
+
+    workbench.state.autoUpdateEnabled = true;
+    workbench.renderAutoUpdateSettings();
+    expect(dom.elements.get("zms-workbench-auto-update-input").checked).toBe(true);
+
+    dom.elements.get("zms-workbench-auto-update-input").checked = false;
+    await expect(workbench.saveAutoUpdatePreference()).resolves.toBe(true);
+
+    expect(prefValues.autoUpdateEnabled).toBe(false);
+    expect(workbench.state.autoUpdateEnabled).toBe(false);
+    expect(applied).toEqual([false]);
+    expect(dom.elements.get("zms-status").textContent).toBe("Automatic update sync disabled");
+  });
+
   it("does not persist a changed workbench output directory when creation fails", async () => {
     const attemptedDirectories: string[] = [];
     const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
@@ -8624,17 +8655,21 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain('chartLayoutStatus: "needs-panel-review"');
     expect(report).toContain("chartPanelCount: 3");
     expect(report).toContain("chartPanelSplitCandidateCount: 3");
+    expect(report).toContain('chartPanelSplitValidationStatus: "needs-panel-evidence"');
+    expect(report).toContain("chartPanelSplitValidationScore: 88");
     expect(report).toContain("## Chart Layout Diagnostics");
     expect(report).toContain("| Panel A | covered | 2 | 1 | 4 | 1, 2, 3 | [image] |");
     expect(report).toContain("| Panel C | needs-review | 0 | 0 | 0 |  | not labeled |");
     expect(report).toContain("### Automatic Panel Split Candidates");
-    expect(report).toContain("| Image | Split layout | Panel | X | Y | Width | Height | Unit | Confidence | Detail |");
-    expect(report).toContain("| multi-panel.png | 1x3 | Panel A | 0 | 0 | 300 | 300 | px | low | even 1x3 split from parsed panel labels; verify against figure gutters |");
-    expect(report).toContain("| multi-panel.png | 1x3 | Panel B | 300 | 0 | 300 | 300 | px | low | even 1x3 split from parsed panel labels; verify against figure gutters |");
-    expect(report).toContain("| multi-panel.png | 1x3 | Panel C | 600 | 0 | 300 | 300 | px | low | even 1x3 split from parsed panel labels; verify against figure gutters |");
+    expect(report).toContain("| Image | Split layout | Panel | X | Y | Width | Height | Unit | Confidence | Split validation | Split validation score | Detail |");
+    expect(report).toContain("| multi-panel.png | 1x3 | Panel A | 0 | 0 | 300 | 300 | px | low | needs-panel-evidence | 88 | even 1x3 split from parsed panel labels; verify against figure gutters; needs evidence for Panel C |");
+    expect(report).toContain("| multi-panel.png | 1x3 | Panel B | 300 | 0 | 300 | 300 | px | low | needs-panel-evidence | 88 | even 1x3 split from parsed panel labels; verify against figure gutters; needs evidence for Panel C |");
+    expect(report).toContain("| multi-panel.png | 1x3 | Panel C | 600 | 0 | 300 | 300 | px | low | needs-panel-evidence | 88 | even 1x3 split from parsed panel labels; verify against figure gutters; needs evidence for Panel C |");
     expect(report).toContain("| layout-coverage | warning | panel coverage incomplete: Panel C |");
+    expect(report).toContain("| panel-split-validation | warning | panel split validation score 88/100; needs evidence for Panel C |");
     expect(report).toContain("| dense-confidence | warning | dense points: 3; high/medium confidence: 1; low/needs-review: 2 |");
     expect(report).toContain("| medium | todo | verify-chart-layout-coverage | layout-coverage (warning)");
+    expect(report).toContain("| medium | todo | validate-panel-split-candidates | panel-split-validation (warning)");
     expect(report).toContain("| medium | todo | improve-dense-point-confidence | dense-confidence (warning)");
 
     const data = (loaded as any).visualExtractionReportData({
@@ -8662,6 +8697,9 @@ describe("workbench writeback helpers", () => {
       status: "needs-panel-review",
       panelCount: 3,
       panelSplitCandidateCount: 3,
+      panelSplitValidationStatus: "needs-panel-evidence",
+      panelSplitValidationScore: 88,
+      panelSplitValidationDetail: "needs evidence for Panel C",
       multiPanelDetected: true
     });
     expect(data.chartLayoutDiagnostics.panels).toEqual(expect.arrayContaining([
@@ -8672,8 +8710,15 @@ describe("workbench writeback helpers", () => {
       expect.objectContaining({ panel: "Panel B", x: 300, y: 0, width: 300, height: 300, unit: "px" }),
       expect.objectContaining({ panel: "Panel C", x: 600, y: 0, width: 300, height: 300, unit: "px" })
     ]);
+    expect(data.chartLayoutDiagnostics.panelSplitCandidates[0]).toMatchObject({
+      validationStatus: "needs-panel-evidence",
+      validationScore: 88,
+      validationDetail: "needs evidence for Panel C"
+    });
     expect((loaded as any).renderVisualExtractionReportCsv(data)).toContain("layout-panel:Panel C,3,status,needs-review");
     expect((loaded as any).renderVisualExtractionReportCsv(data)).toContain("layout-split:multi-panel.png:Panel C,3,x,600,[image],assistant-panel,multi-panel.png");
+    expect((loaded as any).renderVisualExtractionReportCsv(data)).toContain("layout-split:multi-panel.png:Panel C,3,validationStatus,needs-panel-evidence");
+    expect((loaded as any).renderVisualExtractionReportCsv(data)).toContain("layout-split:multi-panel.png:Panel C,3,validationScore,88");
   });
 
   it("infers missing axis values from calibration anchors in pixel drafts", async () => {

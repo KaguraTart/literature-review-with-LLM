@@ -7,6 +7,7 @@
         width="1040"
         height="760">
   <script src="messages.js"/>
+  <script src="auto-update.js"/>
   <script src="provider-models.js"/>
   <script src="markdown-render.js"/>
   <script src="candidate-sources.js"/>
@@ -25,6 +26,11 @@
           <html:button id="zms-workbench-choose-output-dir" type="button">选择文件夹...</html:button>
           <html:button id="zms-workbench-save-output-dir" type="button">保存</html:button>
         </html:div>
+        <html:label class="zms-checkbox-row" id="zms-workbench-auto-update-label">
+          <html:input id="zms-workbench-auto-update-input" type="checkbox"/>
+          <html:span id="zms-workbench-auto-update-text">自动同步更新</html:span>
+        </html:label>
+        <html:p id="zms-workbench-auto-update-help" class="zms-muted">默认开启。关闭后会尝试禁用当前扩展的后台更新。</html:p>
         <html:label id="zms-profile-label" for="zms-profile">配置档案</html:label>
         <html:select id="zms-profile"></html:select>
         <html:label id="zms-workbench-provider-label" for="zms-workbench-provider">接口厂商</html:label>

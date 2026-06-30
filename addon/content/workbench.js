@@ -151,6 +151,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     promptPackId: "general",
     inputMode: "text",
     stream: true,
+    autoUpdateEnabled: true,
     localOcrEnabled: false,
     localOcrEndpoint: "http://127.0.0.1:3333/mcp",
     localOcrTool: "ocr_image",
@@ -180,6 +181,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     this.loadSettings();
     this.applyLanguage();
     this.renderOutputDirSettings();
+    this.renderAutoUpdateSettings();
     this.setStatus(this.t("loading"));
     try {
       this.state.launchPayload = launchPayload();
@@ -308,6 +310,11 @@ var ZoteroMarkdownSummaryWorkbench = {
     if (localOcrInput && localOcrInput.dataset?.zmsLocalOcrBound !== "1") {
       localOcrInput.addEventListener("change", () => this.syncLocalOcrPreference());
       if (localOcrInput.dataset) localOcrInput.dataset.zmsLocalOcrBound = "1";
+    }
+    const autoUpdateInput = document.getElementById("zms-workbench-auto-update-input");
+    if (autoUpdateInput && autoUpdateInput.dataset?.zmsAutoUpdateBound !== "1") {
+      autoUpdateInput.addEventListener("change", () => this.saveAutoUpdatePreference());
+      if (autoUpdateInput.dataset) autoUpdateInput.dataset.zmsAutoUpdateBound = "1";
     }
     const input = document.getElementById("zms-input");
     if (input && input.dataset?.zmsShortcutBound !== "1") {
@@ -512,6 +519,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     this.state.promptPackId = normalizePromptPackId(pref("promptPackId"));
     this.state.inputMode = normalizeInputMode(pref("inputMode"));
     this.state.stream = normalizeBoolean(pref("stream"), true);
+    this.state.autoUpdateEnabled = normalizeBoolean(pref("autoUpdateEnabled"), true);
     this.state.localOcrEnabled = normalizeBoolean(pref("localOcrEnabled"), false);
     this.state.localOcrEndpoint = String(pref("localOcrEndpoint") || "http://127.0.0.1:3333/mcp");
     this.state.localOcrTool = String(pref("localOcrTool") || "ocr_image");
@@ -530,6 +538,29 @@ var ZoteroMarkdownSummaryWorkbench = {
 
   renderOutputDirSettings() {
     setInputValue("zms-workbench-output-dir", this.state.outputDir || resolvedOutputDir(pref("outputDir")));
+  },
+
+  renderAutoUpdateSettings() {
+    const input = document.getElementById("zms-workbench-auto-update-input");
+    if (input) input.checked = this.state.autoUpdateEnabled !== false;
+  },
+
+  async saveAutoUpdatePreference() {
+    const input = document.getElementById("zms-workbench-auto-update-input");
+    const enabled = input ? !!input.checked : this.state.autoUpdateEnabled !== false;
+    this.state.autoUpdateEnabled = enabled;
+    setPref("autoUpdateEnabled", enabled);
+    if (typeof zmsApplyAddonAutoUpdatePreference !== "function") {
+      this.setStatus(`${this.t("autoUpdateSavedButNotApplied")}: ${this.t("autoUpdateUnavailable")}`);
+      return false;
+    }
+    const result = await zmsApplyAddonAutoUpdatePreference(enabled);
+    if (result?.ok) {
+      this.setStatus(this.t(enabled ? "autoUpdateOn" : "autoUpdateOff"));
+      return true;
+    }
+    this.setStatus(`${this.t("autoUpdateSavedButNotApplied")}: ${result?.reason || this.t("autoUpdateUnavailable")}`);
+    return false;
   },
 
   async saveOutputDir(options = {}) {
@@ -590,6 +621,10 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-workbench-output-dir-label", this.t("outputDir"));
     setButtonLabel("zms-workbench-choose-output-dir", this.t("chooseOutputDir"), this.t("chooseOutputDirTitle"));
     setButtonLabel("zms-workbench-save-output-dir", this.t("saveOutputDir"), this.t("saveOutputDir"));
+    setText("zms-workbench-auto-update-text", this.t("autoUpdateEnabled"));
+    setText("zms-workbench-auto-update-help", this.t("autoUpdateHelp"));
+    const autoUpdateInput = document.getElementById("zms-workbench-auto-update-input");
+    if (autoUpdateInput) autoUpdateInput.setAttribute("title", this.t("autoUpdateTitle"));
     setText("zms-save-profile-settings", this.t("save"));
     setText("zms-test-profile-settings", this.t("saveAndTest"));
     setText("zms-workbench-provider-env-heading", this.t("providerEnv"));
@@ -9258,6 +9293,8 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `chartAxisSegmentCalibrationMapCount: ${Number(chartLayoutDiagnostics.axisSegmentCalibrationMapCount) || 0}`,
     `chartAxisBreakCueCount: ${Number(chartLayoutDiagnostics.axisBreakCueCount) || 0}`,
     `chartPanelSplitCandidateCount: ${Number(chartLayoutDiagnostics.panelSplitCandidateCount) || 0}`,
+    `chartPanelSplitValidationStatus: ${yamlScalar(chartLayoutDiagnostics.panelSplitValidationStatus || "")}`,
+    `chartPanelSplitValidationScore: ${Number(chartLayoutDiagnostics.panelSplitValidationScore) || 0}`,
     `pixelDataDraftCount: ${pixelDataDrafts.length}`,
     `calibrationAnchorCount: ${calibrationAnchors.length}`,
     `chartQualityStatus: ${yamlScalar(chartQualityReview.status || "")}`,
@@ -9754,6 +9791,11 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
         ["height", box.height === null || box.height === undefined ? "" : box.height],
         ["unit", box.unit || ""],
         ["confidence", box.confidence || ""],
+        ["validationStatus", candidate.validationStatus || ""],
+        ["validationScore", candidate.validationScore === null || candidate.validationScore === undefined ? "" : candidate.validationScore],
+        ["validationDetail", candidate.validationDetail || ""],
+        ["missingPanelLabels", (candidate.missingPanelLabels || []).join("; ")],
+        ["evidenceMissingPanelLabels", (candidate.evidenceMissingPanelLabels || []).join("; ")],
         ["basis", candidate.basis || ""]
       ]) {
         if (value === "") continue;
@@ -10681,6 +10723,7 @@ function visualExtractionChartLayoutDiagnostics(answer, tables = [], chartDataDr
   const axisBreakCues = visualExtractionAxisBreakCues(text, tables, axisSegments);
   const discontinuousAxisDetected = axisSegments.length > 0 || axisBreakCues.length > 0;
   const panelSplitCandidates = visualExtractionPanelSplitCandidates(images, panels, text, multiPanelMentioned);
+  const panelSplitValidation = visualExtractionPanelSplitValidation(panelSplitCandidates, panels, multiPanelMentioned);
   const panelNeedsReview = multiPanelMentioned && (!panels.length || panels.some((panel) => panel.status !== "covered"));
   const segmentNeedsReview = discontinuousAxisDetected && (!axisSegments.length || axisSegments.some((segment) => segment.status !== "covered"));
   const status = panelNeedsReview
@@ -10697,6 +10740,9 @@ function visualExtractionChartLayoutDiagnostics(answer, tables = [], chartDataDr
     axisSegmentCalibrationMapCount: axisSegments.filter((segment) => segment.status === "covered").length,
     axisBreakCueCount: axisBreakCues.length,
     panelSplitCandidateCount: panelSplitCandidates.reduce((sum, candidate) => sum + (candidate.boxes || []).length, 0),
+    panelSplitValidationStatus: panelSplitValidation.status,
+    panelSplitValidationScore: panelSplitValidation.score,
+    panelSplitValidationDetail: panelSplitValidation.detail,
     multiPanelDetected: !!multiPanelMentioned,
     discontinuousAxisDetected: !!discontinuousAxisDetected,
     panels,
@@ -10813,7 +10859,8 @@ function visualExtractionPanelSplitCandidates(images = [], panels = [], answerTe
     const height = Number(image?.height) || 0;
     const layout = visualExtractionPanelSplitLayout(panelCount, width, height);
     const unit = width > 0 && height > 0 ? "px" : "%";
-    return {
+    const boxes = visualExtractionPanelSplitBoxes(labels, layout, width, height, unit);
+    const candidate = {
       imageName: mdText(image?.name || "image"),
       width,
       height,
@@ -10825,9 +10872,80 @@ function visualExtractionPanelSplitCandidates(images = [], panels = [], answerTe
         ? `even ${layout.rows}x${layout.columns} split from parsed panel labels; verify against figure gutters`
         : `normalized even ${layout.rows}x${layout.columns} split from parsed panel labels; add image dimensions or crop panels for precise boxes`,
       evidenceLabels: visualExtractionEvidenceLabels(answerText),
-      boxes: visualExtractionPanelSplitBoxes(labels, layout, width, height, unit)
+      boxes
+    };
+    return {
+      ...candidate,
+      ...visualExtractionPanelSplitCandidateValidation(candidate, panels)
     };
   });
+}
+
+function visualExtractionPanelSplitValidation(candidates = [], panels = [], multiPanelMentioned = false) {
+  const candidateList = Array.isArray(candidates) ? candidates : [];
+  if (!multiPanelMentioned) {
+    return { status: "not-needed", score: 100, detail: "single-panel layout or no multi-panel cue" };
+  }
+  if (!candidateList.length) {
+    return { status: "missing", score: 0, detail: "multi-panel layout mentioned but no split candidate was generated" };
+  }
+  const best = candidateList.reduce((selected, candidate) =>
+    Number(candidate?.validationScore || 0) > Number(selected?.validationScore || 0) ? candidate : selected,
+  candidateList[0] || {});
+  return {
+    status: best.validationStatus || "needs-review",
+    score: Number(best.validationScore) || 0,
+    detail: best.validationDetail || "panel split candidate needs manual review"
+  };
+}
+
+function visualExtractionPanelSplitCandidateValidation(candidate = {}, panels = []) {
+  const panelList = Array.isArray(panels) ? panels : [];
+  const boxes = Array.isArray(candidate?.boxes) ? candidate.boxes : [];
+  const boxLabels = Array.from(new Set(boxes.map((box) => visualExtractionPanelLabel(box?.panel || "")).filter(Boolean)));
+  const expectedLabels = panelList.length
+    ? Array.from(new Set(panelList.map((panel) => visualExtractionPanelLabel(panel?.label || "")).filter(Boolean)))
+    : boxLabels;
+  const expectedCount = Math.max(expectedLabels.length, boxLabels.length, 1);
+  const matchedLabels = expectedLabels.filter((label) => boxLabels.includes(label));
+  const missingLabels = expectedLabels.filter((label) => !boxLabels.includes(label));
+  const coveredPanelLabels = panelList
+    .filter((panel) => panel?.status === "covered")
+    .map((panel) => visualExtractionPanelLabel(panel?.label || ""))
+    .filter(Boolean);
+  const coveredMatched = coveredPanelLabels.filter((label) => boxLabels.includes(label));
+  const evidenceMissingLabels = panelList
+    .filter((panel) => panel?.status !== "covered")
+    .map((panel) => visualExtractionPanelLabel(panel?.label || ""))
+    .filter((label) => label && boxLabels.includes(label));
+  const hasPixelDimensions = Number(candidate?.width) > 0 && Number(candidate?.height) > 0 && boxes.some((box) => box.unit === "px");
+  const labelScore = (matchedLabels.length / expectedCount) * 45;
+  const evidenceScore = panelList.length ? (coveredMatched.length / expectedCount) * 35 : 0;
+  const dimensionScore = hasPixelDimensions ? 20 : 8;
+  const validationScore = Math.max(0, Math.min(100, Math.round(labelScore + evidenceScore + dimensionScore)));
+  let validationStatus = "needs-review";
+  let validationDetail = "panel split candidate needs manual review";
+  if (missingLabels.length) {
+    validationStatus = "needs-panel-labels";
+    validationDetail = `missing panel boxes: ${missingLabels.join(", ")}`;
+  } else if (evidenceMissingLabels.length) {
+    validationStatus = "needs-panel-evidence";
+    validationDetail = `needs evidence for ${evidenceMissingLabels.join(", ")}`;
+  } else if (!hasPixelDimensions) {
+    validationStatus = "needs-dimensions";
+    validationDetail = "labels matched; add image dimensions for pixel-precise boxes";
+  } else if (matchedLabels.length && (!panelList.length || coveredMatched.length === expectedLabels.length)) {
+    validationStatus = "validated";
+    validationDetail = "all candidate panel boxes have parsed evidence and pixel dimensions";
+  }
+  return {
+    validationStatus,
+    validationScore,
+    validationDetail,
+    matchedPanelLabels: matchedLabels,
+    missingPanelLabels: missingLabels,
+    evidenceMissingPanelLabels: evidenceMissingLabels
+  };
 }
 
 function visualExtractionPanelSplitLabels(panels = [], answerText = "") {
@@ -11095,8 +11213,8 @@ function visualExtractionPanelCoverageMarkdown(panels = [], labels) {
 
 function visualExtractionPanelSplitCandidatesMarkdown(candidates = [], labels) {
   const lines = [
-    `| ${labels.imageName} | ${labels.splitLayout} | ${labels.panel} | X | Y | ${labels.width} | ${labels.height} | ${labels.unit} | ${labels.confidence} | ${labels.detail} |`,
-    "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |"
+    `| ${labels.imageName} | ${labels.splitLayout} | ${labels.panel} | X | Y | ${labels.width} | ${labels.height} | ${labels.unit} | ${labels.confidence} | ${labels.panelSplitValidationStatus} | ${labels.panelSplitValidationScore} | ${labels.detail} |`,
+    "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | --- |"
   ];
   for (const candidate of candidates || []) {
     for (const box of candidate.boxes || []) {
@@ -11110,7 +11228,9 @@ function visualExtractionPanelSplitCandidatesMarkdown(candidates = [], labels) {
         box.height === null || box.height === undefined ? "" : box.height,
         markdownTableCell(box.unit || ""),
         markdownTableCell(box.confidence || ""),
-        markdownTableCell(candidate.basis || "")
+        markdownTableCell(candidate.validationStatus || ""),
+        candidate.validationScore === null || candidate.validationScore === undefined ? "" : candidate.validationScore,
+        markdownTableCell([candidate.basis || "", candidate.validationDetail || ""].filter(Boolean).join("; "))
       ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
     }
   }
@@ -11229,6 +11349,7 @@ function visualExtractionLayoutQualityChecks(diagnostics = {}) {
   const panels = Array.isArray(diagnostics?.panels) ? diagnostics.panels : [];
   const segments = Array.isArray(diagnostics?.axisSegments) ? diagnostics.axisSegments : [];
   const axisBreakCues = Array.isArray(diagnostics?.axisBreakCues) ? diagnostics.axisBreakCues : [];
+  const panelSplitValidation = visualExtractionPanelSplitValidationCheck(diagnostics);
   if (diagnostics?.multiPanelDetected) {
     const uncovered = panels.filter((panel) => panel.status !== "covered");
     if (!panels.length) {
@@ -11239,6 +11360,7 @@ function visualExtractionLayoutQualityChecks(diagnostics = {}) {
       checks.push(visualExtractionQualityCheck("layout-coverage", "pass", `panel coverage: ${panels.length} panel(s)`));
     }
   }
+  if (panelSplitValidation) checks.push(panelSplitValidation);
   if (diagnostics?.discontinuousAxisDetected) {
     const incomplete = segments.filter((segment) => segment.status !== "covered");
     if (!segments.length) {
@@ -11262,6 +11384,21 @@ function visualExtractionLayoutQualityChecks(diagnostics = {}) {
     }
   }
   return checks;
+}
+
+function visualExtractionPanelSplitValidationCheck(diagnostics = {}) {
+  if (!diagnostics?.multiPanelDetected) return null;
+  const candidates = Array.isArray(diagnostics?.panelSplitCandidates) ? diagnostics.panelSplitCandidates : [];
+  const score = Number(diagnostics?.panelSplitValidationScore) || 0;
+  const status = mdText(diagnostics?.panelSplitValidationStatus || "");
+  const detail = mdText(diagnostics?.panelSplitValidationDetail || "");
+  if (!candidates.length) {
+    return visualExtractionQualityCheck("panel-split-validation", "warning", "multi-panel layout mentioned but no automatic split candidate was generated");
+  }
+  if (status === "validated") {
+    return visualExtractionQualityCheck("panel-split-validation", "pass", `panel split validation score ${score}/100; ${detail}`);
+  }
+  return visualExtractionQualityCheck("panel-split-validation", score >= 50 ? "warning" : "fail", `panel split validation score ${score}/100; ${detail || status || "needs manual review"}`);
 }
 
 function visualExtractionDenseConfidenceCheck(chartDataDrafts = []) {
@@ -11515,6 +11652,9 @@ function visualExtractionQualityRecommendations(checks = []) {
   if (byId.get("layout-coverage") && byId.get("layout-coverage")?.status !== "pass") {
     recommendations.push({ id: "layout-coverage" });
   }
+  if (byId.get("panel-split-validation") && byId.get("panel-split-validation")?.status !== "pass") {
+    recommendations.push({ id: "panel-split-validation" });
+  }
   if (byId.get("axis-break-cues") && byId.get("axis-break-cues")?.status !== "pass") {
     recommendations.push({ id: "axis-break-cues" });
   }
@@ -11558,6 +11698,7 @@ function visualExtractionQualityRecommendationText(item, labels) {
   if (id === "axis-calibration") return labels.recommendationAxisCalibration;
   if (id === "calibration-quality") return labels.recommendationCalibrationQuality;
   if (id === "layout-coverage") return labels.recommendationLayoutCoverage;
+  if (id === "panel-split-validation") return labels.recommendationPanelSplitValidation;
   if (id === "axis-break-cues") return labels.recommendationAxisBreakCues;
   if (id === "dense-confidence") return labels.recommendationDenseConfidence;
   if (id === "confidence") return labels.recommendationConfidence;
@@ -11816,6 +11957,15 @@ function visualExtractionChartReviewActionForCheck(check, labels) {
       doneCriteria: labels.reviewDoneVerifyLayoutCoverage
     };
   }
+  if (id === "panel-split-validation") {
+    return {
+      ...base,
+      actionId: "validate-panel-split-candidates",
+      priority: severe ? "high" : "medium",
+      nextStep: labels.reviewActionValidatePanelSplit,
+      doneCriteria: labels.reviewDoneValidatePanelSplit
+    };
+  }
   if (id === "axis-break-cues") {
     return {
       ...base,
@@ -12044,6 +12194,8 @@ function visualExtractionReportLabels(outputLanguage) {
       axisSegmentCalibrationMapCount: "断轴校准映射数",
       axisBreakCueCount: "断轴视觉线索数",
       panelSplitCandidateCount: "候选分割框数",
+      panelSplitValidationStatus: "分割校验状态",
+      panelSplitValidationScore: "分割校验分",
       panelCoverage: "面板覆盖",
       panelSplitCandidates: "自动 panel 分割候选",
       axisSegmentCoverage: "轴段覆盖",
@@ -12097,6 +12249,7 @@ function visualExtractionReportLabels(outputLanguage) {
       recommendationAxisCalibration: "补充至少两个清晰坐标轴刻度/数值锚点，并对照原图核对 Pixel X/Y 到 Axis X/Y 的映射。",
       recommendationCalibrationQuality: "重新核对校准锚点的像素跨度、单调性、重复刻度、分段覆盖和数值单位；跨度太小、断轴分段锚点不足或非单调时不要用于量化比较。",
       recommendationLayoutCoverage: "多面板或断轴图必须逐个 panel/segment 标注点位和校准锚点；不要把不同面板或不连续轴段混成同一组数据。",
+      recommendationPanelSplitValidation: "自动 panel 分割候选必须和已解析 panel 覆盖相互校验；缺少证据的 panel 先补点位、OCR 或裁剪图，再把候选框用于定量复用。",
       recommendationAxisBreakCues: "检测到断轴视觉线索时，必须回到原图确认波浪线、双斜线、锯齿或轴间隙，并为每个可见区段补齐独立校准锚点。",
       recommendationDenseConfidence: "密集点位表需要足够数量的高/中置信点和可追溯视觉依据；低置信密集点只能作为复核草稿。",
       recommendationConfidence: "在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。",
@@ -12107,6 +12260,7 @@ function visualExtractionReportLabels(outputLanguage) {
       reviewActionAddAxisCalibration: "补充每个坐标轴至少两个清晰刻度锚点，再重新导出报告。",
       reviewActionVerifyCalibrationQuality: "回到原图核对锚点跨度、单调性、重复值、断轴分段覆盖和单位，异常时不要用于量化比较。",
       reviewActionVerifyLayoutCoverage: "逐个 panel/segment 核对是否都有数据点、像素点和校准锚点，缺失项先补齐或标记不可读。",
+      reviewActionValidatePanelSplit: "核对自动 panel 分割候选的边界、标签和缺失证据；必要时裁剪单个 panel 后重新抽取。",
       reviewActionVerifyAxisBreakCues: "回到原图确认断轴符号、视觉间隙和每个可见轴段的数值范围；缺锚点时先补齐区段校准表。",
       reviewActionImproveDenseConfidence: "放大原图或裁剪单个 panel，重新生成更高置信的密集点位表，并保留不可读区域说明。",
       reviewActionConfirmConfidence: "人工确认低置信读数、单位和图例；确认前只作为草稿使用。",
@@ -12118,6 +12272,7 @@ function visualExtractionReportLabels(outputLanguage) {
       reviewDoneAddAxisCalibration: "每个坐标轴至少有两个清晰刻度锚点，并已重新导出报告。",
       reviewDoneVerifyCalibrationQuality: "锚点跨度、单调性、重复值、断轴分段覆盖和单位已人工核对，可说明是否能量化使用。",
       reviewDoneVerifyLayoutCoverage: "每个 panel/segment 的数据点、像素点和校准锚点已核对，缺失或不可读部分已有明确说明。",
+      reviewDoneValidatePanelSplit: "每个 panel 的候选框、标签、证据来源和不可读区域已人工确认或标记为不可用。",
       reviewDoneVerifyAxisBreakCues: "断轴符号、视觉间隙、区段范围和每段校准锚点已人工确认，并记录是否可用于量化比较。",
       reviewDoneImproveDenseConfidence: "密集点位表中高/中置信点达到可复核要求，低置信或不可读点已单独标记。",
       reviewDoneConfirmConfidence: "低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。",
@@ -12210,6 +12365,8 @@ function visualExtractionReportLabels(outputLanguage) {
     axisSegmentCalibrationMapCount: "Broken-axis calibration maps",
     axisBreakCueCount: "Axis break visual cues",
     panelSplitCandidateCount: "Panel split candidate boxes",
+    panelSplitValidationStatus: "Split validation",
+    panelSplitValidationScore: "Split validation score",
     panelCoverage: "Panel Coverage",
     panelSplitCandidates: "Automatic Panel Split Candidates",
     axisSegmentCoverage: "Axis Segment Coverage",
@@ -12263,6 +12420,7 @@ function visualExtractionReportLabels(outputLanguage) {
     recommendationAxisCalibration: "Add at least two visible axis tick/value anchors and verify Pixel X/Y to Axis X/Y mapping against the original chart.",
     recommendationCalibrationQuality: "Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, segment coverage, and units; do not use small-span, under-calibrated broken-axis segments, or non-monotonic anchors for quantitative comparison.",
     recommendationLayoutCoverage: "For multi-panel or discontinuous-axis figures, label every panel/segment and keep data points plus calibration anchors separate.",
+    recommendationPanelSplitValidation: "Automatic panel split candidates must be checked against parsed panel coverage; add panel-specific points, OCR, or cropped images before quantitative reuse.",
     recommendationAxisBreakCues: "When visual axis-break cues are detected, verify the wavy line, double slash, jagged mark, or axis gap against the original chart and add separate calibration anchors for each visible segment.",
     recommendationDenseConfidence: "Dense point tables need enough high/medium-confidence points with traceable visual evidence; low-confidence dense points are review drafts only.",
     recommendationConfidence: "Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.",
@@ -12273,6 +12431,7 @@ function visualExtractionReportLabels(outputLanguage) {
     reviewActionAddAxisCalibration: "Add at least two visible tick anchors per axis, then export the report again.",
     reviewActionVerifyCalibrationQuality: "Recheck anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units against the original chart before quantitative use.",
     reviewActionVerifyLayoutCoverage: "Check every panel/segment for data points, pixel points, and calibration anchors; fill gaps or mark unreadable regions.",
+    reviewActionValidatePanelSplit: "Verify automatic panel split boundaries, labels, and missing evidence; crop individual panels and re-extract when needed.",
     reviewActionVerifyAxisBreakCues: "Return to the original figure, verify the axis-break mark, visual gap, and numeric range of each visible segment; add segment calibration rows when anchors are missing.",
     reviewActionImproveDenseConfidence: "Zoom or crop one panel at a time, regenerate a higher-confidence dense point table, and record unreadable regions.",
     reviewActionConfirmConfidence: "Manually confirm low-confidence readings, units, and legends; treat them as draft values until then.",
@@ -12284,6 +12443,7 @@ function visualExtractionReportLabels(outputLanguage) {
     reviewDoneAddAxisCalibration: "Each axis has at least two visible tick anchors, and the report has been exported again.",
     reviewDoneVerifyCalibrationQuality: "Anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units have been manually checked with a reuse decision.",
     reviewDoneVerifyLayoutCoverage: "Each panel/segment has checked data points, pixel points, and calibration anchors, with missing or unreadable regions documented.",
+    reviewDoneValidatePanelSplit: "Each panel candidate box, label, evidence source, and unreadable region has been confirmed or marked unusable.",
     reviewDoneVerifyAxisBreakCues: "Axis-break marks, visual gaps, segment ranges, and per-segment calibration anchors are verified, with a quantitative reuse decision recorded.",
     reviewDoneImproveDenseConfidence: "The dense point table has reviewable high/medium-confidence points, and low-confidence or unreadable points are marked separately.",
     reviewDoneConfirmConfidence: "Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable.",
