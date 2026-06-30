@@ -15107,6 +15107,8 @@ function candidatePdfExtractionQualitySummary(quality, labels) {
     `${labels.pdfQualityEmptyPages}: ${quality?.emptyPageCount || 0}`,
     `${labels.pdfQualityTotalText}: ${quality?.totalTextChars || 0}`,
     `${labels.pdfQualityOcrFallback}: ${quality?.ocrFallbackUsed ? labels.pdfQualityYes : labels.pdfQualityNo}`,
+    quality?.ocrConfidenceSummary ? `${labels.pdfQualityOcrConfidence}: ${quality.ocrConfidenceSummary}` : "",
+    quality?.ocrConfidenceRisk ? `${labels.pdfQualityOcrRisk}: ${quality.ocrConfidenceRisk}` : "",
     `${labels.pdfQualityWarnings}: ${warnings}`
   ].filter(Boolean).join("; ");
 }
@@ -15374,6 +15376,13 @@ function candidatePdfExtractionQualityFromResult(result, pages = []) {
   const warnings = Array.isArray(quality?.warnings) ? quality.warnings.map((item) => mdText(item)).filter(Boolean).slice(0, 8) : [];
   const status = mdText(quality?.status || (pagesWithText ? (warnings.length ? "warning" : "pass") : "fail"));
   if (!quality && !warnings.length && !totalTextChars && !pagesWithText) return null;
+  const ocrPageSignals = candidatePdfOcrPageSignals(quality, normalizedPages);
+  const ocrConfidenceCounts = candidatePdfOcrConfidenceCounts(ocrPageSignals);
+  const ocrConfidenceRisk = candidatePdfOcrConfidenceRisk(ocrConfidenceCounts, {
+    expectedPageCount: Number.isFinite(expectedPageCount) ? expectedPageCount : normalizedPages.length,
+    pagesWithText: Number.isFinite(pagesWithText) ? pagesWithText : 0,
+    emptyPageCount: Number.isFinite(Number(quality?.emptyPageCount)) ? Number(quality.emptyPageCount) : Math.max((Number.isFinite(expectedPageCount) ? expectedPageCount : 0) - (Number.isFinite(pagesWithText) ? pagesWithText : 0), 0)
+  });
   return {
     status,
     engine: mdText(quality?.engine || result?.engine || ""),
@@ -15386,8 +15395,73 @@ function candidatePdfExtractionQualityFromResult(result, pages = []) {
     averageTextCharsPerPage: Number.isFinite(Number(quality?.averageTextCharsPerPage)) ? Number(quality.averageTextCharsPerPage) : 0,
     minTextChars: Number.isFinite(Number(quality?.minTextChars)) ? Number(quality.minTextChars) : 0,
     ocrFallbackUsed: quality?.ocrFallbackUsed === true || quality?.ocrFallbackUsed === "true" || warnings.includes("ocr_fallback_used"),
+    ocrPageSignals,
+    ocrConfidenceCounts,
+    ocrConfidenceSummary: candidatePdfOcrConfidenceSummary(ocrConfidenceCounts),
+    ocrConfidenceRisk,
     warnings
   };
+}
+
+function candidatePdfOcrPageSignals(quality, pages = []) {
+  const direct = Array.isArray(quality?.ocrPageSignals) ? quality.ocrPageSignals : [];
+  const fromPages = (pages || []).map((page) => page?.ocr ? {
+    ...page.ocr,
+    page: page.ocr.page ?? page.page,
+    textChars: page.ocr.textChars ?? mdText(page.text || "").length
+  } : null).filter(Boolean);
+  return (direct.length ? direct : fromPages)
+    .map((signal) => ({
+      page: Number.isFinite(Number(signal?.page)) ? Number(signal.page) : undefined,
+      status: mdText(signal?.status || ""),
+      textChars: Number.isFinite(Number(signal?.textChars)) ? Number(signal.textChars) : 0,
+      ocrConfidence: candidatePdfNormalizedOcrConfidence(signal?.ocrConfidence || signal?.confidence || ""),
+      warnings: Array.isArray(signal?.warnings) ? signal.warnings.map((item) => mdText(item)).filter(Boolean).slice(0, 4) : []
+    }))
+    .slice(0, 40);
+}
+
+function candidatePdfNormalizedOcrConfidence(value) {
+  const normalized = mdText(value || "").toLowerCase();
+  if (["high", "medium", "low", "none", "error"].includes(normalized)) return normalized;
+  if (["empty", "no_text", "notext"].includes(normalized)) return "none";
+  if (["failed", "failure"].includes(normalized)) return "error";
+  return "unknown";
+}
+
+function candidatePdfOcrConfidenceCounts(signals = []) {
+  const counts = { high: 0, medium: 0, low: 0, none: 0, error: 0, unknown: 0, total: 0 };
+  for (const signal of signals || []) {
+    const confidence = candidatePdfNormalizedOcrConfidence(signal?.ocrConfidence || "");
+    counts[confidence] = Number(counts[confidence] || 0) + 1;
+    counts.total += 1;
+  }
+  return counts;
+}
+
+function candidatePdfOcrConfidenceSummary(counts = {}) {
+  const total = Number(counts.total || 0);
+  if (!total) return "";
+  return [
+    `high ${Number(counts.high || 0)}`,
+    `medium ${Number(counts.medium || 0)}`,
+    `low ${Number(counts.low || 0)}`,
+    `none ${Number(counts.none || 0)}`,
+    `error ${Number(counts.error || 0)}`,
+    Number(counts.unknown || 0) ? `unknown ${Number(counts.unknown || 0)}` : ""
+  ].filter(Boolean).join(", ");
+}
+
+function candidatePdfOcrConfidenceRisk(counts = {}, quality = {}) {
+  const total = Number(counts.total || 0);
+  if (!total) return "";
+  const problematic = Number(counts.low || 0) + Number(counts.none || 0) + Number(counts.error || 0) + Number(counts.unknown || 0);
+  const expected = Number(quality.expectedPageCount || 0);
+  const empty = Number(quality.emptyPageCount || 0);
+  const readable = Number(quality.pagesWithText || 0);
+  if (Number(counts.error || 0) || problematic / total >= 0.4 || (expected >= 3 && readable > 0 && empty / expected >= 0.4)) return "high";
+  if (problematic || empty || Number(counts.medium || 0) === total) return "medium";
+  return "low";
 }
 
 async function candidatePdfBridgeArguments(pdf) {
@@ -16112,6 +16186,8 @@ function candidateReviewLabels(outputLanguage) {
       pdfQualityEmptyPages: "空页",
       pdfQualityTotalText: "文本字符",
       pdfQualityOcrFallback: "OCR fallback",
+      pdfQualityOcrConfidence: "OCR 置信度",
+      pdfQualityOcrRisk: "OCR 风险",
       pdfQualityWarnings: "告警",
       pdfQualityNoWarnings: "无",
       pdfQualityYes: "是",
@@ -16273,6 +16349,8 @@ function candidateReviewLabels(outputLanguage) {
     pdfQualityEmptyPages: "empty pages",
     pdfQualityTotalText: "text chars",
     pdfQualityOcrFallback: "OCR fallback",
+    pdfQualityOcrConfidence: "OCR confidence",
+    pdfQualityOcrRisk: "OCR risk",
     pdfQualityWarnings: "warnings",
     pdfQualityNoWarnings: "none",
     pdfQualityYes: "yes",

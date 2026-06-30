@@ -6677,6 +6677,12 @@ describe("workbench writeback helpers", () => {
                     averageTextCharsPerPage: 66,
                     minTextChars: 40,
                     ocrFallbackUsed: true,
+                    ocrPageSignals: [
+                      { page: 1, status: "ok", textChars: 120, ocrConfidence: "high", warnings: [] },
+                      { page: 2, status: "ok", textChars: 44, ocrConfidence: "medium", warnings: [] },
+                      { page: 3, status: "empty", textChars: 0, ocrConfidence: "none", warnings: ["ocr_page_empty"] },
+                      { page: 4, status: "error", textChars: 0, ocrConfidence: "error", warnings: ["ocr_page_error"] }
+                    ],
                     warnings: ["ocr_fallback_used", "empty_or_unread_pages"]
                   }
                 })
@@ -6742,8 +6748,17 @@ describe("workbench writeback helpers", () => {
       expectedPageCount: 4,
       emptyPageCount: 2,
       ocrFallbackUsed: true,
+      ocrConfidenceCounts: expect.objectContaining({ high: 1, medium: 1, none: 1, error: 1, total: 4 }),
+      ocrConfidenceSummary: "high 1, medium 1, low 0, none 1, error 1",
+      ocrConfidenceRisk: "high",
       warnings: ["ocr_fallback_used", "empty_or_unread_pages"]
     });
+    expect(enriched[0].review.pdfExtractionQuality.ocrPageSignals).toEqual([
+      expect.objectContaining({ page: 1, ocrConfidence: "high", textChars: 120 }),
+      expect.objectContaining({ page: 2, ocrConfidence: "medium", textChars: 44 }),
+      expect.objectContaining({ page: 3, ocrConfidence: "none", warnings: ["ocr_page_empty"] }),
+      expect.objectContaining({ page: 4, ocrConfidence: "error", warnings: ["ocr_page_error"] })
+    ]);
     const report = loaded.renderCandidateReviewMarkdown(enriched, {
       outputLanguage: "zh-CN",
       item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
@@ -6754,6 +6769,8 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("状态: warning");
     expect(report).toContain("可读页: 2/4");
     expect(report).toContain("OCR fallback: 是");
+    expect(report).toContain("OCR 置信度: high 1, medium 1, low 0, none 1, error 1");
+    expect(report).toContain("OCR 风险: high");
     expect(report).toContain("ocr_fallback_used, empty_or_unread_pages");
   });
 
