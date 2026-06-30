@@ -4443,6 +4443,7 @@ function renderSynthesisConflictLedger(collectionContext, results, outputLanguag
 function renderSynthesisRoadmap(collectionContext, results, outputLanguage = "zh-CN", summaryInsights = new Map()) {
   const labels = collectionTemplateLabels(outputLanguage);
   const entries = synthesisRoadmapEntries(results, summaryInsights, labels);
+  const readinessEntries = synthesisRoadmapReadinessEntries(entries, labels);
   const items = batchReportItems(results).filter((item) => item.status === "generated" || item.status === "skipped_existing");
   const routeRows = entries.map((entry) => [
     escapeMarkdownTable(entry.cluster),
@@ -4482,6 +4483,10 @@ function renderSynthesisRoadmap(collectionContext, results, outputLanguage = "zh
     `## ${labels.roadmapSectionPlan}`,
     "",
     outline,
+    "",
+    `## ${labels.roadmapReadinessBoard}`,
+    "",
+    renderSynthesisRoadmapReadinessRows(readinessEntries, labels),
     "",
     `## ${labels.roadmapEvidenceIndex}`,
     "",
@@ -4604,6 +4609,70 @@ function synthesisRoadmapEntries(results, summaryInsights = new Map(), labels = 
   });
 }
 
+function synthesisRoadmapReadinessEntries(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  return (entries || []).map((entry) => {
+    const supportScore = Number(entry.claimSupportScore) || 0;
+    const paperCount = Array.isArray(entry.supportingPapers) ? entry.supportingPapers.length : 0;
+    const risk = String(entry.claimRisk || "");
+    const hasHighRisk = risk === labels.claimRiskHigh || /high|高|高度|暫定|薄い/i.test(risk);
+    const hasMediumRisk = risk === labels.claimRiskMedium || /medium|中/i.test(risk);
+    const missingGap = !entry.openGap || entry.openGap === labels.gapMatrixPendingEvidence;
+    const missingValidation = !entry.nextValidation || entry.nextValidation === labels.gapMatrixPendingValidation;
+    const unresolvedGap = entry.openGap && !missingGap ? entry.openGap : "";
+    const score = Math.max(0, Math.min(100, Math.round(
+      supportScore
+      + Math.min(paperCount, 4) * 5
+      + (entry.candidateQuery ? 4 : 0)
+      - (hasHighRisk ? 24 : hasMediumRisk ? 10 : 0)
+      - (missingGap ? 14 : 6)
+      - (missingValidation ? 12 : 4)
+    )));
+    const level = score >= 70 && paperCount >= 2 && !hasHighRisk
+      ? labels.roadmapReadinessReady
+      : paperCount < 2 || hasHighRisk
+        ? labels.roadmapReadinessNeedsEvidence
+        : missingValidation
+          ? labels.roadmapReadinessNeedsValidation
+          : score < 40
+            ? labels.roadmapReadinessDefer
+            : labels.roadmapReadinessNeedsValidation;
+    const blockingIssue = level === labels.roadmapReadinessReady
+      ? labels.roadmapReadinessNoBlocking
+      : paperCount < 2 || hasHighRisk
+        ? labels.roadmapReadinessBlockingEvidence(paperCount, risk)
+        : missingValidation
+          ? labels.roadmapReadinessBlockingValidation
+          : unresolvedGap
+            ? labels.roadmapReadinessBlockingGap(unresolvedGap)
+            : labels.roadmapReadinessBlockingScore(score);
+    return {
+      ...entry,
+      roadmapReadinessScore: score,
+      roadmapReadinessLevel: level,
+      roadmapBlockingIssue: blockingIssue,
+      roadmapNextAction: labels.roadmapReadinessAction(level, entry.cluster, blockingIssue, entry.candidateQuery)
+    };
+  });
+}
+
+function renderSynthesisRoadmapReadinessRows(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const rows = (entries || []).map((entry) => [
+    escapeMarkdownTable(entry.cluster),
+    escapeMarkdownTable(entry.roadmapReadinessScore),
+    escapeMarkdownTable(entry.roadmapReadinessLevel),
+    escapeMarkdownTable(entry.claimSupportScore),
+    escapeMarkdownTable(entry.claimRisk),
+    escapeMarkdownTable(entry.roadmapBlockingIssue),
+    escapeMarkdownTable(entry.candidateQuery),
+    escapeMarkdownTable(entry.roadmapNextAction)
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |  |";
+  return [
+    `| ${labels.clusterColumn} | ${labels.roadmapReadinessScoreColumn} | ${labels.roadmapReadinessLevelColumn} | ${labels.claimSupportScoreColumn} | ${labels.claimRiskColumn} | ${labels.roadmapBlockingIssueColumn} | ${labels.roadmapCandidateQueryColumn} | ${labels.roadmapNextActionColumn} |`,
+    "| --- | ---: | --- | ---: | --- | --- | --- | --- |",
+    rows
+  ].join("\n");
+}
+
 function roadmapCandidateQuery(clusterLabel, methods = [], gaps = [], validations = []) {
   const terms = uniqueInsightLines([
     clusterLabel,
@@ -4724,6 +4793,7 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
   const clusters = topicClusterEntries(results, summaryInsights, labels);
   const synthesisClaims = synthesisClaimEntries(results, summaryInsights, labels);
   const synthesisConflicts = synthesisConflictEntries(results, summaryInsights, labels);
+  const roadmapReadiness = synthesisRoadmapReadinessEntries(synthesisRoadmapEntries(results, summaryInsights, labels), labels);
   const methodSignals = uniqueInsightLines(generatedItems.map((item) => summaryInsights.get(item.itemKey)?.method).filter(Boolean)).slice(0, 6);
   const dataSignals = uniqueInsightLines(generatedItems.flatMap((item) => {
     const insight = summaryInsights.get(item.itemKey) || {};
@@ -4782,6 +4852,10 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     `## ${labels.reportDraftOutline}`,
     "",
     reportDraftOutline(clusters, labels),
+    "",
+    `## ${labels.roadmapReadinessBoard}`,
+    "",
+    renderSynthesisRoadmapReadinessRows(roadmapReadiness, labels),
     "",
     `## ${labels.reportSynthesisWritingPack}`,
     "",
@@ -4963,6 +5037,21 @@ function collectionTemplateLabels(outputLanguage) {
       roadmapCandidateQueryColumn: "Candidate-search Query",
       roadmapSectionPlan: "Section Plan",
       roadmapEvidenceIndex: "Evidence Index",
+      roadmapReadinessBoard: "Roadmap Readiness Board",
+      roadmapReadinessScoreColumn: "Readiness Score",
+      roadmapReadinessLevelColumn: "Readiness Level",
+      roadmapBlockingIssueColumn: "Blocking Issue",
+      roadmapNextActionColumn: "Next Action",
+      roadmapReadinessReady: "Ready for draft",
+      roadmapReadinessNeedsEvidence: "Needs evidence",
+      roadmapReadinessNeedsValidation: "Needs validation",
+      roadmapReadinessDefer: "Defer",
+      roadmapReadinessNoBlocking: "No immediate blocker",
+      roadmapReadinessBlockingEvidence: (count, risk) => `Evidence is thin: ${count || 0} supporting paper(s); ${risk || "risk pending"}`,
+      roadmapReadinessBlockingValidation: "Validation plan is still pending",
+      roadmapReadinessBlockingGap: (gap) => `Open gap must stay explicit: ${gap}`,
+      roadmapReadinessBlockingScore: (score) => `Readiness score ${score || 0} is below the writing threshold`,
+      roadmapReadinessAction: (level, cluster, issue, query) => `${level}: verify ${cluster}; ${issue}; next search/check: ${query || "candidate query pending"}.`,
       crossCollectionSynthesis: "Cross-Collection Synthesis Map",
       crossCollectionSynthesisNote: "Aggregates the latest collection workspaces into one review-planning surface. Use it to compare themes across collections before writing a broader review.",
       crossCollectionInventory: "Collection Inventory",
@@ -5277,6 +5366,21 @@ function collectionTemplateLabels(outputLanguage) {
       roadmapCandidateQueryColumn: "候補検索クエリ",
       roadmapSectionPlan: "節構成プラン",
       roadmapEvidenceIndex: "エビデンス索引",
+      roadmapReadinessBoard: "ロードマップ準備度ボード",
+      roadmapReadinessScoreColumn: "準備度スコア",
+      roadmapReadinessLevelColumn: "準備度レベル",
+      roadmapBlockingIssueColumn: "阻害要因",
+      roadmapNextActionColumn: "次アクション",
+      roadmapReadinessReady: "草稿化可能",
+      roadmapReadinessNeedsEvidence: "証拠追加が必要",
+      roadmapReadinessNeedsValidation: "検証が必要",
+      roadmapReadinessDefer: "保留",
+      roadmapReadinessNoBlocking: "直近の阻害要因なし",
+      roadmapReadinessBlockingEvidence: (count, risk) => `証拠が薄い: 支持論文 ${count || 0} 件。${risk || "リスク未確認"}`,
+      roadmapReadinessBlockingValidation: "検証計画が未設定",
+      roadmapReadinessBlockingGap: (gap) => `未解決ギャップを明示する: ${gap}`,
+      roadmapReadinessBlockingScore: (score) => `準備度スコア ${score || 0} が執筆しきい値未満`,
+      roadmapReadinessAction: (level, cluster, issue, query) => `${level}: ${cluster} を確認する。${issue}。次の検索・確認: ${query || "候補クエリ未設定"}。`,
       crossCollectionSynthesis: "Collection 横断統合マップ",
       crossCollectionSynthesisNote: "最新の collection workspace を横断的なレビュー計画面に集約します。より広いレビューを書く前に、collection 間のテーマを比較するために使います。",
       crossCollectionInventory: "Collection 一覧",
@@ -5590,6 +5694,21 @@ function collectionTemplateLabels(outputLanguage) {
     roadmapCandidateQueryColumn: "候选检索词",
     roadmapSectionPlan: "小节计划",
     roadmapEvidenceIndex: "证据索引",
+    roadmapReadinessBoard: "路线图就绪度看板",
+    roadmapReadinessScoreColumn: "就绪分",
+    roadmapReadinessLevelColumn: "就绪状态",
+    roadmapBlockingIssueColumn: "阻塞问题",
+    roadmapNextActionColumn: "下一步动作",
+    roadmapReadinessReady: "可进入草稿",
+    roadmapReadinessNeedsEvidence: "需补证据",
+    roadmapReadinessNeedsValidation: "需验证",
+    roadmapReadinessDefer: "暂缓",
+    roadmapReadinessNoBlocking: "暂无直接阻塞",
+    roadmapReadinessBlockingEvidence: (count, risk) => `证据偏薄：${count || 0} 篇支持论文；${risk || "风险待判断"}`,
+    roadmapReadinessBlockingValidation: "验证计划仍待补齐",
+    roadmapReadinessBlockingGap: (gap) => `进入正文前需保留未解决缺口：${gap}`,
+    roadmapReadinessBlockingScore: (score) => `就绪分 ${score || 0} 低于写作阈值`,
+    roadmapReadinessAction: (level, cluster, issue, query) => `${level}：核对“${cluster}”；${issue}；下一步检索或检查：${query || "待补充候选检索词"}。`,
     crossCollectionSynthesis: "跨集合综合地图",
     crossCollectionSynthesisNote: "把最近生成的 collection workspace 汇总为一个跨集合综述规划入口，用于在更大范围综述写作前比较不同集合之间的主题、证据和缺口。",
     crossCollectionInventory: "集合清单",

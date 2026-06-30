@@ -759,6 +759,10 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("PPO-based CTDE scheduler");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("主张支持分");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("主张风险");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("路线图就绪度看板");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("就绪分");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("阻塞问题");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("需补证据");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("No field data or ablation");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("Stress-test under mixed priority flights");
     expect(writes.get(artifacts.reviewReportPath)).toContain("PPO-based CTDE scheduler");
@@ -767,6 +771,8 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合冲突与证据缺口");
     expect(writes.get(artifacts.reviewReportPath)).toContain("主张证据审计");
     expect(writes.get(artifacts.reviewReportPath)).toContain("审计主张");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("路线图就绪度看板");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("下一步动作");
     expect(writes.get(artifacts.reviewReportPath)).toContain("Stress-test under mixed priority flights");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合写作包");
     expect(writes.get(artifacts.reviewReportPath)).toContain("基于已引用的总结深化");
