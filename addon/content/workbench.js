@@ -7419,6 +7419,7 @@ function renderProposalNoteMarkdown(context, options = {}) {
   const promptPackId = normalizePromptPackId(options.promptPackId || "general");
   const domainChecklist = proposalDomainChecklist(promptPackId, labels);
   const domainStructure = proposalDomainWritingStructure(promptPackId, labels);
+  const disciplineExamples = proposalDisciplineWritingExamples(promptPackId, labels);
   const sections = proposalNoteSections(labels);
   const lines = [
     "---",
@@ -7461,6 +7462,8 @@ function renderProposalNoteMarkdown(context, options = {}) {
     `- ${labels.promptPack}: ${mdText(domainChecklist.title)}`,
     "",
     ...domainWritingStructureLines(domainStructure, labels),
+    "",
+    ...disciplineWritingExampleLines(disciplineExamples, labels),
     "",
     `### ${labels.writingChecklist}`,
     "",
@@ -7556,6 +7559,21 @@ function venueWritingStructureLines(rows, labels) {
   ];
 }
 
+function disciplineWritingExampleLines(rows, labels) {
+  return [
+    `### ${labels.disciplineWritingExamples}`,
+    "",
+    `| ${labels.exampleScenario} | ${labels.examplePattern} | ${labels.exampleEvidenceAnchor} | ${labels.exampleRevisionCheck} |`,
+    "| --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.scenario,
+      row.pattern,
+      row.evidence,
+      row.check
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
 function proposalDomainWritingStructure(promptPackId, labels) {
   const id = normalizePromptPackId(promptPackId);
   const zh = labels.language === "zh-CN";
@@ -7636,6 +7654,76 @@ function proposalDomainWritingStructure(promptPackId, labels) {
   };
   const rows = packs[id] || packs.general;
   return rows.map(([section, goal, evidence]) => ({ section, goal, evidence }));
+}
+
+function proposalDisciplineWritingExamples(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["任务定义段", "本课题面向{任务/场景}，在{数据/约束}条件下研究{输入到输出}的可验证问题。", "任务定义、数据来源、评价指标和 baseline 缺口。", "是否写清输入、输出、约束、评价指标和不讨论的边界。"],
+      ["方法创新段", "拟从{模块/目标函数/训练策略}入手，解决已有方法在{失败模式/成本/泛化}上的不足。", "已有方法短板、消融线索、复杂度或失败案例。", "是否避免只写模型名称，是否说明相对已有工作的差异。"],
+      ["实验计划段", "验证将按主结果、消融、鲁棒性、失败案例和复现成本逐层展开。", "数据集、指标、对照方法、算力预算和复现条件。", "是否把实验做成可执行清单，而不是泛泛写提高性能。"]
+    ],
+    transportation: [
+      ["场景边界段", "本课题聚焦{道路/空域/网络}中的{冲突/拥堵/调度}问题，研究对象限定为{车辆/无人机/路段/航路}。", "场景假设、OD/需求流、规则约束、冲突或拥堵证据。", "是否说明空间范围、参与者、运行规则和不纳入场景。"],
+      ["安全效率段", "研究目标不是单一最短路径，而是在{安全阈值}约束下兼顾{延误/吞吐/鲁棒性}。", "冲突率、延误、吞吐、风险阈值、仿真或实测数据。", "是否把安全、效率和鲁棒性拆成可评价指标。"],
+      ["验证落地段", "实验将覆盖常规需求、极端工况和敏感性分析，并给出运行管理边界。", "场景集、压力测试、baseline、政策或运维约束。", "是否区分仿真有效、工程可行和管理建议三类结论。"]
+    ],
+    biomedicine: [
+      ["研究对象段", "本研究围绕{疾病/机制/生物过程}，在{样本/队列/实验体系}中检验{暴露/干预/指标}关系。", "纳排标准、样本来源、队列描述或实验设计。", "是否清楚区分研究对象、比较对象和终点指标。"],
+      ["统计计划段", "主要终点为{endpoint}，统计分析将同时报告效应量、不确定性和偏倚控制。", "endpoint 定义、效应量、置信区间、混杂因素和缺失数据处理。", "是否避免只给显著性，是否说明偏倚和缺失处理。"],
+      ["转化边界段", "结论将区分机制解释、临床相关性和暂不能外推的人群或条件。", "外部验证、伦理合规、阴性结果和安全性限制。", "是否说明哪些结论不能直接转化为临床或干预建议。"]
+    ],
+    "social-science": [
+      ["理论假设段", "基于{理论/制度背景}，本研究提出{变量A}通过{机制}影响{变量B}的可证伪假设。", "理论来源、概念定义、替代解释和假设来源。", "是否把概念、变量和机制分开，是否能被数据证伪。"],
+      ["识别策略段", "经验部分将利用{数据/事件/制度差异}识别该关系，并通过{稳健性/反事实}排除替代解释。", "数据来源、识别假设、控制变量、工具变量或准实验。", "是否说明识别假设，是否避免把相关性直接写成因果。"],
+      ["政策含义段", "政策建议仅适用于{制度/群体/时期}条件下，并需考虑{外部有效性/伦理风险}。", "异质性结果、政策边界、制度背景和伦理影响。", "是否把结论适用范围和不可推广部分写清。"]
+    ],
+    "review-writing": [
+      ["分类框架段", "本综述按{问题对象/方法路线/数据场景/评价指标}组织文献，而不是逐篇罗列。", "检索式、代表论文、分类维度、时间线和边界说明。", "分类维度是否能容纳相近小方向，也能隔离完全不同方向。"],
+      ["共识分歧段", "现有研究在{共识点}上趋于一致，但在{数据/假设/指标/场景}上形成分歧。", "方法矩阵、指标对照、反例、低置信证据和证据强度标签。", "是否把共识、分歧和证据强弱分开写。"],
+      ["研究空白段", "下一步研究空白主要来自{数据缺口/方法瓶颈/场景迁移/评价缺失}。", "缺口台账、路线图、候选文献和后续检索计划。", "是否给出可执行问题，而不是只写需要进一步研究。"]
+    ],
+    general: [
+      ["问题提出段", "本文献提示的研究问题可以表述为：在{场景}中，如何用{方法/数据}解决{核心矛盾}。", "摘要、引言、关键词和代表性证据。", "是否写清对象、场景、方法和核心矛盾。"],
+      ["贡献拆分段", "可写贡献包括{理论/方法/数据/应用}四类，其中低证据部分需单独标注。", "贡献句、对比证据、局限说明和待补文献。", "是否区分已由证据支撑的贡献和待验证设想。"],
+      ["风险控制段", "当前最大风险是{数据/方法/验证/范围}不足，后续需要补充{证据或实验}。", "缺失数据、工具依赖、低置信证据和下一步动作。", "是否把风险转成具体补证任务。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Task-definition paragraph", "This project studies a testable input-to-output problem for {task/scenario} under {data/constraint} conditions.", "Task definition, data source, metrics, and baseline gap.", "Check that inputs, outputs, constraints, metrics, and exclusions are explicit."],
+      ["Method-contribution paragraph", "The route starts from {module/objective/training strategy} to address prior limits in {failure mode/cost/generalization}.", "Prior-method weakness, ablation lead, complexity, or failure case.", "Check that the claim explains a difference from prior work, not only a model name."],
+      ["Experiment-plan paragraph", "Validation will move from main results to ablations, robustness, failure cases, and reproduction cost.", "Dataset, metrics, baselines, compute budget, and reproduction conditions.", "Check that the experiment plan is executable rather than a generic performance promise."]
+    ],
+    transportation: [
+      ["Scenario-boundary paragraph", "This project focuses on {conflict/congestion/dispatch} in {road/airspace/network} and limits the object to {vehicle/UAV/segment/route}.", "Scenario assumptions, OD or demand flow, rules, conflict, or congestion evidence.", "Check spatial scope, actors, operating rules, and excluded scenarios."],
+      ["Safety-efficiency paragraph", "The objective is not only shortest routing, but {delay/throughput/robustness} under a {safety threshold} constraint.", "Conflict rate, delay, throughput, risk threshold, simulation, or field data.", "Check that safety, efficiency, and robustness become measurable criteria."],
+      ["Validation-to-deployment paragraph", "Experiments will cover routine demand, stress cases, sensitivity analysis, and operational boundaries.", "Scenario suite, stress test, baseline, policy, or maintenance constraint.", "Check that simulation validity, engineering feasibility, and management implication stay separate."]
+    ],
+    biomedicine: [
+      ["Study-object paragraph", "This study examines {exposure/intervention/indicator} relations around {disease/mechanism/process} in {sample/cohort/system}.", "Eligibility criteria, sample source, cohort description, or experimental design.", "Check that object, comparator, and endpoints are separate."],
+      ["Statistics paragraph", "The primary endpoint is {endpoint}; analysis will report effect size, uncertainty, and bias control.", "Endpoint definition, effect size, confidence interval, confounders, and missing-data handling.", "Check that the plan goes beyond significance and covers bias and missing data."],
+      ["Translation-boundary paragraph", "The conclusions will separate mechanism, clinical relevance, and populations or conditions that cannot be generalized.", "External validation, ethics/compliance, negative results, and safety limits.", "Check which claims cannot become direct clinical or intervention advice."]
+    ],
+    "social-science": [
+      ["Theory-hypothesis paragraph", "Based on {theory/institutional context}, the study tests whether {variable A} affects {variable B} through {mechanism}.", "Theory source, construct definition, alternative explanation, and hypothesis evidence.", "Check that constructs, variables, and mechanisms are separable and falsifiable."],
+      ["Identification paragraph", "The empirical strategy uses {data/event/institutional variation} and {robustness/counterfactual} checks to rule out alternatives.", "Data source, identification assumption, controls, instrument, or quasi-experiment.", "Check that causal assumptions are explicit and correlation is not overstated."],
+      ["Policy-boundary paragraph", "Recommendations apply only under {institution/group/period} conditions and must account for {external validity/ethical risk}.", "Heterogeneity, policy boundary, institutional context, and ethical implication.", "Check that scope and non-generalizable parts are explicit."]
+    ],
+    "review-writing": [
+      ["Taxonomy paragraph", "This review is organized by {problem/method/data/scenario/metric}, not by a paper-by-paper list.", "Search query, representative papers, taxonomy dimensions, timeline, and boundary notes.", "Check that the taxonomy groups related sub-directions and separates unrelated ones."],
+      ["Consensus-and-disagreement paragraph", "The literature agrees on {consensus point}, but diverges on {data/assumption/metric/scenario}.", "Method matrix, metric comparison, counterexample, low-confidence evidence, and evidence-strength labels.", "Check that consensus, disagreement, and evidence strength are separate."],
+      ["Research-gap paragraph", "The next research gap comes from {data gap/method bottleneck/scenario transfer/evaluation absence}.", "Gap ledger, roadmap, candidate papers, and follow-up search plan.", "Check that the gap becomes an actionable question, not only a future-work sentence."]
+    ],
+    general: [
+      ["Problem paragraph", "The research question can be stated as: in {scenario}, how can {method/data} address {core tension}.", "Abstract, introduction, keywords, and representative evidence.", "Check that object, scenario, method, and core tension are explicit."],
+      ["Contribution paragraph", "Draftable contributions include {theory/method/data/application}; low-evidence parts should be marked separately.", "Contribution sentence, comparison evidence, limitation note, and missing literature.", "Check evidence-backed contributions separately from unverified ideas."],
+      ["Risk-control paragraph", "The main risk is insufficient {data/method/validation/scope}; the next step is to add {evidence or experiment}.", "Missing data, tool dependency, low-confidence evidence, and next actions.", "Check that risks are converted into concrete evidence tasks."]
+    ]
+  };
+  const rows = packs[id] || packs.general;
+  return rows.map(([scenario, pattern, evidence, check]) => ({ scenario, pattern, evidence, check }));
 }
 
 function proposalDomainChecklist(promptPackId, labels) {
@@ -7747,6 +7835,11 @@ function proposalNoteLabels(outputLanguage) {
       domainWritingFormat: "领域化写作格式",
       promptPack: "提示模板包",
       writingStructure: "写作结构",
+      disciplineWritingExamples: "学科写作示例",
+      exampleScenario: "写作场景",
+      examplePattern: "可套用表达",
+      exampleEvidenceAnchor: "证据锚点",
+      exampleRevisionCheck: "修订检查",
       writingChecklist: "写作清单",
       structureSection: "结构单元",
       writingGoal: "写作目标",
@@ -7799,6 +7892,11 @@ function proposalNoteLabels(outputLanguage) {
     domainWritingFormat: "Domain Writing Format",
     promptPack: "Prompt pack",
     writingStructure: "Writing Structure",
+    disciplineWritingExamples: "Discipline-Style Writing Examples",
+    exampleScenario: "Writing scenario",
+    examplePattern: "Reusable expression",
+    exampleEvidenceAnchor: "Evidence anchor",
+    exampleRevisionCheck: "Revision check",
     writingChecklist: "Writing Checklist",
     structureSection: "Structure unit",
     writingGoal: "Writing goal",
@@ -7859,6 +7957,7 @@ function renderJournalOutlineMarkdown(context, options = {}) {
   const domainChecklist = journalDomainChecklist(promptPackId, labels);
   const domainStructure = journalDomainWritingStructure(promptPackId, labels);
   const venueStructures = journalVenueWritingStructures(labels);
+  const disciplineExamples = journalDisciplineWritingExamples(promptPackId, labels);
   const sections = journalOutlineSections(labels);
   const lines = [
     "---",
@@ -7894,6 +7993,8 @@ function renderJournalOutlineMarkdown(context, options = {}) {
     ...domainWritingStructureLines(domainStructure, labels),
     "",
     ...venueWritingStructureLines(venueStructures, labels),
+    "",
+    ...disciplineWritingExampleLines(disciplineExamples, labels),
     "",
     `### ${labels.writingChecklist}`,
     "",
@@ -8134,6 +8235,76 @@ function journalVenueWritingStructures(labels) {
   return rows.map(([venueType, pattern, evidence, fit]) => ({ venueType, pattern, evidence, fit }));
 }
 
+function journalDisciplineWritingExamples(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["引言任务段", "已有方法通常在{任务/数据/约束}下评价，但{真实场景/失败模式}仍缺少系统验证。", "任务定义、数据设置、baseline、失败案例和评价协议。", "是否把问题压力、评价协议和本文贡献写在同一逻辑链里。"],
+      ["方法段", "本文方法由{模块A}、{模块B}和{训练/推理策略}组成，关键差异在于{可检验机制}。", "架构图、公式、伪代码、复杂度和复现设置。", "是否能用消融或复杂度分析验证每个模块的必要性。"],
+      ["实验讨论段", "主结果说明{指标提升/成本变化}，消融结果进一步表明{关键模块}贡献最大。", "主结果表、消融表、鲁棒性、失败案例和 compute cost。", "是否把主结果、消融、失败案例和成本放进同一解释框架。"]
+    ],
+    transportation: [
+      ["场景引言段", "{交通/空域}系统的核心矛盾是{需求增长/安全约束/资源有限}与{运行效率}之间的张力。", "OD/流量、冲突或拥堵证据、规则约束和场景图。", "是否明确运营对象、约束来源和安全效率目标。"],
+      ["模型方法段", "模型以{状态变量}描述系统运行，以{约束}保证安全边界，并通过{策略/规划}优化{指标}。", "状态表、约束表、控制/调度流程、baseline 和复杂度。", "是否把工程约束写成模型变量，而不是只写算法流程。"],
+      ["验证启示段", "在{常规/高压/极端}场景下，结果表明该方法对{安全/效率/鲁棒性}的影响存在边界。", "仿真场景、压力测试、敏感性分析、运维或政策边界。", "是否区分算法有效性、部署条件和管理建议。"]
+    ],
+    biomedicine: [
+      ["临床问题段", "{疾病/机制}研究的关键不确定性在于{人群/暴露/终点}关系是否稳定。", "临床背景、队列来源、机制证据和 prior studies。", "是否说明样本来源和研究设计如何支撑问题。"],
+      ["方法统计段", "研究采用{设计/模型/统计方法}估计{endpoint}，并通过{偏倚控制/敏感性分析}评估稳健性。", "流程图、纳排标准、endpoint、效应量和混杂控制。", "是否报告不确定性、缺失处理和偏倚来源。"],
+      ["讨论边界段", "结果支持{机制/相关性}解释，但尚不能外推到{人群/剂量/场景}。", "外部验证、阴性结果、安全性、伦理和合规证据。", "是否明确临床意义和不可外推部分。"]
+    ],
+    "social-science": [
+      ["理论引言段", "围绕{制度/社会问题}，本文把{理论概念}转化为{变量关系}并提出可检验假设。", "理论来源、制度背景、变量定义和替代解释。", "是否从理论问题自然过渡到经验识别。"],
+      ["识别方法段", "识别策略依赖{事件/制度差异/数据结构}，核心假设是{识别假设}。", "数据来源、样本、控制变量、工具变量或准实验设计。", "是否把因果识别条件和稳健性测试写清。"],
+      ["政策讨论段", "结果对{政策/管理实践}的启示受限于{制度背景/样本范围/外部有效性}。", "异质性、机制检验、政策边界和伦理影响。", "是否把政策建议与证据范围对齐。"]
+    ],
+    "review-writing": [
+      ["综述引言段", "本综述围绕{核心问题}，用{分类维度}整合分散在{方向A/方向B}中的研究。", "检索边界、纳入标准、代表论文和研究问题。", "是否用一个大框架容纳相近小方向，并标出完全不同方向。"],
+      ["分类主体段", "第一类研究强调{方法/场景}，第二类研究强调{数据/评价}，二者在{证据维度}上可比较。", "分类表、方法矩阵、指标对照和路线图。", "是否按问题关系组织，而不是按单篇论文顺序堆叠。"],
+      ["综合评价段", "跨论文证据显示{共识}较强，但{争议/缺口}仍由{数据/指标/外部有效性}造成。", "综合主张、反证、低置信来源和证据强度标注。", "是否每个综合判断都能回到代表论文和证据标签。"]
+    ],
+    general: [
+      ["引言主张段", "本文要解决的核心问题是{问题压力}，现有研究的不足集中在{缺口}。", "摘要、引言证据、代表论文和差异化贡献。", "是否一句话说清问题、缺口和本文主张。"],
+      ["主体证据段", "为验证该主张，正文需要把{方法/材料/案例/数据}与{证据标签}逐一对应。", "方法段、案例、数据、图表和证据摘录。", "是否每段都有可追溯证据，而不是只写判断。"],
+      ["讨论边界段", "该结论适用于{范围}，但受到{数据/方法/场景}限制，后续需要{补充工作}。", "局限证据、未解问题、补充实验和后续检索。", "是否把边界、局限和后续工作分开写。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Introduction task paragraph", "Prior methods are usually evaluated under {task/data/constraint}, but {real scenario/failure mode} remains under-tested.", "Task definition, data setting, baseline, failure case, and evaluation protocol.", "Check that problem pressure, protocol, and contribution form one logic chain."],
+      ["Method paragraph", "The method combines {module A}, {module B}, and {training/inference strategy}; the testable mechanism is {mechanism}.", "Architecture figure, formula, pseudocode, complexity, and reproduction settings.", "Check that each module can be justified by ablation or complexity analysis."],
+      ["Experiment discussion paragraph", "Main results show {metric/cost change}; ablations indicate that {key module} explains most of the effect.", "Main table, ablation table, robustness, failure case, and compute cost.", "Check that main results, ablation, failure cases, and cost share one explanation frame."]
+    ],
+    transportation: [
+      ["Scenario introduction paragraph", "The core tension in {traffic/airspace} systems is between {demand growth/safety constraint/resource scarcity} and {operational efficiency}.", "OD/flow, conflict or congestion evidence, rules, and scenario figure.", "Check that operation object, constraint source, and safety-efficiency target are explicit."],
+      ["Model methods paragraph", "The model represents operations with {state variables}, protects safety through {constraints}, and optimizes {metric} via {policy/planning}.", "State table, constraint table, control or dispatch flow, baseline, and complexity.", "Check that engineering constraints become model variables rather than prose around an algorithm."],
+      ["Validation implication paragraph", "Under {routine/stress/extreme} scenarios, the results show bounded effects on {safety/efficiency/robustness}.", "Simulation suite, stress test, sensitivity analysis, operations or policy boundary.", "Check that algorithm validity, deployment conditions, and management implications stay separate."]
+    ],
+    biomedicine: [
+      ["Clinical question paragraph", "The key uncertainty in {disease/mechanism} is whether the {population/exposure/endpoint} relation is stable.", "Clinical context, cohort source, mechanism evidence, and prior studies.", "Check that sample source and design support the question."],
+      ["Methods statistics paragraph", "The study uses {design/model/statistical method} to estimate {endpoint} and tests robustness through {bias control/sensitivity analysis}.", "Flow diagram, eligibility criteria, endpoint, effect size, and confounding control.", "Check that uncertainty, missing data, and bias sources are reported."],
+      ["Discussion boundary paragraph", "The results support a {mechanism/association} interpretation, but should not be generalized to {population/dose/scenario}.", "External validation, negative result, safety, ethics, and compliance evidence.", "Check that clinical meaning and non-generalizable parts are explicit."]
+    ],
+    "social-science": [
+      ["Theory introduction paragraph", "Around {institution/social issue}, the paper turns {theoretical construct} into {variable relation} and a testable hypothesis.", "Theory source, institutional background, variable definition, and alternative explanation.", "Check that the argument moves naturally from theory to empirical identification."],
+      ["Identification methods paragraph", "Identification relies on {event/institutional variation/data structure}; the core assumption is {identification assumption}.", "Data source, sample, controls, instrument, or quasi-experimental design.", "Check that causal identification conditions and robustness tests are explicit."],
+      ["Policy discussion paragraph", "Implications for {policy/management practice} are bounded by {institutional context/sample scope/external validity}.", "Heterogeneity, mechanism test, policy boundary, and ethics implication.", "Check that recommendations match the evidence scope."]
+    ],
+    "review-writing": [
+      ["Review introduction paragraph", "This review centers on {core question} and uses {taxonomy dimension} to connect studies across {direction A/direction B}.", "Search boundary, inclusion criteria, representative papers, and research questions.", "Check that one framework groups related sub-directions and marks unrelated ones."],
+      ["Taxonomy body paragraph", "One stream emphasizes {method/scenario}; another emphasizes {data/evaluation}; they can be compared on {evidence dimension}.", "Taxonomy table, method matrix, metric comparison, and roadmap.", "Check that organization follows problem relations rather than paper order."],
+      ["Synthesis evaluation paragraph", "Cross-paper evidence supports {consensus}, while {controversy/gap} remains driven by {data/metric/external validity}.", "Synthesis claim, counter-evidence, low-confidence source, and evidence-strength label.", "Check that every synthesis judgment traces to representative papers and evidence labels."]
+    ],
+    general: [
+      ["Introduction claim paragraph", "The core problem is {problem pressure}; prior work leaves a gap around {gap}.", "Abstract, introduction evidence, representative papers, and differentiated contribution.", "Check that problem, gap, and claim fit into one sentence."],
+      ["Body evidence paragraph", "To validate the claim, the body should align {method/material/case/data} with {evidence label}.", "Method paragraph, case, data, figure/table, and evidence excerpt.", "Check that each paragraph has traceable evidence rather than only judgment."],
+      ["Discussion boundary paragraph", "The conclusion applies to {scope}, but is limited by {data/method/scenario}; follow-up should add {next work}.", "Limitation evidence, open question, supplementary experiment, and follow-up search.", "Check that boundary, limitation, and future work are separate."]
+    ]
+  };
+  const rows = packs[id] || packs.general;
+  return rows.map(([scenario, pattern, evidence, check]) => ({ scenario, pattern, evidence, check }));
+}
+
 function journalOutlineLabels(outputLanguage) {
   const zh = /^zh/i.test(String(outputLanguage || ""));
   if (zh) {
@@ -8159,6 +8330,11 @@ function journalOutlineLabels(outputLanguage) {
       venueType: "投稿类型",
       writingPattern: "写法重点",
       fitCheck: "适配核查",
+      disciplineWritingExamples: "学科写作示例",
+      exampleScenario: "写作场景",
+      examplePattern: "可套用表达",
+      exampleEvidenceAnchor: "证据锚点",
+      exampleRevisionCheck: "修订检查",
       writingChecklist: "写作清单",
       structureSection: "结构单元",
       writingGoal: "写作目标",
@@ -8227,6 +8403,11 @@ function journalOutlineLabels(outputLanguage) {
     venueType: "Venue type",
     writingPattern: "Writing pattern",
     fitCheck: "Fit check",
+    disciplineWritingExamples: "Discipline-Style Writing Examples",
+    exampleScenario: "Writing scenario",
+    examplePattern: "Reusable expression",
+    exampleEvidenceAnchor: "Evidence anchor",
+    exampleRevisionCheck: "Revision check",
     writingChecklist: "Writing Checklist",
     structureSection: "Structure unit",
     writingGoal: "Writing goal",

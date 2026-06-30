@@ -500,6 +500,7 @@ const SOURCE_MARKERS = [
       "templateVersion: proposal-note-v1",
       "proposalDomainChecklist",
       "proposalDomainWritingStructure",
+      "proposalDisciplineWritingExamples",
       "exportJournalOutline",
       "renderJournalOutlineMarkdown",
       "journalOutlineMarkdownPath",
@@ -507,8 +508,10 @@ const SOURCE_MARKERS = [
       "journalDomainChecklist",
       "journalDomainWritingStructure",
       "journalVenueWritingStructures",
+      "journalDisciplineWritingExamples",
       "Domain Writing Format",
       "Venue-Specific Writing Patterns",
+      "Discipline-Style Writing Examples",
       "Writing Structure",
       "proposalNoteDone",
       "journalOutlineDone"

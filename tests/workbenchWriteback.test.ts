@@ -8928,6 +8928,11 @@ describe("workbench writeback helpers", () => {
     expect(note).toContain("| 结构单元 | 写作目标 | 证据要求 |");
     expect(note).toContain("场景边界与需求流");
     expect(note).toContain("OD/需求流");
+    expect(note).toContain("### 学科写作示例");
+    expect(note).toContain("| 写作场景 | 可套用表达 | 证据锚点 | 修订检查 |");
+    expect(note).toContain("场景边界段");
+    expect(note).toContain("冲突/拥堵/调度");
+    expect(note).toContain("是否说明空间范围");
     expect(note).toContain("### 写作清单");
     expect(note).toContain("明确道路/空域/网络约束");
     expect(note).toContain("### 技术路线与方法基础");
@@ -8976,6 +8981,10 @@ describe("workbench writeback helpers", () => {
     expect(files.get(notePath)).toContain("| Structure unit | Writing goal | Evidence requirement |");
     expect(files.get(notePath)).toContain("Study design and object");
     expect(files.get(notePath)).toContain("Endpoints and statistics");
+    expect(files.get(notePath)).toContain("### Discipline-Style Writing Examples");
+    expect(files.get(notePath)).toContain("| Writing scenario | Reusable expression | Evidence anchor | Revision check |");
+    expect(files.get(notePath)).toContain("Study-object paragraph");
+    expect(files.get(notePath)).toContain("endpoint");
     expect(files.get(notePath)).toContain("### Writing Checklist");
     expect(files.get(notePath)).toContain("Define study design, sample or cohort");
     expect(files.get(notePath)).toContain("Proposal Source Paper");
@@ -9046,6 +9055,10 @@ describe("workbench writeback helpers", () => {
     expect(outline).toContain("| 投稿类型 | 写法重点 | 证据要求 | 适配核查 |");
     expect(outline).toContain("会议论文");
     expect(outline).toContain("政策/管理简报");
+    expect(outline).toContain("### 学科写作示例");
+    expect(outline).toContain("| 写作场景 | 可套用表达 | 证据锚点 | 修订检查 |");
+    expect(outline).toContain("引言任务段");
+    expect(outline).toContain("消融结果进一步表明");
     expect(outline).toContain("### 写作清单");
     expect(outline).toContain("模型类别、数据与评价协议");
     expect(outline).toContain("## 正文提纲");
@@ -9115,6 +9128,10 @@ describe("workbench writeback helpers", () => {
     expect(files.get(outlinePath)).toContain("| Venue type | Writing pattern | Evidence requirement | Fit check |");
     expect(files.get(outlinePath)).toContain("Review article");
     expect(files.get(outlinePath)).toContain("Technical report");
+    expect(files.get(outlinePath)).toContain("### Discipline-Style Writing Examples");
+    expect(files.get(outlinePath)).toContain("| Writing scenario | Reusable expression | Evidence anchor | Revision check |");
+    expect(files.get(outlinePath)).toContain("Review introduction paragraph");
+    expect(files.get(outlinePath)).toContain("Taxonomy body paragraph");
     expect(files.get(outlinePath)).toContain("### Writing Checklist");
     expect(files.get(outlinePath)).toContain("Organize related work by taxonomy dimensions");
     expect(files.get(outlinePath)).toContain("Comparison Evidence Paper");
