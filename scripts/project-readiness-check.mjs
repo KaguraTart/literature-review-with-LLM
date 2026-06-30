@@ -482,7 +482,7 @@ const SOURCE_MARKERS = [
   },
   {
     id: "proposal-journal.templates",
-    description: "Workbench exports proposal notes and journal/report outlines with evidence labels",
+    description: "Workbench exports proposal notes and journal/report outlines with evidence labels, domain writing structures, and evidence requirements",
     files: ["addon/content/workbench.xhtml", "addon/content/workbench.js", "addon/content/messages.js", "tests/workbenchWriteback.test.ts"],
     markers: [
       "zms-export-proposal-note",
@@ -492,12 +492,15 @@ const SOURCE_MARKERS = [
       "proposalNoteMarkdownPath",
       "templateVersion: proposal-note-v1",
       "proposalDomainChecklist",
+      "proposalDomainWritingStructure",
       "exportJournalOutline",
       "renderJournalOutlineMarkdown",
       "journalOutlineMarkdownPath",
       "templateVersion: journal-outline-v1",
       "journalDomainChecklist",
+      "journalDomainWritingStructure",
       "Domain Writing Format",
+      "Writing Structure",
       "proposalNoteDone",
       "journalOutlineDone"
     ]

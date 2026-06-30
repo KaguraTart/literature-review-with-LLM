@@ -8695,6 +8695,11 @@ describe("workbench writeback helpers", () => {
     expect(note).toContain("## 选题框架");
     expect(note).toContain("## 领域化写作格式");
     expect(note).toContain("交通与城市空域");
+    expect(note).toContain("### 写作结构");
+    expect(note).toContain("| 结构单元 | 写作目标 | 证据要求 |");
+    expect(note).toContain("场景边界与需求流");
+    expect(note).toContain("OD/需求流");
+    expect(note).toContain("### 写作清单");
     expect(note).toContain("明确道路/空域/网络约束");
     expect(note).toContain("### 技术路线与方法基础");
     expect(note).toContain("[chunk:proposal-method source=summary locator=summary:1 hash=methodhash]");
@@ -8738,6 +8743,11 @@ describe("workbench writeback helpers", () => {
     expect(files.get(notePath)).toContain("# Proposal Note");
     expect(files.get(notePath)).toContain('promptPackId: "biomedicine"');
     expect(files.get(notePath)).toContain("Biomedicine and life sciences");
+    expect(files.get(notePath)).toContain("### Writing Structure");
+    expect(files.get(notePath)).toContain("| Structure unit | Writing goal | Evidence requirement |");
+    expect(files.get(notePath)).toContain("Study design and object");
+    expect(files.get(notePath)).toContain("Endpoints and statistics");
+    expect(files.get(notePath)).toContain("### Writing Checklist");
     expect(files.get(notePath)).toContain("Define study design, sample or cohort");
     expect(files.get(notePath)).toContain("Proposal Source Paper");
     expect(files.get(notePath)).toContain("[chunk:proposal-method source=summary locator=summary:1 hash=methodhash]");
@@ -8799,6 +8809,11 @@ describe("workbench writeback helpers", () => {
     expect(outline).toContain("## 投稿/报告定位");
     expect(outline).toContain("## 领域化写作格式");
     expect(outline).toContain("AI/ML/系统");
+    expect(outline).toContain("### 写作结构");
+    expect(outline).toContain("| 结构单元 | 写作目标 | 证据要求 |");
+    expect(outline).toContain("引言：任务与评价协议");
+    expect(outline).toContain("主结果到消融链条");
+    expect(outline).toContain("### 写作清单");
     expect(outline).toContain("模型类别、数据与评价协议");
     expect(outline).toContain("## 正文提纲");
     expect(outline).toContain("标题与摘要");
@@ -8859,6 +8874,11 @@ describe("workbench writeback helpers", () => {
     expect(files.get(outlinePath)).toContain("# Journal / Report Outline");
     expect(files.get(outlinePath)).toContain('promptPackId: "review-writing"');
     expect(files.get(outlinePath)).toContain("Literature-review writing");
+    expect(files.get(outlinePath)).toContain("### Writing Structure");
+    expect(files.get(outlinePath)).toContain("| Structure unit | Writing goal | Evidence requirement |");
+    expect(files.get(outlinePath)).toContain("Body: taxonomy frame");
+    expect(files.get(outlinePath)).toContain("Synthesis: consensus and disagreement");
+    expect(files.get(outlinePath)).toContain("### Writing Checklist");
     expect(files.get(outlinePath)).toContain("Organize related work by taxonomy dimensions");
     expect(files.get(outlinePath)).toContain("Comparison Evidence Paper");
     expect(files.get(outlinePath)).toContain("[paper2:compare-results source=summary locator=summary:1 hash=comparehash]");

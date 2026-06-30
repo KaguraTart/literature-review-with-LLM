@@ -7418,6 +7418,7 @@ function renderProposalNoteMarkdown(context, options = {}) {
   const collectionKey = workbenchCollectionKey(options.item);
   const promptPackId = normalizePromptPackId(options.promptPackId || "general");
   const domainChecklist = proposalDomainChecklist(promptPackId, labels);
+  const domainStructure = proposalDomainWritingStructure(promptPackId, labels);
   const sections = proposalNoteSections(labels);
   const lines = [
     "---",
@@ -7458,6 +7459,11 @@ function renderProposalNoteMarkdown(context, options = {}) {
     `## ${labels.domainWritingFormat}`,
     "",
     `- ${labels.promptPack}: ${mdText(domainChecklist.title)}`,
+    "",
+    ...domainWritingStructureLines(domainStructure, labels),
+    "",
+    `### ${labels.writingChecklist}`,
+    "",
     ...domainChecklist.items.map((item) => `- [ ] ${item}`),
     "",
     `## ${labels.sections}`,
@@ -7519,6 +7525,102 @@ function proposalOverviewDimension(labels) {
     label: labels.evidenceIndex,
     query: "summary abstract contribution method experiment limitation future 摘要 贡献 方法 实验 局限 未来"
   };
+}
+
+function domainWritingStructureLines(rows, labels) {
+  return [
+    `### ${labels.writingStructure}`,
+    "",
+    `| ${labels.structureSection} | ${labels.writingGoal} | ${labels.evidenceRequirement} |`,
+    "| --- | --- | --- |",
+    ...rows.map((row) => [
+      row.section,
+      row.goal,
+      row.evidence
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
+function proposalDomainWritingStructure(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["任务定义与问题边界", "把输入、输出、约束、应用场景和研究假设写成可检验问题。", "任务定义、数据来源、baseline 缺口、失败案例或安全风险证据。"],
+      ["模型与技术路线", "说明模型结构、训练目标、关键模块和相对已有方法的差异。", "架构描述、目标函数、消融线索、复杂度或复现成本。"],
+      ["实验与复现计划", "把数据集、指标、对照、消融和鲁棒性测试转成开题可执行任务。", "数据规模、指标定义、主结果趋势、算力预算和开源/复现条件。"],
+      ["可行性与边界", "提前写清泛化边界、偏置、安全和工程落地风险。", "失败模式、域外测试、人工评估、隐私或部署约束。"]
+    ],
+    transportation: [
+      ["场景边界与需求流", "界定道路、空域、交通网络、OD/需求流和运行管理对象。", "场景假设、流量数据、空域/道路规则、冲突或拥堵证据。"],
+      ["安全效率目标", "把安全、效率、鲁棒性和可扩展性目标拆成可评价指标。", "冲突率、延误、吞吐、风险阈值、仿真或实测数据来源。"],
+      ["规划控制机制", "说明路径规划、控制、调度或强化学习机制如何服务场景目标。", "状态变量、动作空间、约束、baseline 和工程实现条件。"],
+      ["验证与管理启示", "把仿真、消融、压力测试和运行管理建议写进研究计划。", "场景集、极端工况、敏感性分析、政策或运维边界。"]
+    ],
+    biomedicine: [
+      ["研究设计与对象", "明确疾病/机制问题、样本或队列、干预/暴露和比较对象。", "纳排标准、样本来源、队列描述、实验设计或临床背景证据。"],
+      ["终点与统计计划", "把主要终点、次要终点、统计方法和偏倚控制写清楚。", "endpoint 定义、效应量、置信区间、混杂因素和缺失数据处理。"],
+      ["机制与转化路径", "区分机制解释、临床相关性和可转化应用边界。", "机制实验、外部验证、临床意义、伦理和数据合规证据。"],
+      ["不可外推部分", "明确不能直接泛化的人群、场景、剂量或实验条件。", "样本偏倚、平台差异、阴性结果和安全性限制。"]
+    ],
+    "social-science": [
+      ["理论框架与假设", "把理论概念、变量关系和可证伪假设写成研究框架。", "经典理论、概念定义、替代解释和假设来源。"],
+      ["数据与测量", "说明样本、变量构造、测量有效性和代表性边界。", "数据来源、问卷/指标定义、样本覆盖、缺失和测量误差。"],
+      ["识别与稳健性", "把因果识别、混杂控制、稳健性和反事实检验写进设计。", "识别假设、控制变量、工具变量/准实验、敏感性检验。"],
+      ["政策或社会含义", "明确适用边界、外部有效性和可操作建议。", "制度背景、异质性结果、政策边界和伦理影响。"]
+    ],
+    "review-writing": [
+      ["综述范围与分类法", "定义纳入范围、排除标准和能承载多方向论文的大框架。", "检索式、代表论文、分类维度、时间线和边界说明。"],
+      ["证据地图", "把单篇证据、跨论文共识和冲突证据分层记录。", "方法/数据/指标对照、证据强度、反例和缺口标签。"],
+      ["研究脉络", "梳理问题演化、方法谱系、场景迁移和评价范式变化。", "关键节点论文、路线分叉、指标变化和场景扩展证据。"],
+      ["可写段落计划", "形成可直接进入正文的综述段落、图表和未来问题。", "段落主张、引用组合、图表计划和后续检索清单。"]
+    ],
+    general: [
+      ["问题与范围", "明确研究问题、对象、场景和不纳入范围。", "摘要、引言、关键词、代表性证据和边界条件。"],
+      ["方法与数据", "说明方法路线、数据来源、指标和验证方式。", "方法段、数据集、实验结果、注释或笔记证据。"],
+      ["贡献与创新", "把可写贡献、可复用设计和区别于已有工作的地方分开。", "贡献句、对比证据、局限说明和待补文献。"],
+      ["风险与计划", "列出可行性、进度、资源和写作风险。", "缺失数据、工具依赖、低置信证据和后续动作。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Task definition and boundary", "Turn inputs, outputs, constraints, scenario, and assumptions into a testable question.", "Task statement, data source, baseline gap, failure-case, or safety-risk evidence."],
+      ["Model and technical route", "Explain architecture, objective, key modules, and difference from prior methods.", "Architecture notes, objective function, ablation leads, complexity, or reproducibility cost."],
+      ["Experiment and reproduction plan", "Translate datasets, metrics, controls, ablations, and robustness checks into executable milestones.", "Data scale, metric definitions, main-result trend, compute budget, and reproduction conditions."],
+      ["Feasibility and boundary", "State generalization limits, bias, safety, and engineering deployment risks early.", "Failure modes, out-of-domain checks, human evaluation, privacy, or deployment constraints."]
+    ],
+    transportation: [
+      ["Scenario boundary and demand flow", "Define road, airspace, network, OD/demand flow, and operational object.", "Scenario assumptions, flow data, airspace/road rules, conflict, or congestion evidence."],
+      ["Safety and efficiency objective", "Break safety, efficiency, robustness, and scalability into reviewable metrics.", "Conflict rate, delay, throughput, risk threshold, simulation, or field-data source."],
+      ["Planning and control mechanism", "Explain how routing, control, scheduling, or RL mechanisms serve the scenario objective.", "State variables, action space, constraints, baseline, and engineering conditions."],
+      ["Validation and management implication", "Plan simulation, ablation, stress tests, and operational recommendations.", "Scenario suite, extreme conditions, sensitivity analysis, policy, or maintenance boundary."]
+    ],
+    biomedicine: [
+      ["Study design and object", "Define disease/mechanism question, sample or cohort, intervention or exposure, and comparator.", "Eligibility criteria, sample source, cohort description, experimental design, or clinical context."],
+      ["Endpoints and statistics", "Specify primary/secondary endpoints, statistical method, and bias control.", "Endpoint definition, effect size, confidence interval, confounders, and missing-data handling."],
+      ["Mechanism and translation path", "Separate mechanism, clinical relevance, and translation boundary.", "Mechanism experiments, external validation, clinical meaning, ethics, and compliance evidence."],
+      ["Non-generalizable claims", "State populations, scenarios, doses, or experimental conditions that should not be generalized.", "Sample bias, platform difference, negative results, and safety limitations."]
+    ],
+    "social-science": [
+      ["Theory and hypothesis", "Turn constructs, variable relations, and falsifiable hypotheses into a research frame.", "Theory source, construct definition, alternative explanation, and hypothesis evidence."],
+      ["Data and measurement", "Explain sample, variable construction, measurement validity, and representativeness boundary.", "Data source, survey/index definition, sample coverage, missingness, and measurement error."],
+      ["Identification and robustness", "Write causal identification, confounder control, robustness, and counterfactual checks into design.", "Identification assumption, controls, instrument/quasi-experiment, and sensitivity test."],
+      ["Policy or social implication", "Clarify applicability boundary, external validity, and actionable recommendation.", "Institutional context, heterogeneity, policy boundary, and ethics implication."]
+    ],
+    "review-writing": [
+      ["Review scope and taxonomy", "Define inclusion scope, exclusion criteria, and a framework broad enough for multiple sub-directions.", "Search query, representative papers, taxonomy dimensions, timeline, and boundary notes."],
+      ["Evidence map", "Separate single-paper evidence, cross-paper consensus, and conflicting evidence.", "Method/data/metric comparison, evidence strength, counterexamples, and gap labels."],
+      ["Research lineage", "Trace problem evolution, method lineage, scenario transfer, and evaluation changes.", "Milestone papers, route split, metric shift, and scenario-expansion evidence."],
+      ["Draft paragraph plan", "Create review paragraphs, figures/tables, and future questions ready for writing.", "Paragraph claim, citation group, figure/table plan, and follow-up search list."]
+    ],
+    general: [
+      ["Problem and scope", "Define research question, object, scenario, and exclusions.", "Abstract, introduction, keywords, representative evidence, and boundary conditions."],
+      ["Method and data", "Explain method route, data source, metrics, and validation.", "Method section, datasets, results, annotations, or note evidence."],
+      ["Contribution and novelty", "Separate draftable contribution, reusable design, and difference from prior work.", "Contribution sentence, comparison evidence, limitation note, and missing literature."],
+      ["Risk and plan", "List feasibility, schedule, resource, and writing risks.", "Missing data, tool dependency, low-confidence evidence, and next actions."]
+    ]
+  };
+  const rows = packs[id] || packs.general;
+  return rows.map(([section, goal, evidence]) => ({ section, goal, evidence }));
 }
 
 function proposalDomainChecklist(promptPackId, labels) {
@@ -7629,6 +7731,11 @@ function proposalNoteLabels(outputLanguage) {
       proposalFrame: "选题框架",
       domainWritingFormat: "领域化写作格式",
       promptPack: "提示模板包",
+      writingStructure: "写作结构",
+      writingChecklist: "写作清单",
+      structureSection: "结构单元",
+      writingGoal: "写作目标",
+      evidenceRequirement: "证据要求",
       topic: "拟定题目/方向",
       coreQuestion: "核心科学问题或工程问题",
       researchObject: "研究对象与场景",
@@ -7676,6 +7783,11 @@ function proposalNoteLabels(outputLanguage) {
     proposalFrame: "Proposal Frame",
     domainWritingFormat: "Domain Writing Format",
     promptPack: "Prompt pack",
+    writingStructure: "Writing Structure",
+    writingChecklist: "Writing Checklist",
+    structureSection: "Structure unit",
+    writingGoal: "Writing goal",
+    evidenceRequirement: "Evidence requirement",
     topic: "Working title / direction",
     coreQuestion: "Core scientific or engineering question",
     researchObject: "Research object and scenario",
@@ -7730,6 +7842,7 @@ function renderJournalOutlineMarkdown(context, options = {}) {
   const collectionKey = workbenchCollectionKey(options.item);
   const promptPackId = normalizePromptPackId(options.promptPackId || "general");
   const domainChecklist = journalDomainChecklist(promptPackId, labels);
+  const domainStructure = journalDomainWritingStructure(promptPackId, labels);
   const sections = journalOutlineSections(labels);
   const lines = [
     "---",
@@ -7761,6 +7874,11 @@ function renderJournalOutlineMarkdown(context, options = {}) {
     `## ${labels.domainWritingFormat}`,
     "",
     `- ${labels.promptPack}: ${mdText(domainChecklist.title)}`,
+    "",
+    ...domainWritingStructureLines(domainStructure, labels),
+    "",
+    `### ${labels.writingChecklist}`,
+    "",
     ...domainChecklist.items.map((item) => `- [ ] ${item}`),
     "",
     `## ${labels.paperInventory}`,
@@ -7826,6 +7944,88 @@ function journalOverviewDimension(labels) {
     label: labels.evidenceIndex,
     query: "summary abstract method experiment result limitation contribution discussion 摘要 方法 实验 结果 局限 贡献 讨论"
   };
+}
+
+function journalDomainWritingStructure(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["引言：任务与评价协议", "用任务定义、数据设置和评价协议界定本文贡献。", "任务描述、数据集、指标、baseline 和已有方法短板。"],
+      ["方法：架构差异与复杂度", "突出目标函数、模块设计、训练/推理流程和复杂度。", "公式、伪代码、模块消融、参数量、算力和复现设置。"],
+      ["实验：主结果到消融链条", "先给主结果，再给消融、鲁棒性、失败案例和成本。", "主表、消融表、误差分析、域外测试和 compute cost。"],
+      ["讨论：边界与可复现性", "说明泛化边界、安全风险、数据偏差和复现实用性。", "局限、开源条件、伦理/安全说明和后续实验。"]
+    ],
+    transportation: [
+      ["引言：场景与运行问题", "把交通/空域场景、需求流、网络约束和安全压力写清楚。", "场景图、OD/流量、冲突/拥堵证据、法规或运行约束。"],
+      ["方法：状态、约束与策略", "说明状态变量、约束、控制/规划/调度策略和可扩展性。", "数学模型、约束表、策略流程、baseline 和复杂度。"],
+      ["实验：仿真到工程验证", "组织仿真设置、极端工况、指标、消融和运行管理启示。", "仿真平台、场景集、安全/效率指标、压力测试和敏感性分析。"],
+      ["讨论：部署边界", "说明与真实运行、管理规则和政策场景的距离。", "实测可得性、鲁棒性、法规边界和运维建议。"]
+    ],
+    biomedicine: [
+      ["引言：临床/机制问题", "明确疾病、机制、样本来源和研究设计边界。", "临床背景、机制证据、队列来源和 prior studies。"],
+      ["方法：队列与统计", "清楚呈现纳排标准、终点、统计方法和偏倚控制。", "流程图、endpoint、效应量、置信区间、混杂和缺失处理。"],
+      ["结果：效应与不确定性", "把主要结果、亚组、敏感性和阴性结果串起来。", "主结果表、亚组分析、稳健性、负结果和安全性。"],
+      ["讨论：机制与转化边界", "区分相关性、因果性、机制解释和临床外推边界。", "外部验证、伦理合规、临床意义和不可外推条件。"]
+    ],
+    "social-science": [
+      ["引言：理论与问题", "建立理论框架、社会/政策背景和可证伪问题。", "理论来源、制度背景、研究缺口和替代解释。"],
+      ["方法：测量与识别", "说明变量测量、样本、识别策略和稳健性计划。", "数据来源、变量构造、识别假设、控制变量和稳健性检验。"],
+      ["结果：机制与异质性", "组织主效应、机制检验、异质性和替代解释排除。", "主回归、机制证据、分组结果和敏感性分析。"],
+      ["讨论：外部有效性", "说明政策含义、适用边界和伦理/社会影响。", "制度限制、外部有效性、政策边界和后续研究。"]
+    ],
+    "review-writing": [
+      ["引言：综述问题与范围", "明确综述对象、检索边界和本文综合主张。", "检索式、纳入标准、代表论文和研究问题。"],
+      ["主体：分类框架", "按问题、方法、数据、场景或证据强度组织，而不是逐篇罗列。", "分类表、方法矩阵、指标对照和路线图。"],
+      ["综合：共识与分歧", "把跨论文共识、冲突、缺口和证据强弱写成可引用段落。", "综合主张、反证、低置信来源和证据强度标注。"],
+      ["结论：研究议程", "输出未来问题、方法路线、数据需求和可执行建议。", "缺口台账、优先级、外部候选文献和后续检索计划。"]
+    ],
+    general: [
+      ["引言：问题与主张", "压缩问题压力、研究空白和本文一句话主张。", "摘要、引言证据、代表论文和差异化贡献。"],
+      ["方法/主体：证据链", "把方法、材料、案例或论证步骤和证据标签对齐。", "方法段、案例、数据、图表和证据摘录。"],
+      ["结果/分析：主张验证", "用表格、图示或段落证明核心主张。", "主结果、对照、反例、限制条件和图表计划。"],
+      ["讨论：边界和后续", "明确适用范围、局限、风险和下一步研究。", "局限证据、未解问题、补充实验和后续检索。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Introduction: task and protocol", "Use task definition, data setting, and evaluation protocol to frame the contribution.", "Task statement, dataset, metrics, baselines, and prior-method gap."],
+      ["Methods: architecture and complexity", "Highlight objective, module design, train/inference flow, and complexity.", "Formula, pseudocode, module ablation, parameter count, compute, and reproduction settings."],
+      ["Experiments: result-to-ablation chain", "Move from main results to ablation, robustness, failure cases, and cost.", "Main table, ablation table, error analysis, out-of-domain test, and compute cost."],
+      ["Discussion: boundary and reproducibility", "Explain generalization, safety risk, data bias, and reproducibility value.", "Limitations, open artifacts, ethics/safety notes, and follow-up experiments."]
+    ],
+    transportation: [
+      ["Introduction: scenario and operations problem", "Frame traffic/airspace scenario, demand flow, network constraints, and safety pressure.", "Scenario figure, OD/flow, conflict/congestion evidence, regulations, or operational constraints."],
+      ["Methods: states, constraints, and policy", "Explain state variables, constraints, control/planning/scheduling policy, and scalability.", "Mathematical model, constraint table, policy flow, baseline, and complexity."],
+      ["Experiments: simulation to engineering validation", "Organize simulation, extreme scenarios, metrics, ablations, and operational implications.", "Simulator, scenario suite, safety/efficiency metrics, stress tests, and sensitivity analysis."],
+      ["Discussion: deployment boundary", "State the distance from real operations, management rules, and policy scenarios.", "Field-data availability, robustness, regulatory boundary, and maintenance recommendation."]
+    ],
+    biomedicine: [
+      ["Introduction: clinical or mechanism question", "Define disease, mechanism, sample source, and study-design boundary.", "Clinical context, mechanism evidence, cohort source, and prior studies."],
+      ["Methods: cohort and statistics", "Present eligibility, endpoints, statistical method, and bias control clearly.", "Flow diagram, endpoint, effect size, confidence interval, confounding, and missing-data handling."],
+      ["Results: effect and uncertainty", "Connect primary results, subgroups, sensitivity, and negative findings.", "Main results, subgroup analysis, robustness, negative results, and safety."],
+      ["Discussion: mechanism and translation boundary", "Separate association, causality, mechanism, and clinical generalization.", "External validation, ethics/compliance, clinical meaning, and non-generalizable conditions."]
+    ],
+    "social-science": [
+      ["Introduction: theory and question", "Build theory frame, social/policy context, and falsifiable question.", "Theory source, institutional background, research gap, and alternative explanation."],
+      ["Methods: measurement and identification", "Explain measurement, sample, identification strategy, and robustness plan.", "Data source, variable construction, identification assumption, controls, and robustness checks."],
+      ["Results: mechanism and heterogeneity", "Organize main effect, mechanism test, heterogeneity, and exclusion of alternatives.", "Main regression, mechanism evidence, subgroup results, and sensitivity analysis."],
+      ["Discussion: external validity", "State policy implication, applicability boundary, and ethical/social impact.", "Institutional limits, external validity, policy boundary, and future research."]
+    ],
+    "review-writing": [
+      ["Introduction: review question and scope", "Define review object, search boundary, and synthesis claim.", "Search query, inclusion criteria, representative papers, and research questions."],
+      ["Body: taxonomy frame", "Organize by problem, method, data, scenario, or evidence strength instead of paper-by-paper notes.", "Taxonomy table, method matrix, metric comparison, and roadmap."],
+      ["Synthesis: consensus and disagreement", "Turn cross-paper consensus, conflict, gaps, and evidence strength into citable paragraphs.", "Synthesis claim, counter-evidence, low-confidence source, and evidence-strength label."],
+      ["Conclusion: research agenda", "Output future questions, method routes, data needs, and actionable recommendations.", "Gap ledger, priorities, external candidates, and follow-up search plan."]
+    ],
+    general: [
+      ["Introduction: problem and claim", "Compress problem pressure, research gap, and one-sentence claim.", "Abstract, introduction evidence, representative papers, and differentiated contribution."],
+      ["Methods/body: evidence chain", "Align methods, materials, cases, or argument steps with evidence labels.", "Method paragraph, case, data, figure/table, and evidence excerpt."],
+      ["Results/analysis: claim validation", "Use table, figure, or paragraph clusters to prove the core claim.", "Main result, comparison, counterexample, boundary condition, and figure/table plan."],
+      ["Discussion: boundary and next work", "Clarify scope, limitations, risk, and next research step.", "Limitation evidence, open question, supplementary experiment, and follow-up search."]
+    ]
+  };
+  const rows = packs[id] || packs.general;
+  return rows.map(([section, goal, evidence]) => ({ section, goal, evidence }));
 }
 
 function journalDomainChecklist(promptPackId, labels) {
@@ -7918,6 +8118,11 @@ function journalOutlineLabels(outputLanguage) {
       requiredEvidence: "必须补齐的证据",
       domainWritingFormat: "领域化写作格式",
       promptPack: "提示模板包",
+      writingStructure: "写作结构",
+      writingChecklist: "写作清单",
+      structureSection: "结构单元",
+      writingGoal: "写作目标",
+      evidenceRequirement: "证据要求",
       paperInventory: "论文清单",
       role: "角色",
       evidence: "证据标签",
@@ -7977,6 +8182,11 @@ function journalOutlineLabels(outputLanguage) {
     requiredEvidence: "Evidence still required",
     domainWritingFormat: "Domain Writing Format",
     promptPack: "Prompt pack",
+    writingStructure: "Writing Structure",
+    writingChecklist: "Writing Checklist",
+    structureSection: "Structure unit",
+    writingGoal: "Writing goal",
+    evidenceRequirement: "Evidence requirement",
     paperInventory: "Paper Inventory",
     role: "Role",
     evidence: "Evidence label",
