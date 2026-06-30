@@ -7584,6 +7584,21 @@ function venueReviewerCriteriaLines(rows, labels) {
   ];
 }
 
+function venueAcceptanceExampleLines(rows, labels) {
+  return [
+    `### ${labels.venueAcceptanceExamples}`,
+    "",
+    `| ${labels.venueType} | ${labels.acceptanceSignal} | ${labels.manuscriptEvidence} | ${labels.acceptanceRevision} |`,
+    "| --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.venueType,
+      row.signal,
+      row.evidence,
+      row.revision
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
 function disciplineWritingExampleLines(rows, labels) {
   return [
     `### ${labels.disciplineWritingExamples}`,
@@ -7647,6 +7662,21 @@ function longManuscriptParagraphExampleLines(rows, labels) {
     ...rows.map((row) => [
       row.section,
       row.paragraph,
+      row.evidence,
+      row.revision
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
+function fullSectionDraftExampleLines(rows, labels) {
+  return [
+    `### ${labels.fullSectionDraftExamples}`,
+    "",
+    `| ${labels.manuscriptSection} | ${labels.sectionDraft} | ${labels.evidencePackage} | ${labels.revisionCue} |`,
+    "| --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.section,
+      row.draft,
       row.evidence,
       row.revision
     ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
@@ -8166,6 +8196,64 @@ function journalLongManuscriptParagraphExamples(promptPackId, labels) {
   return rows.map(([section, paragraph, evidence, revision]) => ({ section, paragraph, evidence, revision }));
 }
 
+function journalFullSectionDraftExamples(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["引言章节草稿", "本章节先用{任务场景}说明现有方法在{数据/部署/评价}中的核心瓶颈，再把问题收束为{可检验任务}。随后用两段综述{baseline/方法族}的共同假设和失败模式，指出本文的差异不在于简单替换模型，而在于用{关键模块/训练目标/推理约束}处理{失败模式}。章节末段明确三项贡献：{方法贡献}、{实验贡献}和{可复现/应用贡献}，并说明每项贡献对应的评价协议和图表位置。", "摘要主张、任务定义、代表 baseline、失败案例、贡献列表和评价协议。", "把背景压缩为问题压力和方法缺口，不要扩写无关发展史。"],
+      ["实验与讨论章节草稿", "本章节按主结果、消融、鲁棒性、失败案例和成本五组证据展开。主结果段只回答{核心指标}是否改善；消融段解释{模块}为什么有效；鲁棒性段说明{域外/噪声/长尾}条件下是否稳定；失败案例段界定不可用边界；成本段报告训练、推理和部署开销。章节结尾把改进幅度、边界和复现条件合并为一个审稿人可核查的结论。", "主结果表、消融表、鲁棒性曲线、失败案例、成本表和复现配置。", "每个小节只承担一个判断，避免把所有结果写成性能提升。"]
+    ],
+    transportation: [
+      ["引言章节草稿", "本章节从{交通/空域}运行压力切入，先描述{需求增长/资源受限/安全阈值}如何形成调度或冲突问题，再用已有研究说明{规划/控制/强化学习/管理规则}的适用边界。随后将本文对象限定为{车辆/无人机/路网/航路}，定义运行状态、约束和评价指标，并说明本文要证明的是安全、效率和鲁棒性的平衡，而不是单一指标优化。", "场景图、需求流、规则约束、冲突或延误证据、代表方法和评价指标。", "先写场景边界和安全阈值，再引入算法。"],
+      ["结果与部署讨论章节草稿", "本章节先汇总常规场景下的{延误/吞吐/冲突率}变化，再加入高压需求、通信延迟、传感误差或规则变化下的压力测试。部署讨论不直接声称可落地，而是按数据可得性、运维成本、监管边界和人工接管条件列出必要前提。最后把结果转化为工程建议和管理建议，并标注哪些仍需实测或硬件在环验证。", "仿真结果、压力测试、敏感性分析、运维约束、法规边界和实测计划。", "区分算法有效、工程可行和管理可采纳三类结论。"]
+    ],
+    biomedicine: [
+      ["引言章节草稿", "本章节先界定{疾病/机制/暴露}的临床或生物学重要性，再说明现有研究在{人群/样本/终点/机制验证}上的不确定性。随后明确本文研究对象、纳排边界、主要 endpoint 和待检验假设，避免把相关性提前写成机制或疗效。章节末尾将贡献限定为{证据类型}支持的结论，并交代需要外部验证的部分。", "临床背景、机制证据、样本来源、纳排标准、endpoint 和既有研究缺口。", "不要过早写转化价值，先把研究对象和统计边界写清。"],
+      ["结果与讨论章节草稿", "本章节按主要 endpoint、亚组、敏感性分析、阴性结果和安全性/伦理边界组织。结果段报告效应量、不确定性和偏倚控制；讨论段解释哪些结果支持{机制/相关性}，哪些只能作为探索性发现。章节结尾必须分开写临床意义、不可外推范围和下一步验证，以避免过度解释。", "效应量、置信区间、亚组结果、敏感性分析、阴性结果、安全性和伦理证据。", "每个临床判断都要带上适用人群和外推限制。"]
+    ],
+    "social-science": [
+      ["理论与识别章节草稿", "本章节先把{理论概念}转化为可观察变量，再说明{制度背景/事件冲击/样本结构}为什么能检验{机制}。文献综述只保留与理论路径、替代解释和识别条件相关的研究。章节后半部分写明数据来源、变量构造、识别假设和稳健性计划，使理论命题自然过渡到方法设计。", "理论来源、制度背景、变量定义、替代解释、数据来源和识别假设。", "不要只堆文献，必须让理论段导向识别策略。"],
+      ["结果与政策讨论章节草稿", "本章节先报告主效应，再依次检验机制、异质性和替代解释。政策讨论应限定在{制度/群体/时期}范围内，先说明估计结果能支持什么，再说明不能支持什么。章节末尾把建议分成可立即执行、需要补证和不宜外推三类，避免把统计关系直接写成全面推广。", "主回归、机制检验、异质性、稳健性、政策边界和伦理影响。", "政策建议必须与识别条件和样本范围一致。"]
+    ],
+    "review-writing": [
+      ["综述主体章节草稿", "本章节不按单篇论文排列，而是先声明{分类维度}，再把{方向A/方向B/方向C}放入同一框架。每个小节先写该方向解决的问题，再写代表论文的共同假设、证据强度和可比指标，最后写该方向与其他方向的联系或不可比原因。章节结尾用一段综合判断说明当前共识、主要分歧和低置信证据。", "检索边界、分类矩阵、代表论文、证据强度标签、方法对比和反例。", "每个综合判断都要回到代表论文和证据标签。"],
+      ["综述结论章节草稿", "本章节先压缩全篇的共识和分歧，再把研究空白拆成数据缺口、方法瓶颈、评价缺失和外部有效性四类。随后给出未来研究议程：哪些问题可由现有数据继续验证，哪些需要新数据或新场景，哪些方向目前证据不足不宜合并。结尾保留一段对读者的使用建议，说明该综述适合支撑哪些研究设计。", "共识分歧表、缺口台账、低置信来源、后续检索计划和研究问题卡。", "把未来工作写成可执行问题，不要只写泛泛展望。"]
+    ],
+    general: [
+      ["引言章节草稿", "本章节先说明{场景}中的{对象}为什么面临{核心矛盾}，再用代表论文说明已有共识和仍未解决的缺口。随后把本文主张限定为当前证据可以支撑的一句话，并提前交代方法、数据或案例的边界。章节末尾列出贡献和证据入口，使读者知道正文各部分如何支撑同一主张。", "摘要、引言证据、代表论文、方法边界、贡献列表和证据标签。", "把问题压力、研究空白和核心主张收束在同一逻辑链中。"],
+      ["讨论章节草稿", "本章节先回到核心主张，说明哪些证据已经支持结论，哪些只能作为可能解释。随后分开写适用范围、失败条件、替代解释和后续补证动作。章节结尾把可靠结论、待验证设想和不应外推的判断分成三类，便于读者复核。", "局限证据、反例、补充实验、后续检索和人工复核清单。", "明确区分已证实结论、待验证判断和不可外推部分。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Introduction section draft", "This section starts with {task scenario} to show the core bottleneck in {data/deployment/evaluation}, then narrows the problem to {testable task}. It reviews the shared assumptions and failure modes of {baseline/method family}, making clear that the contribution is not a model replacement alone but a way to handle {failure mode} through {key module/training objective/inference constraint}. The closing paragraph states three contributions: {method contribution}, {experiment contribution}, and {reproducibility/application contribution}, each tied to an evaluation protocol and figure/table location.", "Abstract claim, task definition, representative baselines, failure cases, contribution list, and evaluation protocol.", "Compress background into problem pressure and method gap; avoid unrelated history."],
+      ["Experiments and discussion section draft", "This section is organized by main result, ablation, robustness, failure cases, and cost. The main-result subsection answers whether {core metric} improves; the ablation subsection explains why {module} matters; the robustness subsection tests stability under {out-of-domain/noise/long-tail}; the failure-case subsection defines where the method should not be used; and the cost subsection reports training, inference, and deployment overhead. The section closes with a reviewer-checkable conclusion that combines gain, boundary, and reproduction conditions.", "Main result table, ablation table, robustness curve, failure cases, cost table, and reproduction settings.", "Each subsection should support one judgment instead of describing every result as a gain."]
+    ],
+    transportation: [
+      ["Introduction section draft", "This section begins from operating pressure in {traffic/airspace}, showing how {demand growth/resource scarcity/safety threshold} creates dispatch or conflict problems. It then reviews the boundaries of {planning/control/reinforcement learning/management rules}, limits the study object to {vehicle/UAV/network/route}, defines state, constraints, and metrics, and states that the claim is a balance among safety, efficiency, and robustness rather than a single-metric optimization.", "Scenario figure, demand flow, rule constraints, conflict or delay evidence, representative methods, and metrics.", "Write scenario boundary and safety threshold before algorithm details."],
+      ["Results and deployment discussion section draft", "This section first reports {delay/throughput/conflict rate} under standard scenarios, then adds stress tests under high demand, communication delay, sensor error, or rule changes. Deployment discussion should not claim readiness directly; it lists prerequisites for data access, operations cost, regulatory scope, and human override. The closing paragraphs translate results into engineering and management recommendations while marking which claims still need field or hardware-in-the-loop validation.", "Simulation results, stress tests, sensitivity analysis, operations constraints, regulatory boundary, and field-validation plan.", "Separate algorithm validity, engineering feasibility, and management adoption."]
+    ],
+    biomedicine: [
+      ["Introduction section draft", "This section defines the clinical or biological importance of {disease/mechanism/exposure}, then states uncertainty in {population/sample/endpoint/mechanism validation}. It specifies the study object, eligibility boundary, primary endpoint, and hypothesis without turning association into mechanism or efficacy too early. The closing paragraph bounds the contribution to what {evidence type} can support and names what still needs external validation.", "Clinical context, mechanism evidence, sample source, eligibility criteria, endpoint, and prior-study gap.", "State object and statistical boundary before translation value."],
+      ["Results and discussion section draft", "This section is organized by primary endpoint, subgroup, sensitivity analysis, negative results, and safety/ethics boundary. Results report effect size, uncertainty, and bias control; discussion explains which findings support {mechanism/association} and which remain exploratory. The section must close by separating clinical meaning, non-generalizable scope, and next validation.", "Effect size, confidence interval, subgroup result, sensitivity analysis, negative result, safety, and ethics evidence.", "Attach population scope and generalization limits to every clinical interpretation."]
+    ],
+    "social-science": [
+      ["Theory and identification section draft", "This section turns {theoretical construct} into observable variables and explains why {institutional context/event shock/sample structure} can test {mechanism}. The literature review keeps only studies that clarify theory path, alternatives, or identification conditions. The second half states data source, variable construction, identification assumptions, and robustness plan so that theory leads directly into method design.", "Theory source, institutional context, variable definition, alternatives, data source, and identification assumptions.", "Do not stack citations; make theory lead to identification."],
+      ["Results and policy discussion section draft", "This section reports the main effect first, then mechanism, heterogeneity, and alternative explanations. Policy discussion remains within {institution/group/period}; it states what the estimate supports and what it cannot support. The final paragraphs classify recommendations into immediately actionable, needing more evidence, and not generalizable.", "Main regression, mechanism test, heterogeneity, robustness, policy boundary, and ethics impact.", "Policy advice must match identification conditions and sample scope."]
+    ],
+    "review-writing": [
+      ["Review body section draft", "This section starts by declaring {taxonomy dimension}, then places {direction A/direction B/direction C} inside one framework instead of listing papers. Each subsection states the problem addressed by that direction, the shared assumptions of representative papers, evidence strength, and comparable metrics, then explains links or non-comparability with other directions. The section closes with a synthesis judgment on current consensus, main disagreements, and low-confidence evidence.", "Search boundary, taxonomy matrix, representative papers, evidence-strength labels, method comparison, and counterexamples.", "Every synthesis judgment should trace to representative papers and evidence labels."],
+      ["Review conclusion section draft", "This section compresses consensus and disagreement, then divides gaps into data gaps, method bottlenecks, evaluation absence, and external validity. It proposes a research agenda: which questions can be tested with existing data, which require new data or scenarios, and which directions should not yet be merged because evidence is too weak. The closing paragraph tells readers which research designs the review can safely support.", "Consensus/disagreement table, gap ledger, low-confidence sources, follow-up search plan, and research-question cards.", "Turn future work into executable questions instead of broad outlook text."]
+    ],
+    general: [
+      ["Introduction section draft", "This section first explains why {object} in {scenario} faces {core tension}, then uses representative papers to establish consensus and remaining gaps. It bounds the central claim as one sentence supported by current evidence and names method, data, or case boundaries early. The closing paragraph lists contributions and evidence entry points so readers can see how the body supports one claim.", "Abstract, introduction evidence, representative papers, method boundary, contribution list, and evidence labels.", "Close problem pressure, research gap, and central claim into one logic chain."],
+      ["Discussion section draft", "This section returns to the central claim and separates evidence-supported conclusions from possible explanations. It then states scope, failure conditions, alternatives, and follow-up evidence tasks separately. The final paragraph classifies reliable conclusions, unverified ideas, and claims that should not be generalized.", "Limitation evidence, counterexamples, supplementary experiments, follow-up search, and manual review checklist.", "Separate proven conclusions, unverified judgments, and non-generalizable claims."]
+    ]
+  };
+  const rows = packs[id] || packs.general;
+  return rows.map(([section, draft, evidence, revision]) => ({ section, draft, evidence, revision }));
+}
+
 function proposalDomainChecklist(promptPackId, labels) {
   const id = normalizePromptPackId(promptPackId);
   const zh = labels.language === "zh-CN";
@@ -8422,15 +8510,17 @@ function renderJournalOutlineMarkdown(context, options = {}) {
   const domainStructure = journalDomainWritingStructure(promptPackId, labels);
   const venueStructures = journalVenueWritingStructures(labels);
   const venueCriteria = journalVenueReviewerCriteria(labels);
+  const venueAcceptanceExamples = journalVenueAcceptanceExamples(labels);
   const disciplineExamples = journalDisciplineWritingExamples(promptPackId, labels);
   const disciplineStyleTemplates = journalDisciplineWritingStyleTemplates(promptPackId, labels);
   const reviewerChecklist = journalDisciplineReviewerChecklist(promptPackId, labels);
   const paragraphExamples = journalParagraphLevelExamples(promptPackId, labels);
   const manuscriptParagraphExamples = journalLongManuscriptParagraphExamples(promptPackId, labels);
+  const fullSectionDraftExamples = journalFullSectionDraftExamples(promptPackId, labels);
   const sections = journalOutlineSections(labels);
   const lines = [
     "---",
-    "templateVersion: journal-outline-v4",
+    "templateVersion: journal-outline-v5",
     `generatedAt: ${generatedAt}`,
     `collectionKey: ${yamlScalar(collectionKey)}`,
     `focalItemKey: ${yamlScalar(focal.itemKey)}`,
@@ -8465,6 +8555,8 @@ function renderJournalOutlineMarkdown(context, options = {}) {
     "",
     ...venueReviewerCriteriaLines(venueCriteria, labels),
     "",
+    ...venueAcceptanceExampleLines(venueAcceptanceExamples, labels),
+    "",
     ...disciplineWritingExampleLines(disciplineExamples, labels),
     "",
     ...disciplineWritingStyleTemplateLines(disciplineStyleTemplates, labels),
@@ -8474,6 +8566,8 @@ function renderJournalOutlineMarkdown(context, options = {}) {
     ...paragraphLevelExampleLines(paragraphExamples, labels),
     "",
     ...longManuscriptParagraphExampleLines(manuscriptParagraphExamples, labels),
+    "",
+    ...fullSectionDraftExampleLines(fullSectionDraftExamples, labels),
     "",
     `### ${labels.writingChecklist}`,
     "",
@@ -8738,6 +8832,29 @@ function journalVenueReviewerCriteria(labels) {
   }));
 }
 
+function journalVenueAcceptanceExamples(labels) {
+  const zh = labels.language === "zh-CN";
+  const rows = zh ? [
+    ["期刊研究论文", "问题、方法、结果和局限形成单一主张闭环，审稿人能从摘要直接追踪到图表。", "摘要一句话主张、引言缺口、方法细节、主结果、稳健性、失败案例和局限互相指向。", "补齐最强 baseline、关键消融和局限段，把过宽结论改成证据可支撑范围。"],
+    ["会议论文", "短篇幅内能迅速看出新颖点、相对强 baseline 的增量和复现实验入口。", "贡献列表、算法框图、核心实验表、消融、开源说明或复现脚本计划。", "把问题新意和方法差异前置，删除弱背景，保留最能证明差异的实验。"],
+    ["综述论文", "分类框架产生新的综合判断，而不是把论文按年份或作者顺序排列。", "检索流程、纳入排除标准、分类矩阵、共识分歧表、反例和研究议程。", "增加检索流程图和证据强度标签，把逐篇摘要改成综合主张段。"],
+    ["技术报告", "读者能复现流程、估算成本并识别失败条件。", "输入输出、系统流程、环境参数、错误案例、成本表和运维边界。", "补部署清单、故障诊断表和成本假设，避免只写方案优点。"],
+    ["政策/管理简报", "建议直接对应证据范围、影响规模、风险和执行条件。", "问题规模、量化影响、方案对比、利益相关方、风险矩阵和执行步骤。", "把方法细节压缩为附录式证据，把正文重排为问题、证据、选项、风险、建议。"]
+  ] : [
+    ["Journal research article", "Problem, method, results, and limitations close around one claim, and reviewers can trace the abstract claim to figures and tables.", "One-sentence abstract claim, introduction gap, method detail, main results, robustness, failure cases, and limitations all point to the same scope.", "Add the strongest baseline, key ablations, and a limitation paragraph; narrow overbroad claims to the evidence-supported scope."],
+    ["Conference paper", "The short format makes novelty, gain over strong baselines, and reproduction entry points immediately visible.", "Contribution list, algorithm diagram, core result table, ablation, open artifacts, or reproduction plan.", "Move novelty and method difference forward, remove weak background, and keep the experiments that prove the difference."],
+    ["Review article", "A review article becomes acceptable when the taxonomy creates new synthesis rather than ordering papers by year or author.", "Search flow, inclusion/exclusion criteria, taxonomy matrix, consensus/disagreement table, counterexamples, and research agenda.", "Add a search-flow diagram and evidence-strength labels; rewrite paper summaries as synthesis-claim paragraphs."],
+    ["Technical report", "Readers can reproduce the workflow, estimate cost, and identify failure conditions.", "Inputs/outputs, system flow, environment parameters, error cases, cost table, and operations boundaries.", "Add deployment checklist, failure-diagnosis table, and cost assumptions instead of listing only benefits."],
+    ["Policy or management brief", "The recommendation maps directly to evidence scope, impact size, risk, and implementation conditions.", "Problem scale, quantified impact, option comparison, stakeholders, risk matrix, and implementation steps.", "Compress method detail into evidence notes and reorder the body as problem, evidence, options, risks, and recommendation."]
+  ];
+  return rows.map(([venueType, signal, evidence, revision]) => ({
+    venueType,
+    signal,
+    evidence,
+    revision
+  }));
+}
+
 function journalDisciplineWritingExamples(promptPackId, labels) {
   const id = normalizePromptPackId(promptPackId);
   const zh = labels.language === "zh-CN";
@@ -8838,6 +8955,10 @@ function journalOutlineLabels(outputLanguage) {
       evidenceToShow: "应展示证据",
       rejectionRisk: "常见退稿风险",
       revisionAction: "修订动作",
+      venueAcceptanceExamples: "投稿录用信号示例",
+      acceptanceSignal: "录用信号",
+      manuscriptEvidence: "稿件证据",
+      acceptanceRevision: "投稿前补强",
       disciplineWritingExamples: "学科写作示例",
       exampleScenario: "写作场景",
       examplePattern: "可套用表达",
@@ -8860,6 +8981,8 @@ function journalOutlineLabels(outputLanguage) {
       longParagraphDraft: "示例段落",
       evidencePackage: "证据包",
       revisionCue: "修订提示",
+      fullSectionDraftExamples: "完整章节级正文草稿",
+      sectionDraft: "章节草稿",
       writingChecklist: "写作清单",
       structureSection: "结构单元",
       writingGoal: "写作目标",
@@ -8933,6 +9056,10 @@ function journalOutlineLabels(outputLanguage) {
     evidenceToShow: "Evidence to show",
     rejectionRisk: "Common rejection risk",
     revisionAction: "Revision action",
+    venueAcceptanceExamples: "Venue-Specific Acceptance Examples",
+    acceptanceSignal: "Acceptance signal",
+    manuscriptEvidence: "Manuscript evidence",
+    acceptanceRevision: "Pre-submission revision",
     disciplineWritingExamples: "Discipline-Style Writing Examples",
     exampleScenario: "Writing scenario",
     examplePattern: "Reusable expression",
@@ -8955,6 +9082,8 @@ function journalOutlineLabels(outputLanguage) {
     longParagraphDraft: "Draft paragraph",
     evidencePackage: "Evidence package",
     revisionCue: "Revision cue",
+    fullSectionDraftExamples: "Full-Section Manuscript Drafts",
+    sectionDraft: "Section draft",
     writingChecklist: "Writing Checklist",
     structureSection: "Structure unit",
     writingGoal: "Writing goal",
