@@ -8263,6 +8263,7 @@ function visualExtractionReportData(payload, options = {}) {
     visualExtractionChartReviewActions(chartQualityReview, labels),
     options.previousChartReviewActions || payload?.previousChartReviewActions
   );
+  const chartBatchReviewBoard = visualExtractionChartBatchReviewBoardRows(chartReviewActions, labels);
   return {
     templateVersion: "visual-extraction-report-v2",
     generatedAt,
@@ -8292,6 +8293,7 @@ function visualExtractionReportData(payload, options = {}) {
     calibrationAnchors,
     chartQualityReview,
     chartReviewActions,
+    chartBatchReviewBoard,
     evidenceLabels,
     originalAnswer: answer || "",
     labels
@@ -8314,7 +8316,10 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
   const chartReviewActions = Array.isArray(data?.chartReviewActions)
     ? data.chartReviewActions
     : visualExtractionChartReviewActions(chartQualityReview, labels);
-  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors, chartReviewActions);
+  const chartBatchReviewBoard = Array.isArray(data?.chartBatchReviewBoard)
+    ? data.chartBatchReviewBoard
+    : visualExtractionChartBatchReviewBoardRows(chartReviewActions, labels);
+  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors, chartReviewActions, chartBatchReviewBoard);
   const imageInventory = images.length
     ? [
       `| ${labels.imageName} | ${labels.imageType} | ${labels.imageSize} | ${labels.localOcr} |`,
@@ -8344,6 +8349,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `chartQualityStatus: ${yamlScalar(chartQualityReview.status || "")}`,
     `chartQualityIssueCount: ${Number(chartQualityReview.issueCount) || 0}`,
     `chartReviewActionCount: ${chartReviewActions.length}`,
+    `chartReviewBatchCount: ${chartBatchReviewBoard.length}`,
     `reconstructedDataRowCount: ${reconstructedRows.length}`,
     "---",
     "",
@@ -8384,6 +8390,10 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `## ${labels.chartQualityReview}`,
     "",
     visualExtractionChartQualityReviewMarkdown(chartQualityReview, labels),
+    "",
+    `## ${labels.chartBatchReviewBoard}`,
+    "",
+    chartBatchReviewBoard.length ? visualExtractionChartBatchReviewBoardMarkdown(chartBatchReviewBoard, labels) : `- ${labels.noChartBatchReviewRows}`,
     "",
     `## ${labels.chartReviewActions}`,
     "",
@@ -8428,7 +8438,8 @@ function renderVisualExtractionReportCsv(data) {
     data?.chartDataDrafts || [],
     data?.pixelDataDrafts || [],
     data?.calibrationAnchors || [],
-    data?.chartReviewActions || []
+    data?.chartReviewActions || [],
+    data?.chartBatchReviewBoard || visualExtractionChartBatchReviewBoardRows(data?.chartReviewActions || [], data?.labels || visualExtractionReportLabels())
   );
   const header = ["tableIndex", "rowIndex", "column", "value", "evidenceLabels", "sourceAssistantMessageId", "imageNames"];
   const imageNames = (data?.images || []).map((image) => image.name).filter(Boolean).join("; ");
@@ -8632,7 +8643,7 @@ function visualExtractionDataRow(columns, cells) {
   return row;
 }
 
-function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataDrafts = [], calibrationAnchors = [], chartReviewActions = []) {
+function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataDrafts = [], calibrationAnchors = [], chartReviewActions = [], chartBatchReviewBoard = []) {
   const rows = [];
   for (const table of tables || []) {
     for (const [rowIndex, row] of (table.rows || []).entries()) {
@@ -8748,6 +8759,24 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       ["due", action.due || ""],
       ["notes", action.notes || ""],
       ["detail", action.detail || ""]
+    ]) {
+      if (value === "") continue;
+      rows.push({ ...base, column, value: mdText(value) });
+    }
+  }
+  for (const [batchIndex, batch] of (chartBatchReviewBoard || []).entries()) {
+    const base = {
+      tableIndex: `review-batch:${batchIndex + 1}`,
+      rowIndex: batchIndex + 1,
+      evidenceLabels: []
+    };
+    for (const [column, value] of [
+      ["priority", batch.priority || ""],
+      ["reviewState", batch.reviewState || ""],
+      ["count", batch.count === null || batch.count === undefined ? "" : batch.count],
+      ["blockingIssue", batch.blockingIssue || ""],
+      ["batchAction", batch.batchAction || ""],
+      ["doneCriteria", batch.doneCriteria || ""]
     ]) {
       if (value === "") continue;
       rows.push({ ...base, column, value: mdText(value) });
@@ -10032,6 +10061,74 @@ function visualExtractionChartReviewActionsMarkdown(actions, labels) {
   ].join("\n");
 }
 
+function visualExtractionChartBatchReviewBoardRows(actions, labels = {}) {
+  const groups = new Map();
+  for (const action of actions || []) {
+    const priority = mdText(action?.priority || "medium") || "medium";
+    const reviewState = normalizeVisualReviewState(action?.reviewState || "todo");
+    const actionId = mdText(action?.actionId || "manual-review");
+    const relatedCheck = mdText(`${action?.checkId || ""}${action?.status ? ` (${action.status})` : ""}`);
+    const batchAction = mdText(action?.nextStep || labels.reviewActionManualReview || actionId);
+    const doneCriteria = mdText(action?.doneCriteria || labels.reviewDoneManualReview || "");
+    const key = [priority, reviewState, actionId, batchAction, doneCriteria].join("::");
+    if (!groups.has(key)) {
+      groups.set(key, {
+        priority,
+        reviewState,
+        count: 0,
+        blockingIssues: [],
+        batchAction,
+        doneCriteria
+      });
+    }
+    const group = groups.get(key);
+    group.count += 1;
+    const issue = [actionId, relatedCheck, mdText(action?.detail || "")].filter(Boolean).join(" - ");
+    if (issue && !group.blockingIssues.includes(issue)) group.blockingIssues.push(issue);
+  }
+  return Array.from(groups.values())
+    .map((group) => ({
+      priority: group.priority,
+      reviewState: group.reviewState,
+      count: group.count,
+      blockingIssue: visualExtractionBatchIssueSummary(group.blockingIssues),
+      batchAction: group.batchAction,
+      doneCriteria: group.doneCriteria
+    }))
+    .sort(visualExtractionChartBatchReviewBoardSort);
+}
+
+function visualExtractionBatchIssueSummary(issues = []) {
+  const visible = (issues || []).filter(Boolean).slice(0, 3);
+  const hidden = Math.max(0, (issues || []).filter(Boolean).length - visible.length);
+  return hidden ? `${visible.join("; ")}; +${hidden} more` : visible.join("; ");
+}
+
+function visualExtractionChartBatchReviewBoardSort(left, right) {
+  const priorityRank = { high: 0, medium: 1, low: 2 };
+  const stateRank = { todo: 0, blocked: 1, "in-review": 2, done: 3, discarded: 4 };
+  const priorityDelta = (priorityRank[left?.priority] ?? 9) - (priorityRank[right?.priority] ?? 9);
+  if (priorityDelta) return priorityDelta;
+  const stateDelta = (stateRank[left?.reviewState] ?? 9) - (stateRank[right?.reviewState] ?? 9);
+  if (stateDelta) return stateDelta;
+  return String(right?.count || "").localeCompare(String(left?.count || ""), undefined, { numeric: true });
+}
+
+function visualExtractionChartBatchReviewBoardMarkdown(rows, labels) {
+  return [
+    `| ${labels.priority} | ${labels.reviewState} | ${labels.actionCount} | ${labels.blockingIssue} | ${labels.batchAction} | ${labels.doneCriteria} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    ...(rows || []).map((row) => [
+      markdownTableCell(row.priority || ""),
+      markdownTableCell(row.reviewState || ""),
+      Number(row.count) || 0,
+      markdownTableCell(row.blockingIssue || ""),
+      markdownTableCell(row.batchAction || ""),
+      markdownTableCell(row.doneCriteria || "")
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
 function visualExtractionStructuredDataTable(rows, labels) {
   return [
     `| ${labels.table} | ${labels.row} | ${labels.column} | ${labels.value} | ${labels.evidenceLabels} |`,
@@ -10113,6 +10210,7 @@ function visualExtractionReportLabels(outputLanguage) {
       noPixelDataDrafts: "未能从回答中抽取像素/坐标数据草稿；需要使用多模态模型重新输出 Pixel X、Pixel Y、轴值和置信度。",
       noCalibrationAnchors: "未检测到坐标轴校准锚点表；如需后续量化复用，请让模型补充 Axis、Pixel、Value、Unit、Scale、Segment、Source 和 Confidence。",
       chartQualityReview: "图表数据质量审阅",
+      chartBatchReviewBoard: "图表批量复核看板",
       chartReviewActions: "图表人工复核任务",
       qualityStatus: "质量状态",
       qualityScore: "质量分",
@@ -10125,9 +10223,13 @@ function visualExtractionReportLabels(outputLanguage) {
       relatedCheck: "关联检查",
       nextStep: "下一步",
       doneCriteria: "完成条件",
+      actionCount: "任务数",
+      blockingIssue: "阻塞问题",
+      batchAction: "批量处理动作",
       reviewer: "复核人",
       due: "期限",
       notes: "备注",
+      noChartBatchReviewRows: "当前没有可批量处理的复核任务；正式使用前仍建议抽查原图。",
       noChartReviewActions: "当前质量审阅未生成强制复核任务；正式使用前仍建议回到原图抽查。",
       noQualityIssues: "未发现结构化质量风险；正式使用前仍建议回到原图核对。",
       recommendationAxisCalibration: "补充至少两个清晰坐标轴刻度/数值锚点，并对照原图核对 Pixel X/Y 到 Axis X/Y 的映射。",
@@ -10229,6 +10331,7 @@ function visualExtractionReportLabels(outputLanguage) {
     noPixelDataDrafts: "No pixel / coordinate data draft could be extracted; ask a multimodal model to return Pixel X, Pixel Y, axis values, and confidence.",
     noCalibrationAnchors: "No axis calibration anchor table was detected. For reusable quantitative exports, ask for Axis, Pixel, Value, Unit, Scale, Segment, Source, and Confidence.",
     chartQualityReview: "Chart Data Quality Review",
+    chartBatchReviewBoard: "Chart Batch Review Board",
     chartReviewActions: "Chart Review Action Queue",
     qualityStatus: "Quality status",
     qualityScore: "Quality score",
@@ -10241,9 +10344,13 @@ function visualExtractionReportLabels(outputLanguage) {
     relatedCheck: "Related check",
     nextStep: "Next step",
     doneCriteria: "Done criteria",
+    actionCount: "Count",
+    blockingIssue: "Blocking issue",
+    batchAction: "Batch action",
     reviewer: "Reviewer",
     due: "Due",
     notes: "Notes",
+    noChartBatchReviewRows: "No batchable review action is available; still spot-check the original figure before final use.",
     noChartReviewActions: "No required review action was generated by the quality review; still spot-check the original figure before final use.",
     noQualityIssues: "No structured quality risk was detected; still verify against the original figure before final use.",
     recommendationAxisCalibration: "Add at least two visible axis tick/value anchors and verify Pixel X/Y to Axis X/Y mapping against the original chart.",

@@ -7809,6 +7809,7 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("pixelDataDraftCount: 1");
     expect(report).toContain("calibrationAnchorCount: 4");
     expect(report).toContain("chartReviewActionCount: 1");
+    expect(report).toContain("chartReviewBatchCount: 1");
     expect(report).toContain("## Pixel / Coordinate Data Drafts");
     expect(report).toContain("| 1 | pixel-coordinate-table | figure.png | 1 | needs-review | [image] |");
     expect(report).toContain("| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] | [image] |");
@@ -7820,6 +7821,9 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("| calibration-quality | pass | spans: X 340 px, Y 240 px; numeric anchors: 4/4; monotonic axes: X, Y |");
     expect(report).toContain("| confidence | warning | high 0, medium 0, low 3, needs-review 1 |");
     expect(report).toContain("Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.");
+    expect(report).toContain("## Chart Batch Review Board");
+    expect(report).toContain("| Priority | Review state | Count | Blocking issue | Batch action | Done criteria |");
+    expect(report).toContain("| medium | todo | 1 | confirm-low-confidence-readings - confidence (warning) - high 0, medium 0, low 3, needs-review 1 | Manually confirm low-confidence readings, units, and legends; treat them as draft values until then. | Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable. |");
     expect(report).toContain("## Chart Review Action Queue");
     expect(report).toContain("| Priority | Review state | Action | Related check | Next step | Done criteria | Reviewer | Due | Notes | Detail |");
     expect(report).toContain("| medium | todo | confirm-low-confidence-readings | confidence (warning) | Manually confirm low-confidence readings, units, and legends; treat them as draft values until then. | Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable. |  |  |  | high 0, medium 0, low 3, needs-review 1 |");
@@ -7950,6 +7954,15 @@ describe("workbench writeback helpers", () => {
         doneCriteria: "低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。"
       }
     ]);
+    expect(parsed.chartBatchReviewBoard).toMatchObject([
+      {
+        priority: "medium",
+        reviewState: "todo",
+        count: 1,
+        blockingIssue: "confirm-low-confidence-readings - confidence (warning) - high 0, medium 0, low 2, needs-review 1",
+        doneCriteria: "低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。"
+      }
+    ]);
     expect(files.get(csvPath)).toContain("tableIndex,rowIndex,column,value,evidenceLabels,sourceAssistantMessageId,imageNames");
     expect(files.get(csvPath)).toContain("1,1,指标,delay,,assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("1,1,数值,12 ms,,assistant-visual,chart.png");
@@ -7960,6 +7973,7 @@ describe("workbench writeback helpers", () => {
     expect(files.get(csvPath)).toContain("calibration:1,1,value,0,[image],assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("review-action:review-1,1,reviewState,todo,,assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("review-action:review-1,1,doneCriteria,低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。,,assistant-visual,chart.png");
+    expect(files.get(csvPath)).toContain("review-batch:1,1,batchAction,人工确认低置信读数、单位和图例；确认前只作为草稿使用。,,assistant-visual,chart.png");
     expect(dom.elements.get("zms-status").textContent).toContain(`visualReportDone: ${reportPath}`);
   });
 
