@@ -9794,6 +9794,11 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
         ["validationStatus", candidate.validationStatus || ""],
         ["validationScore", candidate.validationScore === null || candidate.validationScore === undefined ? "" : candidate.validationScore],
         ["validationDetail", candidate.validationDetail || ""],
+        ["geometryStatus", candidate.geometryStatus || ""],
+        ["geometryScore", candidate.geometryScore === null || candidate.geometryScore === undefined ? "" : candidate.geometryScore],
+        ["geometryDetail", candidate.geometryDetail || ""],
+        ["columnGutter", candidate.columnGutter === null || candidate.columnGutter === undefined ? "" : candidate.columnGutter],
+        ["rowGutter", candidate.rowGutter === null || candidate.rowGutter === undefined ? "" : candidate.rowGutter],
         ["missingPanelLabels", (candidate.missingPanelLabels || []).join("; ")],
         ["evidenceMissingPanelLabels", (candidate.evidenceMissingPanelLabels || []).join("; ")],
         ["basis", candidate.basis || ""]
@@ -10495,7 +10500,7 @@ function visualExtractionPanelColumn(columns = []) {
 function visualExtractionPanelLabel(value) {
   const text = mdText(value || "");
   if (!text) return "";
-  const match = text.match(/(?:panel|subplot|subfigure|part|子图|子圖|面板|分面)\s*[\(:：-]?\s*([A-Za-z0-9]+)\)?/i)
+  const match = text.match(/(?:\bpanel\b|\bsubplot\b|\bsubfigure\b|\bpart\b|子图|子圖|面板|分面)\s*[\(:：-]?\s*([A-Za-z0-9]+)\)?/i)
     || text.match(/(?:fig(?:ure)?\.?|图|圖)\s*[\(:：-]\s*([A-Za-z0-9]+)\)?/i)
     || text.match(/^\(?([A-Za-z])\)?$/)
     || text.match(/^([A-Za-z0-9]+)$/);
@@ -10516,7 +10521,7 @@ function visualExtractionPanelLabelsFromText(value) {
   const text = String(value || "");
   const labels = [];
   const patterns = [
-    /(?:panel|subplot|subfigure|part)\s*[\(:：-]?\s*([A-Za-z0-9]+)\)?/gi,
+    /(?:\bpanel\b|\bsubplot\b|\bsubfigure\b|\bpart\b)\s*[\(:：-]?\s*([A-Za-z0-9]+)\)?/gi,
     /fig(?:ure)?\.?\s*[\(:：-]\s*([A-Za-z0-9]+)\)?/gi,
     /(?:子图|子圖|面板|分面)\s*[\(:：-]?\s*([A-Za-z0-9]+)\)?/g,
     /(?:图|圖)\s*[\(:：-]\s*([A-Za-z0-9]+)\)?/g
@@ -10859,7 +10864,12 @@ function visualExtractionPanelSplitCandidates(images = [], panels = [], answerTe
     const height = Number(image?.height) || 0;
     const layout = visualExtractionPanelSplitLayout(panelCount, width, height);
     const unit = width > 0 && height > 0 ? "px" : "%";
-    const boxes = visualExtractionPanelSplitBoxes(labels, layout, width, height, unit);
+    const geometryHints = visualExtractionPanelSplitGeometryHints(answerText, width, height, unit);
+    const boxes = visualExtractionPanelSplitBoxes(labels, layout, width, height, unit, geometryHints);
+    const geometry = visualExtractionPanelSplitGeometryQuality(boxes, layout, width, height, unit, geometryHints);
+    const baseBasis = width > 0 && height > 0
+      ? `even ${layout.rows}x${layout.columns} split from parsed panel labels; verify against figure gutters`
+      : `normalized even ${layout.rows}x${layout.columns} split from parsed panel labels; add image dimensions or crop panels for precise boxes`;
     const candidate = {
       imageName: mdText(image?.name || "image"),
       width,
@@ -10868,9 +10878,12 @@ function visualExtractionPanelSplitCandidates(images = [], panels = [], answerTe
       layout: layout.label,
       source: "heuristic-panel-split",
       status: "needs-review",
-      basis: width > 0 && height > 0
-        ? `even ${layout.rows}x${layout.columns} split from parsed panel labels; verify against figure gutters`
-        : `normalized even ${layout.rows}x${layout.columns} split from parsed panel labels; add image dimensions or crop panels for precise boxes`,
+      basis: geometry.hasExplicitGutter ? `${baseBasis}; ${geometry.detail}` : baseBasis,
+      columnGutter: geometry.columnGutter,
+      rowGutter: geometry.rowGutter,
+      geometryStatus: geometry.status,
+      geometryScore: geometry.score,
+      geometryDetail: geometry.detail,
       evidenceLabels: visualExtractionEvidenceLabels(answerText),
       boxes
     };
@@ -10999,20 +11012,22 @@ function visualExtractionPanelSplitLayout(count, width = 0, height = 0) {
   return { rows, columns, label: `${rows}x${columns}` };
 }
 
-function visualExtractionPanelSplitBoxes(labels = [], layout = { rows: 1, columns: 1 }, width = 0, height = 0, unit = "%") {
+function visualExtractionPanelSplitBoxes(labels = [], layout = { rows: 1, columns: 1 }, width = 0, height = 0, unit = "%", geometryHints = {}) {
   const numericWidth = Number(width) > 0 ? Number(width) : 100;
   const numericHeight = Number(height) > 0 ? Number(height) : 100;
   const columns = Math.max(1, Number(layout.columns) || 1);
   const rows = Math.max(1, Number(layout.rows) || 1);
-  const cellWidth = numericWidth / columns;
-  const cellHeight = numericHeight / rows;
+  const columnGutter = visualExtractionBoundedGutter(geometryHints.columnGutter, numericWidth, columns);
+  const rowGutter = visualExtractionBoundedGutter(geometryHints.rowGutter, numericHeight, rows);
+  const cellWidth = Math.max(1, (numericWidth - columnGutter * Math.max(0, columns - 1)) / columns);
+  const cellHeight = Math.max(1, (numericHeight - rowGutter * Math.max(0, rows - 1)) / rows);
   return (labels || []).map((label, index) => {
     const row = Math.floor(index / columns);
     const column = index % columns;
-    const x = visualExtractionRoundedCoordinate(column * cellWidth);
-    const y = visualExtractionRoundedCoordinate(row * cellHeight);
-    const boxWidth = visualExtractionRoundedCoordinate(column === columns - 1 ? numericWidth - column * cellWidth : cellWidth);
-    const boxHeight = visualExtractionRoundedCoordinate(row === rows - 1 ? numericHeight - row * cellHeight : cellHeight);
+    const x = visualExtractionRoundedCoordinate(column * (cellWidth + columnGutter));
+    const y = visualExtractionRoundedCoordinate(row * (cellHeight + rowGutter));
+    const boxWidth = visualExtractionRoundedCoordinate(column === columns - 1 ? numericWidth - column * (cellWidth + columnGutter) : cellWidth);
+    const boxHeight = visualExtractionRoundedCoordinate(row === rows - 1 ? numericHeight - row * (cellHeight + rowGutter) : cellHeight);
     return {
       panel: label,
       x,
@@ -11024,6 +11039,89 @@ function visualExtractionPanelSplitBoxes(labels = [], layout = { rows: 1, column
       status: "needs-review"
     };
   });
+}
+
+function visualExtractionPanelSplitGeometryHints(text = "", width = 0, height = 0, unit = "%") {
+  const source = String(text || "");
+  const generic = visualExtractionFirstGutterHint(source, /(?:gutter|gap|spacing|间距|間距|分隔|分割缝|分割縫)\D{0,24}(\d+(?:\.\d+)?)\s*(px|pixels?|%)/i);
+  const column = visualExtractionFirstGutterHint(source, /(?:column|columns|horizontal|x[-\s]?axis|列|横向|橫向|水平)\D{0,24}(?:gutter|gap|spacing|间距|間距|分隔)\D{0,24}(\d+(?:\.\d+)?)\s*(px|pixels?|%)/i)
+    || visualExtractionFirstGutterHint(source, /(?:gutter|gap|spacing|间距|間距|分隔)\D{0,24}(?:between\s+columns?|column|columns|列|横向|橫向|水平)\D{0,24}(\d+(?:\.\d+)?)\s*(px|pixels?|%)/i);
+  const row = visualExtractionFirstGutterHint(source, /(?:row|rows|vertical|y[-\s]?axis|行|纵向|縱向|垂直)\D{0,24}(?:gutter|gap|spacing|间距|間距|分隔)\D{0,24}(\d+(?:\.\d+)?)\s*(px|pixels?|%)/i)
+    || visualExtractionFirstGutterHint(source, /(?:gutter|gap|spacing|间距|間距|分隔)\D{0,24}(?:between\s+rows?|row|rows|行|纵向|縱向|垂直)\D{0,24}(\d+(?:\.\d+)?)\s*(px|pixels?|%)/i);
+  const columnGutter = visualExtractionGutterValue(column || generic, width, unit);
+  const rowGutter = visualExtractionGutterValue(row || generic, height, unit);
+  return {
+    columnGutter,
+    rowGutter,
+    hasExplicitGutter: !!(column || row || generic),
+    source: column || row || generic ? "text-gutter-hint" : ""
+  };
+}
+
+function visualExtractionFirstGutterHint(text, pattern) {
+  const match = String(text || "").match(pattern);
+  if (!match) return null;
+  return {
+    value: Number(match[1]),
+    unit: String(match[2] || "px").toLowerCase().startsWith("%") ? "%" : "px"
+  };
+}
+
+function visualExtractionGutterValue(hint, size = 0, unit = "%") {
+  if (!hint || !Number.isFinite(Number(hint.value)) || Number(hint.value) <= 0) return 0;
+  if (hint.unit === "%") return visualExtractionRoundedCoordinate((Number(size) > 0 ? Number(size) : 100) * Number(hint.value) / 100);
+  if (unit === "%" && Number(size) <= 0) return visualExtractionRoundedCoordinate(Number(hint.value));
+  return visualExtractionRoundedCoordinate(Number(hint.value));
+}
+
+function visualExtractionBoundedGutter(value, size = 0, cells = 1) {
+  const gutter = Number(value) || 0;
+  if (gutter <= 0 || Number(cells) <= 1) return 0;
+  const numericSize = Number(size) > 0 ? Number(size) : 100;
+  const maxGutter = numericSize / Math.max(2, Number(cells) * 2);
+  return visualExtractionRoundedCoordinate(Math.min(gutter, maxGutter));
+}
+
+function visualExtractionPanelSplitGeometryQuality(boxes = [], layout = {}, width = 0, height = 0, unit = "%", geometryHints = {}) {
+  const numericWidth = Number(width) > 0 ? Number(width) : 100;
+  const numericHeight = Number(height) > 0 ? Number(height) : 100;
+  const areas = (boxes || []).map((box) => Math.max(0, Number(box?.width) || 0) * Math.max(0, Number(box?.height) || 0)).filter((area) => area > 0);
+  const totalArea = areas.reduce((sum, area) => sum + area, 0);
+  const canvasArea = numericWidth * numericHeight;
+  const coverage = canvasArea > 0 ? totalArea / canvasArea : 0;
+  const balance = areas.length ? Math.min(...areas) / Math.max(...areas) : 0;
+  const hasDimensions = unit === "px" && Number(width) > 0 && Number(height) > 0;
+  const hasExplicitGutter = geometryHints?.hasExplicitGutter === true;
+  const score = Math.max(0, Math.min(100, Math.round(
+    Math.min(coverage, 1) * 35
+    + balance * 35
+    + (hasDimensions ? 20 : 8)
+    + (hasExplicitGutter ? 10 : 0)
+  )));
+  const columnGutter = Number(geometryHints?.columnGutter) || 0;
+  const rowGutter = Number(geometryHints?.rowGutter) || 0;
+  const status = hasExplicitGutter
+    ? "gutter-aware"
+    : hasDimensions
+      ? "dimension-aware"
+      : "normalized";
+  const detail = [
+    status,
+    `coverage ${visualExtractionRoundedCoordinate(coverage * 100)}%`,
+    `area balance ${visualExtractionRoundedCoordinate(balance * 100)}%`,
+    columnGutter || rowGutter ? `gutter column ${columnGutter}${unit}, row ${rowGutter}${unit}` : ""
+  ].filter(Boolean).join("; ");
+  return {
+    status,
+    score,
+    detail,
+    columnGutter,
+    rowGutter,
+    coverage: visualExtractionRoundedCoordinate(coverage),
+    balance: visualExtractionRoundedCoordinate(balance),
+    hasExplicitGutter,
+    layout: `${Number(layout?.rows) || 1}x${Number(layout?.columns) || 1}`
+  };
 }
 
 function visualExtractionRoundedCoordinate(value) {

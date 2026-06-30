@@ -8793,6 +8793,85 @@ describe("workbench writeback helpers", () => {
     expect((loaded as any).renderVisualExtractionReportCsv(data)).toContain("layout-split:multi-panel.png:Panel C,3,validationScore,88");
   });
 
+  it("uses explicit gutter hints for multi-panel split candidates", () => {
+    const loaded = loadWorkbenchHelpers();
+    const item = {
+      key: "GUTTER",
+      getCollections: () => []
+    };
+    const messages = [
+      {
+        id: "user-gutter",
+        role: "user",
+        images: [{ name: "gutter-chart.png", mimeType: "image/png", size: 101, width: 1000, height: 620 }]
+      },
+      {
+        id: "assistant-gutter",
+        role: "assistant",
+        content: [
+          "## Visual OCR Text",
+          "- Four panels: Panel A, Panel B, Panel C, Panel D. The layout is a 2x2 grid with column gutter 40 px and row gutter 20 px.",
+          "",
+          "## Dense Point Data Draft",
+          "| Panel | Series | Point | Axis X | Axis Y | Unit | Confidence | Source | Notes |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| A | baseline | p1 | 0.1 | 12 | ms | high | [image] | visible point |",
+          "| B | baseline | p1 | 0.1 | 13 | ms | high | [image] | visible point |",
+          "| C | proposed | p1 | 0.1 | 10 | ms | high | [image] | visible point |",
+          "| D | proposed | p1 | 0.1 | 11 | ms | high | [image] | visible point |"
+        ].join("\n")
+      }
+    ];
+    const data = (loaded as any).visualExtractionReportData({
+      item,
+      messages
+    }, { item, outputLanguage: "en-US" });
+
+    expect(data.chartLayoutDiagnostics).toMatchObject({
+      status: "layout-reviewable",
+      panelCount: 4,
+      panelSplitCandidateCount: 4,
+      panelSplitValidationStatus: "validated",
+      panelSplitValidationScore: 100,
+      multiPanelDetected: true
+    });
+    expect(data.chartLayoutDiagnostics.panelSplitCandidates[0]).toMatchObject({
+      layout: "2x2",
+      columnGutter: 40,
+      rowGutter: 20,
+      geometryStatus: "gutter-aware",
+      geometryScore: 98,
+      geometryDetail: expect.stringContaining("gutter column 40px, row 20px")
+    });
+    expect(data.chartLayoutDiagnostics.panelSplitCandidates[0].boxes).toEqual([
+      expect.objectContaining({ panel: "Panel A", x: 0, y: 0, width: 480, height: 300, unit: "px" }),
+      expect.objectContaining({ panel: "Panel B", x: 520, y: 0, width: 480, height: 300, unit: "px" }),
+      expect.objectContaining({ panel: "Panel C", x: 0, y: 320, width: 480, height: 300, unit: "px" }),
+      expect.objectContaining({ panel: "Panel D", x: 520, y: 320, width: 480, height: 300, unit: "px" })
+    ]);
+
+    const report = loaded.renderVisualExtractionReportMarkdown({
+      item,
+      messages
+    }, {
+      item,
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      reportPath: "/tmp/out/collections/GUTTER/writing/visual-extraction-GUTTER.md",
+      jsonPath: "/tmp/out/collections/GUTTER/writing/visual-extraction-GUTTER.json",
+      csvPath: "/tmp/out/collections/GUTTER/writing/visual-extraction-GUTTER.csv"
+    });
+    expect(report).toContain("| gutter-chart.png | 2x2 | Panel B | 520 | 0 | 480 | 300 | px | low | validated | 100 |");
+    expect(report).toContain("gutter-aware; coverage 92.9%; area balance 100%; gutter column 40px, row 20px");
+
+    const csv = (loaded as any).renderVisualExtractionReportCsv(data);
+    expect(csv).toContain("layout-split:gutter-chart.png:Panel B,2,x,520,[image],assistant-gutter,gutter-chart.png");
+    expect(csv).toContain("layout-split:gutter-chart.png:Panel D,4,y,320,[image],assistant-gutter,gutter-chart.png");
+    expect(csv).toContain("layout-split:gutter-chart.png:Panel A,1,geometryStatus,gutter-aware,[image],assistant-gutter,gutter-chart.png");
+    expect(csv).toContain("layout-split:gutter-chart.png:Panel A,1,columnGutter,40,[image],assistant-gutter,gutter-chart.png");
+    expect(csv).toContain("layout-split:gutter-chart.png:Panel A,1,rowGutter,20,[image],assistant-gutter,gutter-chart.png");
+  });
+
   it("infers missing axis values from calibration anchors in pixel drafts", async () => {
     const files = new Map<string, string>();
     const loaded = loadWorkbenchHelpers(files);
