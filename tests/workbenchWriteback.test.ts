@@ -8435,6 +8435,93 @@ describe("workbench writeback helpers", () => {
     expect(files.get(csvPath)).toContain("calibration:3,3,segment,lower,[image],assistant-log-segment,log-segment.png");
   });
 
+  it("infers broken-axis values from calibration range rows", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "RANGESEG",
+      getCollections: () => [10]
+    };
+    workbench.state.contextSourceHash = "sourcehash";
+    workbench.state.context = {
+      metadata: { title: "Range Broken Axis Paper" }
+    };
+    workbench.state.messages = [
+      {
+        id: "user-range-segment",
+        role: "user",
+        content: "Extract points from a broken-axis figure with readable segment ranges",
+        images: [{ name: "range-segment.png", mimeType: "image/png", size: 88 }]
+      },
+      {
+        id: "assistant-range-segment",
+        role: "assistant",
+        profileName: "MiniMax",
+        content: [
+          "## Pixel / Coordinate Data Draft",
+          "| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| baseline | p1 | 250 | 150 |  |  | low | [image] |",
+          "",
+          "## Axis Calibration Anchors",
+          "| Axis | Pixel | Value | Unit | Scale | Source | Confidence |",
+          "| --- | --- | --- | --- | --- | --- | --- |",
+          "| X | 50 | 0 | s | linear | [image] | medium |",
+          "| X | 450 | 10 | s | linear | [image] | medium |",
+          "",
+          "## Broken Axis Calibration Ranges",
+          "| Axis | Segment | Pixel Start | Pixel End | Value Start | Value End | Unit | Scale | Source | Confidence | Notes |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| Y | lower | 400 | 260 | 0 | 10 | ms | linear | [image] | medium | lower visible range |",
+          "| Y | upper | 220 | 80 | 50 | 100 | ms | linear | [image] | medium | upper visible range |"
+        ].join("\n")
+      }
+    ];
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportVisualExtractionReport();
+
+    const reportPath = "/tmp/out/collections/COL/writing/visual-extraction-RANGESEG.md";
+    const report = files.get(reportPath) || "";
+    expect(report).toContain("5 s");
+    expect(report).toContain("75 ms");
+    expect(report).toContain("segmented Y calibration: upper 220px=50 ms, 80px=100 ms; lower 400px=0 ms, 260px=10 ms");
+    expect(report).toContain("| 3 | axis-calibration-range-table | Y | 400 | 0 | ms | medium | [image] | linear | lower |");
+    expect(report).toContain("| 5 | axis-calibration-range-table | Y | 220 | 50 | ms | medium | [image] | linear | upper |");
+    expect(report).toContain("| calibration-quality | pass | spans: X 400 px, Y lower 140 px, Y upper 140 px, Y 320 px; numeric anchors: 6/6; monotonic axes: X, Y; segmented axes: Y 2 (lower 2, upper 2) |");
+
+    const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-RANGESEG.json";
+    const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-RANGESEG.csv";
+    const parsed = JSON.parse(files.get(jsonPath) || "{}");
+    expect(parsed.pixelDataDrafts[0].points[0]).toMatchObject({
+      series: "baseline",
+      point: "p1",
+      pixelX: 250,
+      pixelY: 150,
+      axisX: "5 s",
+      axisY: "75 ms",
+      axisXCalibrated: true,
+      axisYCalibrated: true,
+      calibrationBasis: "linear X calibration: 50px=0 s, 450px=10 s; segmented Y calibration: upper 220px=50 ms, 80px=100 ms; lower 400px=0 ms, 260px=10 ms"
+    });
+    expect(parsed.calibrationAnchors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "axis-calibration-range-table", axis: "Y", segment: "lower", pixel: 400, value: "0", rangeEndpoint: "start" }),
+      expect.objectContaining({ source: "axis-calibration-range-table", axis: "Y", segment: "lower", pixel: 260, value: "10", rangeEndpoint: "end" }),
+      expect.objectContaining({ source: "axis-calibration-range-table", axis: "Y", segment: "upper", pixel: 220, value: "50", rangeEndpoint: "start" }),
+      expect.objectContaining({ source: "axis-calibration-range-table", axis: "Y", segment: "upper", pixel: 80, value: "100", rangeEndpoint: "end" })
+    ]));
+    expect(files.get(csvPath)).toContain("pixel:1,1,axisY,75 ms,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("calibration:3,3,source,axis-calibration-range-table,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("calibration:3,3,rangeEndpoint,start,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("calibration:6,6,value,100,[image],assistant-range-segment,range-segment.png");
+  });
+
   it("flags under-calibrated broken-axis segments in visual extraction reports", () => {
     const loaded = loadWorkbenchHelpers();
     const item = {

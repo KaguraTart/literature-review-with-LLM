@@ -8732,6 +8732,7 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       ["unit", anchor.unit || ""],
       ["scale", anchor.scale || ""],
       ["segment", anchor.segment || ""],
+      ["rangeEndpoint", anchor.rangeEndpoint || ""],
       ["confidence", anchor.confidence || ""],
       ["basis", anchor.basis || ""]
     ]) {
@@ -9042,13 +9043,45 @@ function visualExtractionCalibrationAnchorsFromTable(table, images = []) {
   const valueColumn = visualExtractionFindColumn(columns, [
     /^(value|axis\s*value|tick|tick\s*value|data\s*value|anchor\s*value|值|轴值|軸値|刻度|刻度值|锚点值|錨點值)$/i
   ]);
-  if (!axisColumn || !pixelColumn || !valueColumn) return [];
   const unitColumn = visualExtractionFindColumn(columns, [/^(unit|units|单位|單位)$/i]);
   const scaleColumn = visualExtractionFindColumn(columns, [/^(scale|axis\s*scale|mapping|transform|尺度|坐标尺度|座標尺度|刻度类型|刻度類型)$/i]);
   const segmentColumn = visualExtractionFindColumn(columns, [/^(segment|segment\s*id|axis\s*segment|piece|piecewise|区段|區段|分段|段)$/i]);
   const confidenceColumn = visualExtractionFindColumn(columns, [/^(confidence|置信度|certainty|可靠性)$/i]);
   const sourceColumn = visualExtractionFindColumn(columns, [/^(source|来源|來源|evidence|证据|證據|basis|依据|依據)$/i]);
   const notesColumn = visualExtractionFindColumn(columns, [/^(note|notes|备注|備註|说明|說明)$/i]);
+  const pixelStartColumn = visualExtractionFindColumn(columns, [
+    /^(pixel\s*start|start\s*pixel|pixel\s*a|pixel\s*from|pixel\s*min|start\s*px|px\s*start|像素起点|起始像素|像素开始|像素起始)$/i
+  ]);
+  const pixelEndColumn = visualExtractionFindColumn(columns, [
+    /^(pixel\s*end|end\s*pixel|pixel\s*b|pixel\s*to|pixel\s*max|end\s*px|px\s*end|像素终点|结束像素|像素结束|像素终止)$/i
+  ]);
+  const valueStartColumn = visualExtractionFindColumn(columns, [
+    /^(value\s*start|start\s*value|axis\s*value\s*start|tick\s*start|value\s*a|from\s*value|起始值|开始值|轴值起点|刻度起点)$/i
+  ]);
+  const valueEndColumn = visualExtractionFindColumn(columns, [
+    /^(value\s*end|end\s*value|axis\s*value\s*end|tick\s*end|value\s*b|to\s*value|结束值|终点值|轴值终点|刻度终点)$/i
+  ]);
+  if (axisColumn && pixelStartColumn && pixelEndColumn && valueStartColumn && valueEndColumn) {
+    return rows.flatMap((row, rowIndex) => visualExtractionCalibrationRangeAnchorsFromRow({
+      row,
+      rowIndex,
+      rowCount: rows.length,
+      table,
+      images,
+      axisColumn,
+      pixelStartColumn,
+      pixelEndColumn,
+      valueStartColumn,
+      valueEndColumn,
+      unitColumn,
+      scaleColumn,
+      segmentColumn,
+      confidenceColumn,
+      sourceColumn,
+      notesColumn
+    }));
+  }
+  if (!axisColumn || !pixelColumn || !valueColumn) return [];
   return rows.map((row) => {
     const axis = visualExtractionAxisName(row[axisColumn]);
     const pixel = visualExtractionNumber(row[pixelColumn] || "");
@@ -9069,6 +9102,50 @@ function visualExtractionCalibrationAnchorsFromTable(table, images = []) {
       evidenceLabels: visualExtractionEvidenceLabels(Object.values(row).join(" "))
     };
   }).filter((anchor) => anchor.axis && anchor.pixel !== null && anchor.value);
+}
+
+function visualExtractionCalibrationRangeAnchorsFromRow(options = {}) {
+  const {
+    row = {},
+    rowIndex = 0,
+    rowCount = 1,
+    table = {},
+    images = [],
+    axisColumn = "",
+    pixelStartColumn = "",
+    pixelEndColumn = "",
+    valueStartColumn = "",
+    valueEndColumn = "",
+    unitColumn = "",
+    scaleColumn = "",
+    segmentColumn = "",
+    confidenceColumn = "",
+    sourceColumn = "",
+    notesColumn = ""
+  } = options;
+  const axis = visualExtractionAxisName(row[axisColumn]);
+  const pixelStart = visualExtractionNumber(row[pixelStartColumn] || "");
+  const pixelEnd = visualExtractionNumber(row[pixelEndColumn] || "");
+  const valueStart = mdText(row[valueStartColumn] || "");
+  const valueEnd = mdText(row[valueEndColumn] || "");
+  if (!axis || pixelStart === null || pixelEnd === null || !valueStart || !valueEnd) return [];
+  const segment = mdText(row[segmentColumn] || (rowCount > 1 ? `range-${rowIndex + 1}` : ""));
+  const common = {
+    source: "axis-calibration-range-table",
+    tableIndex: table.tableIndex,
+    imageName: visualExtractionPixelDraftImageName(images),
+    axis,
+    unit: mdText(row[unitColumn] || ""),
+    scale: visualExtractionAxisScaleName(row[scaleColumn] || ""),
+    segment,
+    confidence: visualExtractionConfidence(row[confidenceColumn] || row[sourceColumn] || ""),
+    basis: mdText([row[sourceColumn], row[notesColumn]].filter(Boolean).join(" · ")),
+    evidenceLabels: visualExtractionEvidenceLabels(Object.values(row).join(" "))
+  };
+  return [
+    { ...common, pixel: pixelStart, value: valueStart, rangeEndpoint: "start" },
+    { ...common, pixel: pixelEnd, value: valueEnd, rangeEndpoint: "end" }
+  ];
 }
 
 function visualExtractionApplyAxisCalibration(pixelDataDrafts = [], calibrationAnchors = []) {
@@ -10662,6 +10739,7 @@ function figureTableTemplate(common, outputLanguage) {
     "",
     "## Axis Calibration Anchors",
     "- For charts with X/Y axes, add a visible tick-anchor table with: Axis, Pixel, Value, Unit, Scale, Segment, Source, Confidence, Notes.",
+    "- For broken axes where a visible range is easier to read, add one row per readable segment with: Axis, Segment, Pixel Start, Pixel End, Value Start, Value End, Unit, Scale, Source, Confidence, Notes.",
     "- Use Scale=linear by default; use Scale=log for logarithmic axes. Use Segment labels for broken axes, piecewise axes, or visibly separated axis ranges.",
     "- Provide at least two clear anchors per axis, and at least two anchors per segment when segmented axes are readable; if the ticks are unreadable, state that calibration is unreliable.",
     "",
