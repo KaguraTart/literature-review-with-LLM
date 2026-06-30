@@ -4444,6 +4444,7 @@ function renderSynthesisRoadmap(collectionContext, results, outputLanguage = "zh
   const labels = collectionTemplateLabels(outputLanguage);
   const entries = synthesisRoadmapEntries(results, summaryInsights, labels);
   const readinessEntries = synthesisRoadmapReadinessEntries(entries, labels);
+  const finalReportCalibrationEntries = roadmapFinalReportCalibrationEntries(readinessEntries, labels);
   const items = batchReportItems(results).filter((item) => item.status === "generated" || item.status === "skipped_existing");
   const routeRows = entries.map((entry) => [
     escapeMarkdownTable(entry.cluster),
@@ -4487,6 +4488,10 @@ function renderSynthesisRoadmap(collectionContext, results, outputLanguage = "zh
     `## ${labels.roadmapReadinessBoard}`,
     "",
     renderSynthesisRoadmapReadinessRows(readinessEntries, labels),
+    "",
+    `## ${labels.finalReportCalibrationMatrix}`,
+    "",
+    renderRoadmapFinalReportCalibrationRows(finalReportCalibrationEntries, labels),
     "",
     `## ${labels.roadmapEvidenceIndex}`,
     "",
@@ -4673,6 +4678,54 @@ function renderSynthesisRoadmapReadinessRows(entries = [], labels = collectionTe
   ].join("\n");
 }
 
+function roadmapFinalReportCalibrationEntries(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  return (entries || []).map((entry) => {
+    const paperCount = Array.isArray(entry.supportingPapers) ? entry.supportingPapers.length : 0;
+    const readinessScore = Number(entry.roadmapReadinessScore) || 0;
+    const supportScore = Number(entry.claimSupportScore) || 0;
+    const ready = entry.roadmapReadinessLevel === labels.roadmapReadinessReady;
+    const needsEvidence = entry.roadmapReadinessLevel === labels.roadmapReadinessNeedsEvidence;
+    const needsValidation = entry.roadmapReadinessLevel === labels.roadmapReadinessNeedsValidation;
+    const placement = ready
+      ? labels.finalReportCalibrationPlacementReady
+      : needsEvidence
+        ? labels.finalReportCalibrationPlacementEvidence
+        : needsValidation
+          ? labels.finalReportCalibrationPlacementValidation
+          : labels.finalReportCalibrationPlacementDeferred;
+    const citationMode = paperCount >= 2 && supportScore >= 60
+      ? labels.finalReportCalibrationCitationMulti(paperCount)
+      : paperCount === 1
+        ? labels.finalReportCalibrationCitationSingle
+        : labels.finalReportCalibrationCitationThin;
+    const blocker = entry.roadmapBlockingIssue || labels.roadmapReadinessNoBlocking;
+    return {
+      ...entry,
+      finalReportThreshold: labels.finalReportCalibrationThreshold(readinessScore, supportScore, paperCount),
+      finalReportPlacement: placement,
+      finalReportCitationMode: citationMode,
+      finalReportAction: labels.finalReportCalibrationAction(placement, entry.cluster, blocker, entry.candidateQuery)
+    };
+  });
+}
+
+function renderRoadmapFinalReportCalibrationRows(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const rows = (entries || []).map((entry) => [
+    escapeMarkdownTable(entry.cluster),
+    escapeMarkdownTable(entry.roadmapReadinessScore),
+    escapeMarkdownTable(entry.finalReportThreshold),
+    escapeMarkdownTable(entry.finalReportPlacement),
+    escapeMarkdownTable(entry.finalReportCitationMode),
+    escapeMarkdownTable(entry.roadmapBlockingIssue),
+    escapeMarkdownTable(entry.finalReportAction)
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |";
+  return [
+    `| ${labels.clusterColumn} | ${labels.roadmapReadinessScoreColumn} | ${labels.finalReportCalibrationThresholdColumn} | ${labels.finalReportCalibrationPlacementColumn} | ${labels.finalReportCalibrationCitationColumn} | ${labels.roadmapBlockingIssueColumn} | ${labels.finalReportCalibrationActionColumn} |`,
+    "| --- | ---: | --- | --- | --- | --- | --- |",
+    rows
+  ].join("\n");
+}
+
 function roadmapCandidateQuery(clusterLabel, methods = [], gaps = [], validations = []) {
   const terms = uniqueInsightLines([
     clusterLabel,
@@ -4794,6 +4847,7 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
   const synthesisClaims = synthesisClaimEntries(results, summaryInsights, labels);
   const synthesisConflicts = synthesisConflictEntries(results, summaryInsights, labels);
   const roadmapReadiness = synthesisRoadmapReadinessEntries(synthesisRoadmapEntries(results, summaryInsights, labels), labels);
+  const finalReportCalibrationEntries = roadmapFinalReportCalibrationEntries(roadmapReadiness, labels);
   const methodSignals = uniqueInsightLines(generatedItems.map((item) => summaryInsights.get(item.itemKey)?.method).filter(Boolean)).slice(0, 6);
   const dataSignals = uniqueInsightLines(generatedItems.flatMap((item) => {
     const insight = summaryInsights.get(item.itemKey) || {};
@@ -4834,6 +4888,10 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     `## ${labels.reportSectionReadinessMatrix}`,
     "",
     renderFormalReportSectionReadinessMatrix(sectionReadiness, labels),
+    "",
+    `## ${labels.finalReportCalibrationMatrix}`,
+    "",
+    renderRoadmapFinalReportCalibrationRows(finalReportCalibrationEntries, labels),
     "",
     `## ${labels.reportPaperInventory}`,
     "",
@@ -5284,6 +5342,20 @@ function collectionTemplateLabels(outputLanguage) {
       roadmapReadinessBlockingGap: (gap) => `Open gap must stay explicit: ${gap}`,
       roadmapReadinessBlockingScore: (score) => `Readiness score ${score || 0} is below the writing threshold`,
       roadmapReadinessAction: (level, cluster, issue, query) => `${level}: verify ${cluster}; ${issue}; next search/check: ${query || "candidate query pending"}.`,
+      finalReportCalibrationMatrix: "Final Report Calibration Matrix",
+      finalReportCalibrationThresholdColumn: "Writing Threshold",
+      finalReportCalibrationPlacementColumn: "Report Placement",
+      finalReportCalibrationCitationColumn: "Citation Strategy",
+      finalReportCalibrationActionColumn: "Final Report Action",
+      finalReportCalibrationThreshold: (readiness, support, papers) => `readiness ${readiness || 0}/100; support ${support || 0}/100; papers ${papers || 0}`,
+      finalReportCalibrationPlacementReady: "Move into formal report section",
+      finalReportCalibrationPlacementEvidence: "Hold as evidence-building task",
+      finalReportCalibrationPlacementValidation: "Draft with validation caveat",
+      finalReportCalibrationPlacementDeferred: "Defer from final prose",
+      finalReportCalibrationCitationMulti: (count) => `multi-paper citation block (${count || 0} papers)`,
+      finalReportCalibrationCitationSingle: "single-paper citation only; keep tentative",
+      finalReportCalibrationCitationThin: "citation evidence missing",
+      finalReportCalibrationAction: (placement, cluster, blocker, query) => `${placement}: calibrate ${cluster}; ${blocker}; candidate search/check: ${query || "pending"}.`,
       crossCollectionSynthesis: "Cross-Collection Synthesis Map",
       crossCollectionSynthesisNote: "Aggregates the latest collection workspaces into one review-planning surface. Use it to compare themes across collections before writing a broader review.",
       crossCollectionInventory: "Collection Inventory",
@@ -5670,6 +5742,20 @@ function collectionTemplateLabels(outputLanguage) {
       roadmapReadinessBlockingGap: (gap) => `未解決ギャップを明示する: ${gap}`,
       roadmapReadinessBlockingScore: (score) => `準備度スコア ${score || 0} が執筆しきい値未満`,
       roadmapReadinessAction: (level, cluster, issue, query) => `${level}: ${cluster} を確認する。${issue}。次の検索・確認: ${query || "候補クエリ未設定"}。`,
+      finalReportCalibrationMatrix: "最終報告校正マトリクス",
+      finalReportCalibrationThresholdColumn: "執筆しきい値",
+      finalReportCalibrationPlacementColumn: "報告書内の配置",
+      finalReportCalibrationCitationColumn: "引用戦略",
+      finalReportCalibrationActionColumn: "最終報告アクション",
+      finalReportCalibrationThreshold: (readiness, support, papers) => `準備度 ${readiness || 0}/100、支持 ${support || 0}/100、論文 ${papers || 0} 件`,
+      finalReportCalibrationPlacementReady: "正式報告書の節へ移す",
+      finalReportCalibrationPlacementEvidence: "証拠補強タスクとして保持",
+      finalReportCalibrationPlacementValidation: "検証注記付きで草稿化",
+      finalReportCalibrationPlacementDeferred: "最終本文から保留",
+      finalReportCalibrationCitationMulti: (count) => `複数論文の引用ブロック (${count || 0} 件)`,
+      finalReportCalibrationCitationSingle: "単一論文引用のみ。暫定扱い",
+      finalReportCalibrationCitationThin: "引用証拠が不足",
+      finalReportCalibrationAction: (placement, cluster, blocker, query) => `${placement}: ${cluster} を校正する。${blocker}。候補検索・確認: ${query || "未設定"}。`,
       crossCollectionSynthesis: "Collection 横断統合マップ",
       crossCollectionSynthesisNote: "最新の collection workspace を横断的なレビュー計画面に集約します。より広いレビューを書く前に、collection 間のテーマを比較するために使います。",
       crossCollectionInventory: "Collection 一覧",
@@ -6055,6 +6141,20 @@ function collectionTemplateLabels(outputLanguage) {
     roadmapReadinessBlockingGap: (gap) => `进入正文前需保留未解决缺口：${gap}`,
     roadmapReadinessBlockingScore: (score) => `就绪分 ${score || 0} 低于写作阈值`,
     roadmapReadinessAction: (level, cluster, issue, query) => `${level}：核对“${cluster}”；${issue}；下一步检索或检查：${query || "待补充候选检索词"}。`,
+    finalReportCalibrationMatrix: "最终报告校准矩阵",
+    finalReportCalibrationThresholdColumn: "写作阈值",
+    finalReportCalibrationPlacementColumn: "正文放置",
+    finalReportCalibrationCitationColumn: "引用策略",
+    finalReportCalibrationActionColumn: "最终报告动作",
+    finalReportCalibrationThreshold: (readiness, support, papers) => `就绪 ${readiness || 0}/100；支持 ${support || 0}/100；论文 ${papers || 0} 篇`,
+    finalReportCalibrationPlacementReady: "作为候选小节写入正式报告",
+    finalReportCalibrationPlacementEvidence: "暂缓为证据补强任务",
+    finalReportCalibrationPlacementValidation: "带验证限制写入草稿",
+    finalReportCalibrationPlacementDeferred: "暂不进入最终正文",
+    finalReportCalibrationCitationMulti: (count) => `多篇论文组合引用（${count || 0} 篇）`,
+    finalReportCalibrationCitationSingle: "仅可作为单篇证据引用，主张保持暂定",
+    finalReportCalibrationCitationThin: "引用证据不足",
+    finalReportCalibrationAction: (placement, cluster, blocker, query) => `${placement}：校准“${cluster}”；${blocker}；候选检索或检查：${query || "待补充"}。`,
     crossCollectionSynthesis: "跨集合综合地图",
     crossCollectionSynthesisNote: "把最近生成的 collection workspace 汇总为一个跨集合综述规划入口，用于在更大范围综述写作前比较不同集合之间的主题、证据和缺口。",
     crossCollectionInventory: "集合清单",

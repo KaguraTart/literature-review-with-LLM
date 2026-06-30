@@ -462,6 +462,9 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("综合路线图");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("跨主题证据地图");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("候选检索词");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("最终报告校准矩阵");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("写作阈值");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("正文放置");
     expect(writes.get(artifacts.researchQuestionCardsPath)).toContain("研究问题卡");
     expect(writes.get(artifacts.researchQuestionCardsPath)).toContain("最小下一步动作");
     expect(writes.get(artifacts.reviewDraftPath)).toContain("手动综述草稿");
@@ -471,6 +474,8 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.reviewReportPath)).toContain("章节就绪矩阵");
     expect(writes.get(artifacts.reviewReportPath)).toContain("章节就绪分");
     expect(writes.get(artifacts.reviewReportPath)).toContain("报告章节");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("最终报告校准矩阵");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("引用策略");
     expect(writes.get(artifacts.reviewReportPath)).toContain("有证据支持的综合主张");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合冲突与证据缺口");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合写作包");
@@ -790,6 +795,8 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("路线图就绪度看板");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("就绪分");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("阻塞问题");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("最终报告校准矩阵");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("暂缓为证据补强任务");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("需补证据");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("No field data or ablation");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("Stress-test under mixed priority flights");
@@ -807,6 +814,7 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.reviewReportPath)).toContain("路线图就绪度");
     expect(writes.get(artifacts.reviewReportPath)).toContain("缺口可追溯性");
     expect(writes.get(artifacts.reviewReportPath)).toContain("路线图就绪度看板");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("最终报告动作");
     expect(writes.get(artifacts.reviewReportPath)).toContain("下一步动作");
     expect(writes.get(artifacts.reviewReportPath)).toContain("Stress-test under mixed priority flights");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合写作包");
@@ -1242,6 +1250,7 @@ describe("batch papers index", () => {
     expect(writes.get(english.synthesisConflictsPath)).toContain("Support Level");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Synthesis Roadmap");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Cross-theme Evidence Map");
+    expect(writes.get(english.synthesisRoadmapPath)).toContain("Final Report Calibration Matrix");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Cluster Map");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cluster Evidence Cards");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Theme Merge Review Board");
@@ -1249,6 +1258,7 @@ describe("batch papers index", () => {
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Priority Board");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Review Pack");
     expect(writes.get(english.reviewReportPath)).toContain("Formal Review Report");
+    expect(writes.get(english.reviewReportPath)).toContain("Final Report Calibration Matrix");
     expect(writes.get(english.reviewReportPath)).toContain("Evidence-backed Synthesis Claims");
     expect(writes.get(english.reviewReportPath)).toContain("Synthesis Conflicts and Evidence Gaps");
     expect(writes.get(english.reviewReportPath)).toContain("Writing Readiness Gate");
