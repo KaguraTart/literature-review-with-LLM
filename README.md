@@ -58,6 +58,8 @@ Then install it in Zotero:
 4. Select `literature-review-with-llm.xpi`.
 5. Restart Zotero if prompted.
 
+Automatic update sync is enabled by default after installation. Zotero will read the release `update.json` from GitHub Releases and install newer XPI releases when extension updates run. To opt out, open `Tools -> Literature Review with LLM Settings` and turn off `Automatically sync updates`; this only changes this add-on's background update policy and does not change Zotero's global extension update settings.
+
 This plugin targets Zotero 9.x.
 
 ## Quick Start

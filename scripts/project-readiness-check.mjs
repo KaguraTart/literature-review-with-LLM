@@ -125,6 +125,7 @@ const REQUIRED_SKILL_IDS = [
 const REQUIRED_XPI_ENTRIES = [
   "bootstrap.js",
   "prefs.js",
+  "content/auto-update.js",
   "content/bootstrap-provider.js",
   "content/bootstrap-settings.js",
   "content/bootstrap-summary-store.js",
@@ -148,6 +149,12 @@ const SOURCE_MARKERS = [
     description: "XPI releases publish Zotero update metadata with stable update URL and hash verification",
     files: ["addon/manifest.json", "scripts/build-update-manifest.mjs", "package.json", ".github/workflows/ci.yml", ".github/workflows/release.yml"],
     markers: ["update_url", "buildUpdateManifest", "verify:update-manifest", "build/update.json", "gh release upload", "--clobber"]
+  },
+  {
+    id: "release.auto-update-opt-out",
+    description: "XPI installs default to automatic update sync and expose an opt-out setting",
+    files: ["addon/prefs.js", "addon/bootstrap.js", "addon/content/auto-update.js", "addon/content/preferences.xhtml", "addon/content/preferences.js", "README.md", "README.zh-CN.md", "tests/preferencesLocalAgent.test.ts"],
+    markers: ["autoUpdateEnabled", "zms-autoUpdateEnabled", "zmsApplyAddonAutoUpdatePreference", "applyConfiguredAddonAutoUpdatePolicy", "Automatically sync updates", "自动同步更新", "mode: 0"]
   },
   {
     id: "provider.endpoint-normalization",
