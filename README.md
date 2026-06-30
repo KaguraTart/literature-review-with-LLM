@@ -346,7 +346,7 @@ The Zotero update manifest is generated at:
 build/update.json
 ```
 
-`addon/manifest.json` points Zotero to the stable GitHub Releases URL for `update.json`. The update manifest records the tagged XPI download URL, the current XPI `sha256` hash, and Zotero compatibility bounds. Both `literature-review-with-llm.xpi` and `update.json` are uploaded as release artifacts rather than committed to the repository.
+`addon/manifest.json` points Zotero to the stable GitHub Releases URL for `update.json`. The update manifest records the tagged XPI download URL, the current XPI `sha256` hash, and Zotero compatibility bounds. Both `literature-review-with-llm.xpi` and `update.json` are uploaded as release artifacts rather than committed to the repository. When a `v*` tag is pushed, the Release workflow runs the full gate, rebuilds the XPI, regenerates `update.json` for that tag, and uploads both files to the GitHub Release so Zotero can discover the latest package from the stable update URL.
 
 Automatic update sync is enabled by default. Users can turn off `Automatically sync updates` in the Zotero `Literature Review with LLM` settings pane; when disabled, the plugin stops proactive update prompts and tries to disable this add-on's background update policy. Zotero still controls the global extension update policy.
 

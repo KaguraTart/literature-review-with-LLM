@@ -146,8 +146,8 @@ const SOURCE_MARKERS = [
   {
     id: "release.update-manifest",
     description: "XPI releases publish Zotero update metadata with stable update URL and hash verification",
-    files: ["addon/manifest.json", "scripts/build-update-manifest.mjs", "package.json", ".github/workflows/ci.yml"],
-    markers: ["update_url", "buildUpdateManifest", "verify:update-manifest", "build/update.json"]
+    files: ["addon/manifest.json", "scripts/build-update-manifest.mjs", "package.json", ".github/workflows/ci.yml", ".github/workflows/release.yml"],
+    markers: ["update_url", "buildUpdateManifest", "verify:update-manifest", "build/update.json", "gh release upload", "--clobber"]
   },
   {
     id: "provider.endpoint-normalization",
