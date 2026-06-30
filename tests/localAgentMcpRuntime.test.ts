@@ -97,7 +97,7 @@ describe("local agent stdio MCP runtime", () => {
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPreprocessRepair).toMatchObject({
         type: "boolean"
       });
-      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPreprocessModes.description).toContain("grayscale,monochrome");
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPreprocessModes.description).toContain("grayscale,monochrome,adaptive-threshold");
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPages.description).toContain("1,3-5");
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.minTextChars).toMatchObject({
         type: "number"
@@ -775,6 +775,102 @@ describe("local agent stdio MCP runtime", () => {
     }
   });
 
+  it("repairs stubborn OCR pages with adaptive threshold preprocessing after grayscale and monochrome fail", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", "");
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 1);
+      const tesseractBin = fakeRepairingTesseractByPageBin(
+        dir,
+        "tesseract",
+        {
+          1: ""
+        },
+        {
+          1: ""
+        },
+        {},
+        {
+          "adaptive-threshold:1": "page recovered after adaptive threshold preprocessing"
+        }
+      );
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 115,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF scanned adaptive repair").toString("base64"),
+              name: "adaptive-repair-scan.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              maxOcrPages: 1,
+              ocrRepairPsms: "6,11",
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "adaptive-repair-scan.pdf",
+          pageCount: 1,
+          ocrFallbackUsed: true,
+          ocrRepairAttemptedPageCount: 1,
+          ocrRepairRecoveredPageCount: 1,
+          ocrRepairFailedPageCount: 0,
+          ocrPreprocessAttemptedPageCount: 1,
+          ocrPreprocessRecoveredPageCount: 1,
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 1,
+            ocrFallbackUsed: true,
+            ocrRepairAttemptedPageCount: 1,
+            ocrRepairRecoveredPageCount: 1,
+            ocrPreprocessAttemptedPageCount: 1,
+            ocrPreprocessRecoveredPageCount: 1,
+            warnings: ["ocr_fallback_used", "ocr_auto_repair_used", "ocr_psm_repair_used", "ocr_preprocess_repair_used"]
+          }
+        });
+        expect(parsed.pages[0]).toMatchObject({
+          page: 1,
+          text: "page recovered after adaptive threshold preprocessing",
+          ocr: {
+            status: "ok",
+            repairAttempted: true,
+            repairStrategy: "adaptive-threshold",
+            repairStatus: "recovered",
+            repairPreprocess: "adaptive-threshold",
+            repairPsmAttempted: [6, 11],
+            previousStatus: "empty",
+            warnings: ["ocr_page_repaired", "ocr_page_repaired_preprocessed"]
+          }
+        });
+        expect(parsed.quality.ocrPageSignals[0]).toMatchObject({
+          page: 1,
+          status: "ok",
+          repairStrategy: "adaptive-threshold",
+          repairPreprocess: "adaptive-threshold"
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("OCRs sparse middle PDF pages and merges them with pdftotext pages", async () => {
     const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
     try {
@@ -1318,7 +1414,10 @@ function fakePdfToPpmBin(dir: string, name: string, pageCount: number) {
     "const lastPage = Math.min(pageCount, Math.max(firstPage, flagValue('-l', pageCount)));",
     "const extension = args.includes('-mono') ? 'pbm' : args.includes('-gray') ? 'pgm' : 'png';",
     "for (let page = firstPage; page <= lastPage; page += 1) {",
-    "  fs.writeFileSync(`${prefix}-${page}.${extension}`, `fake page ${page}`);",
+    "  const out = `${prefix}-${page}.${extension}`;",
+    "  if (extension === 'pgm') fs.writeFileSync(out, 'P2\\n4 3\\n255\\n0 40 210 255\\n20 80 190 240\\n0 60 180 255\\n');",
+    "  else if (extension === 'pbm') fs.writeFileSync(out, 'P1\\n4 3\\n1 1 0 0\\n1 1 0 0\\n1 1 0 0\\n');",
+    "  else fs.writeFileSync(out, `fake page ${page}`);",
     "}",
     ""
   ].join("\n"));
@@ -1369,7 +1468,7 @@ function fakeRepairingTesseractByPageBin(
     `const psmRepairOutputs = ${JSON.stringify(psmRepairOutputs)};`,
     `const preprocessOutputs = ${JSON.stringify(preprocessOutputs)};`,
     `const preprocessPsmOutputs = ${JSON.stringify(preprocessPsmOutputs)};`,
-    "const preprocessMode = imagePath.includes('/repair-monochrome-page-') ? 'monochrome' : imagePath.includes('/repair-grayscale-page-') || imagePath.includes('/repair-gray-page-') ? 'grayscale' : '';",
+    "const preprocessMode = imagePath.includes('/repair-adaptive-threshold-page-') ? 'adaptive-threshold' : imagePath.includes('/repair-monochrome-page-') ? 'monochrome' : imagePath.includes('/repair-grayscale-page-') || imagePath.includes('/repair-gray-page-') ? 'grayscale' : '';",
     "const isPreprocessed = Boolean(preprocessMode);",
     "const isRepair = imagePath.includes('/repair-page-') || isPreprocessed;",
     "const source = isPreprocessed ? preprocessOutputs : isRepair ? repairOutputs : outputs;",

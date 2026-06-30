@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { cwd as currentDirectory } from "node:process";
@@ -266,7 +266,7 @@ function pdfPagesSchema() {
           { type: "string" },
           { type: "array", items: { type: "string" } }
         ],
-        description: "Optional OCR preprocessing modes for stubborn repair pages. Defaults to grayscale,monochrome."
+        description: "Optional OCR preprocessing modes for stubborn repair pages. Defaults to grayscale,monochrome,adaptive-threshold."
       },
       ocrPages: {
         anyOf: [
@@ -692,10 +692,7 @@ async function repairPdfOcrPage(sourcePath, renderDir, page, language, pageTimeo
       for (const preprocess of pdfOcrPreprocessRepairModes(args.ocrPreprocessModes)) {
         lastPreprocess = preprocess;
         const prefixName = `repair-${preprocess}-page-${page}`;
-        await renderPdfOcrPage(sourcePath, renderDir, page, prefixName, dpi, args, {
-          colorMode: pdfOcrPreprocessColorMode(preprocess)
-        });
-        const preprocessedImagePath = await pdfRenderedRepairImagePath(renderDir, page, prefixName);
+        const preprocessedImagePath = await renderPdfOcrPreprocessPage(sourcePath, renderDir, page, prefixName, dpi, args, preprocess);
         const preprocessedResult = await runPdfOcrOnImage(preprocessedImagePath, renderDir, language, pageTimeout);
         lastResult = preprocessedResult;
         if (preprocessedResult.cleaned) {
@@ -783,6 +780,103 @@ async function repairPdfOcrPage(sourcePath, renderDir, page, language, pageTimeo
     });
     return { cleaned: "", error, signal };
   }
+}
+
+async function renderPdfOcrPreprocessPage(sourcePath, renderDir, page, prefixName, dpi, args = {}, preprocess = "") {
+  if (preprocess === "adaptive-threshold") {
+    await renderPdfOcrPage(sourcePath, renderDir, page, prefixName, dpi, args, { colorMode: "gray" });
+    const grayPath = await pdfRenderedRepairImagePath(renderDir, page, prefixName);
+    const adaptivePath = join(renderDir, `${prefixName}-${page}.pbm`);
+    const converted = await writeAdaptiveThresholdPbm(grayPath, adaptivePath);
+    return converted || grayPath;
+  }
+  await renderPdfOcrPage(sourcePath, renderDir, page, prefixName, dpi, args, {
+    colorMode: pdfOcrPreprocessColorMode(preprocess)
+  });
+  return pdfRenderedRepairImagePath(renderDir, page, prefixName);
+}
+
+async function writeAdaptiveThresholdPbm(inputPath, outputPath) {
+  try {
+    const pgm = parsePgm(await readFile(inputPath));
+    if (!pgm) return "";
+    const radius = 8;
+    const bias = 12;
+    const pixels = [];
+    for (let y = 0; y < pgm.height; y += 1) {
+      for (let x = 0; x < pgm.width; x += 1) {
+        let sum = 0;
+        let count = 0;
+        const yStart = Math.max(0, y - radius);
+        const yEnd = Math.min(pgm.height - 1, y + radius);
+        const xStart = Math.max(0, x - radius);
+        const xEnd = Math.min(pgm.width - 1, x + radius);
+        for (let yy = yStart; yy <= yEnd; yy += 1) {
+          for (let xx = xStart; xx <= xEnd; xx += 1) {
+            sum += pgm.pixels[yy * pgm.width + xx];
+            count += 1;
+          }
+        }
+        const localMean = count ? sum / count : 0;
+        const value = pgm.pixels[y * pgm.width + x];
+        pixels.push(value < localMean - bias ? "1" : "0");
+      }
+    }
+    const lines = [`P1`, `${pgm.width} ${pgm.height}`];
+    for (let index = 0; index < pixels.length; index += pgm.width) {
+      lines.push(pixels.slice(index, index + pgm.width).join(" "));
+    }
+    await writeFile(outputPath, `${lines.join("\n")}\n`);
+    return outputPath;
+  } catch (_err) {
+    return "";
+  }
+}
+
+function parsePgm(buffer) {
+  const text = buffer.toString("latin1");
+  const header = [];
+  let index = 0;
+  while (header.length < 4 && index < text.length) {
+    while (/\s/.test(text[index] || "")) index += 1;
+    if (text[index] === "#") {
+      while (index < text.length && text[index] !== "\n") index += 1;
+      continue;
+    }
+    const start = index;
+    while (index < text.length && !/\s/.test(text[index] || "")) index += 1;
+    if (index > start) header.push(text.slice(start, index));
+  }
+  const [magic, widthRaw, heightRaw, maxRaw] = header;
+  const width = Number(widthRaw);
+  const height = Number(heightRaw);
+  const maxValue = Number(maxRaw);
+  if ((magic !== "P2" && magic !== "P5") || !Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 || !Number.isFinite(maxValue) || maxValue <= 0) {
+    return null;
+  }
+  while (/\s/.test(text[index] || "")) index += 1;
+  const expected = width * height;
+  let pixels = [];
+  if (magic === "P2") {
+    pixels = text.slice(index).split(/\s+/).filter(Boolean).slice(0, expected).map((value) => Number(value));
+  } else {
+    const start = Buffer.byteLength(text.slice(0, index), "latin1");
+    const bytes = buffer.subarray(start, start + expected * (maxValue > 255 ? 2 : 1));
+    if (maxValue > 255) {
+      for (let byteIndex = 0; byteIndex + 1 < bytes.length && pixels.length < expected; byteIndex += 2) {
+        pixels.push(bytes.readUInt16BE(byteIndex));
+      }
+    } else {
+      pixels = Array.from(bytes.slice(0, expected));
+    }
+  }
+  if (pixels.length < expected || pixels.some((value) => !Number.isFinite(value))) return null;
+  const scale = maxValue === 255 ? 1 : 255 / maxValue;
+  return {
+    width,
+    height,
+    pixels: pixels.map((value) => Math.max(0, Math.min(255, Math.round(value * scale))))
+  };
 }
 
 async function pdfRenderedRepairImagePath(renderDir, page, prefixName = `repair-page-${page}`) {
@@ -1002,7 +1096,7 @@ function pdfOcrPreprocessRepairEnabled(args = {}) {
 }
 
 function pdfOcrPreprocessRepairModes(value) {
-  if (value === undefined || value === null) return ["grayscale", "monochrome"];
+  if (value === undefined || value === null) return ["grayscale", "monochrome", "adaptive-threshold"];
   const rawValues = Array.isArray(value)
     ? value
     : String(value).trim().toLowerCase() === "none" || String(value).trim().toLowerCase() === "off"
@@ -1021,6 +1115,7 @@ function pdfOcrPreprocessMode(value) {
   const normalized = String(value || "").trim().toLowerCase().replace(/[_\s-]+/g, "");
   if (normalized === "gray" || normalized === "grey" || normalized === "grayscale" || normalized === "greyscale") return "grayscale";
   if (normalized === "mono" || normalized === "monochrome" || normalized === "threshold" || normalized === "binarize" || normalized === "binarized") return "monochrome";
+  if (normalized === "adaptive" || normalized === "adaptivethreshold" || normalized === "localthreshold" || normalized === "localthresholding") return "adaptive-threshold";
   return "";
 }
 
