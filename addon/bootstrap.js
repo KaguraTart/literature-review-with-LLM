@@ -3158,11 +3158,12 @@ function renderCrossCollectionReviewPack(indexPayload, labels) {
   const collections = Array.isArray(indexPayload?.collections) ? indexPayload.collections : [];
   const mergeBoard = indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels);
   const clusterMap = indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels);
+  const rankedClusterCards = crossCollectionClusterEvidenceCardEntries(clusterMap, labels);
   const priorityBoard = indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels, mergeBoard, clusterMap);
   const bridgeBoard = indexPayload?.themeBridgeBoard || crossCollectionThemeBridgeEntries(collections, labels);
   const gapBoard = indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels);
   const rows = [];
-  for (const entry of (clusterMap || []).filter((cluster) => Number(cluster?.collectionCount || 0) >= 2).slice(0, 4)) {
+  for (const entry of (rankedClusterCards || []).filter((cluster) => Number(cluster?.collectionCount || 0) >= 2).slice(0, 4)) {
     const scope = entry.title || labels.clusterOther;
     const gap = uniqueInsightLines(entry.gapSignals || []).slice(0, 3).join("; ") || labels.gapMatrixPendingEvidence;
     rows.push(crossCollectionReviewPackRow({
@@ -3256,11 +3257,13 @@ function renderCrossCollectionClusterCalibrationRows(calibrationEntries, labels)
 }
 
 function renderCrossCollectionClusterEvidenceCards(clusterEntries, labels) {
-  const cards = (clusterEntries || []).slice(0, 12).map((entry) => [
+  const cards = crossCollectionClusterEvidenceCardEntries(clusterEntries, labels).map((entry) => [
     `### ${entry.title || labels.clusterOther}`,
     "",
     `- ${labels.collectionColumn}: ${(entry.collections || []).join("; ") || labels.noSummary}`,
     `- ${labels.crossCollectionThemeCandidatesColumn}: ${(entry.themes || []).join("; ") || labels.clusterOther}`,
+    `- ${labels.crossCollectionEvidenceRankColumn}: ${entry.evidenceCardRank || 0}`,
+    `- ${labels.crossCollectionEvidenceRankSignalsColumn}: ${(entry.evidenceCardRankSignals || []).join("; ") || labels.crossCollectionClusterLinkPending}`,
     `- ${labels.crossCollectionClusterScoreColumn}: ${entry.clusterScore || 0}`,
     `- ${labels.supportLevelColumn}: ${entry.supportLevel || labels.crossCollectionClusterSupport(0, 0)}`,
     `- ${labels.crossCollectionClusterLinkColumn}: ${(entry.linkSignals || []).join("; ") || labels.crossCollectionClusterLinkPending}`,
@@ -3276,6 +3279,63 @@ function renderCrossCollectionClusterEvidenceCards(clusterEntries, labels) {
     ""
   ].join("\n"));
   return cards.join("\n") || labels.crossCollectionClusterNoEvidence;
+}
+
+function crossCollectionClusterEvidenceCardEntries(clusterEntries = [], labels = collectionTemplateLabels("zh-CN")) {
+  return (clusterEntries || [])
+    .map((entry) => {
+      const ranking = crossCollectionClusterEvidenceCardRanking(entry, labels);
+      return {
+        ...entry,
+        evidenceCardRank: ranking.score,
+        evidenceCardRankSignals: ranking.signals
+      };
+    })
+    .sort((left, right) => Number(right.evidenceCardRank || 0) - Number(left.evidenceCardRank || 0)
+      || Number(right.clusterScore || 0) - Number(left.clusterScore || 0)
+      || Number(right.collectionCount || 0) - Number(left.collectionCount || 0)
+      || String(left.title || "").localeCompare(String(right.title || "")))
+    .slice(0, 12);
+}
+
+function crossCollectionClusterEvidenceCardRanking(cluster = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const calibration = crossCollectionClusterCalibration(cluster, labels);
+  const collectionCount = Number(cluster?.collectionCount || 0);
+  const paperCount = Number(cluster?.paperCount || 0);
+  const clusterScore = Number(cluster?.clusterScore || 0);
+  const linkCount = (cluster?.linkSignals || []).length;
+  const methodCount = (cluster?.methodSignals || []).length;
+  const gapCount = (cluster?.gapSignals || []).length;
+  const queryCount = (cluster?.candidateQueries || []).length;
+  const riskText = String(cluster?.reviewRisk || calibration.reviewRisk || "").toLowerCase();
+  const highRisk = /high|高|広/.test(riskText);
+  const mediumRisk = /medium|中/.test(riskText);
+  const recommendationKey = calibration.key || "review";
+  const recommendationBonus = {
+    merge: 28,
+    review: 20,
+    split: 16,
+    gather: 6
+  }[recommendationKey] || 12;
+  const riskBonus = highRisk ? 14 : mediumRisk ? 9 : 3;
+  const score = Math.round(
+    clusterScore
+    + Math.min(collectionCount, 6) * 14
+    + Math.min(linkCount, 6) * 10
+    + Math.min(paperCount, 20)
+    + Math.min(methodCount, 6) * 3
+    + Math.min(gapCount, 6) * 3
+    + Math.min(queryCount, 4) * 2
+    + recommendationBonus
+    + riskBonus
+  );
+  const signals = uniqueInsightLines([
+    labels.crossCollectionEvidenceRankCoverage(collectionCount, paperCount),
+    labels.crossCollectionEvidenceRankLinks(linkCount),
+    labels.crossCollectionEvidenceRankCalibration(calibration.recommendation),
+    labels.crossCollectionEvidenceRankRisk(cluster?.reviewRisk || calibration.reviewRisk || labels.crossCollectionClusterRiskPending)
+  ]).slice(0, 4);
+  return { score, signals };
 }
 
 function crossCollectionReviewPackRow(entry, labels) {
@@ -3801,20 +3861,23 @@ function crossCollectionPriorityEntries(collections = [], gapEntries = [], label
   for (const cluster of clusterMapEntries || []) {
     const count = Number(cluster?.collectionCount || 0);
     if (count < 2) continue;
+    const cardRanking = crossCollectionClusterEvidenceCardRanking(cluster, labels);
     entries.push({
       kind: "cross_collection_cluster",
-      score: 85 + Number(cluster?.clusterScore || 0) + count * 10 + Math.min(Number(cluster?.paperCount || 0), 20),
+      score: 85 + Number(cardRanking.score || 0),
       priority: labels.crossCollectionPriorityCluster(cluster?.title || labels.clusterOther, count),
       reason: labels.crossCollectionPriorityClusterReason(count, cluster?.clusterScore || 0),
       collections: cluster?.collections || [],
       evidence: uniqueInsightLines([
+        cardRanking.score ? `${labels.crossCollectionEvidenceRankColumn}: ${cardRanking.score}` : "",
+        ...(cardRanking.signals || []).map((signal) => `${labels.crossCollectionEvidenceRankSignalsColumn}: ${signal}`),
         cluster?.clusterScore ? `${labels.crossCollectionClusterScoreColumn}: ${cluster.clusterScore}` : "",
         cluster?.calibrationRecommendation ? `${labels.crossCollectionClusterRecommendationColumn}: ${cluster.calibrationRecommendation}` : "",
         cluster?.thresholdBand ? `${labels.crossCollectionClusterThresholdColumn}: ${cluster.thresholdBand}` : "",
         ...(cluster?.linkSignals || []).map((signal) => `${labels.crossCollectionClusterLinkColumn}: ${signal}`),
         ...(cluster?.themes || []).map((theme) => `${labels.clusterColumn}: ${theme}`),
         ...(cluster?.gapSignals || []).map((gap) => `${labels.gapSignalColumn}: ${gap}`)
-      ]).slice(0, 5),
+      ]).slice(0, 10),
       nextAction: cluster?.calibrationAction || cluster?.reviewAction || labels.crossCollectionClusterReviewAction(cluster?.title || labels.clusterOther)
     });
   }
@@ -4714,6 +4777,8 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionReviewPack: "Cross-Collection Review Pack",
       crossCollectionClusterScopeColumn: "Cluster Scope",
       crossCollectionClusterScoreColumn: "Cluster Score",
+      crossCollectionEvidenceRankColumn: "Evidence Card Rank",
+      crossCollectionEvidenceRankSignalsColumn: "Rank Signals",
       crossCollectionClusterThresholdColumn: "Threshold Evidence",
       crossCollectionClusterRecommendationColumn: "Calibration Recommendation",
       crossCollectionClusterLinkColumn: "Link Evidence",
@@ -4750,6 +4815,10 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionClusterSupport: (count, papers) => count >= 2
         ? `${count} collections, ${papers} papers`
         : `single collection, ${papers} papers`,
+      crossCollectionEvidenceRankCoverage: (count, papers) => `coverage: ${count || 0} collections, ${papers || 0} papers`,
+      crossCollectionEvidenceRankLinks: (links) => `link signals: ${links || 0}`,
+      crossCollectionEvidenceRankCalibration: (recommendation) => `calibration: ${recommendation || "pending"}`,
+      crossCollectionEvidenceRankRisk: (risk) => `risk: ${risk || "pending"}`,
       crossCollectionClusterPrompt: (cluster, count) => `Turn ${cluster} into a review section plan across ${count || "the relevant"} collections; separate shared claims, scope-specific claims, and missing evidence.`,
       crossCollectionClusterReviewAction: (cluster) => `Verify the source collection reports for ${cluster}; keep only evidence-backed shared claims.`,
       crossCollectionClusterNoEvidence: "No cluster evidence cards are available yet.",
@@ -4996,6 +5065,8 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionReviewPack: "Collection 横断レビュー執筆パック",
       crossCollectionClusterScopeColumn: "クラスタ範囲",
       crossCollectionClusterScoreColumn: "クラスタスコア",
+      crossCollectionEvidenceRankColumn: "証拠カード順位",
+      crossCollectionEvidenceRankSignalsColumn: "順位シグナル",
       crossCollectionClusterThresholdColumn: "しきい値根拠",
       crossCollectionClusterRecommendationColumn: "校正提案",
       crossCollectionClusterLinkColumn: "接続根拠",
@@ -5032,6 +5103,10 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionClusterSupport: (count, papers) => count >= 2
         ? `${count} 件の collection、${papers} 本の論文`
         : `単一 collection、${papers} 本の論文`,
+      crossCollectionEvidenceRankCoverage: (count, papers) => `カバレッジ: collection ${count || 0} 件、論文 ${papers || 0} 本`,
+      crossCollectionEvidenceRankLinks: (links) => `接続根拠: ${links || 0} 件`,
+      crossCollectionEvidenceRankCalibration: (recommendation) => `校正提案: ${recommendation || "未確認"}`,
+      crossCollectionEvidenceRankRisk: (risk) => `リスク: ${risk || "未確認"}`,
       crossCollectionClusterPrompt: (cluster, count) => `${cluster} を ${count || "関連する"} 件の collection にまたがるレビュー節計画に変換し、共通主張、範囲固有の主張、不足証拠を分ける。`,
       crossCollectionClusterReviewAction: (cluster) => `${cluster} の元 collection 報告書を確認し、証拠で支えられる共通主張だけを残す。`,
       crossCollectionClusterNoEvidence: "利用できるクラスタ証拠カードはまだありません。",
@@ -5277,6 +5352,8 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionReviewPack: "跨集合综述写作包",
     crossCollectionClusterScopeColumn: "聚类范围",
     crossCollectionClusterScoreColumn: "聚类评分",
+    crossCollectionEvidenceRankColumn: "证据卡排序分",
+    crossCollectionEvidenceRankSignalsColumn: "排序线索",
     crossCollectionClusterThresholdColumn: "阈值证据",
     crossCollectionClusterRecommendationColumn: "校准建议",
     crossCollectionClusterLinkColumn: "连接证据",
@@ -5313,6 +5390,10 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionClusterSupport: (count, papers) => count >= 2
       ? `${count} 个集合，${papers} 篇论文`
       : `单集合，${papers} 篇论文`,
+    crossCollectionEvidenceRankCoverage: (count, papers) => `覆盖：${count || 0} 个集合，${papers || 0} 篇论文`,
+    crossCollectionEvidenceRankLinks: (links) => `连接证据：${links || 0} 条`,
+    crossCollectionEvidenceRankCalibration: (recommendation) => `校准建议：${recommendation || "待复核"}`,
+    crossCollectionEvidenceRankRisk: (risk) => `风险：${risk || "待复核"}`,
     crossCollectionClusterPrompt: (cluster, count) => `把“${cluster}”整理成横跨 ${count || "相关"} 个集合的综述小节计划，区分共同主张、范围特有主张和缺失证据。`,
     crossCollectionClusterReviewAction: (cluster) => `核对“${cluster}”对应的集合报告，只保留有证据支撑的共同主张。`,
     crossCollectionClusterNoEvidence: "暂时没有可用的聚类证据卡。",

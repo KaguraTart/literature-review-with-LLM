@@ -120,6 +120,7 @@ function loadBootstrapHelpers(files = new Map<string, string>()) {
       batchRunReportPayload: (settings: any, collectionContext: any, results: any[], options?: any) => any;
       crossCollectionIndexPath: (settings: any) => string;
       crossCollectionSynthesisPath: (settings: any, outputLanguage: string) => string;
+      renderCrossCollectionSynthesis: (indexPayload: any, outputLanguage?: string) => string;
       renderMarkdown: (item: any, pdf: any, settings: any, result: any) => string;
       linkOrUpdateAttachment: (item: any, outputPath: string, existing?: any) => Promise<any>;
       linkCollectionWorkspaceMarkdownArtifacts: (collectionContext: any, artifacts: any) => Promise<any[]>;
@@ -1032,6 +1033,8 @@ describe("batch papers index", () => {
         reason: expect.stringContaining("Cluster spans 2 collections; score"),
         collections: expect.arrayContaining(["Old Collection", "New Collection"]),
         evidence: expect.arrayContaining([
+          expect.stringContaining("Evidence Card Rank:"),
+          expect.stringContaining("Rank Signals:"),
           expect.stringContaining("Cluster Score:"),
           expect.stringContaining("Calibration Recommendation:"),
           expect.stringContaining("Threshold Evidence:"),
@@ -1050,6 +1053,8 @@ describe("batch papers index", () => {
     expect(synthesis).toContain("Cross-Collection Cluster Map");
     expect(synthesis).toContain("Cluster Threshold Calibration Board");
     expect(synthesis).toContain("Cluster Evidence Cards");
+    expect(synthesis).toContain("Evidence Card Rank");
+    expect(synthesis).toContain("Rank Signals");
     expect(synthesis).toContain("Cluster Score");
     expect(synthesis).toContain("Calibration Recommendation");
     expect(synthesis).toContain("Threshold Evidence");
@@ -1079,6 +1084,54 @@ describe("batch papers index", () => {
     expect(synthesis).toContain("New Collection");
     expect(synthesis).toContain("Urban Airspace");
     expect(synthesis).toContain("Prioritize candidate search; this gap recurs in 2 collections");
+  });
+
+  it("ranks cross-collection cluster evidence cards before isolated high-score clusters", () => {
+    const { helpers } = loadBootstrapHelpers();
+    const synthesis = helpers.renderCrossCollectionSynthesis({
+      collections: [],
+      stats: { collections: 0, totalPapers: 0, availableSummaries: 0, skippedNoPdf: 0, failed: 0 },
+      clusterMap: [
+        {
+          title: "Single collection benchmark",
+          collectionCount: 1,
+          paperCount: 30,
+          themeCount: 1,
+          collections: ["Benchmarks"],
+          themes: ["Benchmark"],
+          clusterScore: 95,
+          linkSignals: [],
+          methodSignals: ["benchmark protocol"],
+          gapSignals: [],
+          candidateQueries: [],
+          reviewRisk: "low: narrow scope, still verify source summaries"
+        },
+        {
+          title: "Cross-cutting safety",
+          collectionCount: 3,
+          paperCount: 6,
+          themeCount: 2,
+          collections: ["UAM", "Safety", "Routing"],
+          themes: ["Safety", "Routing"],
+          clusterScore: 60,
+          linkSignals: ["Safety / Routing: method-signal overlap", "Safety / Routing: gap-signal overlap"],
+          methodSignals: ["risk-aware routing", "safe scheduling"],
+          gapSignals: ["No field deployment"],
+          candidateQueries: ["risk-aware UAM routing"],
+          reviewRisk: "medium: verify shared evidence before merging review sections"
+        }
+      ]
+    }, "en-US");
+    const cardStart = synthesis.indexOf("## Cluster Evidence Cards");
+    const cardEnd = synthesis.indexOf("## Theme Merge Review Board");
+    const cardSection = synthesis.slice(cardStart, cardEnd);
+
+    expect(cardSection).toContain("Evidence Card Rank");
+    expect(cardSection).toContain("Rank Signals");
+    expect(cardSection).toContain("coverage: 3 collections, 6 papers");
+    expect(cardSection).toContain("link signals: 2");
+    expect(cardSection.indexOf("### Cross-cutting safety")).toBeGreaterThanOrEqual(0);
+    expect(cardSection.indexOf("### Cross-cutting safety")).toBeLessThan(cardSection.indexOf("### Single collection benchmark"));
   });
 
   it("localizes collection review and research question templates", async () => {
