@@ -7421,10 +7421,12 @@ function renderProposalNoteMarkdown(context, options = {}) {
   const domainStructure = proposalDomainWritingStructure(promptPackId, labels);
   const disciplineExamples = proposalDisciplineWritingExamples(promptPackId, labels);
   const disciplineStyleTemplates = proposalDisciplineWritingStyleTemplates(promptPackId, labels);
+  const reviewerChecklist = proposalDisciplineReviewerChecklist(promptPackId, labels);
+  const paragraphExamples = proposalParagraphLevelExamples(promptPackId, labels);
   const sections = proposalNoteSections(labels);
   const lines = [
     "---",
-    "templateVersion: proposal-note-v2",
+    "templateVersion: proposal-note-v3",
     `generatedAt: ${generatedAt}`,
     `collectionKey: ${yamlScalar(collectionKey)}`,
     `itemKey: ${yamlScalar(itemKey)}`,
@@ -7467,6 +7469,10 @@ function renderProposalNoteMarkdown(context, options = {}) {
     ...disciplineWritingExampleLines(disciplineExamples, labels),
     "",
     ...disciplineWritingStyleTemplateLines(disciplineStyleTemplates, labels),
+    "",
+    ...disciplineReviewerChecklistLines(reviewerChecklist, labels),
+    "",
+    ...paragraphLevelExampleLines(paragraphExamples, labels),
     "",
     `### ${labels.writingChecklist}`,
     "",
@@ -7589,6 +7595,29 @@ function disciplineWritingStyleTemplateLines(rows, labels) {
       row.weak,
       row.strong,
       row.check
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
+function disciplineReviewerChecklistLines(items, labels) {
+  return [
+    `### ${labels.disciplineReviewerChecklist}`,
+    "",
+    ...items.map((item) => `- [ ] ${item}`)
+  ];
+}
+
+function paragraphLevelExampleLines(rows, labels) {
+  return [
+    `### ${labels.paragraphLevelExamples}`,
+    "",
+    `| ${labels.paragraphUse} | ${labels.paragraphWeak} | ${labels.paragraphStronger} | ${labels.paragraphEvidence} |`,
+    "| --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.use,
+      row.weak,
+      row.strong,
+      row.evidence
     ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
   ];
 }
@@ -7753,6 +7782,22 @@ function journalDisciplineWritingStyleTemplates(promptPackId, labels) {
   return disciplineWritingStyleTemplates(promptPackId, labels, "journal");
 }
 
+function proposalDisciplineReviewerChecklist(promptPackId, labels) {
+  return disciplineReviewerChecklist(promptPackId, labels, "proposal");
+}
+
+function journalDisciplineReviewerChecklist(promptPackId, labels) {
+  return disciplineReviewerChecklist(promptPackId, labels, "journal");
+}
+
+function proposalParagraphLevelExamples(promptPackId, labels) {
+  return paragraphLevelExamples(promptPackId, labels, "proposal");
+}
+
+function journalParagraphLevelExamples(promptPackId, labels) {
+  return paragraphLevelExamples(promptPackId, labels, "journal");
+}
+
 function disciplineWritingStyleTemplates(promptPackId, labels, mode) {
   const id = normalizePromptPackId(promptPackId);
   const zh = labels.language === "zh-CN";
@@ -7891,6 +7936,147 @@ function disciplineWritingStyleTemplates(promptPackId, labels, mode) {
   return rows.map(([move, focus, weak, strong, check]) => ({ move, focus, weak, strong, check }));
 }
 
+function disciplineReviewerChecklist(promptPackId, labels, mode) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      "是否明确 task、data、metric、baseline 四件套。",
+      "是否用消融、复杂度或失败案例支撑方法差异。",
+      "是否记录域外测试、复现成本和安全/偏置边界。"
+    ],
+    transportation: [
+      "是否明确道路/空域/网络约束、需求流和安全阈值。",
+      "是否把安全、效率、鲁棒性和可扩展性拆成可计算指标。",
+      "是否区分仿真有效、工程部署条件和运行管理建议。"
+    ],
+    biomedicine: [
+      "是否明确纳排标准、比较对象、endpoint 和样本来源。",
+      "是否报告效应量、不确定性、偏倚控制和缺失处理。",
+      "是否区分机制解释、临床相关性和不可外推条件。"
+    ],
+    "social-science": [
+      "是否把理论概念、变量关系和机制假设分开。",
+      "是否说明识别假设、替代解释和稳健性测试。",
+      "政策建议是否绑定制度背景、样本范围和外部有效性。"
+    ],
+    "review-writing": [
+      "分类框架是否能合并相近方向并分开无关方向。",
+      "每个综合主张是否追溯到代表论文、证据强度和反例。",
+      "研究空白是否被转化为可执行的后续问题。"
+    ],
+    general: [
+      "问题、对象、范围和证据边界是否清楚。",
+      "贡献、风险和待补证据是否分开。",
+      "每个判断是否有证据标签或低置信度说明。"
+    ]
+  } : {
+    "ai-ml": [
+      "Are task, data, metric, and baseline all explicit?",
+      "Is the method difference supported by ablation, complexity, or failure cases?",
+      "Are out-of-domain tests, reproduction cost, and safety/bias boundaries recorded?"
+    ],
+    transportation: [
+      "Are road, airspace, or network constraints, demand flow, and safety thresholds explicit?",
+      "Are safety, efficiency, robustness, and scalability converted into measurable criteria?",
+      "Are simulation validity, deployment conditions, and operations implications separate?"
+    ],
+    biomedicine: [
+      "Are eligibility criteria, comparator, endpoint, and sample source explicit?",
+      "Are effect size, uncertainty, bias control, and missing-data handling reported?",
+      "Are mechanism, clinical relevance, and non-generalizable conditions separated?"
+    ],
+    "social-science": [
+      "Are theoretical constructs, variable relations, and mechanism hypotheses separate?",
+      "Are identification assumptions, alternatives, and robustness checks explicit?",
+      "Does policy advice include institution, sample scope, and external-validity boundaries?"
+    ],
+    "review-writing": [
+      "Can the taxonomy merge related directions and separate unrelated ones?",
+      "Does each synthesis claim trace to representative papers, evidence strength, and counter-evidence?",
+      "Is each research gap converted into an actionable follow-up question?"
+    ],
+    general: [
+      "Are the question, object, scope, and evidence boundary clear?",
+      "Are contribution, risk, and missing evidence separated?",
+      "Does every judgment have an evidence label or a low-confidence note?"
+    ]
+  };
+  const modeItem = zh
+    ? (mode === "journal"
+      ? "摘要、引言、方法、结果和讨论是否围绕同一个核心主张闭合。"
+      : "开题/申报文本是否能落到研究问题、技术路线、实验计划和风险控制。")
+    : (mode === "journal"
+      ? "Do abstract, introduction, methods, results, and discussion close around one central claim?"
+      : "Can the proposal text become a research question, technical route, validation plan, and risk control?");
+  return [...(packs[id] || packs.general), modeItem];
+}
+
+function paragraphLevelExamples(promptPackId, labels, mode) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["结果段", "模型效果很好。", "在{数据集}和{评价协议}下，{指标}相对{baseline}提升{数值}，消融显示{模块}贡献最大。", "主结果表、baseline、消融和协议说明。"],
+      ["局限段", "模型仍有一些不足。", "失败主要集中在{域外/长尾/噪声}样本，说明方法受{泛化/成本/安全}边界影响。", "失败案例、域外测试、错误分析和算力成本。"]
+    ],
+    transportation: [
+      ["问题段", "需要提升交通效率。", "不是只提升效率，而是在{安全阈值}下缓解{冲突/拥堵/调度}并评价{延误/吞吐/鲁棒性}。", "需求流、规则约束、冲突率、延误和吞吐指标。"],
+      ["结论段", "方法可以用于实际交通系统。", "结果仅表明在{仿真场景/需求条件}下有效，真实部署还需补充{实测/法规/运维}证据。", "仿真场景、压力测试、实测可得性和运行规则。"]
+    ],
+    biomedicine: [
+      ["研究对象段", "本文研究疾病机制。", "在{样本/队列/实验体系}中，检验{暴露/干预}与{endpoint}之间的关系。", "纳排标准、样本来源、比较对象和 endpoint 定义。"],
+      ["讨论段", "结果有临床价值。", "结果支持{机制/相关性}解释，但在{人群/剂量/场景}外仍缺少外部验证。", "外部验证、阴性结果、安全性和伦理合规证据。"]
+    ],
+    "social-science": [
+      ["理论段", "本文研究因素影响。", "基于{理论/制度背景}，本文检验{变量A}经由{机制}影响{变量B}的假设。", "理论来源、变量定义、替代解释和假设证据。"],
+      ["政策段", "建议推广该政策。", "政策含义仅适用于{制度/群体/时期}条件，外部有效性需由{异质性/补充数据}继续检验。", "异质性结果、制度背景、样本范围和伦理影响。"]
+    ],
+    "review-writing": [
+      ["分类段", "本文总结相关研究。", "本文按{问题/方法/数据/场景}划分文献，使{方向A}和{方向B}可在同一框架下比较。", "分类表、代表论文、检索边界和时间线。"],
+      ["综合段", "未来还需要更多研究。", "当前空白来自{数据缺口/方法瓶颈/评价缺失}，下一步可检验{可执行问题}。", "缺口台账、反例、低置信来源和后续检索计划。"]
+    ],
+    general: [
+      ["问题段", "这个问题很重要。", "在{场景}中，{对象}面临{核心矛盾}，现有证据显示{缺口}。", "摘要、引言、代表论文和边界证据。"],
+      ["贡献段", "本文有创新。", "可写贡献包括{理论/方法/数据/应用}，其中{低证据贡献}需要后续补证。", "贡献句、对比证据、局限和待补文献。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Results paragraph", "The model works well.", "Under {dataset} and {protocol}, {metric} improves over {baseline} by {value}; ablation shows {module} explains most of the gain.", "Main result table, baseline, ablation, and protocol notes."],
+      ["Limitation paragraph", "The model has some limitations.", "Failures concentrate in {out-of-domain/long-tail/noisy} samples, showing a {generalization/cost/safety} boundary.", "Failure cases, out-of-domain tests, error analysis, and compute cost."]
+    ],
+    transportation: [
+      ["Problem paragraph", "Traffic efficiency needs improvement.", "The goal is not only efficiency: under {safety threshold}, reduce {conflict/congestion/dispatch} and evaluate {delay/throughput/robustness}.", "Demand flow, rule constraints, conflict rate, delay, and throughput metrics."],
+      ["Conclusion paragraph", "The method can be used in real traffic systems.", "The result only supports effectiveness under {simulation scenario/demand condition}; deployment still needs {field/regulatory/operations} evidence.", "Simulation scenarios, stress tests, field-data access, and operating rules."]
+    ],
+    biomedicine: [
+      ["Study scope paragraph", "This paper studies a disease mechanism.", "In {sample/cohort/system}, the study tests the relation between {exposure/intervention} and {endpoint}.", "Eligibility criteria, sample source, comparator, and endpoint definition."],
+      ["Discussion paragraph", "The result has clinical value.", "The result supports {mechanism/association}, but external validation is still missing beyond {population/dose/scenario}.", "External validation, negative results, safety, and ethics/compliance evidence."]
+    ],
+    "social-science": [
+      ["Theory paragraph", "The paper studies factor effects.", "Based on {theory/institutional context}, the paper tests whether {variable A} affects {variable B} through {mechanism}.", "Theory source, variable definition, alternatives, and hypothesis evidence."],
+      ["Policy paragraph", "The policy should be adopted broadly.", "The policy implication applies only under {institution/group/period}; external validity needs {heterogeneity/additional data}.", "Heterogeneity, institutional background, sample scope, and ethical impact."]
+    ],
+    "review-writing": [
+      ["Taxonomy paragraph", "This review summarizes related work.", "The review organizes papers by {problem/method/data/scenario}, making {direction A} and {direction B} comparable within one frame.", "Taxonomy table, representative papers, search boundary, and timeline."],
+      ["Synthesis paragraph", "More research is needed.", "The remaining gap comes from {data gap/method bottleneck/evaluation absence}; the next actionable question is {question}.", "Gap ledger, counter-evidence, low-confidence sources, and follow-up search plan."]
+    ],
+    general: [
+      ["Problem paragraph", "This is an important problem.", "In {scenario}, {object} faces {core tension}; current evidence shows {gap}.", "Abstract, introduction, representative papers, and boundary evidence."],
+      ["Contribution paragraph", "The paper is innovative.", "Draftable contributions include {theory/method/data/application}; {low-evidence contribution} needs follow-up evidence.", "Contribution sentence, comparison evidence, limitations, and missing literature."]
+    ]
+  };
+  const modeRow = zh
+    ? (mode === "journal"
+      ? ["投稿定位段", "适合投稿。", "本文适合{期刊/会议/报告类型}，因为{主张}由{方法/结果/证据链}支撑。", "目标读者、文章类型、核心主张和必需证据。"]
+      : ["开题定位段", "这个方向可以做。", "本课题可行性来自{数据/平台/方法基础}，风险集中在{证据缺口/验证成本/范围边界}。", "数据可得性、平台条件、技术路线和风险清单。"])
+    : (mode === "journal"
+      ? ["Venue-positioning paragraph", "It is suitable for submission.", "The work fits {journal/conference/report type} because {claim} is supported by {method/result/evidence chain}.", "Target readers, article type, central claim, and required evidence."]
+      : ["Proposal-positioning paragraph", "This direction is feasible.", "Feasibility comes from {data/platform/method basis}; risks concentrate in {evidence gap/validation cost/scope boundary}.", "Data access, platform conditions, technical route, and risk checklist."]);
+  const rows = [...(packs[id] || packs.general), modeRow];
+  return rows.map(([use, weak, strong, evidence]) => ({ use, weak, strong, evidence }));
+}
+
 function proposalDomainChecklist(promptPackId, labels) {
   const id = normalizePromptPackId(promptPackId);
   const zh = labels.language === "zh-CN";
@@ -8011,6 +8197,12 @@ function proposalNoteLabels(outputLanguage) {
       weakWording: "不建议写法",
       strongerWording: "更稳妥写法",
       styleEvidenceCheck: "证据核查",
+      disciplineReviewerChecklist: "分领域审稿核查清单",
+      paragraphLevelExamples: "段落级改写示例",
+      paragraphUse: "段落用途",
+      paragraphWeak: "容易被质疑的写法",
+      paragraphStronger: "建议改写",
+      paragraphEvidence: "需要补齐的证据",
       writingChecklist: "写作清单",
       structureSection: "结构单元",
       writingGoal: "写作目标",
@@ -8074,6 +8266,12 @@ function proposalNoteLabels(outputLanguage) {
     weakWording: "Weak wording",
     strongerWording: "Stronger wording",
     styleEvidenceCheck: "Evidence check",
+    disciplineReviewerChecklist: "Field-Specific Reviewer Checklist",
+    paragraphLevelExamples: "Paragraph-Level Revision Examples",
+    paragraphUse: "Paragraph use",
+    paragraphWeak: "Questionable wording",
+    paragraphStronger: "Suggested revision",
+    paragraphEvidence: "Evidence to add",
     writingChecklist: "Writing Checklist",
     structureSection: "Structure unit",
     writingGoal: "Writing goal",
@@ -8136,10 +8334,12 @@ function renderJournalOutlineMarkdown(context, options = {}) {
   const venueStructures = journalVenueWritingStructures(labels);
   const disciplineExamples = journalDisciplineWritingExamples(promptPackId, labels);
   const disciplineStyleTemplates = journalDisciplineWritingStyleTemplates(promptPackId, labels);
+  const reviewerChecklist = journalDisciplineReviewerChecklist(promptPackId, labels);
+  const paragraphExamples = journalParagraphLevelExamples(promptPackId, labels);
   const sections = journalOutlineSections(labels);
   const lines = [
     "---",
-    "templateVersion: journal-outline-v2",
+    "templateVersion: journal-outline-v3",
     `generatedAt: ${generatedAt}`,
     `collectionKey: ${yamlScalar(collectionKey)}`,
     `focalItemKey: ${yamlScalar(focal.itemKey)}`,
@@ -8175,6 +8375,10 @@ function renderJournalOutlineMarkdown(context, options = {}) {
     ...disciplineWritingExampleLines(disciplineExamples, labels),
     "",
     ...disciplineWritingStyleTemplateLines(disciplineStyleTemplates, labels),
+    "",
+    ...disciplineReviewerChecklistLines(reviewerChecklist, labels),
+    "",
+    ...paragraphLevelExampleLines(paragraphExamples, labels),
     "",
     `### ${labels.writingChecklist}`,
     "",
@@ -8521,6 +8725,12 @@ function journalOutlineLabels(outputLanguage) {
       weakWording: "不建议写法",
       strongerWording: "更稳妥写法",
       styleEvidenceCheck: "证据核查",
+      disciplineReviewerChecklist: "分领域审稿核查清单",
+      paragraphLevelExamples: "段落级改写示例",
+      paragraphUse: "段落用途",
+      paragraphWeak: "容易被质疑的写法",
+      paragraphStronger: "建议改写",
+      paragraphEvidence: "需要补齐的证据",
       writingChecklist: "写作清单",
       structureSection: "结构单元",
       writingGoal: "写作目标",
@@ -8600,6 +8810,12 @@ function journalOutlineLabels(outputLanguage) {
     weakWording: "Weak wording",
     strongerWording: "Stronger wording",
     styleEvidenceCheck: "Evidence check",
+    disciplineReviewerChecklist: "Field-Specific Reviewer Checklist",
+    paragraphLevelExamples: "Paragraph-Level Revision Examples",
+    paragraphUse: "Paragraph use",
+    paragraphWeak: "Questionable wording",
+    paragraphStronger: "Suggested revision",
+    paragraphEvidence: "Evidence to add",
     writingChecklist: "Writing Checklist",
     structureSection: "Structure unit",
     writingGoal: "Writing goal",

@@ -9289,7 +9289,7 @@ describe("workbench writeback helpers", () => {
       contextSourceHash: "sourcehash"
     });
 
-    expect(note).toContain("templateVersion: proposal-note-v2");
+    expect(note).toContain("templateVersion: proposal-note-v3");
     expect(note).toContain('promptPackId: "transportation"');
     expect(note).toContain("# 开题与课题申报笔记");
     expect(note).toContain("## 选题框架");
@@ -9310,6 +9310,13 @@ describe("workbench writeback helpers", () => {
     expect(note).toContain("提升交通效率");
     expect(note).toContain("在{道路/空域/网络}约束下");
     expect(note).toContain("检查 OD/需求流、规则约束和安全阈值");
+    expect(note).toContain("### 分领域审稿核查清单");
+    expect(note).toContain("是否明确道路/空域/网络约束、需求流和安全阈值");
+    expect(note).toContain("开题/申报文本是否能落到研究问题、技术路线、实验计划和风险控制");
+    expect(note).toContain("### 段落级改写示例");
+    expect(note).toContain("| 段落用途 | 容易被质疑的写法 | 建议改写 | 需要补齐的证据 |");
+    expect(note).toContain("不是只提升效率");
+    expect(note).toContain("真实部署还需补充");
     expect(note).toContain("### 写作清单");
     expect(note).toContain("明确道路/空域/网络约束");
     expect(note).toContain("### 技术路线与方法基础");
@@ -9367,6 +9374,13 @@ describe("workbench writeback helpers", () => {
     expect(files.get(notePath)).toContain("Define study object");
     expect(files.get(notePath)).toContain("Study a disease mechanism");
     expect(files.get(notePath)).toContain("Eligibility criteria, comparator, and endpoint");
+    expect(files.get(notePath)).toContain("### Field-Specific Reviewer Checklist");
+    expect(files.get(notePath)).toContain("Are eligibility criteria, comparator, endpoint, and sample source explicit?");
+    expect(files.get(notePath)).toContain("Can the proposal text become a research question, technical route, validation plan, and risk control?");
+    expect(files.get(notePath)).toContain("### Paragraph-Level Revision Examples");
+    expect(files.get(notePath)).toContain("| Paragraph use | Questionable wording | Suggested revision | Evidence to add |");
+    expect(files.get(notePath)).toContain("Study scope paragraph");
+    expect(files.get(notePath)).toContain("Feasibility comes from");
     expect(files.get(notePath)).toContain("### Writing Checklist");
     expect(files.get(notePath)).toContain("Define study design, sample or cohort");
     expect(files.get(notePath)).toContain("Proposal Source Paper");
@@ -9423,7 +9437,7 @@ describe("workbench writeback helpers", () => {
       contextSourceHash: "sourcehash"
     });
 
-    expect(outline).toContain("templateVersion: journal-outline-v2");
+    expect(outline).toContain("templateVersion: journal-outline-v3");
     expect(outline).toContain('promptPackId: "ai-ml"');
     expect(outline).toContain("# 期刊/报告写作提纲");
     expect(outline).toContain("## 投稿/报告定位");
@@ -9446,6 +9460,13 @@ describe("workbench writeback helpers", () => {
     expect(outline).toContain("定位贡献层级");
     expect(outline).toContain("效果更好");
     expect(outline).toContain("主结果、消融和协议必须能相互印证");
+    expect(outline).toContain("### 分领域审稿核查清单");
+    expect(outline).toContain("是否明确 task、data、metric、baseline 四件套");
+    expect(outline).toContain("摘要、引言、方法、结果和讨论是否围绕同一个核心主张闭合");
+    expect(outline).toContain("### 段落级改写示例");
+    expect(outline).toContain("| 段落用途 | 容易被质疑的写法 | 建议改写 | 需要补齐的证据 |");
+    expect(outline).toContain("在{数据集}和{评价协议}下");
+    expect(outline).toContain("失败主要集中在");
     expect(outline).toContain("### 写作清单");
     expect(outline).toContain("模型类别、数据与评价协议");
     expect(outline).toContain("## 正文提纲");
@@ -9524,6 +9545,13 @@ describe("workbench writeback helpers", () => {
     expect(files.get(outlinePath)).toContain("State synthesis claim");
     expect(files.get(outlinePath)).toContain("This review summarizes related studies");
     expect(files.get(outlinePath)).toContain("representative papers and evidence labels");
+    expect(files.get(outlinePath)).toContain("### Field-Specific Reviewer Checklist");
+    expect(files.get(outlinePath)).toContain("Does each synthesis claim trace to representative papers, evidence strength, and counter-evidence?");
+    expect(files.get(outlinePath)).toContain("Do abstract, introduction, methods, results, and discussion close around one central claim?");
+    expect(files.get(outlinePath)).toContain("### Paragraph-Level Revision Examples");
+    expect(files.get(outlinePath)).toContain("| Paragraph use | Questionable wording | Suggested revision | Evidence to add |");
+    expect(files.get(outlinePath)).toContain("Taxonomy paragraph");
+    expect(files.get(outlinePath)).toContain("The remaining gap comes from");
     expect(files.get(outlinePath)).toContain("### Writing Checklist");
     expect(files.get(outlinePath)).toContain("Organize related work by taxonomy dimensions");
     expect(files.get(outlinePath)).toContain("Comparison Evidence Paper");
