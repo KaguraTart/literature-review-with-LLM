@@ -8580,6 +8580,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `chartPanelCount: ${Number(chartLayoutDiagnostics.panelCount) || 0}`,
     `chartAxisSegmentCount: ${Number(chartLayoutDiagnostics.axisSegmentCount) || 0}`,
     `chartAxisSegmentCalibrationMapCount: ${Number(chartLayoutDiagnostics.axisSegmentCalibrationMapCount) || 0}`,
+    `chartAxisBreakCueCount: ${Number(chartLayoutDiagnostics.axisBreakCueCount) || 0}`,
     `chartPanelSplitCandidateCount: ${Number(chartLayoutDiagnostics.panelSplitCandidateCount) || 0}`,
     `pixelDataDraftCount: ${pixelDataDrafts.length}`,
     `calibrationAnchorCount: ${calibrationAnchors.length}`,
@@ -9037,6 +9038,24 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       ["pixelGapToNextSegment", segment.pixelGapToNextSegment === null || segment.pixelGapToNextSegment === undefined ? "" : segment.pixelGapToNextSegment],
       ["valueGapToNextSegment", segment.valueGapToNextSegment === null || segment.valueGapToNextSegment === undefined ? "" : segment.valueGapToNextSegment],
       ["detail", segment.detail || ""]
+    ]) {
+      if (value === "") continue;
+      rows.push({ ...base, column, value: mdText(value) });
+    }
+  }
+  for (const [cueIndex, cue] of (chartLayoutDiagnostics?.axisBreakCues || []).entries()) {
+    const base = {
+      tableIndex: `layout-axis-break:${cueIndex + 1}`,
+      rowIndex: cueIndex + 1,
+      evidenceLabels: cue.evidenceLabels || []
+    };
+    for (const [column, value] of [
+      ["source", cue.source || ""],
+      ["axis", cue.axis || ""],
+      ["cue", cue.cue || ""],
+      ["status", cue.status || ""],
+      ["confidence", cue.confidence || ""],
+      ["detail", cue.detail || ""]
     ]) {
       if (value === "") continue;
       rows.push({ ...base, column, value: mdText(value) });
@@ -9983,7 +10002,8 @@ function visualExtractionChartLayoutDiagnostics(answer, tables = [], chartDataDr
   const text = String(answer || "");
   const multiPanelMentioned = panels.length > 1 || (images || []).length > 1 || /multi[-\s]?panel|subplot|subfigure|分面|面板|子图|子圖|多图|多圖/i.test(text);
   const axisSegments = visualExtractionAxisSegmentDiagnostics(calibrationAnchors);
-  const discontinuousAxisDetected = axisSegments.length > 0 || /broken[-\s]?axis|axis\s*break|discontinuous|segmented\s*axis|piecewise|断轴|斷軸|断裂轴|不连续|不連續|分段轴|区段|區段/i.test(text);
+  const axisBreakCues = visualExtractionAxisBreakCues(text, tables, axisSegments);
+  const discontinuousAxisDetected = axisSegments.length > 0 || axisBreakCues.length > 0;
   const panelSplitCandidates = visualExtractionPanelSplitCandidates(images, panels, text, multiPanelMentioned);
   const panelNeedsReview = multiPanelMentioned && (!panels.length || panels.some((panel) => panel.status !== "covered"));
   const segmentNeedsReview = discontinuousAxisDetected && (!axisSegments.length || axisSegments.some((segment) => segment.status !== "covered"));
@@ -9999,13 +10019,109 @@ function visualExtractionChartLayoutDiagnostics(answer, tables = [], chartDataDr
     panelCount: panels.length,
     axisSegmentCount: axisSegments.length,
     axisSegmentCalibrationMapCount: axisSegments.filter((segment) => segment.status === "covered").length,
+    axisBreakCueCount: axisBreakCues.length,
     panelSplitCandidateCount: panelSplitCandidates.reduce((sum, candidate) => sum + (candidate.boxes || []).length, 0),
     multiPanelDetected: !!multiPanelMentioned,
     discontinuousAxisDetected: !!discontinuousAxisDetected,
     panels,
     axisSegments,
+    axisBreakCues,
     panelSplitCandidates
   };
+}
+
+function visualExtractionAxisBreakCues(answerText = "", tables = [], axisSegments = []) {
+  const cues = [];
+  const seen = new Set();
+  const pushCue = (cue) => {
+    const normalized = `${cue.source || ""}::${cue.axis || ""}::${cue.cue || ""}::${cue.detail || ""}`.toLowerCase();
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    cues.push({
+      source: cue.source || "textual-cue",
+      axis: cue.axis || "",
+      cue: cue.cue || "axis break",
+      status: cue.status || "needs-review",
+      confidence: cue.confidence || "medium",
+      detail: mdText(cue.detail || ""),
+      evidenceLabels: cue.evidenceLabels || []
+    });
+  };
+  const sources = [
+    { source: "answer-text", text: answerText, evidenceLabels: visualExtractionEvidenceLabels(answerText) },
+    ...(tables || []).map((table) => ({
+      source: table?.heading ? `table:${table.tableIndex}:${table.heading}` : `table:${table?.tableIndex || ""}`,
+      text: [table?.heading || "", table?.markdown || ""].join("\n"),
+      evidenceLabels: table?.evidenceLabels || []
+    }))
+  ];
+  for (const source of sources) {
+    for (const match of visualExtractionAxisBreakCueMatches(source.text)) {
+      pushCue({
+        source: source.source,
+        axis: match.axis,
+        cue: match.cue,
+        status: "needs-review",
+        confidence: match.confidence,
+        detail: match.detail,
+        evidenceLabels: source.evidenceLabels
+      });
+    }
+  }
+  for (const segment of axisSegments || []) {
+    if (!segment?.axis || !segment?.segment) continue;
+    pushCue({
+      source: "segmented-calibration",
+      axis: segment.axis,
+      cue: "segmented axis calibration",
+      status: segment.status || "needs-review",
+      confidence: segment.status === "covered" ? "high" : "medium",
+      detail: `${segment.axis} ${segment.segment}: ${segment.detail || ""}`.trim(),
+      evidenceLabels: segment.evidenceLabels || []
+    });
+  }
+  return cues.slice(0, 16);
+}
+
+function visualExtractionAxisBreakCueMatches(text = "") {
+  const source = String(text || "");
+  if (!source.trim()) return [];
+  const cuePatterns = [
+    { cue: "broken axis", pattern: /broken[-\s]?axis|axis\s*break|break\s*mark|axis\s*discontinu(?:ity|ities)|discontinuous\s*axis|segmented\s*axis|piecewise\s*axis/i, confidence: "medium" },
+    { cue: "zigzag break mark", pattern: /zig[-\s]?zag|jagged|sawtooth|saw[-\s]?tooth|wavy\s*(?:line|mark)|\/\/|double\s*slash/i, confidence: "medium" },
+    { cue: "visible axis gap", pattern: /visible\s+axis\s+gap|axis\s+gap|gap\s+between\s+(?:axis\s+)?segments?|gap\s+between\s+(?:visible\s+)?(?:ranges?|ticks?|values?)|gap\s+on\s+(?:the\s+)?axis|omitted\s+range|non[-\s]?contiguous\s+(?:axis|range)/i, confidence: "medium" },
+    { cue: "断轴视觉线索", pattern: /断轴|斷軸|断裂轴|斷裂軸|坐标轴断裂|坐標軸斷裂|不连续轴|不連續軸|分段轴|分段坐标轴|省略区间|省略區間|轴间隙|軸間隙|双斜线|雙斜線|波浪线|波浪線|锯齿|鋸齒/i, confidence: "medium" },
+    { cue: "軸ブレーク", pattern: /軸ブレーク|軸切断|不連続軸|区切り軸|波線|二重スラッシュ|省略区間/i, confidence: "medium" }
+  ];
+  const matches = [];
+  for (const item of cuePatterns) {
+    const match = source.match(item.pattern);
+    if (!match) continue;
+    matches.push({
+      cue: item.cue,
+      axis: visualExtractionAxisFromCueContext(source, match.index || 0),
+      confidence: item.confidence,
+      detail: visualExtractionCueSnippet(source, match.index || 0)
+    });
+  }
+  return matches;
+}
+
+function visualExtractionAxisFromCueContext(text = "", index = 0) {
+  const start = Math.max(0, Number(index) - 80);
+  const end = Math.min(String(text || "").length, Number(index) + 120);
+  const context = String(text || "").slice(start, end);
+  if (/(?:^|[^A-Za-z])Y(?:[^A-Za-z]|$)|y[-\s]?axis|vertical\s+axis|纵轴|縱軸|纵坐标|縱座標|Y轴|Y 軸|Y軸/i.test(context)) return "Y";
+  if (/(?:^|[^A-Za-z])X(?:[^A-Za-z]|$)|x[-\s]?axis|horizontal\s+axis|横轴|橫軸|横坐标|橫座標|X轴|X 軸|X軸/i.test(context)) return "X";
+  return "";
+}
+
+function visualExtractionCueSnippet(text = "", index = 0) {
+  const source = String(text || "").replace(/\s+/g, " ").trim();
+  const position = Math.max(0, Number(index) || 0);
+  const start = Math.max(0, position - 80);
+  const end = Math.min(source.length, position + 140);
+  return source.slice(start, end);
 }
 
 function visualExtractionPanelSplitCandidates(images = [], panels = [], answerText = "", multiPanelMentioned = false) {
@@ -10235,12 +10351,14 @@ function visualExtractionAnnotateAxisSegmentGaps(segments = []) {
 function visualExtractionChartLayoutDiagnosticsMarkdown(diagnostics = {}, labels) {
   const panels = Array.isArray(diagnostics?.panels) ? diagnostics.panels : [];
   const segments = Array.isArray(diagnostics?.axisSegments) ? diagnostics.axisSegments : [];
+  const axisBreakCues = Array.isArray(diagnostics?.axisBreakCues) ? diagnostics.axisBreakCues : [];
   const splitCandidates = Array.isArray(diagnostics?.panelSplitCandidates) ? diagnostics.panelSplitCandidates : [];
   return [
     `- ${labels.layoutStatus}: ${diagnostics?.status || labels.unknown}`,
     `- ${labels.panelCount}: ${Number(diagnostics?.panelCount) || 0}`,
     `- ${labels.axisSegmentCount}: ${Number(diagnostics?.axisSegmentCount) || 0}`,
     `- ${labels.axisSegmentCalibrationMapCount}: ${Number(diagnostics?.axisSegmentCalibrationMapCount) || 0}`,
+    `- ${labels.axisBreakCueCount}: ${Number(diagnostics?.axisBreakCueCount) || 0}`,
     `- ${labels.panelSplitCandidateCount}: ${Number(diagnostics?.panelSplitCandidateCount) || 0}`,
     "",
     `### ${labels.panelCoverage}`,
@@ -10255,11 +10373,31 @@ function visualExtractionChartLayoutDiagnosticsMarkdown(diagnostics = {}, labels
     "",
     segments.length ? visualExtractionAxisSegmentCoverageMarkdown(segments, labels) : `- ${labels.noAxisSegmentDiagnostics}`,
     "",
+    `### ${labels.axisBreakCues}`,
+    "",
+    axisBreakCues.length ? visualExtractionAxisBreakCuesMarkdown(axisBreakCues, labels) : `- ${labels.noAxisBreakCues}`,
+    "",
     `### ${labels.brokenAxisCalibrationMap}`,
     "",
     segments.some((segment) => segment.status === "covered")
       ? visualExtractionBrokenAxisCalibrationMapMarkdown(segments, labels)
       : `- ${labels.noBrokenAxisCalibrationMap}`
+  ].join("\n");
+}
+
+function visualExtractionAxisBreakCuesMarkdown(cues = [], labels) {
+  return [
+    `| ${labels.source} | ${labels.axis} | ${labels.axisBreakCue} | ${labels.reviewStatus} | ${labels.confidence} | ${labels.detail} | ${labels.evidenceLabels} |`,
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    ...(cues || []).map((cue) => [
+      markdownTableCell(cue.source || ""),
+      markdownTableCell(cue.axis || ""),
+      markdownTableCell(cue.cue || ""),
+      markdownTableCell(cue.status || ""),
+      markdownTableCell(cue.confidence || ""),
+      markdownTableCell(cue.detail || ""),
+      markdownTableCell((cue.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
   ].join("\n");
 }
 
@@ -10414,6 +10552,7 @@ function visualExtractionLayoutQualityChecks(diagnostics = {}) {
   const checks = [];
   const panels = Array.isArray(diagnostics?.panels) ? diagnostics.panels : [];
   const segments = Array.isArray(diagnostics?.axisSegments) ? diagnostics.axisSegments : [];
+  const axisBreakCues = Array.isArray(diagnostics?.axisBreakCues) ? diagnostics.axisBreakCues : [];
   if (diagnostics?.multiPanelDetected) {
     const uncovered = panels.filter((panel) => panel.status !== "covered");
     if (!panels.length) {
@@ -10432,6 +10571,18 @@ function visualExtractionLayoutQualityChecks(diagnostics = {}) {
       checks.push(visualExtractionQualityCheck("layout-coverage", "fail", `axis segment coverage incomplete: ${incomplete.map((segment) => `${segment.axis} ${segment.segment}`).join(", ")}`));
     } else {
       checks.push(visualExtractionQualityCheck("layout-coverage", "pass", `axis segment coverage: ${segments.length} segment(s)`));
+    }
+  }
+  if (axisBreakCues.length) {
+    const coveredSegments = segments.filter((segment) => segment.status === "covered").length;
+    const incompleteSegments = segments.filter((segment) => segment.status !== "covered").length;
+    const cueSummary = `axis break visual cue(s): ${axisBreakCues.length}; covered segment calibration: ${coveredSegments}`;
+    if (!segments.length) {
+      checks.push(visualExtractionQualityCheck("axis-break-cues", "warning", `${cueSummary}; no segment anchors parsed`));
+    } else if (incompleteSegments) {
+      checks.push(visualExtractionQualityCheck("axis-break-cues", "fail", `${cueSummary}; incomplete segment calibration: ${incompleteSegments}`));
+    } else {
+      checks.push(visualExtractionQualityCheck("axis-break-cues", "pass", cueSummary));
     }
   }
   return checks;
@@ -10688,6 +10839,9 @@ function visualExtractionQualityRecommendations(checks = []) {
   if (byId.get("layout-coverage") && byId.get("layout-coverage")?.status !== "pass") {
     recommendations.push({ id: "layout-coverage" });
   }
+  if (byId.get("axis-break-cues") && byId.get("axis-break-cues")?.status !== "pass") {
+    recommendations.push({ id: "axis-break-cues" });
+  }
   if (byId.get("dense-confidence") && byId.get("dense-confidence")?.status !== "pass") {
     recommendations.push({ id: "dense-confidence" });
   }
@@ -10728,6 +10882,7 @@ function visualExtractionQualityRecommendationText(item, labels) {
   if (id === "axis-calibration") return labels.recommendationAxisCalibration;
   if (id === "calibration-quality") return labels.recommendationCalibrationQuality;
   if (id === "layout-coverage") return labels.recommendationLayoutCoverage;
+  if (id === "axis-break-cues") return labels.recommendationAxisBreakCues;
   if (id === "dense-confidence") return labels.recommendationDenseConfidence;
   if (id === "confidence") return labels.recommendationConfidence;
   if (id === "image-evidence") return labels.recommendationImageEvidence;
@@ -10985,6 +11140,15 @@ function visualExtractionChartReviewActionForCheck(check, labels) {
       doneCriteria: labels.reviewDoneVerifyLayoutCoverage
     };
   }
+  if (id === "axis-break-cues") {
+    return {
+      ...base,
+      actionId: "verify-axis-break-cues",
+      priority: severe ? "high" : "medium",
+      nextStep: labels.reviewActionVerifyAxisBreakCues,
+      doneCriteria: labels.reviewDoneVerifyAxisBreakCues
+    };
+  }
   if (id === "dense-confidence") {
     return {
       ...base,
@@ -11202,10 +11366,12 @@ function visualExtractionReportLabels(outputLanguage) {
       panelCount: "面板数",
       axisSegmentCount: "轴段数",
       axisSegmentCalibrationMapCount: "断轴校准映射数",
+      axisBreakCueCount: "断轴视觉线索数",
       panelSplitCandidateCount: "候选分割框数",
       panelCoverage: "面板覆盖",
       panelSplitCandidates: "自动 panel 分割候选",
       axisSegmentCoverage: "轴段覆盖",
+      axisBreakCues: "断轴视觉线索",
       brokenAxisCalibrationMap: "断轴校准映射",
       panel: "面板",
       chartPointCount: "图表点数",
@@ -11222,11 +11388,13 @@ function visualExtractionReportLabels(outputLanguage) {
       pixelGapToNextSegment: "到下一段像素间隙",
       valueGapToNextSegment: "到下一段数值间隙",
       splitLayout: "分割布局",
+      axisBreakCue: "断轴线索",
       width: "宽度",
       height: "高度",
       noPanelDiagnostics: "未检测到多面板结构；如原图包含多个 panel，请要求模型在点表和校准锚点中加入 Panel/Subplot 列。",
       noPanelSplitCandidates: "没有生成 panel 分割候选；如原图包含多个 panel，请在回答中标注 Panel A/B/C 或提供图片宽高后重新导出。",
       noAxisSegmentDiagnostics: "未检测到断轴或分段轴；如原图存在视觉不连续轴段，请要求模型为每个 Segment 单独列出锚点。",
+      noAxisBreakCues: "未检测到断轴视觉线索；如原图有波浪线、双斜线、锯齿或明显轴间隙，请要求模型明确描述断轴位置。",
       noBrokenAxisCalibrationMap: "没有可复核的断轴校准映射；每个断轴区段至少需要两个清晰锚点。",
       chartBatchReviewBoard: "图表批量复核看板",
       chartReviewActions: "图表人工复核任务",
@@ -11253,6 +11421,7 @@ function visualExtractionReportLabels(outputLanguage) {
       recommendationAxisCalibration: "补充至少两个清晰坐标轴刻度/数值锚点，并对照原图核对 Pixel X/Y 到 Axis X/Y 的映射。",
       recommendationCalibrationQuality: "重新核对校准锚点的像素跨度、单调性、重复刻度、分段覆盖和数值单位；跨度太小、断轴分段锚点不足或非单调时不要用于量化比较。",
       recommendationLayoutCoverage: "多面板或断轴图必须逐个 panel/segment 标注点位和校准锚点；不要把不同面板或不连续轴段混成同一组数据。",
+      recommendationAxisBreakCues: "检测到断轴视觉线索时，必须回到原图确认波浪线、双斜线、锯齿或轴间隙，并为每个可见区段补齐独立校准锚点。",
       recommendationDenseConfidence: "密集点位表需要足够数量的高/中置信点和可追溯视觉依据；低置信密集点只能作为复核草稿。",
       recommendationConfidence: "在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。",
       recommendationImageEvidence: "重新提问时要求模型用 [image] 标注直接视觉观察，并把文本上下文推断分开。",
@@ -11262,6 +11431,7 @@ function visualExtractionReportLabels(outputLanguage) {
       reviewActionAddAxisCalibration: "补充每个坐标轴至少两个清晰刻度锚点，再重新导出报告。",
       reviewActionVerifyCalibrationQuality: "回到原图核对锚点跨度、单调性、重复值、断轴分段覆盖和单位，异常时不要用于量化比较。",
       reviewActionVerifyLayoutCoverage: "逐个 panel/segment 核对是否都有数据点、像素点和校准锚点，缺失项先补齐或标记不可读。",
+      reviewActionVerifyAxisBreakCues: "回到原图确认断轴符号、视觉间隙和每个可见轴段的数值范围；缺锚点时先补齐区段校准表。",
       reviewActionImproveDenseConfidence: "放大原图或裁剪单个 panel，重新生成更高置信的密集点位表，并保留不可读区域说明。",
       reviewActionConfirmConfidence: "人工确认低置信读数、单位和图例；确认前只作为草稿使用。",
       reviewActionSeparateImageEvidence: "重新提问时要求直接视觉观察都用 [image] 标注，推断内容单独列出。",
@@ -11272,6 +11442,7 @@ function visualExtractionReportLabels(outputLanguage) {
       reviewDoneAddAxisCalibration: "每个坐标轴至少有两个清晰刻度锚点，并已重新导出报告。",
       reviewDoneVerifyCalibrationQuality: "锚点跨度、单调性、重复值、断轴分段覆盖和单位已人工核对，可说明是否能量化使用。",
       reviewDoneVerifyLayoutCoverage: "每个 panel/segment 的数据点、像素点和校准锚点已核对，缺失或不可读部分已有明确说明。",
+      reviewDoneVerifyAxisBreakCues: "断轴符号、视觉间隙、区段范围和每段校准锚点已人工确认，并记录是否可用于量化比较。",
       reviewDoneImproveDenseConfidence: "密集点位表中高/中置信点达到可复核要求，低置信或不可读点已单独标记。",
       reviewDoneConfirmConfidence: "低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。",
       reviewDoneSeparateImageEvidence: "直接视觉观察、文本上下文推断和低置信判断已分开标注。",
@@ -11361,10 +11532,12 @@ function visualExtractionReportLabels(outputLanguage) {
     panelCount: "Panel count",
     axisSegmentCount: "Axis segment count",
     axisSegmentCalibrationMapCount: "Broken-axis calibration maps",
+    axisBreakCueCount: "Axis break visual cues",
     panelSplitCandidateCount: "Panel split candidate boxes",
     panelCoverage: "Panel Coverage",
     panelSplitCandidates: "Automatic Panel Split Candidates",
     axisSegmentCoverage: "Axis Segment Coverage",
+    axisBreakCues: "Axis Break Visual Cues",
     brokenAxisCalibrationMap: "Broken-Axis Calibration Map",
     panel: "Panel",
     chartPointCount: "Chart points",
@@ -11381,11 +11554,13 @@ function visualExtractionReportLabels(outputLanguage) {
     pixelGapToNextSegment: "Pixel gap to next segment",
     valueGapToNextSegment: "Value gap to next segment",
     splitLayout: "Split layout",
+    axisBreakCue: "Axis break cue",
     width: "Width",
     height: "Height",
     noPanelDiagnostics: "No multi-panel structure was detected. If the original figure has multiple panels, ask for a Panel/Subplot column in point tables and calibration anchors.",
     noPanelSplitCandidates: "No panel split candidate was generated. If the original figure has multiple panels, label Panel A/B/C in the answer or include image dimensions and export again.",
     noAxisSegmentDiagnostics: "No broken or segmented axis was detected. If the original figure has visual discontinuities, ask for separate Segment anchors.",
+    noAxisBreakCues: "No visual axis-break cue was detected. If the source figure has a wavy line, double slash, jagged break, or visible axis gap, ask the model to describe the break location explicitly.",
     noBrokenAxisCalibrationMap: "No reviewable broken-axis calibration map was generated. Each visible broken-axis segment needs at least two clear anchors.",
     chartBatchReviewBoard: "Chart Batch Review Board",
     chartReviewActions: "Chart Review Action Queue",
@@ -11412,6 +11587,7 @@ function visualExtractionReportLabels(outputLanguage) {
     recommendationAxisCalibration: "Add at least two visible axis tick/value anchors and verify Pixel X/Y to Axis X/Y mapping against the original chart.",
     recommendationCalibrationQuality: "Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, segment coverage, and units; do not use small-span, under-calibrated broken-axis segments, or non-monotonic anchors for quantitative comparison.",
     recommendationLayoutCoverage: "For multi-panel or discontinuous-axis figures, label every panel/segment and keep data points plus calibration anchors separate.",
+    recommendationAxisBreakCues: "When visual axis-break cues are detected, verify the wavy line, double slash, jagged mark, or axis gap against the original chart and add separate calibration anchors for each visible segment.",
     recommendationDenseConfidence: "Dense point tables need enough high/medium-confidence points with traceable visual evidence; low-confidence dense points are review drafts only.",
     recommendationConfidence: "Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.",
     recommendationImageEvidence: "Ask the model to mark direct visual observations with [image] and keep text-context inferences separate.",
@@ -11421,6 +11597,7 @@ function visualExtractionReportLabels(outputLanguage) {
     reviewActionAddAxisCalibration: "Add at least two visible tick anchors per axis, then export the report again.",
     reviewActionVerifyCalibrationQuality: "Recheck anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units against the original chart before quantitative use.",
     reviewActionVerifyLayoutCoverage: "Check every panel/segment for data points, pixel points, and calibration anchors; fill gaps or mark unreadable regions.",
+    reviewActionVerifyAxisBreakCues: "Return to the original figure, verify the axis-break mark, visual gap, and numeric range of each visible segment; add segment calibration rows when anchors are missing.",
     reviewActionImproveDenseConfidence: "Zoom or crop one panel at a time, regenerate a higher-confidence dense point table, and record unreadable regions.",
     reviewActionConfirmConfidence: "Manually confirm low-confidence readings, units, and legends; treat them as draft values until then.",
     reviewActionSeparateImageEvidence: "Ask again with direct visual observations marked as [image] and inferred context separated.",
@@ -11431,6 +11608,7 @@ function visualExtractionReportLabels(outputLanguage) {
     reviewDoneAddAxisCalibration: "Each axis has at least two visible tick anchors, and the report has been exported again.",
     reviewDoneVerifyCalibrationQuality: "Anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units have been manually checked with a reuse decision.",
     reviewDoneVerifyLayoutCoverage: "Each panel/segment has checked data points, pixel points, and calibration anchors, with missing or unreadable regions documented.",
+    reviewDoneVerifyAxisBreakCues: "Axis-break marks, visual gaps, segment ranges, and per-segment calibration anchors are verified, with a quantitative reuse decision recorded.",
     reviewDoneImproveDenseConfidence: "The dense point table has reviewable high/medium-confidence points, and low-confidence or unreadable points are marked separately.",
     reviewDoneConfirmConfidence: "Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable.",
     reviewDoneSeparateImageEvidence: "Direct visual observations, text-context inference, and low-confidence judgments are separated.",

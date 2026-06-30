@@ -8882,6 +8882,81 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("Anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units have been manually checked with a reuse decision.");
   });
 
+  it("detects visual axis-break cues and queues segment calibration review", () => {
+    const loaded = loadWorkbenchHelpers();
+    const item = {
+      key: "AXISBREAK",
+      getCollections: () => []
+    };
+    const payload = {
+      item,
+      messages: [
+        {
+          id: "user-axis-break",
+          role: "user",
+          content: "Extract points from the figure with a visible axis break",
+          images: [{ name: "broken-axis.png", mimeType: "image/png", size: 88 }]
+        },
+        {
+          id: "assistant-axis-break",
+          role: "assistant",
+          profileName: "MiniMax",
+          content: [
+            "## Visual OCR Text",
+            "- The Y-axis has a zigzag marker and a visible axis gap between 10 ms and 50 ms [image].",
+            "",
+            "## Pixel / Coordinate Data Draft",
+            "| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| baseline | p1 | 120 | 350 | 2 s | 5 ms | medium | [image] |",
+            "| baseline | p2 | 250 | 180 | 5 s | 75 ms | medium | [image] |",
+            "| baseline | p3 | 420 | 90 | 9 s | 95 ms | medium | [image] |",
+            "",
+            "## Axis Calibration Anchors",
+            "| Axis | Pixel | Value | Unit | Source | Confidence |",
+            "| --- | --- | --- | --- | --- | --- |",
+            "| X | 50 | 0 | s | [image] | medium |",
+            "| X | 450 | 10 | s | [image] | medium |",
+            "| Y | 400 | 0 | ms | [image] | medium |",
+            "| Y | 80 | 100 | ms | [image] | medium |"
+          ].join("\n")
+        }
+      ]
+    };
+    const data = (loaded as any).visualExtractionReportData(payload, {
+      item,
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      reportPath: "/tmp/out/visual-extraction-AXISBREAK.md",
+      jsonPath: "/tmp/out/visual-extraction-AXISBREAK.json",
+      csvPath: "/tmp/out/visual-extraction-AXISBREAK.csv"
+    });
+    const report = (loaded as any).renderVisualExtractionReportMarkdownFromData(data);
+    const csv = (loaded as any).renderVisualExtractionReportCsv(data);
+
+    expect(data.chartLayoutDiagnostics).toMatchObject({
+      discontinuousAxisDetected: true,
+      axisBreakCueCount: 2,
+      axisBreakCues: expect.arrayContaining([
+        expect.objectContaining({ axis: "Y", cue: "zigzag break mark", source: "answer-text" }),
+        expect.objectContaining({ axis: "Y", cue: "visible axis gap", source: "answer-text" })
+      ])
+    });
+    expect(data.chartQualityReview.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "layout-coverage", status: "warning" }),
+      expect.objectContaining({ id: "axis-break-cues", status: "warning" })
+    ]));
+    expect(data.chartReviewActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ actionId: "verify-axis-break-cues", checkId: "axis-break-cues", status: "warning" })
+    ]));
+    expect(report).toContain("chartAxisBreakCueCount: 2");
+    expect(report).toContain("### Axis Break Visual Cues");
+    expect(report).toContain("| axis-break-cues | warning | axis break visual cue(s): 2; covered segment calibration: 0; no segment anchors parsed |");
+    expect(report).toContain("| medium | todo | verify-axis-break-cues | axis-break-cues (warning)");
+    expect(csv).toContain("layout-axis-break:1,1,cue,zigzag break mark,[image],assistant-axis-break,broken-axis.png");
+    expect(csv).toContain("layout-axis-break:2,2,cue,visible axis gap,[image],assistant-axis-break,broken-axis.png");
+  });
+
   it("flags low-quality axis calibration anchors in visual extraction reports", () => {
     const loaded = loadWorkbenchHelpers();
     const item = {
