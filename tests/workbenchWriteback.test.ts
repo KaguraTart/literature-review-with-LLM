@@ -9005,6 +9005,7 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("segmented Y calibration: upper 250px=10 ms, 100px=40 ms; lower 400px=0 ms, 250px=10 ms");
     expect(report).toContain("### Broken-Axis Calibration Map");
     expect(report).toContain("| Axis | Segment | Pixel Start | Pixel End | Value Start | Value End | Unit | Scale | Direction | Pixel gap to next segment | Value gap to next segment | Review status | Detail |");
+    expect(report).toContain("Calibration confidence | Calibration risk | Gap status | Gap risk");
     expect(report).toContain("| Y | lower | 400 | 250 | 0 | 10 | ms | linear | pixel-desc/value-asc |  | 0 | covered | 2 numeric anchor(s), 150 px span, 0 ms -> 10 ms |");
     expect(report).toContain("| Y | upper | 250 | 100 | 10 | 40 | ms | linear | pixel-desc/value-asc | 0 |  | covered | 2 numeric anchor(s), 150 px span, 10 ms -> 40 ms |");
     expect(report).toContain("| 1 | axis-calibration-table | X | 50 | 1 | Hz | medium | [image] | log |");
@@ -9030,16 +9031,19 @@ describe("workbench writeback helpers", () => {
     expect(parsed.chartLayoutDiagnostics).toMatchObject({
       axisSegmentCalibrationMapCount: 2,
       axisSegments: expect.arrayContaining([
-        expect.objectContaining({ axis: "Y", segment: "lower", pixelStart: 400, pixelEnd: 250, valueStart: 0, valueEnd: 10, direction: "pixel-desc/value-asc", valueGapToNextSegment: 0 }),
-        expect.objectContaining({ axis: "Y", segment: "upper", pixelStart: 250, pixelEnd: 100, valueStart: 10, valueEnd: 40, direction: "pixel-desc/value-asc", pixelGapToNextSegment: 0 })
+        expect.objectContaining({ axis: "Y", segment: "lower", pixelStart: 400, pixelEnd: 250, valueStart: 0, valueEnd: 10, direction: "pixel-desc/value-asc", calibrationConfidence: "medium", calibrationRisk: "low", valueGapToNextSegment: 0, gapStatusToNextSegment: "value-contiguous-to-next", gapRiskToNextSegment: "low" }),
+        expect.objectContaining({ axis: "Y", segment: "upper", pixelStart: 250, pixelEnd: 100, valueStart: 10, valueEnd: 40, direction: "pixel-desc/value-asc", calibrationConfidence: "medium", calibrationRisk: "low", pixelGapToNextSegment: 0, gapStatusToNextSegment: "pixel-contiguous-to-next", gapRiskToNextSegment: "low" })
       ])
     });
     expect(files.get(csvPath)).toContain("pixel:1,1,axisX,31.622777 Hz,[image],assistant-log-segment,log-segment.png");
     expect(files.get(csvPath)).toContain("pixel:1,1,axisY,25 ms,[image],assistant-log-segment,log-segment.png");
     expect(files.get(csvPath)).toContain("calibration:1,1,scale,log,[image],assistant-log-segment,log-segment.png");
     expect(files.get(csvPath)).toContain("calibration:3,3,segment,lower,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:lower,1,calibrationConfidence,medium,[image],assistant-log-segment,log-segment.png");
     expect(files.get(csvPath)).toContain("layout-segment:Y:lower,1,valueGapToNextSegment,0,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:lower,1,gapStatusToNextSegment,value-contiguous-to-next,[image],assistant-log-segment,log-segment.png");
     expect(files.get(csvPath)).toContain("layout-segment:Y:upper,2,pixelGapToNextSegment,0,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:upper,2,gapRiskToNextSegment,low,[image],assistant-log-segment,log-segment.png");
   });
 
   it("infers broken-axis values from calibration range rows", async () => {
@@ -9101,6 +9105,7 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("75 ms");
     expect(report).toContain("segmented Y calibration: upper 220px=50 ms, 80px=100 ms; lower 400px=0 ms, 260px=10 ms");
     expect(report).toContain("### Broken-Axis Calibration Map");
+    expect(report).toContain("Calibration confidence | Calibration risk | Gap status | Gap risk");
     expect(report).toContain("| Y | lower | 400 | 260 | 0 | 10 | ms | linear | pixel-desc/value-asc |  | 40 | covered | 2 numeric anchor(s), 140 px span, 0 ms -> 10 ms |");
     expect(report).toContain("| Y | upper | 220 | 80 | 50 | 100 | ms | linear | pixel-desc/value-asc | 40 |  | covered | 2 numeric anchor(s), 140 px span, 50 ms -> 100 ms |");
     expect(report).toContain("| 3 | axis-calibration-range-table | Y | 400 | 0 | ms | medium | [image] | linear | lower |");
@@ -9130,16 +9135,19 @@ describe("workbench writeback helpers", () => {
     expect(parsed.chartLayoutDiagnostics).toMatchObject({
       axisSegmentCalibrationMapCount: 2,
       axisSegments: expect.arrayContaining([
-        expect.objectContaining({ axis: "Y", segment: "lower", pixelStart: 400, pixelEnd: 260, valueStart: 0, valueEnd: 10, direction: "pixel-desc/value-asc", valueGapToNextSegment: 40 }),
-        expect.objectContaining({ axis: "Y", segment: "upper", pixelStart: 220, pixelEnd: 80, valueStart: 50, valueEnd: 100, direction: "pixel-desc/value-asc", pixelGapToNextSegment: 40 })
+        expect.objectContaining({ axis: "Y", segment: "lower", pixelStart: 400, pixelEnd: 260, valueStart: 0, valueEnd: 10, direction: "pixel-desc/value-asc", calibrationConfidence: "medium", calibrationRisk: "low", valueGapToNextSegment: 40, gapStatusToNextSegment: "value-gap-to-next", gapRiskToNextSegment: "medium" }),
+        expect.objectContaining({ axis: "Y", segment: "upper", pixelStart: 220, pixelEnd: 80, valueStart: 50, valueEnd: 100, direction: "pixel-desc/value-asc", calibrationConfidence: "medium", calibrationRisk: "low", pixelGapToNextSegment: 40, gapStatusToNextSegment: "pixel-gap-to-next", gapRiskToNextSegment: "medium" })
       ])
     });
     expect(files.get(csvPath)).toContain("pixel:1,1,axisY,75 ms,[image],assistant-range-segment,range-segment.png");
     expect(files.get(csvPath)).toContain("calibration:3,3,source,axis-calibration-range-table,[image],assistant-range-segment,range-segment.png");
     expect(files.get(csvPath)).toContain("calibration:3,3,rangeEndpoint,start,[image],assistant-range-segment,range-segment.png");
     expect(files.get(csvPath)).toContain("calibration:6,6,value,100,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:lower,1,calibrationRisk,low,[image],assistant-range-segment,range-segment.png");
     expect(files.get(csvPath)).toContain("layout-segment:Y:lower,1,valueGapToNextSegment,40,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:lower,1,gapStatusToNextSegment,value-gap-to-next,[image],assistant-range-segment,range-segment.png");
     expect(files.get(csvPath)).toContain("layout-segment:Y:upper,2,pixelGapToNextSegment,40,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:upper,2,gapRiskToNextSegment,medium,[image],assistant-range-segment,range-segment.png");
   });
 
   it("flags under-calibrated broken-axis segments in visual extraction reports", () => {

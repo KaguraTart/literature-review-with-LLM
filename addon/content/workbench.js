@@ -9748,8 +9748,12 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       ["unit", segment.unit || ""],
       ["scale", segment.scale || ""],
       ["direction", segment.direction || ""],
+      ["calibrationConfidence", segment.calibrationConfidence || ""],
+      ["calibrationRisk", segment.calibrationRisk || ""],
       ["pixelGapToNextSegment", segment.pixelGapToNextSegment === null || segment.pixelGapToNextSegment === undefined ? "" : segment.pixelGapToNextSegment],
       ["valueGapToNextSegment", segment.valueGapToNextSegment === null || segment.valueGapToNextSegment === undefined ? "" : segment.valueGapToNextSegment],
+      ["gapStatusToNextSegment", segment.gapStatusToNextSegment || ""],
+      ["gapRiskToNextSegment", segment.gapRiskToNextSegment || ""],
       ["detail", segment.detail || ""]
     ]) {
       if (value === "") continue;
@@ -11159,6 +11163,21 @@ function visualExtractionAxisSegmentDiagnostics(calibrationAnchors = []) {
     const valueRange = endpointPair
       ? `${visualExtractionFormatCalibratedAxisValue(endpointPair.start.numericValue, unit)} -> ${visualExtractionFormatCalibratedAxisValue(endpointPair.end.numericValue, unit)}`
       : "";
+    const calibrationConfidence = visualExtractionAxisSegmentCalibrationConfidence({
+      covered,
+      anchorCount: numericAnchors.length,
+      pixelSpan,
+      valueSpan,
+      direction
+    }, numericAnchors);
+    const calibrationRisk = visualExtractionAxisSegmentCalibrationRisk({
+      covered,
+      calibrationConfidence,
+      anchorCount: numericAnchors.length,
+      pixelSpan,
+      valueSpan,
+      direction
+    });
     return {
       axis: group.axis,
       segment: group.segment,
@@ -11176,8 +11195,12 @@ function visualExtractionAxisSegmentDiagnostics(calibrationAnchors = []) {
       maxPixel: pixels.length ? Math.max(...pixels) : null,
       minValue: numericAnchors.length ? Math.min(...numericAnchors.map((anchor) => Number(anchor.numericValue))) : null,
       maxValue: numericAnchors.length ? Math.max(...numericAnchors.map((anchor) => Number(anchor.numericValue))) : null,
+      calibrationConfidence,
+      calibrationRisk,
       pixelGapToNextSegment: null,
       valueGapToNextSegment: null,
+      gapStatusToNextSegment: "",
+      gapRiskToNextSegment: "",
       status: covered ? "covered" : "needs-review",
       detail: covered
         ? `${numericAnchors.length} numeric anchor(s), ${pixelSpan} px span, ${valueRange}`
@@ -11187,6 +11210,34 @@ function visualExtractionAxisSegmentDiagnostics(calibrationAnchors = []) {
   });
   return visualExtractionAnnotateAxisSegmentGaps(segments)
     .sort((left, right) => `${left.axis}:${left.segment}`.localeCompare(`${right.axis}:${right.segment}`, undefined, { numeric: true }));
+}
+
+function visualExtractionAxisSegmentCalibrationConfidence(segment, numericAnchors = []) {
+  if (!segment?.covered) return "none";
+  if (Number(segment.anchorCount) < 2 || Number(segment.pixelSpan) <= 0) return "none";
+  if (Number(segment.pixelSpan) < 24 || Number(segment.valueSpan) <= 0 || String(segment.direction || "").includes("flat")) return "low";
+  const ranks = (numericAnchors || []).map((anchor) => visualExtractionConfidenceRank(anchor?.confidence));
+  const lowestRank = ranks.length ? Math.min(...ranks) : 2;
+  if (lowestRank <= 1) return "low";
+  if (Number(segment.anchorCount) >= 3 && Number(segment.pixelSpan) >= 80 && lowestRank >= 3) return "high";
+  if (Number(segment.pixelSpan) >= 50) return "medium";
+  return "low";
+}
+
+function visualExtractionAxisSegmentCalibrationRisk(segment) {
+  if (!segment?.covered || segment.calibrationConfidence === "none") return "high";
+  if (Number(segment.pixelSpan) < 24 || Number(segment.valueSpan) <= 0 || String(segment.direction || "").includes("flat")) return "high";
+  if (segment.calibrationConfidence === "low" || Number(segment.pixelSpan) < 50) return "medium";
+  return "low";
+}
+
+function visualExtractionConfidenceRank(value) {
+  const text = mdText(value || "").toLowerCase();
+  if (!text) return 2;
+  if (/\bhigh\b|\bstrong\b|\bclear\b|高置信|高可信|可靠|清晰/.test(text)) return 3;
+  if (/\blow\b|\bweak\b|\buncertain\b|\brough\b|\bneeds[-\s]?review\b|低置信|低可信|不确定|粗略/.test(text)) return 1;
+  if (/\bmedium\b|\bmoderate\b|\bestimated\b|中等|估计|可复核/.test(text)) return 2;
+  return 2;
 }
 
 function visualExtractionAxisSegmentEndpointPair(numericAnchors = []) {
@@ -11236,8 +11287,29 @@ function visualExtractionAnnotateAxisSegmentGaps(segments = []) {
       const following = valueOrdered[index + 1];
       current.valueGapToNextSegment = visualExtractionRoundedCoordinate(Math.max(0, Number(following.minValue) - Number(current.maxValue)));
     }
+    for (const segment of axisSegments) {
+      const gap = visualExtractionAxisSegmentGapAssessment(segment);
+      segment.gapStatusToNextSegment = gap.status;
+      segment.gapRiskToNextSegment = gap.risk;
+    }
   }
   return next;
+}
+
+function visualExtractionAxisSegmentGapAssessment(segment) {
+  const hasPixelGap = segment?.pixelGapToNextSegment !== null && segment?.pixelGapToNextSegment !== undefined;
+  const hasValueGap = segment?.valueGapToNextSegment !== null && segment?.valueGapToNextSegment !== undefined;
+  if (!hasPixelGap && !hasValueGap) return { status: "", risk: "" };
+  const pixelGap = hasPixelGap ? Number(segment.pixelGapToNextSegment) : 0;
+  const valueGap = hasValueGap ? Number(segment.valueGapToNextSegment) : 0;
+  const pixelPositive = hasPixelGap && pixelGap > 0;
+  const valuePositive = hasValueGap && valueGap > 0;
+  if (pixelPositive && valuePositive) return { status: "pixel-and-value-gap-to-next", risk: "high" };
+  if (pixelPositive) return { status: "pixel-gap-to-next", risk: "medium" };
+  if (valuePositive) return { status: "value-gap-to-next", risk: "medium" };
+  if (hasPixelGap && hasValueGap) return { status: "continuous-to-next", risk: "low" };
+  if (hasPixelGap) return { status: "pixel-contiguous-to-next", risk: "low" };
+  return { status: "value-contiguous-to-next", risk: "low" };
 }
 
 function visualExtractionChartLayoutDiagnosticsMarkdown(diagnostics = {}, labels) {
@@ -11337,14 +11409,16 @@ function visualExtractionPanelSplitCandidatesMarkdown(candidates = [], labels) {
 
 function visualExtractionAxisSegmentCoverageMarkdown(segments = [], labels) {
   return [
-    `| ${labels.axis} | ${labels.segment} | ${labels.reviewStatus} | ${labels.anchorCount} | ${labels.pixelSpan} | ${labels.detail} | ${labels.evidenceLabels} |`,
-    "| --- | --- | --- | ---: | ---: | --- | --- |",
+    `| ${labels.axis} | ${labels.segment} | ${labels.reviewStatus} | ${labels.anchorCount} | ${labels.pixelSpan} | ${labels.calibrationConfidence} | ${labels.calibrationRisk} | ${labels.detail} | ${labels.evidenceLabels} |`,
+    "| --- | --- | --- | ---: | ---: | --- | --- | --- | --- |",
     ...segments.map((segment) => [
       markdownTableCell(segment.axis || ""),
       markdownTableCell(segment.segment || ""),
       markdownTableCell(segment.status || ""),
       Number(segment.anchorCount) || 0,
       Number(segment.pixelSpan) || 0,
+      markdownTableCell(segment.calibrationConfidence || ""),
+      markdownTableCell(segment.calibrationRisk || ""),
       markdownTableCell(segment.detail || ""),
       markdownTableCell((segment.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
     ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
@@ -11353,8 +11427,8 @@ function visualExtractionAxisSegmentCoverageMarkdown(segments = [], labels) {
 
 function visualExtractionBrokenAxisCalibrationMapMarkdown(segments = [], labels) {
   const lines = [
-    `| ${labels.axis} | ${labels.segment} | ${labels.pixelStart} | ${labels.pixelEnd} | ${labels.valueStart} | ${labels.valueEnd} | ${labels.unit} | ${labels.scale} | ${labels.direction} | ${labels.pixelGapToNextSegment} | ${labels.valueGapToNextSegment} | ${labels.reviewStatus} | ${labels.detail} |`,
-    "| --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | --- | --- |"
+    `| ${labels.axis} | ${labels.segment} | ${labels.pixelStart} | ${labels.pixelEnd} | ${labels.valueStart} | ${labels.valueEnd} | ${labels.unit} | ${labels.scale} | ${labels.direction} | ${labels.pixelGapToNextSegment} | ${labels.valueGapToNextSegment} | ${labels.reviewStatus} | ${labels.detail} | ${labels.calibrationConfidence} | ${labels.calibrationRisk} | ${labels.gapStatusToNextSegment} | ${labels.gapRiskToNextSegment} |`,
+    "| --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- | --- |"
   ];
   for (const segment of segments || []) {
     if (segment.status !== "covered") continue;
@@ -11371,7 +11445,11 @@ function visualExtractionBrokenAxisCalibrationMapMarkdown(segments = [], labels)
       segment.pixelGapToNextSegment === null || segment.pixelGapToNextSegment === undefined ? "" : segment.pixelGapToNextSegment,
       segment.valueGapToNextSegment === null || segment.valueGapToNextSegment === undefined ? "" : segment.valueGapToNextSegment,
       markdownTableCell(segment.status || ""),
-      markdownTableCell(segment.detail || "")
+      markdownTableCell(segment.detail || ""),
+      markdownTableCell(segment.calibrationConfidence || ""),
+      markdownTableCell(segment.calibrationRisk || ""),
+      markdownTableCell(segment.gapStatusToNextSegment || ""),
+      markdownTableCell(segment.gapRiskToNextSegment || "")
     ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
   }
   return lines.join("\n");
@@ -12311,8 +12389,12 @@ function visualExtractionReportLabels(outputLanguage) {
       valueStart: "数值起点",
       valueEnd: "数值终点",
       direction: "方向",
+      calibrationConfidence: "校准置信度",
+      calibrationRisk: "校准风险",
       pixelGapToNextSegment: "到下一段像素间隙",
       valueGapToNextSegment: "到下一段数值间隙",
+      gapStatusToNextSegment: "段间状态",
+      gapRiskToNextSegment: "段间风险",
       splitLayout: "分割布局",
       axisBreakCue: "断轴线索",
       width: "宽度",
@@ -12482,8 +12564,12 @@ function visualExtractionReportLabels(outputLanguage) {
     valueStart: "Value Start",
     valueEnd: "Value End",
     direction: "Direction",
+    calibrationConfidence: "Calibration confidence",
+    calibrationRisk: "Calibration risk",
     pixelGapToNextSegment: "Pixel gap to next segment",
     valueGapToNextSegment: "Value gap to next segment",
+    gapStatusToNextSegment: "Gap status",
+    gapRiskToNextSegment: "Gap risk",
     splitLayout: "Split layout",
     axisBreakCue: "Axis break cue",
     width: "Width",
