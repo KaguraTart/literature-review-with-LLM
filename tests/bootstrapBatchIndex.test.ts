@@ -468,6 +468,9 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.reviewDraftPath)).toContain("已生成 1 篇");
     expect(writes.get(artifacts.reviewReportPath)).toContain("正式综述报告草稿");
     expect(writes.get(artifacts.reviewReportPath)).toContain("论文清单与证据地图");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("章节就绪矩阵");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("章节就绪分");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("报告章节");
     expect(writes.get(artifacts.reviewReportPath)).toContain("有证据支持的综合主张");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合冲突与证据缺口");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合写作包");
@@ -1250,6 +1253,8 @@ describe("batch papers index", () => {
     expect(writes.get(english.reviewReportPath)).toContain("Synthesis Conflicts and Evidence Gaps");
     expect(writes.get(english.reviewReportPath)).toContain("Writing Readiness Gate");
     expect(writes.get(english.reviewReportPath)).toContain("Formal report readiness score");
+    expect(writes.get(english.reviewReportPath)).toContain("Section Readiness Matrix");
+    expect(writes.get(english.reviewReportPath)).toContain("Section Readiness Score");
     expect(writes.get(english.reviewReportPath)).toContain("Synthesis Writing Pack");
     expect(writes.get(english.reviewReportPath)).toContain("Risk Checklist");
     expect(writes.get(english.ideaListPath)).toContain("Reject condition");
@@ -1327,6 +1332,8 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.reviewDraftPath)).toContain("手動レビュー草稿");
     expect(writes.get(english.reviewReportPath)).toContain("Formal Review Report");
     expect(writes.get(japanese.reviewReportPath)).toContain("正式レビュー報告書");
+    expect(writes.get(japanese.reviewReportPath)).toContain("章別準備度マトリクス");
+    expect(writes.get(japanese.reviewReportPath)).toContain("章別準備度スコア");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Synthesis Roadmap");
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("統合ロードマップ");
     expect(writes.get(english.ideaListPath)).toContain("Idea List");

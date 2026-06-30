@@ -4803,6 +4803,16 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     const insight = summaryInsights.get(item.itemKey) || {};
     return insightValues(insight.limitations, insight.missingEvidence, insight.validationNeeds);
   })).slice(0, 8);
+  const sectionReadiness = formalReportSectionReadinessEntries({
+    generatedItems,
+    clusters,
+    synthesisClaims,
+    roadmapReadiness,
+    methodSignals,
+    dataSignals,
+    gapSignals,
+    stats
+  }, labels);
   return [
     `# ${collectionContext.name || collectionContext.key} ${labels.formalReviewReport}`,
     "",
@@ -4820,6 +4830,10 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     `## ${labels.reportWritingReadinessGate}`,
     "",
     renderFormalReportWritingReadinessGate(synthesisClaims, roadmapReadiness, gapSignals, stats, labels),
+    "",
+    `## ${labels.reportSectionReadinessMatrix}`,
+    "",
+    renderFormalReportSectionReadinessMatrix(sectionReadiness, labels),
     "",
     `## ${labels.reportPaperInventory}`,
     "",
@@ -4962,6 +4976,127 @@ function formalReportWritingReadinessSummary(synthesisClaims = [], roadmapReadin
       }
     ]
   };
+}
+
+function renderFormalReportSectionReadinessMatrix(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const rows = (entries || []).map((entry) => [
+    escapeMarkdownTable(entry.section),
+    escapeMarkdownTable(entry.score),
+    escapeMarkdownTable(entry.level),
+    escapeMarkdownTable(entry.evidence),
+    escapeMarkdownTable(entry.blocker || labels.reportSectionNoBlocker),
+    escapeMarkdownTable(entry.action)
+  ].join(" | ")).map((row) => `| ${row} |`);
+  return [
+    `| ${labels.reportSectionColumn} | ${labels.reportSectionReadinessScoreColumn} | ${labels.reportSectionReadinessLevelColumn} | ${labels.reportSectionEvidenceColumn} | ${labels.reportSectionBlockerColumn} | ${labels.reportSectionActionColumn} |`,
+    "| --- | ---: | --- | --- | --- | --- |",
+    rows.join("\n") || `| ${escapeMarkdownTable(labels.reportSectionColumn)} | 0 | ${escapeMarkdownTable(labels.reportSectionBlocked)} | ${escapeMarkdownTable(labels.noSummary)} | ${escapeMarkdownTable(labels.reportReadinessGapBlocker)} | ${escapeMarkdownTable(labels.reportReadinessDefaultAction(labels.reportSectionBlocked))} |`
+  ].join("\n");
+}
+
+function formalReportSectionReadinessEntries(context = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const stats = context.stats || {};
+  const available = Number(stats.generated || 0) + Number(stats.skippedExisting || 0);
+  const skippedNoPdf = Number(stats.skippedNoPdf || 0);
+  const failed = Number(stats.failed || 0);
+  const clusters = Array.isArray(context.clusters) ? context.clusters : [];
+  const synthesisClaims = Array.isArray(context.synthesisClaims) ? context.synthesisClaims : [];
+  const roadmapReadiness = Array.isArray(context.roadmapReadiness) ? context.roadmapReadiness : [];
+  const methodSignals = uniqueInsightLines(context.methodSignals || []);
+  const dataSignals = uniqueInsightLines(context.dataSignals || []);
+  const gapSignals = uniqueInsightLines(context.gapSignals || []);
+  const claimScores = synthesisClaims.map((entry) => Number(entry.claimSupportScore || 0)).filter((score) => Number.isFinite(score));
+  const roadmapScores = roadmapReadiness.map((entry) => Number(entry.roadmapReadinessScore || 0)).filter((score) => Number.isFinite(score));
+  const averageClaimScore = claimScores.length ? Math.round(claimScores.reduce((sum, score) => sum + score, 0) / claimScores.length) : 0;
+  const averageRoadmapScore = roadmapScores.length ? Math.round(roadmapScores.reduce((sum, score) => sum + score, 0) / roadmapScores.length) : 0;
+  const highRiskClaims = synthesisClaims.filter((entry) => formalReportRiskMatches(entry?.claimRisk, labels.claimRiskHigh, /high|高|高度|暫定|薄い/i)).length;
+  const mediumRiskClaims = synthesisClaims.filter((entry) => formalReportRiskMatches(entry?.claimRisk, labels.claimRiskMedium, /medium|中/i)).length;
+  const readyRoutes = roadmapReadiness.filter((entry) => entry?.roadmapReadinessLevel === labels.roadmapReadinessReady).length;
+  const evidenceThinRoutes = roadmapReadiness.filter((entry) => entry?.roadmapReadinessLevel === labels.roadmapReadinessNeedsEvidence).length;
+  const validationRoutes = roadmapReadiness.filter((entry) => entry?.roadmapReadinessLevel === labels.roadmapReadinessNeedsValidation).length;
+  const coverageBlocker = skippedNoPdf || failed
+    ? labels.reportReadinessCoverageBlocker(skippedNoPdf, failed)
+    : "";
+  return [
+    formalReportSectionEntry(
+      labels.reportScopeAndEvidence,
+      formalReportClampScore(available * 12 + (available >= 2 ? 20 : 0) - skippedNoPdf * 8 - failed * 10),
+      labels.reportReadinessEvidenceBaseEvidence(available, skippedNoPdf, failed),
+      coverageBlocker || (!available ? labels.noSummary : ""),
+      coverageBlocker ? labels.reportReadinessCoverageAction : labels.reportReadinessProceedAction,
+      labels
+    ),
+    formalReportSectionEntry(
+      labels.reportMethodTaxonomy,
+      formalReportClampScore(methodSignals.length * 18 + Math.min(available, 5) * 5),
+      labels.reportSectionSignalEvidence(methodSignals.length, available),
+      methodSignals.length ? "" : labels.reportSectionMissingMethodSignals,
+      labels.reportSectionActionMethod,
+      labels
+    ),
+    formalReportSectionEntry(
+      labels.reportDataAndEvidence,
+      formalReportClampScore(dataSignals.length * 14 + Math.min(available, 5) * 4),
+      labels.reportSectionSignalEvidence(dataSignals.length, available),
+      dataSignals.length ? "" : labels.reportSectionMissingDataSignals,
+      labels.reportSectionActionData,
+      labels
+    ),
+    formalReportSectionEntry(
+      labels.reportTopicSynthesis,
+      formalReportClampScore(clusters.length * 16 + Math.min(available, 6) * 4),
+      labels.reportSectionClusterEvidence(clusters.length, available),
+      clusters.length ? "" : labels.reportSectionMissingClusters,
+      labels.reportSectionActionTopic,
+      labels
+    ),
+    formalReportSectionEntry(
+      labels.reportSynthesisClaims,
+      formalReportClampScore(averageClaimScore + synthesisClaims.length * 5 - highRiskClaims * 20 - mediumRiskClaims * 8),
+      labels.reportReadinessClaimRiskEvidence(highRiskClaims, mediumRiskClaims, averageClaimScore),
+      synthesisClaims.length ? (highRiskClaims ? labels.reportReadinessHighRiskBlocker(highRiskClaims) : "") : labels.reportSectionMissingClaims,
+      highRiskClaims ? labels.reportReadinessClaimRiskAction : labels.reportSectionActionClaim,
+      labels
+    ),
+    formalReportSectionEntry(
+      labels.reportSynthesisConflicts,
+      formalReportClampScore(gapSignals.length * 12 + (synthesisClaims.length ? 15 : 0)),
+      labels.reportReadinessGapTraceEvidence(gapSignals.length),
+      gapSignals.length ? "" : labels.reportSectionMissingGaps,
+      labels.reportSectionActionGap,
+      labels
+    ),
+    formalReportSectionEntry(
+      `${labels.reportDraftOutline} / ${labels.synthesisRoadmap}`,
+      formalReportClampScore(averageRoadmapScore * 0.55 + readyRoutes * 18 - evidenceThinRoutes * 8 - validationRoutes * 5),
+      labels.reportReadinessRoadmapEvidence(readyRoutes, evidenceThinRoutes, validationRoutes),
+      readyRoutes ? "" : labels.reportSectionNoReadyRoadmap,
+      labels.reportSectionActionRoadmap,
+      labels
+    )
+  ];
+}
+
+function formalReportSectionEntry(section, score, evidence, blocker, action, labels = collectionTemplateLabels("zh-CN")) {
+  const normalizedScore = formalReportClampScore(score);
+  const normalizedBlocker = String(blocker || "").trim();
+  const level = normalizedScore >= 75 && !normalizedBlocker
+    ? labels.reportSectionReady
+    : normalizedScore >= 50
+      ? labels.reportSectionNeedsRevision
+      : labels.reportSectionBlocked;
+  return {
+    section,
+    score: normalizedScore,
+    level,
+    evidence,
+    blocker: normalizedBlocker,
+    action
+  };
+}
+
+function formalReportClampScore(score) {
+  return Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
 }
 
 function formalReportRiskMatches(value, localizedValue, pattern) {
@@ -5456,6 +5591,31 @@ function collectionTemplateLabels(outputLanguage) {
       reportReadinessGapTraceAction: "Keep each unresolved gap visible in the relevant subsection.",
       reportReadinessProceedAction: "Can move into the writing pack after source summaries are checked.",
       reportReadinessDefaultAction: (level) => `${level}: verify source summaries, claim risk, and roadmap blockers before prose writing.`,
+      reportSectionReadinessMatrix: "Section Readiness Matrix",
+      reportSectionColumn: "Report Section",
+      reportSectionReadinessScoreColumn: "Section Readiness Score",
+      reportSectionReadinessLevelColumn: "Section Readiness Level",
+      reportSectionEvidenceColumn: "Current Evidence",
+      reportSectionBlockerColumn: "Section Blocker",
+      reportSectionActionColumn: "Next Section Action",
+      reportSectionReady: "ready",
+      reportSectionNeedsRevision: "needs revision",
+      reportSectionBlocked: "blocked",
+      reportSectionNoBlocker: "No section blocker from current summaries",
+      reportSectionMissingMethodSignals: "No method signal is available for this section yet",
+      reportSectionMissingDataSignals: "No data, scenario, or metric signal is available yet",
+      reportSectionMissingClusters: "No topic cluster is available yet",
+      reportSectionMissingClaims: "No synthesis claim is available yet",
+      reportSectionMissingGaps: "No explicit gap signal is available yet",
+      reportSectionNoReadyRoadmap: "No roadmap topic is ready for prose drafting yet",
+      reportSectionSignalEvidence: (count, available) => `${count || 0} extracted signal(s) from ${available || 0} available summary(s)`,
+      reportSectionClusterEvidence: (count, available) => `${count || 0} topic cluster(s) from ${available || 0} available summary(s)`,
+      reportSectionActionMethod: "Fill or verify the method matrix before writing taxonomy prose.",
+      reportSectionActionData: "Add dataset, scenario, metric, and evaluation details to the evidence map.",
+      reportSectionActionTopic: "Review cluster boundaries and split incomparable topics before writing.",
+      reportSectionActionClaim: "Move only audited, traceable claims into prose.",
+      reportSectionActionGap: "Keep unresolved gaps beside the relevant claims and sections.",
+      reportSectionActionRoadmap: "Promote ready roadmap topics and defer evidence-thin sections.",
       reportSynthesisWritingPack: "Synthesis Writing Pack",
       reportRiskChecklist: "Risk Checklist",
       reportRiskChecklistItems: [
@@ -5817,6 +5977,31 @@ function collectionTemplateLabels(outputLanguage) {
       reportReadinessGapTraceAction: "各未解決ギャップを該当小節で明示する。",
       reportReadinessProceedAction: "元要約を確認した後、執筆パックへ移行可能。",
       reportReadinessDefaultAction: (level) => `${level}: 本文化前に元要約、主張リスク、ロードマップ阻害要因を確認する。`,
+      reportSectionReadinessMatrix: "章別準備度マトリクス",
+      reportSectionColumn: "報告書セクション",
+      reportSectionReadinessScoreColumn: "章別準備度スコア",
+      reportSectionReadinessLevelColumn: "章別準備度レベル",
+      reportSectionEvidenceColumn: "現在の証拠",
+      reportSectionBlockerColumn: "章別阻害要因",
+      reportSectionActionColumn: "次の章別アクション",
+      reportSectionReady: "準備済み",
+      reportSectionNeedsRevision: "修正が必要",
+      reportSectionBlocked: "保留",
+      reportSectionNoBlocker: "現在の要約からは章別阻害要因なし",
+      reportSectionMissingMethodSignals: "この章に使える手法シグナルがまだありません",
+      reportSectionMissingDataSignals: "データ、シナリオ、指標のシグナルがまだありません",
+      reportSectionMissingClusters: "トピッククラスタがまだありません",
+      reportSectionMissingClaims: "統合主張がまだありません",
+      reportSectionMissingGaps: "明示的なギャップシグナルがまだありません",
+      reportSectionNoReadyRoadmap: "本文草稿化できるロードマップ項目がまだありません",
+      reportSectionSignalEvidence: (count, available) => `${available || 0} 件の利用可能な要約から ${count || 0} 件のシグナルを抽出`,
+      reportSectionClusterEvidence: (count, available) => `${available || 0} 件の利用可能な要約から ${count || 0} 件のトピッククラスタ`,
+      reportSectionActionMethod: "手法分類の本文を書く前に、手法マトリクスを補完または確認する。",
+      reportSectionActionData: "証拠マップにデータセット、シナリオ、指標、評価詳細を追加する。",
+      reportSectionActionTopic: "本文化前にクラスタ境界を確認し、比較不能なトピックを分ける。",
+      reportSectionActionClaim: "監査済みで追跡可能な主張だけを本文へ移す。",
+      reportSectionActionGap: "未解決ギャップを関連する主張と小節の横に残す。",
+      reportSectionActionRoadmap: "準備済みロードマップ項目を昇格し、証拠が薄い小節は保留する。",
       reportSynthesisWritingPack: "統合執筆パック",
       reportRiskChecklist: "リスク確認リスト",
       reportRiskChecklistItems: [
@@ -6177,6 +6362,31 @@ function collectionTemplateLabels(outputLanguage) {
     reportReadinessGapTraceAction: "把每个未解决缺口保留在对应小节中。",
     reportReadinessProceedAction: "核对来源总结后可进入写作包。",
     reportReadinessDefaultAction: (level) => `${level}：进入正文前核对来源总结、主张风险和路线图阻塞项。`,
+    reportSectionReadinessMatrix: "章节就绪矩阵",
+    reportSectionColumn: "报告章节",
+    reportSectionReadinessScoreColumn: "章节就绪分",
+    reportSectionReadinessLevelColumn: "章节就绪状态",
+    reportSectionEvidenceColumn: "当前证据",
+    reportSectionBlockerColumn: "章节阻塞项",
+    reportSectionActionColumn: "下一步章节动作",
+    reportSectionReady: "可写",
+    reportSectionNeedsRevision: "需修订",
+    reportSectionBlocked: "暂缓",
+    reportSectionNoBlocker: "当前总结未发现章节阻塞项",
+    reportSectionMissingMethodSignals: "该章节暂无可用方法线索",
+    reportSectionMissingDataSignals: "暂无数据、场景或指标线索",
+    reportSectionMissingClusters: "暂无主题聚类",
+    reportSectionMissingClaims: "暂无综合主张",
+    reportSectionMissingGaps: "暂无明确缺口线索",
+    reportSectionNoReadyRoadmap: "暂无可进入正文的路线图主题",
+    reportSectionSignalEvidence: (count, available) => `从 ${available || 0} 篇可用总结抽取 ${count || 0} 条线索`,
+    reportSectionClusterEvidence: (count, available) => `从 ${available || 0} 篇可用总结形成 ${count || 0} 个主题聚类`,
+    reportSectionActionMethod: "写方法分类正文前，先补齐或核对方法矩阵。",
+    reportSectionActionData: "把数据集、场景、指标和评估细节补到证据地图中。",
+    reportSectionActionTopic: "进入正文前复核聚类边界，拆开不可比较主题。",
+    reportSectionActionClaim: "只把已审计且可追溯的主张迁移到正文。",
+    reportSectionActionGap: "把未解决缺口保留在相关主张和小节旁边。",
+    reportSectionActionRoadmap: "提升已就绪路线图主题，暂缓证据薄弱小节。",
     reportSynthesisWritingPack: "综合写作包",
     reportRiskChecklist: "风险核查清单",
     reportRiskChecklistItems: [
