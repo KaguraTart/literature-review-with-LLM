@@ -932,6 +932,8 @@ describe("batch papers index", () => {
     expect(payload.chartReviewTriage[0].details).toEqual(expect.arrayContaining([
       expect.objectContaining({
         collectionName: "New Collection",
+        priority: "high",
+        reviewState: "todo",
         count: 1,
         paperCount: 1,
         papers: ["New Chart Paper"],
@@ -941,12 +943,35 @@ describe("batch papers index", () => {
       }),
       expect.objectContaining({
         collectionName: "Old Collection",
+        priority: "high",
+        reviewState: "todo",
         count: 2,
         paperCount: 1,
         papers: ["Old Chart Paper"],
         blockingIssue: "old anchors",
         sourceReports: ["/out/collections/OLD/writing/visual-extraction-O.md"],
         sourceIndex: "/out/collections/OLD/writing/chart-review-batch-index.en-US.md"
+      })
+    ]));
+    expect(payload.chartReviewTriage[0].writebackTargets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        collectionName: "New Collection",
+        currentState: "todo",
+        targetState: "in-review",
+        actionCount: 1,
+        sourceIndex: "/out/collections/NEW/writing/chart-review-batch-index.en-US.md",
+        match: expect.objectContaining({
+          priority: "high",
+          reviewState: "todo",
+          batchAction: "Add axis anchors",
+          doneCriteria: "Anchors verified"
+        }),
+        statusPatch: expect.objectContaining({
+          reviewState: "in-review",
+          reviewer: "",
+          due: "",
+          notes: expect.stringContaining("triagePriority=high")
+        })
       })
     ]));
     expect(payload.gapBoard).toEqual(expect.arrayContaining([
@@ -1040,6 +1065,9 @@ describe("batch papers index", () => {
     expect(synthesis).toContain("<details>");
     expect(synthesis).toContain("<summary>1. high / todo - 3 action(s) across 2 collection(s)</summary>");
     expect(synthesis).toContain("| New Collection | 1 | 1 | New Chart Paper | new anchors | /out/collections/NEW/writing/visual-extraction-N.md | /out/collections/NEW/writing/chart-review-batch-index.en-US.md |");
+    expect(synthesis).toContain("#### Batch Status Writeback Targets");
+    expect(synthesis).toContain("| Collection | Current State | Suggested State | Actions | Status Patch | Match Filter | Chart Review Index |");
+    expect(synthesis).toContain("| New Collection | todo | in-review | 1 | Review State=in-review; reviewer=; due=; notes=triagePriority=high; new anchors; doneCriteria=Anchors verified | priority=high; Review State=todo; action=Add axis anchors; done=Anchors verified | /out/collections/NEW/writing/chart-review-batch-index.en-US.md |");
     expect(synthesis).toContain("- [ ] Open each linked chart review index and inspect the source visual reports.");
     expect(synthesis).toContain("Cross-Collection Review Pack");
     expect(synthesis).toContain("Model Deepening Prompt");

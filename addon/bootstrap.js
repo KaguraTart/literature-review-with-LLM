@@ -2889,6 +2889,8 @@ function crossCollectionChartReviewTriageEntries(collections = []) {
       group.details.push({
         collectionKey: collection?.key || "",
         collectionName: collection?.name || collection?.key || "",
+        priority,
+        reviewState,
         count,
         paperCount: Number(row.paperCount) || 0,
         papers: Array.isArray(row.papers) ? row.papers.slice(0, 8) : [],
@@ -2911,8 +2913,66 @@ function crossCollectionChartReviewTriageEntries(collections = []) {
     batchAction: group.batchAction,
     doneCriteria: group.doneCriteria,
     sourceIndexes: group.sourceIndexes.slice(0, 8),
-    details: group.details.slice(0, 16)
+    details: group.details.slice(0, 16),
+    writebackTargets: crossCollectionChartReviewWritebackTargets({
+      priority: group.priority,
+      reviewState: group.reviewState,
+      blockingIssue: collectionChartReviewIssueSummary(group.blockingIssues),
+      batchAction: group.batchAction,
+      doneCriteria: group.doneCriteria,
+      details: group.details.slice(0, 16)
+    })
   })).sort(collectionChartReviewBatchSort);
+}
+
+function crossCollectionChartReviewWritebackTargets(entry) {
+  const details = Array.isArray(entry?.details) ? entry.details : [];
+  return details.map((detail, index) => {
+    const currentState = normalizeCollectionChartReviewState(detail.reviewState || entry.reviewState || "todo");
+    const targetState = nextCollectionChartReviewWritebackState(currentState);
+    const priority = detail.priority || entry.priority || "medium";
+    const batchAction = detail.batchAction || entry.batchAction || "";
+    const doneCriteria = detail.doneCriteria || entry.doneCriteria || "";
+    const sourceReports = Array.isArray(detail.sourceReports) ? detail.sourceReports.slice(0, 8) : [];
+    const notes = [
+      `triagePriority=${priority}`,
+      detail.blockingIssue || entry.blockingIssue || "",
+      doneCriteria ? `doneCriteria=${doneCriteria}` : ""
+    ].filter(Boolean).join("; ");
+    return {
+      targetId: `chart-review-status:${priority}:${currentState}:${detail.collectionKey || detail.collectionName || index + 1}:${index + 1}`,
+      collectionKey: detail.collectionKey || "",
+      collectionName: detail.collectionName || detail.collectionKey || "",
+      priority,
+      currentState,
+      targetState,
+      actionCount: Number(detail.count) || 0,
+      paperCount: Number(detail.paperCount) || 0,
+      papers: Array.isArray(detail.papers) ? detail.papers.slice(0, 8) : [],
+      sourceIndex: detail.sourceIndex || "",
+      sourceReports,
+      match: {
+        priority,
+        reviewState: currentState,
+        batchAction,
+        doneCriteria,
+        sourceReports
+      },
+      statusPatch: {
+        reviewState: targetState,
+        reviewer: "",
+        due: "",
+        notes
+      }
+    };
+  });
+}
+
+function nextCollectionChartReviewWritebackState(reviewState) {
+  const normalized = normalizeCollectionChartReviewState(reviewState || "todo");
+  if (normalized === "done" || normalized === "discarded") return normalized;
+  if (normalized === "in-review") return "done";
+  return "in-review";
 }
 
 function renderCrossCollectionChartReviewTriageRows(entries, labels) {
@@ -2941,6 +3001,9 @@ function renderCrossCollectionChartReviewDrilldown(entries, labels) {
   return visible.map((entry, index) => {
     const title = labels.crossCollectionChartReviewDrilldownSummary?.(index + 1, entry) || `${index + 1}. ${entry.priority || ""} ${entry.reviewState || ""}`;
     const details = Array.isArray(entry.details) ? entry.details : [];
+    const writebackTargets = Array.isArray(entry.writebackTargets)
+      ? entry.writebackTargets
+      : crossCollectionChartReviewWritebackTargets(entry);
     const detailRows = details.map((detail) => [
       escapeMarkdownTable(detail.collectionName || detail.collectionKey || ""),
       Number(detail.count) || 0,
@@ -2949,6 +3012,15 @@ function renderCrossCollectionChartReviewDrilldown(entries, labels) {
       escapeMarkdownTable(detail.blockingIssue || labels.crossCollectionChartReviewNoIssue),
       escapeMarkdownTable((detail.sourceReports || []).join("; ") || labels.pendingSummaryPath),
       escapeMarkdownTable(detail.sourceIndex || labels.crossCollectionChartReviewIndexPending)
+    ].join(" | ")).map((row) => `| ${row} |`);
+    const writebackRows = writebackTargets.map((target) => [
+      escapeMarkdownTable(target.collectionName || target.collectionKey || ""),
+      escapeMarkdownTable(target.currentState || ""),
+      escapeMarkdownTable(target.targetState || ""),
+      Number(target.actionCount) || 0,
+      escapeMarkdownTable(crossCollectionChartReviewStatusPatchText(target.statusPatch, labels)),
+      escapeMarkdownTable(crossCollectionChartReviewMatchText(target.match, labels)),
+      escapeMarkdownTable(target.sourceIndex || labels.crossCollectionChartReviewIndexPending)
     ].join(" | ")).map((row) => `| ${row} |`);
     return [
       "<details>",
@@ -2962,6 +3034,12 @@ function renderCrossCollectionChartReviewDrilldown(entries, labels) {
       "| --- | ---: | ---: | --- | --- | --- | --- |",
       detailRows.join("\n") || `|  | 0 | 0 |  | ${escapeMarkdownTable(labels.crossCollectionChartReviewEmpty)} |  |  |`,
       "",
+      `#### ${labels.crossCollectionChartReviewWritebackTargets}`,
+      "",
+      `| ${labels.collectionColumn} | ${labels.crossCollectionChartReviewCurrentStateColumn} | ${labels.crossCollectionChartReviewTargetStateColumn} | ${labels.crossCollectionChartReviewActionCountColumn} | ${labels.crossCollectionChartReviewStatusPatchColumn} | ${labels.crossCollectionChartReviewMatchColumn} | ${labels.crossCollectionChartReviewIndexColumn} |`,
+      "| --- | --- | --- | ---: | --- | --- | --- |",
+      writebackRows.join("\n") || `|  |  |  | 0 |  |  | ${escapeMarkdownTable(labels.crossCollectionChartReviewIndexPending)} |`,
+      "",
       `- [ ] ${labels.crossCollectionChartReviewChecklistOpenIndexes}`,
       `- [ ] ${labels.crossCollectionChartReviewChecklistVerifyPapers}`,
       `- [ ] ${labels.crossCollectionChartReviewChecklistUpdateState}`,
@@ -2969,6 +3047,28 @@ function renderCrossCollectionChartReviewDrilldown(entries, labels) {
       "</details>"
     ].join("\n");
   }).join("\n\n");
+}
+
+function crossCollectionChartReviewStatusPatchText(statusPatch = {}, labels = {}) {
+  const state = statusPatch.reviewState || "";
+  const reviewer = statusPatch.reviewer || "";
+  const due = statusPatch.due || "";
+  const notes = statusPatch.notes || "";
+  return [
+    `${labels.crossCollectionChartReviewStateColumn || "state"}=${state}`,
+    `reviewer=${reviewer}`,
+    `due=${due}`,
+    notes ? `notes=${notes}` : ""
+  ].filter(Boolean).join("; ");
+}
+
+function crossCollectionChartReviewMatchText(match = {}, labels = {}) {
+  return [
+    `priority=${match.priority || ""}`,
+    `${labels.crossCollectionChartReviewStateColumn || "state"}=${match.reviewState || ""}`,
+    `action=${match.batchAction || ""}`,
+    match.doneCriteria ? `done=${match.doneCriteria}` : ""
+  ].filter(Boolean).join("; ");
 }
 
 function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") {
@@ -4691,6 +4791,11 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionChartReviewIndexPending: "chart review index pending",
       crossCollectionChartReviewEmpty: "No collection-level chart review tasks are available yet.",
       crossCollectionChartReviewDrilldown: "Chart Review Drilldown",
+      crossCollectionChartReviewWritebackTargets: "Batch Status Writeback Targets",
+      crossCollectionChartReviewCurrentStateColumn: "Current State",
+      crossCollectionChartReviewTargetStateColumn: "Suggested State",
+      crossCollectionChartReviewStatusPatchColumn: "Status Patch",
+      crossCollectionChartReviewMatchColumn: "Match Filter",
       crossCollectionChartReviewDrilldownSummary: (index, entry) => `${index}. ${entry.priority || "medium"} / ${entry.reviewState || "todo"} - ${entry.count || 0} action(s) across ${entry.collectionCount || 0} collection(s)`,
       crossCollectionChartReviewChecklistOpenIndexes: "Open each linked chart review index and inspect the source visual reports.",
       crossCollectionChartReviewChecklistVerifyPapers: "Verify the listed papers before reusing extracted chart values.",
@@ -4968,6 +5073,11 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionChartReviewIndexPending: "図表レビュー索引待ち",
       crossCollectionChartReviewEmpty: "Collection レベルの図表レビュータスクはまだありません。",
       crossCollectionChartReviewDrilldown: "図表レビュードリルダウン",
+      crossCollectionChartReviewWritebackTargets: "一括ステータス書き戻し対象",
+      crossCollectionChartReviewCurrentStateColumn: "現在の状態",
+      crossCollectionChartReviewTargetStateColumn: "推奨状態",
+      crossCollectionChartReviewStatusPatchColumn: "ステータスパッチ",
+      crossCollectionChartReviewMatchColumn: "照合条件",
       crossCollectionChartReviewDrilldownSummary: (index, entry) => `${index}. ${entry.priority || "medium"} / ${entry.reviewState || "todo"} - ${entry.collectionCount || 0} 件の collection に ${entry.count || 0} タスク`,
       crossCollectionChartReviewChecklistOpenIndexes: "リンクされた図表レビュー索引を開き、元の visual report を確認する。",
       crossCollectionChartReviewChecklistVerifyPapers: "抽出値を再利用する前に対象論文を確認する。",
@@ -5244,6 +5354,11 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionChartReviewIndexPending: "待生成图表复核索引",
     crossCollectionChartReviewEmpty: "暂无 collection 级图表复核任务。",
     crossCollectionChartReviewDrilldown: "图表复核下钻",
+    crossCollectionChartReviewWritebackTargets: "批量状态回写目标",
+    crossCollectionChartReviewCurrentStateColumn: "当前状态",
+    crossCollectionChartReviewTargetStateColumn: "建议状态",
+    crossCollectionChartReviewStatusPatchColumn: "状态补丁",
+    crossCollectionChartReviewMatchColumn: "匹配条件",
     crossCollectionChartReviewDrilldownSummary: (index, entry) => `${index}. ${entry.priority || "medium"} / ${entry.reviewState || "todo"} - ${entry.collectionCount || 0} 个集合中的 ${entry.count || 0} 个任务`,
     crossCollectionChartReviewChecklistOpenIndexes: "打开每个已链接的图表复核索引，核对来源 visual report。",
     crossCollectionChartReviewChecklistVerifyPapers: "复用抽取图表数值前，先核对明细中的论文。",
