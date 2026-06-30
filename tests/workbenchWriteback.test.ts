@@ -6775,6 +6775,146 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("ocr_fallback_used, empty_or_unread_pages");
   });
 
+  it("records PDF byte access diagnostics and falls back to indexed text evidence", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    (loaded as any).fetch = async (_url: string, _init: any) => {
+      fetchCalls.push({ url: _url, init: _init });
+      throw new Error("bridge should not be called without PDF bytes");
+    };
+    loaded.__zoteroItems.set(64, {
+      id: 64,
+      key: "ITEM64",
+      getAttachments: () => [65]
+    });
+    loaded.__zoteroItems.set(65, {
+      id: 65,
+      key: "PDF65",
+      attachmentContentType: "application/pdf",
+      attachmentText: [
+        "The proposed method uses graph attention from Zotero indexed text.",
+        "Experiments evaluate benchmark scenarios with delay and throughput metrics."
+      ].join(" "),
+      getFilePathAsync: async () => "",
+      getField: (field: string) => field === "title" ? "no-bytes.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/no-bytes",
+        title: "No Bytes Candidate",
+        decision: "include",
+        zoteroItemID: 64,
+        zoteroItemKey: "ITEM64",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(fetchCalls).toHaveLength(0);
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      sourceType: "indexed-text",
+      locator: expect.stringContaining("indexed-text:"),
+      quote: expect.stringContaining("proposed method uses graph attention")
+    });
+    expect(enriched[0].review.pdfExtractionQuality).toMatchObject({
+      status: "fail",
+      engine: "local-bridge",
+      pagesWithText: 0,
+      expectedPageCount: 0,
+      warnings: ["pdf_bytes_unavailable", "indexed_text_fallback_used"]
+    });
+
+    const labels = loaded.candidateReviewLabels("en-US");
+    const evidenceRows = loaded.candidateReviewEvidenceRows(enriched, labels);
+    expect(evidenceRows[0]).toMatchObject({
+      gap: "PDF page-text extraction quality needs review",
+      check: expect.stringContaining("indexed-text fallback")
+    });
+
+    const report = loaded.renderCandidateReviewMarkdown(enriched, {
+      outputLanguage: "en-US",
+      item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+    expect(report).toContain("PDF extraction quality");
+    expect(report).toContain("status: fail");
+    expect(report).toContain("warnings: pdf_bytes_unavailable, indexed_text_fallback_used");
+    expect(report).toContain("next action: Attach a locally readable PDF file");
+    expect(report).toContain("PDF page-text extraction quality needs review");
+  });
+
+  it("keeps indexed text evidence visible when local bridge PDF extraction fails", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    (loaded as any).fetch = async (url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ url, body });
+      return {
+        ok: false,
+        status: 500,
+        text: async () => JSON.stringify({ error: { message: "pdftotext failed" } })
+      };
+    };
+    loaded.__zoteroItems.set(66, {
+      id: 66,
+      key: "ITEM66",
+      getAttachments: () => [67]
+    });
+    loaded.__zoteroItems.set(67, {
+      id: 67,
+      key: "PDF67",
+      attachmentContentType: "application/pdf",
+      attachmentText: [
+        "The proposed method uses graph attention even when bridge extraction fails.",
+        "Limitations include missing weather robustness checks."
+      ].join(" "),
+      getFilePathAsync: async () => "/tmp/broken.pdf",
+      getField: (field: string) => field === "title" ? "broken.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/bridge-failure",
+        title: "Bridge Failure Candidate",
+        decision: "include",
+        zoteroItemID: 66,
+        zoteroItemKey: "ITEM66",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].body.params.arguments).toMatchObject({
+      filePath: "/tmp/broken.pdf",
+      name: "broken.pdf"
+    });
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      sourceType: "indexed-text",
+      locator: expect.stringContaining("indexed-text:"),
+      quote: expect.stringContaining("bridge extraction fails")
+    });
+    expect(enriched[0].review.pdfExtractionQuality).toMatchObject({
+      status: "warning",
+      engine: "local-bridge",
+      warnings: ["local_bridge_request_failed", "pdf_page_text_unavailable", "indexed_text_fallback_used"],
+      lastError: expect.stringContaining("pdftotext failed")
+    });
+
+    const report = loaded.renderCandidateReviewMarkdown(enriched, {
+      outputLanguage: "zh-CN",
+      item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+    expect(report).toContain("PDF 抽取质量");
+    expect(report).toContain("状态: warning");
+    expect(report).toContain("告警: local_bridge_request_failed, pdf_page_text_unavailable, indexed_text_fallback_used");
+    expect(report).toContain("下一步: 检查本地 bridge 日志、Poppler/Tesseract 安装和 PDF 文件权限。");
+    expect(report).toContain("PDF 页文本抽取质量需要复核");
+    expect(report).toContain("indexed-text:");
+  });
+
   it("uses base64 PDF bridge extraction when no local attachment path is available", async () => {
     const loaded = loadWorkbenchHelpers();
     const pdfBase64 = Buffer.from("%PDF in-memory candidate").toString("base64");

@@ -16310,6 +16310,7 @@ function candidateReviewEvidenceGap(record, labels) {
   if (decision === "include" && !candidateHasFullText(record)) return labels.evidenceGapMissingFullText;
   if (stage === "full_text_needed") return labels.evidenceGapFullTextNeeded;
   if (record?.quality?.isAbstractOnly === true) return labels.evidenceGapAbstractOnly;
+  if (decision !== "exclude" && candidatePdfExtractionQualityNeedsFollowUp(candidateReviewPdfExtractionQuality(record))) return labels.evidenceGapPdfExtractionQuality;
   if (["include", "to_read"].includes(decision) && stage !== "full_text_screened") return labels.evidenceGapNeedFullTextScreening;
   if (record?.networkOrigins?.length && stage !== "full_text_screened") return labels.evidenceGapCitationContext;
   return "";
@@ -16320,6 +16321,7 @@ function candidateReviewEvidenceCheck(record, labels) {
   if (gap === labels.evidenceGapMissingExclusionReason) return labels.evidenceCheckAddExclusionReason;
   if (gap === labels.evidenceGapMissingFullText || gap === labels.evidenceGapFullTextNeeded) return labels.evidenceCheckFindPdf;
   if (gap === labels.evidenceGapAbstractOnly) return labels.evidenceCheckReadAbstract;
+  if (gap === labels.evidenceGapPdfExtractionQuality) return labels.evidenceCheckPdfExtractionQuality;
   if (gap === labels.evidenceGapCitationContext) return labels.evidenceCheckTraceCitationContext;
   if (gap === labels.evidenceGapNeedFullTextScreening) return labels.evidenceCheckScreenFullText;
   return labels.actionNoImmediate;
@@ -16362,6 +16364,7 @@ function candidateReviewSourceEvidenceRows(records, labels) {
 function candidateHasSourceEvidence(record) {
   if (record?.quality?.dedupeStatus === "duplicate" || record?.priority?.tier === "duplicate") return false;
   return !!candidateReviewFullTextEvidence(record).length
+    || !!candidateReviewPdfExtractionQuality(record)
     || !!candidateReviewAbstract(record)
     || !!record?.pdfUrl
     || record?.pdfAttachmentStatus === "attached_pdf"
@@ -16482,6 +16485,7 @@ function candidatePdfExtractionQualityLocator(record, quality) {
 
 function candidatePdfExtractionQualitySummary(quality, labels) {
   const warnings = (quality?.warnings || []).join(", ") || labels.pdfQualityNoWarnings;
+  const nextAction = candidatePdfExtractionQualityNextAction(quality, labels);
   return [
     `${labels.pdfQualityStatus}: ${quality?.status || labels.unknown || "unknown"}`,
     quality?.engine ? `${labels.pdfQualityEngine}: ${quality.engine}` : "",
@@ -16491,8 +16495,28 @@ function candidatePdfExtractionQualitySummary(quality, labels) {
     `${labels.pdfQualityOcrFallback}: ${quality?.ocrFallbackUsed ? labels.pdfQualityYes : labels.pdfQualityNo}`,
     quality?.ocrConfidenceSummary ? `${labels.pdfQualityOcrConfidence}: ${quality.ocrConfidenceSummary}` : "",
     quality?.ocrConfidenceRisk ? `${labels.pdfQualityOcrRisk}: ${quality.ocrConfidenceRisk}` : "",
-    `${labels.pdfQualityWarnings}: ${warnings}`
+    `${labels.pdfQualityWarnings}: ${warnings}`,
+    nextAction ? `${labels.pdfQualityNextAction}: ${nextAction}` : ""
   ].filter(Boolean).join("; ");
+}
+
+function candidatePdfExtractionQualityNeedsFollowUp(quality) {
+  if (!quality) return false;
+  const status = mdText(quality.status || "").toLowerCase();
+  if (["fail", "failed", "error", "warning"].includes(status)) return true;
+  return (quality.warnings || []).some((warning) => {
+    const value = mdText(warning).toLowerCase();
+    return value && value !== "none" && value !== "no_warnings";
+  });
+}
+
+function candidatePdfExtractionQualityNextAction(quality, labels) {
+  const warnings = new Set((quality?.warnings || []).map((warning) => mdText(warning).toLowerCase()).filter(Boolean));
+  if (warnings.has("pdf_bytes_unavailable")) return labels.pdfQualityActionAttachReadablePdf;
+  if (warnings.has("local_bridge_fetch_unavailable") || warnings.has("local_bridge_endpoint_missing")) return labels.pdfQualityActionStartBridge;
+  if (warnings.has("local_bridge_request_failed")) return labels.pdfQualityActionCheckBridge;
+  if (warnings.has("indexed_text_fallback_used")) return labels.pdfQualityActionVerifyIndexedText;
+  return mdText(quality?.nextAction || "");
 }
 
 function candidateReviewFullTextEvidence(record) {
@@ -16685,22 +16709,58 @@ async function candidatePdfEvidenceSource(pdf, record = {}) {
     }
   }
   const bridgePages = await candidatePdfTextPagesFromLocalBridge(pdf, record);
-  if (bridgePages?.pages?.length || bridgePages?.quality) return {
-    sourceType: "pdf-page-text",
-    pages: bridgePages.pages || [],
-    quality: bridgePages.quality || null,
-    engine: bridgePages.engine || "",
-    name: bridgePages.name || ""
-  };
-  return String((await pdf?.attachmentText) || "").trim();
+  if (bridgePages?.pages?.length) {
+    return {
+      sourceType: "pdf-page-text",
+      pages: bridgePages.pages || [],
+      quality: bridgePages.quality || null,
+      engine: bridgePages.engine || "",
+      name: bridgePages.name || ""
+    };
+  }
+  const fallbackText = String((await pdf?.attachmentText) || "").trim();
+  if (bridgePages?.quality) {
+    return {
+      sourceType: fallbackText ? "indexed-text" : "pdf-page-text",
+      text: fallbackText,
+      pages: [],
+      quality: candidatePdfExtractionQualityWithFallback(bridgePages.quality, fallbackText),
+      engine: bridgePages.engine || "",
+      name: bridgePages.name || ""
+    };
+  }
+  return fallbackText;
 }
 
 async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
-  if (!pdf || typeof fetch !== "function") return null;
+  if (!pdf) return null;
+  const name = attachmentDisplayName(pdf) || "paper.pdf";
+  if (typeof fetch !== "function") {
+    return {
+      pages: [],
+      quality: candidatePdfBridgeDiagnosticQuality("local_bridge_fetch_unavailable", { name, status: "warning" }),
+      engine: "local-bridge",
+      name
+    };
+  }
   const bridgeArguments = await candidatePdfBridgeArguments(pdf);
-  if (!bridgeArguments) return null;
+  if (!bridgeArguments) {
+    return {
+      pages: [],
+      quality: candidatePdfBridgeDiagnosticQuality("pdf_bytes_unavailable", { name, status: "fail" }),
+      engine: "local-bridge",
+      name
+    };
+  }
   const endpoint = candidatePdfTextBridgeEndpoint(record);
-  if (!endpoint) return null;
+  if (!endpoint) {
+    return {
+      pages: [],
+      quality: candidatePdfBridgeDiagnosticQuality("local_bridge_endpoint_missing", { name: bridgeArguments.name || name, status: "warning" }),
+      engine: "local-bridge",
+      name: bridgeArguments.name || name
+    };
+  }
   const [signal, clearPdfTextTimeout] = typeof setTimeout === "function"
     ? createAbortController(null, 50000)
     : [undefined, () => {}];
@@ -16735,10 +16795,67 @@ async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
       name: mdText(result?.name || bridgeArguments.name || "")
     };
   } catch (_err) {
-    return null;
+    return {
+      pages: [],
+      quality: candidatePdfBridgeDiagnosticQuality("local_bridge_request_failed", {
+        name: bridgeArguments.name || name,
+        status: "warning",
+        warnings: ["pdf_page_text_unavailable"],
+        error: safeError(_err)
+      }),
+      engine: "local-bridge",
+      name: bridgeArguments.name || name
+    };
   } finally {
     clearPdfTextTimeout();
   }
+}
+
+function candidatePdfExtractionQualityWithFallback(quality, fallbackText) {
+  if (!fallbackText || !quality) return quality;
+  return candidatePdfExtractionQualityFromResult({
+    name: quality.name || "",
+    engine: quality.engine || "",
+    quality: {
+      ...quality,
+      warnings: uniquePdfQualityWarnings([...(quality.warnings || []), "indexed_text_fallback_used"])
+    }
+  }, []);
+}
+
+function candidatePdfBridgeDiagnosticQuality(reason, options = {}) {
+  const warnings = uniquePdfQualityWarnings([reason, ...(options.warnings || [])]);
+  return candidatePdfExtractionQualityFromResult({
+    name: options.name || "",
+    engine: options.engine || "local-bridge",
+    quality: {
+      status: options.status || "warning",
+      engine: options.engine || "local-bridge",
+      pageCount: 0,
+      expectedPageCount: 0,
+      pagesWithText: 0,
+      emptyPageCount: 0,
+      totalTextChars: 0,
+      averageTextCharsPerPage: 0,
+      minTextChars: 40,
+      ocrFallbackUsed: false,
+      ocrPageSignals: [],
+      warnings,
+      lastError: mdText(options.error || ""),
+      nextAction: candidatePdfBridgeDiagnosticNextAction(reason)
+    }
+  }, []);
+}
+
+function uniquePdfQualityWarnings(values) {
+  return [...new Set((values || []).map((value) => mdText(value).toLowerCase()).filter(Boolean))].slice(0, 8);
+}
+
+function candidatePdfBridgeDiagnosticNextAction(reason) {
+  if (reason === "pdf_bytes_unavailable") return "Attach a locally readable PDF file or expose PDF bytes before rerunning page extraction.";
+  if (reason === "local_bridge_fetch_unavailable" || reason === "local_bridge_endpoint_missing") return "Start the local bridge and verify the PDF extraction endpoint.";
+  if (reason === "local_bridge_request_failed") return "Check the local bridge logs, Poppler/Tesseract installation, and PDF file permissions.";
+  return "";
 }
 
 function candidatePdfExtractionQualityFromSource(source) {
@@ -16782,6 +16899,8 @@ function candidatePdfExtractionQualityFromResult(result, pages = []) {
     ocrConfidenceCounts,
     ocrConfidenceSummary: candidatePdfOcrConfidenceSummary(ocrConfidenceCounts),
     ocrConfidenceRisk,
+    nextAction: mdText(quality?.nextAction || result?.nextAction || ""),
+    lastError: mdText(quality?.lastError || result?.lastError || ""),
     warnings
   };
 }
@@ -16936,8 +17055,12 @@ function candidatePdfTextBridgeEndpoint(record = {}) {
 
 function indexedTextForEvidence(text) {
   const explicitPages = normalizePdfTextPagesForEvidence(text);
-  const normalizedPages = explicitPages.length ? explicitPages : splitIndexedTextPages(text);
-  const sourceType = explicitPages.length ? "pdf-page-text" : "indexed-text";
+  const objectSource = text && typeof text === "object" && !Array.isArray(text) ? text : null;
+  const rawText = objectSource
+    ? objectSource.text ?? objectSource.attachmentText ?? objectSource.fullText ?? objectSource.value ?? ""
+    : text;
+  const normalizedPages = explicitPages.length ? explicitPages : splitIndexedTextPages(rawText);
+  const sourceType = explicitPages.length ? "pdf-page-text" : candidateFullTextLocatorSourceType(objectSource?.sourceType || "indexed-text");
   const pages = [];
   let cursor = 0;
   normalizedPages.forEach((pageEntry, index) => {
@@ -17532,11 +17655,13 @@ function candidateReviewLabels(outputLanguage) {
       evidenceGapAbstractOnly: "仅摘要，缺少方法、实验和局限证据",
       evidenceGapNeedFullTextScreening: "尚未完成全文筛选",
       evidenceGapCitationContext: "引用网络相关性需要回到原文核对",
+      evidenceGapPdfExtractionQuality: "PDF 页文本抽取质量需要复核",
       evidenceCheckAddExclusionReason: "补充排除理由，并在备注中写明证据位置。",
       evidenceCheckFindPdf: "查找开放获取 PDF 或附加本地全文，再更新筛选阶段。",
       evidenceCheckScreenFullText: "检查方法、实验、局限和可复用指标，并标记为已筛全文。",
       evidenceCheckReadAbstract: "先核对摘要与来源页，能获取全文后再进入纳入判断。",
       evidenceCheckTraceCitationContext: "核对它与种子论文的引用/被引关系和具体段落上下文。",
+      evidenceCheckPdfExtractionQuality: "检查本地 bridge、PDF 文件权限或 indexed-text fallback，必要时重新抽取页文本。",
       evidenceSourcePdfUrl: "PDF 链接",
       evidenceSourceAttachedPdf: "已附加 PDF",
       evidenceSourceNetwork: "引用网络",
@@ -17572,6 +17697,11 @@ function candidateReviewLabels(outputLanguage) {
       pdfQualityOcrConfidence: "OCR 置信度",
       pdfQualityOcrRisk: "OCR 风险",
       pdfQualityWarnings: "告警",
+      pdfQualityNextAction: "下一步",
+      pdfQualityActionAttachReadablePdf: "附加本机可读取的 PDF 文件，或启用可访问的 PDF 字节后重新抽取页文本。",
+      pdfQualityActionStartBridge: "启动本地 bridge，并确认 PDF 页文本抽取 endpoint 可访问。",
+      pdfQualityActionCheckBridge: "检查本地 bridge 日志、Poppler/Tesseract 安装和 PDF 文件权限。",
+      pdfQualityActionVerifyIndexedText: "当前已回退到 Zotero indexed text；请打开原文核对页码和上下文。",
       pdfQualityNoWarnings: "无",
       pdfQualityYes: "是",
       pdfQualityNo: "否",
@@ -17695,11 +17825,13 @@ function candidateReviewLabels(outputLanguage) {
     evidenceGapAbstractOnly: "Abstract-only record lacks method, experiment, and limitation evidence",
     evidenceGapNeedFullTextScreening: "Full-text screening is not complete",
     evidenceGapCitationContext: "Citation-network relevance needs source-context verification",
+    evidenceGapPdfExtractionQuality: "PDF page-text extraction quality needs review",
     evidenceCheckAddExclusionReason: "Add an exclusion reason and note the evidence location.",
     evidenceCheckFindPdf: "Find an open-access PDF or attach local full text, then update the screening stage.",
     evidenceCheckScreenFullText: "Check method, experiments, limitations, and reusable metrics, then mark full text screened.",
     evidenceCheckReadAbstract: "Check the abstract and source page first; defer inclusion until full text is available.",
     evidenceCheckTraceCitationContext: "Verify the reference/citation relation and the source paragraphs around it.",
+    evidenceCheckPdfExtractionQuality: "Check the local bridge, PDF file permissions, or indexed-text fallback, then rerun page extraction if needed.",
     evidenceSourcePdfUrl: "PDF URL",
     evidenceSourceAttachedPdf: "Attached PDF",
     evidenceSourceNetwork: "Citation network",
@@ -17735,6 +17867,11 @@ function candidateReviewLabels(outputLanguage) {
     pdfQualityOcrConfidence: "OCR confidence",
     pdfQualityOcrRisk: "OCR risk",
     pdfQualityWarnings: "warnings",
+    pdfQualityNextAction: "next action",
+    pdfQualityActionAttachReadablePdf: "Attach a locally readable PDF file or expose PDF bytes before rerunning page extraction.",
+    pdfQualityActionStartBridge: "Start the local bridge and verify the PDF page extraction endpoint.",
+    pdfQualityActionCheckBridge: "Check local bridge logs, Poppler/Tesseract installation, and PDF file permissions.",
+    pdfQualityActionVerifyIndexedText: "The report fell back to Zotero indexed text; verify page and context in the original PDF.",
     pdfQualityNoWarnings: "none",
     pdfQualityYes: "yes",
     pdfQualityNo: "no",
