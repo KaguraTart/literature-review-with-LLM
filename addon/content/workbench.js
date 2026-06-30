@@ -8509,6 +8509,8 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       ["pixel", anchor.pixel === null || anchor.pixel === undefined ? "" : anchor.pixel],
       ["value", anchor.value || ""],
       ["unit", anchor.unit || ""],
+      ["scale", anchor.scale || ""],
+      ["segment", anchor.segment || ""],
       ["confidence", anchor.confidence || ""],
       ["basis", anchor.basis || ""]
     ]) {
@@ -8803,6 +8805,8 @@ function visualExtractionCalibrationAnchorsFromTable(table, images = []) {
   ]);
   if (!axisColumn || !pixelColumn || !valueColumn) return [];
   const unitColumn = visualExtractionFindColumn(columns, [/^(unit|units|单位|單位)$/i]);
+  const scaleColumn = visualExtractionFindColumn(columns, [/^(scale|axis\s*scale|mapping|transform|尺度|坐标尺度|座標尺度|刻度类型|刻度類型)$/i]);
+  const segmentColumn = visualExtractionFindColumn(columns, [/^(segment|segment\s*id|axis\s*segment|piece|piecewise|区段|區段|分段|段)$/i]);
   const confidenceColumn = visualExtractionFindColumn(columns, [/^(confidence|置信度|certainty|可靠性)$/i]);
   const sourceColumn = visualExtractionFindColumn(columns, [/^(source|来源|來源|evidence|证据|證據|basis|依据|依據)$/i]);
   const notesColumn = visualExtractionFindColumn(columns, [/^(note|notes|备注|備註|说明|說明)$/i]);
@@ -8819,6 +8823,8 @@ function visualExtractionCalibrationAnchorsFromTable(table, images = []) {
       pixel,
       value,
       unit: mdText(row[unitColumn] || ""),
+      scale: visualExtractionAxisScaleName(row[scaleColumn] || ""),
+      segment: mdText(row[segmentColumn] || ""),
       confidence: visualExtractionConfidence(row[confidenceColumn] || row[sourceColumn] || ""),
       basis,
       evidenceLabels: visualExtractionEvidenceLabels(Object.values(row).join(" "))
@@ -8872,7 +8878,9 @@ function visualExtractionAxisCalibrationScale(calibrationAnchors = [], axisName)
     ...anchor,
     axis: visualExtractionAxisName(anchor?.axis),
     pixel: Number(anchor?.pixel),
-    numericValue: visualExtractionNumber(anchor?.value)
+    numericValue: visualExtractionNumber(anchor?.value),
+    scale: visualExtractionAxisScaleName(anchor?.scale),
+    segment: mdText(anchor?.segment || "")
   })).filter((anchor) =>
     anchor.axis === axis
     && Number.isFinite(anchor.pixel)
@@ -8880,9 +8888,64 @@ function visualExtractionAxisCalibrationScale(calibrationAnchors = [], axisName)
     && Number.isFinite(anchor.numericValue)
   );
   if (anchors.length < 2) return null;
+  const segmented = visualExtractionSegmentedAxisCalibrationScale(axis, anchors);
+  if (segmented) return segmented;
+  const scaleType = visualExtractionPreferredAxisScale(anchors);
+  const selected = visualExtractionAxisCalibrationPair(anchors, scaleType);
+  if (!selected) return null;
+  const unit = mdText(selected.left.unit || selected.right.unit || "");
+  return {
+    type: scaleType,
+    axis,
+    pixelA: selected.left.pixel,
+    valueA: selected.left.numericValue,
+    pixelB: selected.right.pixel,
+    valueB: selected.right.numericValue,
+    unit,
+    evidenceLabels: Array.from(new Set([...(selected.left.evidenceLabels || []), ...(selected.right.evidenceLabels || [])]))
+  };
+}
+
+function visualExtractionSegmentedAxisCalibrationScale(axis, anchors = []) {
+  const segmentedAnchors = (anchors || []).filter((anchor) => anchor.segment);
+  if (!segmentedAnchors.length) return null;
+  const bySegment = new Map();
+  for (const anchor of segmentedAnchors) {
+    const segment = mdText(anchor.segment);
+    if (!bySegment.has(segment)) bySegment.set(segment, []);
+    bySegment.get(segment).push(anchor);
+  }
+  const segments = [];
+  for (const [segment, segmentAnchors] of bySegment.entries()) {
+    const scaleType = visualExtractionPreferredAxisScale(segmentAnchors);
+    const selected = visualExtractionAxisCalibrationPair(segmentAnchors, scaleType);
+    if (!selected) continue;
+    segments.push({
+      type: scaleType,
+      segment,
+      pixelA: selected.left.pixel,
+      valueA: selected.left.numericValue,
+      pixelB: selected.right.pixel,
+      valueB: selected.right.numericValue,
+      unit: mdText(selected.left.unit || selected.right.unit || ""),
+      evidenceLabels: Array.from(new Set([...(selected.left.evidenceLabels || []), ...(selected.right.evidenceLabels || [])]))
+    });
+  }
+  if (!segments.length) return null;
+  return {
+    type: "segmented",
+    axis,
+    unit: segments.find((segment) => segment.unit)?.unit || "",
+    segments: segments.sort((left, right) => Math.min(left.pixelA, left.pixelB) - Math.min(right.pixelA, right.pixelB)),
+    evidenceLabels: Array.from(new Set(segments.flatMap((segment) => segment.evidenceLabels || [])))
+  };
+}
+
+function visualExtractionAxisCalibrationPair(anchors = [], scaleType = "linear") {
   let selected = null;
   for (let left = 0; left < anchors.length; left += 1) {
     for (let right = left + 1; right < anchors.length; right += 1) {
+      if (scaleType === "log" && (anchors[left].numericValue <= 0 || anchors[right].numericValue <= 0)) continue;
       const pixelSpan = Math.abs(anchors[right].pixel - anchors[left].pixel);
       const valueSpan = Math.abs(anchors[right].numericValue - anchors[left].numericValue);
       if (!pixelSpan || !valueSpan) continue;
@@ -8895,27 +8958,41 @@ function visualExtractionAxisCalibrationScale(calibrationAnchors = [], axisName)
       }
     }
   }
-  if (!selected) return null;
-  const unit = mdText(selected.left.unit || selected.right.unit || "");
-  return {
-    axis,
-    pixelA: selected.left.pixel,
-    valueA: selected.left.numericValue,
-    pixelB: selected.right.pixel,
-    valueB: selected.right.numericValue,
-    unit,
-    evidenceLabels: Array.from(new Set([...(selected.left.evidenceLabels || []), ...(selected.right.evidenceLabels || [])]))
-  };
+  return selected;
+}
+
+function visualExtractionPreferredAxisScale(anchors = []) {
+  return (anchors || []).some((anchor) => visualExtractionAxisScaleName(anchor?.scale) === "log") ? "log" : "linear";
 }
 
 function visualExtractionAxisValueFromPixel(scale, pixel) {
   const numericPixel = Number(pixel);
+  if (scale?.type === "segmented") {
+    const segment = visualExtractionSegmentForPixel(scale.segments || [], numericPixel);
+    return segment ? visualExtractionAxisValueFromPixel(segment, numericPixel) : null;
+  }
   const pixelSpan = Number(scale?.pixelB) - Number(scale?.pixelA);
   const valueSpan = Number(scale?.valueB) - Number(scale?.valueA);
   if (!Number.isFinite(numericPixel) || !Number.isFinite(pixelSpan) || !Number.isFinite(valueSpan) || pixelSpan === 0) {
     return null;
   }
+  if (scale?.type === "log") {
+    if (Number(scale.valueA) <= 0 || Number(scale.valueB) <= 0) return null;
+    const logA = Math.log(Number(scale.valueA));
+    const logB = Math.log(Number(scale.valueB));
+    return Math.exp(logA + ((numericPixel - Number(scale.pixelA)) * (logB - logA) / pixelSpan));
+  }
   return Number(scale.valueA) + ((numericPixel - Number(scale.pixelA)) * valueSpan / pixelSpan);
+}
+
+function visualExtractionSegmentForPixel(segments = [], pixel) {
+  if (!Number.isFinite(Number(pixel))) return null;
+  for (const segment of segments || []) {
+    const minPixel = Math.min(Number(segment.pixelA), Number(segment.pixelB));
+    const maxPixel = Math.max(Number(segment.pixelA), Number(segment.pixelB));
+    if (Number(pixel) >= minPixel && Number(pixel) <= maxPixel) return segment;
+  }
+  return null;
 }
 
 function visualExtractionFormatCalibratedAxisValue(value, unit = "") {
@@ -8930,9 +9007,19 @@ function visualExtractionFormatCalibratedAxisValue(value, unit = "") {
 
 function visualExtractionCalibrationBasis(scale) {
   if (!scale) return "";
+  if (scale.type === "segmented") {
+    const parts = (scale.segments || []).map((segment) => {
+      const left = visualExtractionFormatCalibratedAxisValue(segment.valueA, segment.unit || scale.unit);
+      const right = visualExtractionFormatCalibratedAxisValue(segment.valueB, segment.unit || scale.unit);
+      const label = segment.segment ? `${segment.segment} ` : "";
+      return `${label}${segment.pixelA}px=${left}, ${segment.pixelB}px=${right}`;
+    }).filter(Boolean);
+    return parts.length ? `segmented ${scale.axis} calibration: ${parts.join("; ")}` : "";
+  }
   const left = visualExtractionFormatCalibratedAxisValue(scale.valueA, scale.unit);
   const right = visualExtractionFormatCalibratedAxisValue(scale.valueB, scale.unit);
-  return `linear ${scale.axis} calibration: ${scale.pixelA}px=${left}, ${scale.pixelB}px=${right}`;
+  const type = scale.type === "log" ? "log" : "linear";
+  return `${type} ${scale.axis} calibration: ${scale.pixelA}px=${left}, ${scale.pixelB}px=${right}`;
 }
 
 function visualExtractionMergeBasis(existing, addition) {
@@ -8945,6 +9032,13 @@ function visualExtractionAxisName(value) {
   if (/^(x|x[-_\s]?axis|axis\s*x)$/i.test(text) || /横轴|橫軸|横坐标|橫座標|水平/.test(text)) return "X";
   if (/^(y|y[-_\s]?axis|axis\s*y)$/i.test(text) || /纵轴|縱軸|纵坐标|縱座標|垂直/.test(text)) return "Y";
   return text;
+}
+
+function visualExtractionAxisScaleName(value) {
+  const text = mdText(value).toLowerCase();
+  if (!text) return "";
+  if (/log|log10|logarithmic|对数|對數|ログ/.test(text)) return "log";
+  return "linear";
 }
 
 function visualExtractionNumericTextPoints(text) {
@@ -9083,8 +9177,8 @@ function visualExtractionPixelDataDraftsMarkdown(drafts, labels) {
 
 function visualExtractionCalibrationAnchorsMarkdown(anchors, labels) {
   const lines = [
-    `| ${labels.anchor} | ${labels.source} | ${labels.axis} | ${labels.pixelPosition} | ${labels.axisValue} | ${labels.unit} | ${labels.confidence} | ${labels.evidenceLabels} |`,
-    "| --- | --- | --- | ---: | --- | --- | --- | --- |"
+    `| ${labels.anchor} | ${labels.source} | ${labels.axis} | ${labels.pixelPosition} | ${labels.axisValue} | ${labels.unit} | ${labels.confidence} | ${labels.evidenceLabels} | ${labels.scale} | ${labels.segment} |`,
+    "| --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |"
   ];
   for (const anchor of anchors || []) {
     lines.push([
@@ -9095,7 +9189,9 @@ function visualExtractionCalibrationAnchorsMarkdown(anchors, labels) {
       markdownTableCell(anchor.value || ""),
       markdownTableCell(anchor.unit || ""),
       markdownTableCell(anchor.confidence || ""),
-      markdownTableCell((anchor.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+      markdownTableCell((anchor.evidenceLabels || []).join(", ") || labels.noEvidenceLabels),
+      markdownTableCell(anchor.scale || ""),
+      markdownTableCell(anchor.segment || "")
     ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
   }
   return lines.join("\n");
@@ -9195,19 +9291,33 @@ function visualExtractionCalibrationQualityCheck(calibrationAnchors = []) {
   const axisGroups = visualExtractionCalibrationAxisGroups(anchors);
   const spans = [];
   const monotonicAxes = [];
+  const logAxes = [];
+  const segmentedAxes = [];
   const issues = [];
   const severeIssues = [];
   let numericCount = 0;
   for (const [axis, axisAnchors] of axisGroups.entries()) {
     const numericAnchors = axisAnchors
-      .map((anchor) => ({ ...anchor, numericValue: visualExtractionNumber(anchor.value) }))
+      .map((anchor) => ({
+        ...anchor,
+        numericValue: visualExtractionNumber(anchor.value),
+        scale: visualExtractionAxisScaleName(anchor.scale),
+        segment: mdText(anchor.segment || "")
+      }))
       .filter((anchor) => anchor.numericValue !== null);
     numericCount += numericAnchors.length;
-    const duplicatePixels = visualExtractionDuplicateValues(axisAnchors.map((anchor) => anchor.pixel));
+    const segments = Array.from(new Set(axisAnchors.map((anchor) => mdText(anchor.segment || "")).filter(Boolean)));
+    if (segments.length) segmentedAxes.push(`${axis} ${segments.length}`);
+    if (numericAnchors.some((anchor) => anchor.scale === "log")) {
+      logAxes.push(axis);
+      const nonPositive = numericAnchors.filter((anchor) => Number(anchor.numericValue) <= 0);
+      if (nonPositive.length) severeIssues.push(`non-positive log anchors on ${axis}`);
+    }
+    const duplicatePixels = visualExtractionDuplicateCalibrationValues(axisAnchors, (anchor) => anchor.pixel);
     if (duplicatePixels.length) {
       severeIssues.push(`duplicate pixel anchors on ${axis}: ${duplicatePixels.join(", ")}`);
     }
-    const duplicateAxisValues = visualExtractionDuplicateValues(numericAnchors.map((anchor) => anchor.numericValue));
+    const duplicateAxisValues = visualExtractionDuplicateCalibrationValues(numericAnchors, (anchor) => anchor.numericValue);
     if (duplicateAxisValues.length) {
       severeIssues.push(`duplicate axis values on ${axis}: ${duplicateAxisValues.join(", ")}`);
     }
@@ -9232,6 +9342,8 @@ function visualExtractionCalibrationQualityCheck(calibrationAnchors = []) {
     spans.length ? `spans: ${spans.join(", ")}` : "",
     `numeric anchors: ${numericCount}/${anchors.length}`,
     monotonicAxes.length ? `monotonic axes: ${monotonicAxes.join(", ")}` : "",
+    logAxes.length ? `log axes: ${Array.from(new Set(logAxes)).join(", ")}` : "",
+    segmentedAxes.length ? `segmented axes: ${segmentedAxes.join(", ")}` : "",
     severeIssues.length || issues.length ? `issues: ${[...severeIssues, ...issues].join("; ")}` : ""
   ].filter(Boolean);
   if (severeIssues.length) return visualExtractionQualityCheck("calibration-quality", "fail", detailParts.join("; "));
@@ -9259,6 +9371,15 @@ function visualExtractionDuplicateValues(values = []) {
     if (seen.get(normalized) === 2) duplicates.push(normalized);
   }
   return duplicates;
+}
+
+function visualExtractionDuplicateCalibrationValues(anchors = [], valueForAnchor = (anchor) => anchor) {
+  const segmented = (anchors || []).some((anchor) => mdText(anchor?.segment || ""));
+  const values = (anchors || []).map((anchor) => {
+    const value = valueForAnchor(anchor);
+    return segmented ? `${mdText(anchor?.segment || "")}::${value}` : value;
+  });
+  return visualExtractionDuplicateValues(values).map((value) => segmented ? String(value).replace(/^.*?::/, "") : value);
 }
 
 function visualExtractionMonotonicCalibration(anchors = []) {
@@ -9726,10 +9847,12 @@ function visualExtractionReportLabels(outputLanguage) {
       axisXValue: "X 轴值",
       axisYValue: "Y 轴值",
       unit: "单位",
+      scale: "尺度",
+      segment: "分段",
       confidence: "置信度",
       noChartDataDrafts: "未能从重建表格、可校正 OCR 或回答文本中抽取图表数据草稿；需要人工放大原图或重新提问。",
       noPixelDataDrafts: "未能从回答中抽取像素/坐标数据草稿；需要使用多模态模型重新输出 Pixel X、Pixel Y、轴值和置信度。",
-      noCalibrationAnchors: "未检测到坐标轴校准锚点表；如需后续量化复用，请让模型补充 Axis、Pixel、Value、Unit、Source 和 Confidence。",
+      noCalibrationAnchors: "未检测到坐标轴校准锚点表；如需后续量化复用，请让模型补充 Axis、Pixel、Value、Unit、Scale、Segment、Source 和 Confidence。",
       chartQualityReview: "图表数据质量审阅",
       chartReviewActions: "图表人工复核任务",
       qualityStatus: "质量状态",
@@ -9840,10 +9963,12 @@ function visualExtractionReportLabels(outputLanguage) {
     axisXValue: "Axis X value",
     axisYValue: "Axis Y value",
     unit: "Unit",
+    scale: "Scale",
+    segment: "Segment",
     confidence: "Confidence",
     noChartDataDrafts: "No chart data draft could be extracted from reconstructed tables, editable OCR, or answer text; zoom the original image or ask again.",
     noPixelDataDrafts: "No pixel / coordinate data draft could be extracted; ask a multimodal model to return Pixel X, Pixel Y, axis values, and confidence.",
-    noCalibrationAnchors: "No axis calibration anchor table was detected. For reusable quantitative exports, ask for Axis, Pixel, Value, Unit, Source, and Confidence.",
+    noCalibrationAnchors: "No axis calibration anchor table was detected. For reusable quantitative exports, ask for Axis, Pixel, Value, Unit, Scale, Segment, Source, and Confidence.",
     chartQualityReview: "Chart Data Quality Review",
     chartReviewActions: "Chart Review Action Queue",
     qualityStatus: "Quality status",
@@ -10170,8 +10295,9 @@ function figureTableTemplate(common, outputLanguage) {
     "- Include only directly visible or explicitly estimated points; do not fabricate a complete series.",
     "",
     "## Axis Calibration Anchors",
-    "- For charts with X/Y axes, add a visible tick-anchor table with: Axis, Pixel, Value, Unit, Source, Confidence, Notes.",
-    "- Provide at least two clear anchors per axis when readable; if the ticks are unreadable, state that calibration is unreliable.",
+    "- For charts with X/Y axes, add a visible tick-anchor table with: Axis, Pixel, Value, Unit, Scale, Segment, Source, Confidence, Notes.",
+    "- Use Scale=linear by default; use Scale=log for logarithmic axes. Use Segment labels for broken axes, piecewise axes, or visibly separated axis ranges.",
+    "- Provide at least two clear anchors per axis, and at least two anchors per segment when segmented axes are readable; if the ticks are unreadable, state that calibration is unreliable.",
     "",
     "## Interpretation And Evidence Map",
     "- Explain what the visual tries to prove and how it supports or limits the paper's claims.",

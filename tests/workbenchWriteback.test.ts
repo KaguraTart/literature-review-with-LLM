@@ -8322,6 +8322,88 @@ describe("workbench writeback helpers", () => {
     expect(files.get(csvPath)).toContain("pixel:1,1,calibrationBasis,\"linear X calibration: 50px=0 s, 450px=10 s; linear Y calibration: 400px=0 ms, 100px=30 ms\",[image],assistant-calibration,chart.png");
   });
 
+  it("infers log and segmented axis values from calibration anchors in pixel drafts", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "LOGSEG",
+      getCollections: () => [10]
+    };
+    workbench.state.contextSourceHash = "sourcehash";
+    workbench.state.context = {
+      metadata: { title: "Log Segmented Chart Paper" }
+    };
+    workbench.state.messages = [
+      {
+        id: "user-log-segment",
+        role: "user",
+        content: "Extract chart points from a log and broken-axis figure",
+        images: [{ name: "log-segment.png", mimeType: "image/png", size: 88 }]
+      },
+      {
+        id: "assistant-log-segment",
+        role: "assistant",
+        profileName: "MiniMax",
+        content: [
+          "## Pixel / Coordinate Data Draft",
+          "| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| baseline | p1 | 250 | 175 |  |  | low | [image] |",
+          "",
+          "## Axis Calibration Anchors",
+          "| Axis | Pixel | Value | Unit | Scale | Segment | Source | Confidence |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| X | 50 | 1 | Hz | log |  | [image] | medium |",
+          "| X | 450 | 1000 | Hz | log |  | [image] | medium |",
+          "| Y | 400 | 0 | ms | linear | lower | [image] | medium |",
+          "| Y | 250 | 10 | ms | linear | lower | [image] | medium |",
+          "| Y | 250 | 10 | ms | linear | upper | [image] | medium |",
+          "| Y | 100 | 40 | ms | linear | upper | [image] | medium |"
+        ].join("\n")
+      }
+    ];
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportVisualExtractionReport();
+
+    const reportPath = "/tmp/out/collections/COL/writing/visual-extraction-LOGSEG.md";
+    const report = files.get(reportPath) || "";
+    expect(report).toContain("31.622777 Hz");
+    expect(report).toContain("25 ms");
+    expect(report).toContain("log X calibration: 50px=1 Hz, 450px=1000 Hz");
+    expect(report).toContain("segmented Y calibration: upper 250px=10 ms, 100px=40 ms; lower 400px=0 ms, 250px=10 ms");
+    expect(report).toContain("| 1 | axis-calibration-table | X | 50 | 1 | Hz | medium | [image] | log |");
+    expect(report).toContain("| 3 | axis-calibration-table | Y | 400 | 0 | ms | medium | [image] | linear | lower |");
+    expect(report).toContain("| calibration-quality | pass | spans: X 400 px, Y 300 px; numeric anchors: 6/6; monotonic axes: X, Y; log axes: X; segmented axes: Y 2 |");
+
+    const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-LOGSEG.json";
+    const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-LOGSEG.csv";
+    const parsed = JSON.parse(files.get(jsonPath) || "{}");
+    expect(parsed.pixelDataDrafts[0].points[0]).toMatchObject({
+      series: "baseline",
+      point: "p1",
+      pixelX: 250,
+      pixelY: 175,
+      axisX: "31.622777 Hz",
+      axisY: "25 ms",
+      axisXCalibrated: true,
+      axisYCalibrated: true,
+      calibrationBasis: "log X calibration: 50px=1 Hz, 450px=1000 Hz; segmented Y calibration: upper 250px=10 ms, 100px=40 ms; lower 400px=0 ms, 250px=10 ms"
+    });
+    expect(parsed.calibrationAnchors[0]).toMatchObject({ axis: "X", scale: "log" });
+    expect(parsed.calibrationAnchors[2]).toMatchObject({ axis: "Y", scale: "linear", segment: "lower" });
+    expect(files.get(csvPath)).toContain("pixel:1,1,axisX,31.622777 Hz,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("pixel:1,1,axisY,25 ms,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("calibration:1,1,scale,log,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("calibration:3,3,segment,lower,[image],assistant-log-segment,log-segment.png");
+  });
+
   it("flags low-quality axis calibration anchors in visual extraction reports", () => {
     const loaded = loadWorkbenchHelpers();
     const item = {
