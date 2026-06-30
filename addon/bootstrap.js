@@ -1687,7 +1687,8 @@ async function writeCollectionWorkspace(settings, collectionContext, results, op
       modelReviewPath,
       collectionReviewPath,
       ideaListPath,
-      chartReviewBatchIndexPath
+      chartReviewBatchIndexPath,
+      chartReviewBatchIndex
     }
   );
   return {
@@ -2711,6 +2712,7 @@ async function writeCrossCollectionSynthesisIndex(settings, collectionContext, r
   const themeMergeBoard = crossCollectionThemeMergeEntries(collections, labels);
   const clusterMap = crossCollectionClusterMapEntries(collections, labels);
   const clusterCalibrationBoard = crossCollectionClusterCalibrationEntries(clusterMap, labels);
+  const chartReviewTriage = crossCollectionChartReviewTriageEntries(collections);
   const payload = {
     templateVersion: "cross-collection-index-v1",
     generatedAt: new Date().toISOString(),
@@ -2721,6 +2723,7 @@ async function writeCrossCollectionSynthesisIndex(settings, collectionContext, r
     gapBoard,
     themeBridgeBoard,
     themeMergeBoard,
+    chartReviewTriage,
     priorityBoard: crossCollectionPriorityEntries(collections, gapBoard, labels, themeMergeBoard, clusterMap),
     collections
   };
@@ -2792,6 +2795,7 @@ function crossCollectionEntry(collectionContext, results, outputLanguage, summar
       ideaListPath: artifacts.ideaListPath || "",
       chartReviewBatchIndexPath: artifacts.chartReviewBatchIndexPath || ""
     },
+    chartReview: crossCollectionChartReviewSummary(artifacts.chartReviewBatchIndex, artifacts.chartReviewBatchIndexPath || ""),
     clusters,
     claims,
     openGaps: uniqueInsightLines(roadmap.map((entry) => entry.openGap).filter(Boolean)).slice(0, 8),
@@ -2817,6 +2821,104 @@ function crossCollectionStats(collections = []) {
     stats.failed += Number(itemStats.failed || 0);
     return stats;
   }, { collections: 0, totalPapers: 0, availableSummaries: 0, skippedNoPdf: 0, failed: 0 });
+}
+
+function crossCollectionChartReviewSummary(chartReviewBatchIndex, path = "") {
+  const rows = Array.isArray(chartReviewBatchIndex?.rows) ? chartReviewBatchIndex.rows : [];
+  const stats = chartReviewBatchIndex?.stats || collectionChartReviewBatchStats(chartReviewBatchIndex?.reports || [], rows);
+  return {
+    path,
+    stats: {
+      visualReports: Number(stats.visualReports) || 0,
+      batchRows: Number(stats.batchRows) || rows.length,
+      chartReviewActions: Number(stats.chartReviewActions) || 0,
+      openChartReviewActions: Number(stats.openChartReviewActions) || 0,
+      highPriorityActions: Number(stats.highPriorityActions) || 0,
+      blockedActions: Number(stats.blockedActions) || 0
+    },
+    rows: rows.slice(0, 12).map((row) => ({
+      priority: row.priority || "medium",
+      reviewState: normalizeCollectionChartReviewState(row.reviewState || "todo"),
+      count: Number(row.count) || 0,
+      paperCount: Number(row.paperCount) || 0,
+      papers: Array.isArray(row.papers) ? row.papers.slice(0, 8) : [],
+      blockingIssue: row.blockingIssue || "",
+      batchAction: row.batchAction || "",
+      doneCriteria: row.doneCriteria || "",
+      sourceReports: Array.isArray(row.sourceReports) ? row.sourceReports.slice(0, 8) : []
+    }))
+  };
+}
+
+function crossCollectionChartReviewTriageEntries(collections = []) {
+  const groups = new Map();
+  for (const collection of collections || []) {
+    const chartReview = collection?.chartReview || {};
+    const rows = Array.isArray(chartReview.rows) ? chartReview.rows : [];
+    for (const row of rows) {
+      const priority = row.priority || "medium";
+      const reviewState = normalizeCollectionChartReviewState(row.reviewState || "todo");
+      const batchAction = row.batchAction || "";
+      const doneCriteria = row.doneCriteria || "";
+      const key = [priority, reviewState, batchAction, doneCriteria].join("::");
+      if (!groups.has(key)) {
+        groups.set(key, {
+          priority,
+          reviewState,
+          count: 0,
+          paperCount: 0,
+          collectionKeys: new Set(),
+          collections: [],
+          sourceIndexes: [],
+          blockingIssues: [],
+          batchAction,
+          doneCriteria
+        });
+      }
+      const group = groups.get(key);
+      const count = Number(row.count) || 1;
+      group.count += count;
+      group.paperCount += Number(row.paperCount) || 0;
+      if (collection?.key && !group.collectionKeys.has(collection.key)) {
+        group.collectionKeys.add(collection.key);
+        group.collections.push(collection.name || collection.key);
+      }
+      if (chartReview.path && !group.sourceIndexes.includes(chartReview.path)) group.sourceIndexes.push(chartReview.path);
+      if (row.blockingIssue && !group.blockingIssues.includes(row.blockingIssue)) group.blockingIssues.push(row.blockingIssue);
+    }
+  }
+  return Array.from(groups.values()).map((group) => ({
+    priority: group.priority,
+    reviewState: group.reviewState,
+    count: group.count,
+    collectionCount: group.collectionKeys.size,
+    paperCount: group.paperCount,
+    collections: group.collections.slice(0, 8),
+    blockingIssue: collectionChartReviewIssueSummary(group.blockingIssues),
+    batchAction: group.batchAction,
+    doneCriteria: group.doneCriteria,
+    sourceIndexes: group.sourceIndexes.slice(0, 8)
+  })).sort(collectionChartReviewBatchSort);
+}
+
+function renderCrossCollectionChartReviewTriageRows(entries, labels) {
+  const rows = (entries || []).slice(0, 16).map((entry) => [
+    escapeMarkdownTable(entry.priority || ""),
+    escapeMarkdownTable(entry.reviewState || ""),
+    Number(entry.count) || 0,
+    Number(entry.collectionCount) || 0,
+    Number(entry.paperCount) || 0,
+    escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
+    escapeMarkdownTable(entry.blockingIssue || labels.crossCollectionChartReviewNoIssue),
+    escapeMarkdownTable(entry.batchAction || labels.crossCollectionChartReviewActionPending),
+    escapeMarkdownTable(entry.doneCriteria || labels.crossCollectionChartReviewDonePending),
+    escapeMarkdownTable((entry.sourceIndexes || []).join("; ") || labels.crossCollectionChartReviewIndexPending)
+  ].join(" | ")).map((row) => `| ${row} |`);
+  return [
+    `| ${labels.crossCollectionPriorityColumn} | ${labels.crossCollectionChartReviewStateColumn} | ${labels.crossCollectionChartReviewActionCountColumn} | ${labels.crossCollectionChartReviewCollectionCountColumn || labels.collectionColumn} | ${labels.crossCollectionChartReviewPaperCountColumn || labels.paperColumn} | ${labels.crossCollectionChartReviewCollectionsColumn} | ${labels.crossCollectionChartReviewBlockingColumn} | ${labels.crossCollectionChartReviewBatchActionColumn} | ${labels.crossCollectionChartReviewDoneColumn} | ${labels.crossCollectionChartReviewIndexColumn} |`,
+    "| --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- |",
+    rows.join("\n") || `|  |  | 0 | 0 | 0 |  | ${escapeMarkdownTable(labels.crossCollectionChartReviewEmpty)} |  |  |  |`
+  ].join("\n");
 }
 
 function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") {
@@ -2882,6 +2984,10 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
       indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels),
       indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels)
     ), labels),
+    "",
+    `## ${labels.crossCollectionChartReviewTriage}`,
+    "",
+    renderCrossCollectionChartReviewTriageRows(indexPayload?.chartReviewTriage || crossCollectionChartReviewTriageEntries(collections), labels),
     "",
     `## ${labels.crossCollectionReviewPack}`,
     "",
@@ -4450,6 +4556,7 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionBridgeBoard: "Cross-Collection Bridge Board",
       crossCollectionGapBoard: "Cross-Collection Gap Board",
       crossCollectionPriorityBoard: "Cross-Collection Priority Board",
+      crossCollectionChartReviewTriage: "Cross-Collection Chart Review Triage",
       crossCollectionReviewPack: "Cross-Collection Review Pack",
       crossCollectionClusterScopeColumn: "Cluster Scope",
       crossCollectionClusterScoreColumn: "Cluster Score",
@@ -4515,6 +4622,20 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionClusterLinkMethodOverlap: "method-signal overlap",
       crossCollectionClusterLinkGapOverlap: "gap-signal overlap",
       crossCollectionClusterLinkQueryOverlap: "candidate-query overlap",
+      crossCollectionChartReviewStateColumn: "Review State",
+      crossCollectionChartReviewActionCountColumn: "Actions",
+      crossCollectionChartReviewCollectionCountColumn: "Collections",
+      crossCollectionChartReviewPaperCountColumn: "Papers",
+      crossCollectionChartReviewCollectionsColumn: "Collections",
+      crossCollectionChartReviewBlockingColumn: "Blocking Issue",
+      crossCollectionChartReviewBatchActionColumn: "Batch Action",
+      crossCollectionChartReviewDoneColumn: "Done Criteria",
+      crossCollectionChartReviewIndexColumn: "Chart Review Index",
+      crossCollectionChartReviewNoIssue: "No blocking issue recorded",
+      crossCollectionChartReviewActionPending: "Batch action pending",
+      crossCollectionChartReviewDonePending: "Done criteria pending",
+      crossCollectionChartReviewIndexPending: "chart review index pending",
+      crossCollectionChartReviewEmpty: "No collection-level chart review tasks are available yet.",
       collectionColumn: "Collection",
       reportColumn: "Report",
       crossCollectionStatsLine: (stats) => `Collections ${stats.collections}, papers ${stats.totalPapers}, available summaries ${stats.availableSummaries}, skipped without PDF ${stats.skippedNoPdf}, failed ${stats.failed}.`,
@@ -4707,6 +4828,7 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionBridgeBoard: "Collection 横断ブリッジボード",
       crossCollectionGapBoard: "Collection 横断ギャップボード",
       crossCollectionPriorityBoard: "Collection 横断優先度ボード",
+      crossCollectionChartReviewTriage: "Collection 横断図表レビュートリアージ",
       crossCollectionReviewPack: "Collection 横断レビュー執筆パック",
       crossCollectionClusterScopeColumn: "クラスタ範囲",
       crossCollectionClusterScoreColumn: "クラスタスコア",
@@ -4772,6 +4894,20 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionClusterLinkMethodOverlap: "手法シグナルの重なり",
       crossCollectionClusterLinkGapOverlap: "ギャップシグナルの重なり",
       crossCollectionClusterLinkQueryOverlap: "候補検索クエリの重なり",
+      crossCollectionChartReviewStateColumn: "レビュー状態",
+      crossCollectionChartReviewActionCountColumn: "タスク数",
+      crossCollectionChartReviewCollectionCountColumn: "Collection 数",
+      crossCollectionChartReviewPaperCountColumn: "論文数",
+      crossCollectionChartReviewCollectionsColumn: "Collections",
+      crossCollectionChartReviewBlockingColumn: "阻害要因",
+      crossCollectionChartReviewBatchActionColumn: "一括処理",
+      crossCollectionChartReviewDoneColumn: "完了条件",
+      crossCollectionChartReviewIndexColumn: "図表レビュー索引",
+      crossCollectionChartReviewNoIssue: "阻害要因の記録なし",
+      crossCollectionChartReviewActionPending: "一括処理未設定",
+      crossCollectionChartReviewDonePending: "完了条件未設定",
+      crossCollectionChartReviewIndexPending: "図表レビュー索引待ち",
+      crossCollectionChartReviewEmpty: "Collection レベルの図表レビュータスクはまだありません。",
       collectionColumn: "Collection",
       reportColumn: "報告書",
       crossCollectionStatsLine: (stats) => `Collection ${stats.collections} 件、論文 ${stats.totalPapers} 件、利用可能な要約 ${stats.availableSummaries} 件、PDF なしスキップ ${stats.skippedNoPdf} 件、失敗 ${stats.failed} 件。`,
@@ -4963,6 +5099,7 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionBridgeBoard: "跨集合主题桥接板",
     crossCollectionGapBoard: "跨集合缺口看板",
     crossCollectionPriorityBoard: "跨集合优先级看板",
+    crossCollectionChartReviewTriage: "跨集合图表复核分诊",
     crossCollectionReviewPack: "跨集合综述写作包",
     crossCollectionClusterScopeColumn: "聚类范围",
     crossCollectionClusterScoreColumn: "聚类评分",
@@ -5028,6 +5165,20 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionClusterLinkMethodOverlap: "方法线索重叠",
     crossCollectionClusterLinkGapOverlap: "缺口线索重叠",
     crossCollectionClusterLinkQueryOverlap: "候选检索词重叠",
+    crossCollectionChartReviewStateColumn: "复核状态",
+    crossCollectionChartReviewActionCountColumn: "任务数",
+    crossCollectionChartReviewCollectionCountColumn: "集合数",
+    crossCollectionChartReviewPaperCountColumn: "论文数",
+    crossCollectionChartReviewCollectionsColumn: "集合",
+    crossCollectionChartReviewBlockingColumn: "阻塞问题",
+    crossCollectionChartReviewBatchActionColumn: "批量处理动作",
+    crossCollectionChartReviewDoneColumn: "完成条件",
+    crossCollectionChartReviewIndexColumn: "图表复核索引",
+    crossCollectionChartReviewNoIssue: "未记录阻塞问题",
+    crossCollectionChartReviewActionPending: "待补充批量处理动作",
+    crossCollectionChartReviewDonePending: "待补充完成条件",
+    crossCollectionChartReviewIndexPending: "待生成图表复核索引",
+    crossCollectionChartReviewEmpty: "暂无 collection 级图表复核任务。",
     collectionColumn: "集合",
     reportColumn: "报告",
     crossCollectionStatsLine: (stats) => `集合 ${stats.collections} 个，论文 ${stats.totalPapers} 篇，可用总结 ${stats.availableSummaries} 篇，无 PDF 跳过 ${stats.skippedNoPdf} 篇，失败 ${stats.failed} 篇。`,

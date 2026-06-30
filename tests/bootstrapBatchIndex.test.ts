@@ -817,7 +817,10 @@ describe("batch papers index", () => {
           type: "collection",
           outputLanguage: "en-US",
           stats: { total: 2, generated: 2, skippedExisting: 0, skippedNoPdf: 0, failed: 0 },
-          artifacts: { reviewReportPath: "/out/collections/OLD/writing/formal-review-report.en-US.md" },
+          artifacts: {
+            reviewReportPath: "/out/collections/OLD/writing/formal-review-report.en-US.md",
+            chartReviewBatchIndexPath: "/out/collections/OLD/writing/chart-review-batch-index.en-US.md"
+          },
           clusters: [
             {
               label: "Safety / Risk",
@@ -833,12 +836,53 @@ describe("batch papers index", () => {
             }
           ],
           openGaps: ["No deployment evidence"],
-          candidateQueries: ["Safety / Risk Bayesian risk model No deployment evidence"]
+          candidateQueries: ["Safety / Risk Bayesian risk model No deployment evidence"],
+          chartReview: {
+            path: "/out/collections/OLD/writing/chart-review-batch-index.en-US.md",
+            stats: {
+              visualReports: 1,
+              batchRows: 1,
+              chartReviewActions: 2,
+              openChartReviewActions: 2,
+              highPriorityActions: 2,
+              blockedActions: 0
+            },
+            rows: [
+              {
+                priority: "high",
+                reviewState: "todo",
+                count: 2,
+                paperCount: 1,
+                papers: ["Old Chart Paper"],
+                blockingIssue: "old anchors",
+                batchAction: "Add axis anchors",
+                doneCriteria: "Anchors verified",
+                sourceReports: ["/out/collections/OLD/writing/visual-extraction-O.md"]
+              }
+            ]
+          }
         }
       ]
     };
     const files = new Map<string, string>([
       ["/out/collections/index.json", JSON.stringify(existingIndex, null, 2)],
+      ["/out/collections/NEW/writing/visual-extraction-N.json", JSON.stringify({
+        templateVersion: "visual-extraction-report-v2",
+        itemKey: "N",
+        generatedAt: "2026-06-20T00:00:00.000Z",
+        reportPath: "/out/collections/NEW/writing/visual-extraction-N.md",
+        metadata: { title: "New Chart Paper" },
+        chartQualityReview: { status: "needs-review" },
+        chartReviewActions: [{ queueId: "review-1" }],
+        chartBatchReviewBoard: [{
+          priority: "high",
+          reviewState: "todo",
+          count: 1,
+          blockingIssue: "new anchors",
+          batchAction: "Add axis anchors",
+          doneCriteria: "Anchors verified"
+        }]
+      })],
       ["/out/new.md", [
         "# Urban airspace conflict resolution",
         "",
@@ -865,6 +909,26 @@ describe("batch papers index", () => {
     expect(payload.collections.find((collection: any) => collection.key === "OLD").clusters[0].label).toBe("Safety / Risk");
     expect(payload.collections.find((collection: any) => collection.key === "NEW").artifacts.reviewReportPath)
       .toBe("/out/collections/NEW/writing/formal-review-report.en-US.md");
+    expect(payload.collections.find((collection: any) => collection.key === "NEW").chartReview.stats.chartReviewActions)
+      .toBe(1);
+    expect(payload.chartReviewTriage).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        priority: "high",
+        reviewState: "todo",
+        count: 3,
+        collectionCount: 2,
+        paperCount: 2,
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        blockingIssue: expect.stringContaining("old anchors"),
+        batchAction: "Add axis anchors",
+        doneCriteria: "Anchors verified",
+        sourceIndexes: expect.arrayContaining([
+          "/out/collections/OLD/writing/chart-review-batch-index.en-US.md",
+          "/out/collections/NEW/writing/chart-review-batch-index.en-US.md"
+        ])
+      })
+    ]));
+    expect(payload.chartReviewTriage[0].blockingIssue).toContain("new anchors");
     expect(payload.gapBoard).toEqual(expect.arrayContaining([
       expect.objectContaining({
         gap: "No deployment evidence",
@@ -950,6 +1014,8 @@ describe("batch papers index", () => {
     expect(synthesis).toContain("Cross-Collection Bridge Board");
     expect(synthesis).toContain("Cross-Collection Gap Board");
     expect(synthesis).toContain("Cross-Collection Priority Board");
+    expect(synthesis).toContain("Cross-Collection Chart Review Triage");
+    expect(synthesis).toContain("| high | todo | 3 | 2 | 2 | New Collection; Old Collection | new anchors; old anchors | Add axis anchors | Anchors verified | /out/collections/NEW/writing/chart-review-batch-index.en-US.md; /out/collections/OLD/writing/chart-review-batch-index.en-US.md |");
     expect(synthesis).toContain("Cross-Collection Review Pack");
     expect(synthesis).toContain("Model Deepening Prompt");
     expect(synthesis).toContain("Review possible theme merge");
