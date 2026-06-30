@@ -17530,6 +17530,7 @@ function candidatePdfExtractionQualityNeedsFollowUp(quality) {
 function candidatePdfExtractionQualityNextAction(quality, labels) {
   const warnings = new Set((quality?.warnings || []).map((warning) => mdText(warning).toLowerCase()).filter(Boolean));
   if (warnings.has("pdf_bytes_unavailable")) return labels.pdfQualityActionAttachReadablePdf;
+  if (warnings.has("raw_pdf_byte_text_fallback")) return labels.pdfQualityActionVerifyRawBytes;
   if (warnings.has("local_bridge_fetch_unavailable") || warnings.has("local_bridge_endpoint_missing")) return labels.pdfQualityActionStartBridge;
   if (warnings.has("local_bridge_request_failed")) return labels.pdfQualityActionCheckBridge;
   if (warnings.has("indexed_text_fallback_used")) return labels.pdfQualityActionVerifyIndexedText;
@@ -17736,6 +17737,16 @@ async function candidatePdfEvidenceSource(pdf, record = {}) {
       name: bridgePages.name || ""
     };
   }
+  const rawBytePages = await candidatePdfTextPagesFromRawBytes(pdf, bridgePages?.quality);
+  if (rawBytePages?.pages?.length) {
+    return {
+      sourceType: "pdf-page-text",
+      pages: rawBytePages.pages || [],
+      quality: rawBytePages.quality || null,
+      engine: rawBytePages.engine || "",
+      name: rawBytePages.name || ""
+    };
+  }
   const fallbackText = String((await pdf?.attachmentText) || "").trim();
   if (bridgePages?.quality) {
     return {
@@ -17748,6 +17759,46 @@ async function candidatePdfEvidenceSource(pdf, record = {}) {
     };
   }
   return fallbackText;
+}
+
+async function candidatePdfTextPagesFromRawBytes(pdf, previousQuality = null) {
+  if (!pdf) return null;
+  const name = attachmentDisplayName(pdf) || "paper.pdf";
+  const rawText = await attachmentPdfRawByteText(pdf);
+  if (!rawText) return null;
+  const pages = extractPdfRawByteTextPages(rawText);
+  if (!pages.length) return null;
+  const inheritedWarnings = Array.isArray(previousQuality?.warnings) ? previousQuality.warnings : [];
+  const warnings = uniquePdfQualityWarnings([
+    ...inheritedWarnings,
+    "raw_pdf_byte_text_fallback",
+    ...(pages.length === 1 ? ["raw_pdf_page_boundary_uncertain"] : [])
+  ]);
+  const totalTextChars = pages.reduce((sum, page) => sum + mdText(page?.text || "").length, 0);
+  return {
+    pages,
+    quality: candidatePdfExtractionQualityFromResult({
+      name,
+      engine: "pdf-raw-bytes",
+      quality: {
+        status: "warning",
+        engine: "pdf-raw-bytes",
+        pageCount: pages.length,
+        expectedPageCount: pages.length,
+        pagesWithText: pages.length,
+        emptyPageCount: 0,
+        totalTextChars,
+        averageTextCharsPerPage: pages.length ? Math.round(totalTextChars / pages.length) : 0,
+        minTextChars: 40,
+        ocrFallbackUsed: false,
+        ocrPageSignals: [],
+        warnings,
+        nextAction: "Review raw-byte page text against the PDF; use the local bridge/OCR path for final page locators when possible."
+      }
+    }, pages),
+    engine: "pdf-raw-bytes",
+    name
+  };
 }
 
 async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
@@ -18068,6 +18119,67 @@ async function attachmentPdfBase64(pdf) {
   return "";
 }
 
+async function attachmentPdfRawByteText(pdf) {
+  const directBase64 = normalizedPdfBase64(
+    pdf?.pdfBase64
+    || pdf?.attachmentBase64
+    || pdf?.base64
+    || pdf?.data
+    || pdf?.dataURL
+  );
+  const directText = pdfBase64ToByteString(directBase64);
+  if (directText) return directText;
+
+  const directBytes = pdfBytesToByteString(pdf?.bytes || pdf?.fileBytes || pdf?.attachmentBytes);
+  if (directBytes) return directBytes;
+
+  for (const method of ["getPdfBase64", "getBase64", "getDataURL", "getData"]) {
+    if (typeof pdf?.[method] !== "function") continue;
+    try {
+      const value = await pdf[method]();
+      const text = pdfBase64ToByteString(normalizedPdfBase64(value)) || pdfBytesToByteString(value);
+      if (text) return text;
+    } catch (_err) {
+      // Keep trying other byte accessors.
+    }
+  }
+
+  for (const method of ["getFileDataAsync", "getBytes", "getArrayBuffer"]) {
+    if (typeof pdf?.[method] !== "function") continue;
+    try {
+      const value = await pdf[method]();
+      const text = pdfBytesToByteString(value) || pdfBase64ToByteString(normalizedPdfBase64(value));
+      if (text) return text;
+    } catch (_err) {
+      // Keep trying other byte accessors.
+    }
+  }
+
+  for (const method of ["getBlob", "getFile", "getFileAsync"]) {
+    if (typeof pdf?.[method] !== "function") continue;
+    try {
+      const blob = await pdf[method]();
+      if (blob && typeof blob.arrayBuffer === "function") {
+        const text = pdfBytesToByteString(await blob.arrayBuffer());
+        if (text) return text;
+      }
+    } catch (_err) {
+      // Keep trying other byte accessors.
+    }
+  }
+
+  try {
+    const filePath = await candidatePdfFilePath(pdf);
+    if (filePath && IOUtils?.read) {
+      const text = pdfBytesToByteString(await IOUtils.read(filePath));
+      if (text) return text;
+    }
+  } catch (_err) {
+    // No local byte fallback is available.
+  }
+  return "";
+}
+
 function normalizedPdfBase64(value) {
   if (typeof value !== "string") return "";
   const text = value.replace(/^data:application\/pdf[^,]*,/i, "").trim();
@@ -18076,17 +18188,127 @@ function normalizedPdfBase64(value) {
 }
 
 function pdfBytesToBase64(value) {
-  if (!value) return "";
-  if (Array.isArray(value)) return bytesToBase64(Uint8Array.from(value));
+  const bytes = pdfBytesToUint8Array(value);
+  return bytes ? bytesToBase64(bytes) : "";
+}
+
+function pdfBytesToByteString(value) {
+  const bytes = pdfBytesToUint8Array(value);
+  if (!bytes?.length) return "";
+  const chunks = [];
+  for (let index = 0; index < bytes.length; index += 8192) {
+    chunks.push(String.fromCharCode(...bytes.slice(index, index + 8192)));
+  }
+  return chunks.join("");
+}
+
+function pdfBytesToUint8Array(value) {
+  if (!value) return null;
+  if (Array.isArray(value)) return Uint8Array.from(value);
   if (typeof ArrayBuffer !== "undefined") {
     if (typeof ArrayBuffer.isView === "function" && ArrayBuffer.isView(value)) {
-      return bytesToBase64(new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength || value.length || 0));
+      return new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength || value.length || 0);
     }
     if (value instanceof ArrayBuffer || Object.prototype.toString.call(value) === "[object ArrayBuffer]") {
-      return bytesToBase64(new Uint8Array(value));
+      return new Uint8Array(value);
     }
   }
+  return null;
+}
+
+function pdfBase64ToByteString(value) {
+  const text = normalizedPdfBase64(value);
+  if (!text) return "";
+  try {
+    if (typeof atob === "function") return atob(text);
+  } catch (_err) {}
+  try {
+    if (typeof Buffer !== "undefined") return Buffer.from(text, "base64").toString("binary");
+  } catch (_err) {}
   return "";
+}
+
+function extractPdfRawByteTextPages(rawText) {
+  const segments = rawText.split(/\f+|%%Page:\s*[^\r\n]+/g);
+  const pageTexts = (segments.length > 1 ? segments : [rawText])
+    .map((segment) => extractPdfReadableText(segment))
+    .map(cleanPdfRawText)
+    .filter((text) => text.length >= 24);
+  return pageTexts.slice(0, 40).map((text, index) => ({
+    page: index + 1,
+    pageLabel: String(index + 1),
+    text,
+    sourceType: "pdf-raw-bytes"
+  }));
+}
+
+function extractPdfReadableText(segment) {
+  const pieces = [];
+  const text = String(segment || "");
+  const literalPattern = /\(((?:\\.|[^\\()]){3,})\)\s*(?:Tj|'|"|TJ|\])/g;
+  let match;
+  while ((match = literalPattern.exec(text))) {
+    const decoded = decodePdfLiteralString(match[1]);
+    if (decoded) pieces.push(decoded);
+  }
+  const hexPattern = /<([0-9A-Fa-f\s]{8,})>\s*(?:Tj|'|"|TJ|\])/g;
+  while ((match = hexPattern.exec(text))) {
+    const decoded = decodePdfHexString(match[1]);
+    if (decoded) pieces.push(decoded);
+  }
+  if (pieces.length) return pieces.join(" ");
+  return printablePdfFallbackText(text);
+}
+
+function decodePdfLiteralString(value) {
+  return String(value || "")
+    .replace(/\\([nrtbf()\\])/g, (_match, code) => {
+      if (code === "n") return "\n";
+      if (code === "r") return "\r";
+      if (code === "t") return "\t";
+      if (code === "b") return "\b";
+      if (code === "f") return "\f";
+      return code;
+    })
+    .replace(/\\\r?\n/g, "")
+    .replace(/\\([0-7]{1,3})/g, (_match, octal) => String.fromCharCode(parseInt(octal, 8) || 0));
+}
+
+function decodePdfHexString(value) {
+  const hex = String(value || "").replace(/\s+/g, "");
+  if (hex.length < 8) return "";
+  const padded = hex.length % 2 ? `${hex}0` : hex;
+  const bytes = [];
+  for (let index = 0; index < padded.length; index += 2) {
+    const byte = parseInt(padded.slice(index, index + 2), 16);
+    if (Number.isFinite(byte)) bytes.push(byte);
+  }
+  if (!bytes.length) return "";
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    const chars = [];
+    for (let index = 2; index + 1 < bytes.length; index += 2) {
+      chars.push(String.fromCharCode((bytes[index] << 8) + bytes[index + 1]));
+    }
+    return chars.join("");
+  }
+  return bytes.map((byte) => String.fromCharCode(byte)).join("");
+}
+
+function printablePdfFallbackText(value) {
+  return String(value || "")
+    .replace(/[^\x09\x0a\x0d\x20-\x7e]+/g, " ")
+    .split(/\s{2,}|[<>[\]{}]/g)
+    .map((part) => part.trim())
+    .filter((part) => /[A-Za-z][A-Za-z\s,.;:()/-]{20,}/.test(part))
+    .filter((part) => !/^(obj|endobj|stream|endstream|xref|trailer|startxref|Type|Length|Filter|FlateDecode)\b/i.test(part))
+    .join(" ");
+}
+
+function cleanPdfRawText(value) {
+  return mdText(value)
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .trim();
 }
 
 function candidatePdfTextBridgeEndpoint(record = {}) {
@@ -18748,6 +18970,7 @@ function candidateReviewLabels(outputLanguage) {
       pdfQualityWarnings: "告警",
       pdfQualityNextAction: "下一步",
       pdfQualityActionAttachReadablePdf: "附加本机可读取的 PDF 文件，或启用可访问的 PDF 字节后重新抽取页文本。",
+      pdfQualityActionVerifyRawBytes: "已从 PDF 原始字节生成可复核页文本；请对照原文核对页码和上下文，条件允许时再用本地 bridge/OCR 提高准确性。",
       pdfQualityActionStartBridge: "启动本地 bridge，并确认 PDF 页文本抽取 endpoint 可访问。",
       pdfQualityActionCheckBridge: "检查本地 bridge 日志、Poppler/Tesseract 安装和 PDF 文件权限。",
       pdfQualityActionVerifyIndexedText: "当前已回退到 Zotero indexed text；请打开原文核对页码和上下文。",
@@ -18922,6 +19145,7 @@ function candidateReviewLabels(outputLanguage) {
     pdfQualityWarnings: "warnings",
     pdfQualityNextAction: "next action",
     pdfQualityActionAttachReadablePdf: "Attach a locally readable PDF file or expose PDF bytes before rerunning page extraction.",
+    pdfQualityActionVerifyRawBytes: "Review raw-byte page text against the PDF; use the local bridge/OCR path for final page locators when possible.",
     pdfQualityActionStartBridge: "Start the local bridge and verify the PDF page extraction endpoint.",
     pdfQualityActionCheckBridge: "Check local bridge logs, Poppler/Tesseract installation, and PDF file permissions.",
     pdfQualityActionVerifyIndexedText: "The report fell back to Zotero indexed text; verify page and context in the original PDF.",

@@ -6991,6 +6991,78 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("PDF page-text extraction quality needs review");
   });
 
+  it("uses raw PDF byte text when the local bridge is unavailable", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const pdfBytes = new Uint8Array(Buffer.from([
+      "%PDF-1.7",
+      "1 0 obj",
+      "<< /Type /Page >>",
+      "stream",
+      "BT",
+      "(The proposed method uses graph attention from raw PDF bytes.) Tj",
+      "(Experiments evaluate benchmark scenarios with delay and throughput metrics.) Tj",
+      "ET",
+      "endstream",
+      "endobj",
+      "%%EOF"
+    ].join("\n")));
+    loaded.__zoteroItems.set(68, {
+      id: 68,
+      key: "ITEM68",
+      getAttachments: () => [69]
+    });
+    loaded.__zoteroItems.set(69, {
+      id: 69,
+      key: "PDF69",
+      attachmentContentType: "application/pdf",
+      attachmentText: "Unpaged indexed text should not be preferred when raw byte text is available.",
+      getBytes: async () => pdfBytes,
+      getFilePathAsync: async () => "",
+      getField: (field: string) => field === "title" ? "raw-bytes.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/raw-bytes",
+        title: "Raw Byte Candidate",
+        decision: "include",
+        zoteroItemID: 68,
+        zoteroItemKey: "ITEM68",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      sourceType: "pdf-page-text",
+      page: 1,
+      pageLabel: "1",
+      locator: expect.stringContaining("pdf-page-text:"),
+      quote: expect.stringContaining("proposed method uses graph attention from raw PDF bytes")
+    });
+    expect(enriched[0].review.fullTextEvidence[0].locator).not.toContain("indexed-text:");
+    expect(enriched[0].review.pdfExtractionQuality).toMatchObject({
+      status: "warning",
+      engine: "pdf-raw-bytes",
+      pagesWithText: 1,
+      expectedPageCount: 1,
+      warnings: [
+        "local_bridge_fetch_unavailable",
+        "raw_pdf_byte_text_fallback",
+        "raw_pdf_page_boundary_uncertain"
+      ]
+    });
+
+    const report = loaded.renderCandidateReviewMarkdown(enriched, {
+      outputLanguage: "en-US",
+      item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+    expect(report).toContain("engine: pdf-raw-bytes");
+    expect(report).toContain("raw_pdf_byte_text_fallback");
+    expect(report).toContain("Review raw-byte page text against the PDF");
+  });
+
   it("keeps indexed text evidence visible when local bridge PDF extraction fails", async () => {
     const loaded = loadWorkbenchHelpers();
     const fetchCalls: Array<{ url: string; body: any }> = [];

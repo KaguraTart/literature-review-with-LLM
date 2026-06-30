@@ -697,6 +697,8 @@ const requiredMarkers = [
   [workbenchJs, "candidateFullTextEvidenceDisplayText", "candidate full-text evidence context display"],
   [workbenchJs, "candidatePdfEvidenceSource", "candidate PDF page-text source selection"],
   [workbenchJs, "candidatePdfTextPagesFromLocalBridge", "candidate local bridge PDF page extraction"],
+  [workbenchJs, "candidatePdfTextPagesFromRawBytes", "candidate no-bridge raw PDF byte text fallback"],
+  [workbenchJs, "raw_pdf_byte_text_fallback", "candidate raw PDF byte quality warning"],
   [workbenchJs, "pdfExtractionQuality", "candidate PDF extraction quality persistence"],
   [workbenchJs, "candidatePdfExtractionQualitySummary", "candidate PDF extraction quality summary"],
   [workbenchJs, "PDF extraction quality", "candidate PDF extraction quality report row"],
