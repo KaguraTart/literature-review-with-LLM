@@ -89,6 +89,10 @@ describe("local agent stdio MCP runtime", () => {
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPageStrategy).toMatchObject({
         type: "string"
       });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrAutoRepair).toMatchObject({
+        type: "boolean"
+      });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrAutoRepair.description).toContain("higher-DPI render");
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPages.description).toContain("1,3-5");
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.minTextChars).toMatchObject({
         type: "number"
@@ -324,6 +328,7 @@ describe("local agent stdio MCP runtime", () => {
               timeoutSeconds: 12,
               ocrFallback: true,
               maxOcrPages: 3,
+              ocrAutoRepair: false,
               ocrLanguage: "eng"
             }
           }
@@ -364,6 +369,100 @@ describe("local agent stdio MCP runtime", () => {
           page: 1,
           text: "dense enough OCR text for a readable scanned page",
           ocr: { status: "ok", ocrConfidence: "medium" }
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs empty OCR pages with a higher-DPI retry when enabled", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", "");
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 2);
+      const tesseractBin = fakeRepairingTesseractByPageBin(
+        dir,
+        "tesseract",
+        {
+          1: "first page OCR text is already readable",
+          2: ""
+        },
+        {
+          2: "second page OCR recovered after high DPI rendering"
+        }
+      );
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 111,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF scanned repair").toString("base64"),
+              name: "repair-scan.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              maxOcrPages: 2,
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "repair-scan.pdf",
+          pageCount: 2,
+          ocrFallbackUsed: true,
+          ocrRenderedPageCount: 2,
+          ocrEmptyPageCount: 0,
+          ocrRepairAttemptedPageCount: 1,
+          ocrRepairRecoveredPageCount: 1,
+          ocrRepairFailedPageCount: 0,
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 2,
+            emptyPageCount: 0,
+            ocrFallbackUsed: true,
+            ocrReadablePageCount: 2,
+            ocrRepairAttemptedPageCount: 1,
+            ocrRepairRecoveredPageCount: 1,
+            ocrRepairFailedPageCount: 0,
+            warnings: ["ocr_fallback_used", "ocr_auto_repair_used"]
+          }
+        });
+        expect(parsed.pages.map((page: any) => page.page)).toEqual([1, 2]);
+        expect(parsed.pages[1]).toMatchObject({
+          page: 2,
+          text: "second page OCR recovered after high DPI rendering",
+          ocr: {
+            status: "ok",
+            repairAttempted: true,
+            repairDpi: 300,
+            repairStatus: "recovered",
+            previousStatus: "empty",
+            warnings: ["ocr_page_repaired"]
+          }
+        });
+        expect(parsed.quality.ocrPageSignals[1]).toMatchObject({
+          page: 2,
+          status: "ok",
+          repairAttempted: true,
+          repairStatus: "recovered",
+          previousStatus: "empty",
+          warnings: ["ocr_page_repaired"]
         });
       } finally {
         runtime.stop();
@@ -932,6 +1031,33 @@ function fakeTesseractByPageBin(dir: string, name: string, outputs: Record<numbe
     "const page = match ? Number(match[1]) : 0;",
     `const outputs = ${JSON.stringify(outputs)};`,
     "const output = outputs[page] ?? '';",
+    "if (output && typeof output === 'object') {",
+    "  process.stderr.write(output.error || 'ocr failed');",
+    "  process.exit(output.code || 1);",
+    "}",
+    "process.stdout.write(String(output || ''));",
+    ""
+  ].join("\n"));
+  chmodSync(path, 0o755);
+  return path;
+}
+
+function fakeRepairingTesseractByPageBin(
+  dir: string,
+  name: string,
+  outputs: Record<number, string | { error: string; code?: number }>,
+  repairOutputs: Record<number, string | { error: string; code?: number }>
+) {
+  const path = join(dir, name);
+  writeFileSync(path, [
+    "#!/usr/bin/env node",
+    "const imagePath = process.argv[2] || '';",
+    "const match = /-(\\d+)\\.[^.]+$/.exec(imagePath);",
+    "const page = match ? Number(match[1]) : 0;",
+    `const outputs = ${JSON.stringify(outputs)};`,
+    `const repairOutputs = ${JSON.stringify(repairOutputs)};`,
+    "const source = imagePath.includes('/repair-page-') ? repairOutputs : outputs;",
+    "const output = source[page] ?? '';",
     "if (output && typeof output === 'object') {",
     "  process.stderr.write(output.error || 'ocr failed');",
     "  process.exit(output.code || 1);",

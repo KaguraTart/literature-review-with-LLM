@@ -246,6 +246,10 @@ function pdfPagesSchema() {
         type: "string",
         description: "OCR fallback page selection strategy: first, sparse, or all. sparse uses pdftotext page breaks to OCR empty or low-text pages across the document before falling back to the first pages."
       },
+      ocrAutoRepair: {
+        type: "boolean",
+        description: "When true, retry empty or failed OCR pages after a higher-DPI render. Enabled by default."
+      },
       ocrPages: {
         anyOf: [
           { type: "string" },
@@ -455,6 +459,9 @@ async function extractPdfPages(args = {}) {
           ocrRequestedPageCount: ocrResult.requestedPageCount,
           ocrTruncatedPageCount: ocrResult.truncatedPageCount,
           ocrFullDocumentUsed: ocrResult.fullDocumentOcr,
+          ocrRepairAttemptedPageCount: ocrResult.repairAttemptedPageCount,
+          ocrRepairRecoveredPageCount: ocrResult.repairRecoveredPageCount,
+          ocrRepairFailedPageCount: ocrResult.repairFailedPageCount,
           textError: textError ? cleanPdfPageText(textError.message || String(textError)).slice(0, 500) : ""
         }));
       }
@@ -473,7 +480,10 @@ async function extractPdfPages(args = {}) {
       ocrPageStrategy: ocrResult?.pageStrategy || pdfOcrPageStrategy(args.ocrPageStrategy),
       ocrRequestedPageCount: ocrResult?.requestedPageCount || 0,
       ocrTruncatedPageCount: ocrResult?.truncatedPageCount || 0,
-      ocrFullDocumentUsed: Boolean(ocrResult?.fullDocumentOcr)
+      ocrFullDocumentUsed: Boolean(ocrResult?.fullDocumentOcr),
+      ocrRepairAttemptedPageCount: ocrResult?.repairAttemptedPageCount || 0,
+      ocrRepairRecoveredPageCount: ocrResult?.repairRecoveredPageCount || 0,
+      ocrRepairFailedPageCount: ocrResult?.repairFailedPageCount || 0
     }));
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true });
@@ -488,38 +498,36 @@ async function extractPdfOcrPages(sourcePath, args = {}) {
   const language = pdfOcrLanguage(args.ocrLanguage || args.language);
   try {
     for (const pageNumber of pageNumbers) {
-      const prefix = join(renderDir, `page-${pageNumber}`);
-      await runCommand(PDFTOPPM_BIN, ["-png", "-r", "200", "-f", String(pageNumber), "-l", String(pageNumber), sourcePath, prefix], {
-        cwd: renderDir,
-        timeoutSeconds: pdfRenderTimeoutSeconds(args.timeoutSeconds),
-        requireOutput: false
-      });
+      await renderPdfOcrPage(sourcePath, renderDir, pageNumber, `page-${pageNumber}`, 200, args);
     }
     const rendered = await pdfRenderedImagePaths(renderDir);
     const pages = [];
     const pageSignals = [];
+    let repairAttemptedPageCount = 0;
+    let repairRecoveredPageCount = 0;
+    let repairFailedPageCount = 0;
     const pageTimeout = pdfOcrPageTimeoutSeconds(args.timeoutSeconds, maxPages);
     for (const imagePath of rendered.slice(0, maxPages)) {
       const page = pdfRenderedImagePage(imagePath) || (pages.length + 1);
-      let cleaned = "";
-      let error = "";
-      try {
-        const text = await runCommand(TESSERACT_BIN, [imagePath, "stdout", "-l", language], {
-          cwd: renderDir,
-          timeoutSeconds: pageTimeout,
-          requireOutput: false
-        });
-        cleaned = cleanPdfPageText(text === "(empty response)" ? "" : text);
-      } catch (err) {
-        error = cleanPdfPageText(err?.message || String(err)).slice(0, 500);
+      let result = await runPdfOcrOnImage(imagePath, renderDir, language, pageTimeout);
+      let signal = pdfOcrPageSignal({ page, text: result.cleaned, error: result.error, language });
+      if (pdfOcrAutoRepairEnabled(args) && signal.status !== "ok") {
+        repairAttemptedPageCount += 1;
+        const repaired = await repairPdfOcrPage(sourcePath, renderDir, page, language, pageTimeout, signal, args);
+        signal = repaired.signal;
+        result = { cleaned: repaired.cleaned, error: repaired.error };
+        if (signal.status === "ok") {
+          repairRecoveredPageCount += 1;
+        } else {
+          repairFailedPageCount += 1;
+        }
       }
-      const signal = pdfOcrPageSignal({ page, text: cleaned, error, language });
       pageSignals.push(signal);
-      if (cleaned) {
+      if (result.cleaned) {
         pages.push({
           page,
           pageLabel: String(page),
-          text: cleaned,
+          text: result.cleaned,
           ocr: signal
         });
       }
@@ -536,11 +544,89 @@ async function extractPdfOcrPages(sourcePath, args = {}) {
       requestedPageCount: pagePlan.requestedPageCount,
       truncatedPageCount: pagePlan.truncatedPageCount,
       fullDocumentOcr: pagePlan.fullDocumentOcr,
+      repairAttemptedPageCount,
+      repairRecoveredPageCount,
+      repairFailedPageCount,
       language
     };
   } finally {
     await rm(renderDir, { recursive: true, force: true });
   }
+}
+
+async function renderPdfOcrPage(sourcePath, renderDir, pageNumber, prefixName, dpi, args = {}) {
+  const prefix = join(renderDir, prefixName);
+  await runCommand(PDFTOPPM_BIN, ["-png", "-r", String(dpi), "-f", String(pageNumber), "-l", String(pageNumber), sourcePath, prefix], {
+    cwd: renderDir,
+    timeoutSeconds: pdfRenderTimeoutSeconds(args.timeoutSeconds),
+    requireOutput: false
+  });
+}
+
+async function runPdfOcrOnImage(imagePath, renderDir, language, pageTimeout) {
+  let cleaned = "";
+  let error = "";
+  try {
+    const text = await runCommand(TESSERACT_BIN, [imagePath, "stdout", "-l", language], {
+      cwd: renderDir,
+      timeoutSeconds: pageTimeout,
+      requireOutput: false
+    });
+    cleaned = cleanPdfPageText(text === "(empty response)" ? "" : text);
+  } catch (err) {
+    error = cleanPdfPageText(err?.message || String(err)).slice(0, 500);
+  }
+  return { cleaned, error };
+}
+
+async function repairPdfOcrPage(sourcePath, renderDir, page, language, pageTimeout, previousSignal, args = {}) {
+  const dpi = pdfOcrRepairDpi(args.ocrRepairDpi);
+  const previousStatus = previousSignal?.status || "unknown";
+  const previousError = previousSignal?.error || "";
+  try {
+    await renderPdfOcrPage(sourcePath, renderDir, page, `repair-page-${page}`, dpi, args);
+    const imagePath = await pdfRenderedRepairImagePath(renderDir, page);
+    const result = await runPdfOcrOnImage(imagePath, renderDir, language, pageTimeout);
+    const signal = pdfOcrPageSignal({
+      page,
+      text: result.cleaned,
+      error: result.error,
+      language,
+      repair: {
+        attempted: true,
+        dpi,
+        previousStatus,
+        previousError,
+        recovered: Boolean(result.cleaned)
+      }
+    });
+    return { ...result, signal };
+  } catch (err) {
+    const error = cleanPdfPageText(err?.message || String(err)).slice(0, 500);
+    const signal = pdfOcrPageSignal({
+      page,
+      text: "",
+      error,
+      language,
+      repair: {
+        attempted: true,
+        dpi,
+        previousStatus,
+        previousError,
+        recovered: false
+      }
+    });
+    return { cleaned: "", error, signal };
+  }
+}
+
+async function pdfRenderedRepairImagePath(renderDir, page) {
+  const expected = `repair-page-${page}-${page}.png`;
+  const repairPrefix = `repair-page-${page}-`;
+  const images = await pdfRenderedImagePaths(renderDir);
+  return images.find((imagePath) => basename(imagePath) === expected)
+    || images.find((imagePath) => basename(imagePath).startsWith(repairPrefix))
+    || join(renderDir, expected);
 }
 
 function pdfMergeTextAndOcrPages(pageSlots = [], textPages = [], ocrPages = []) {
@@ -584,6 +670,8 @@ function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
   const warnings = [];
   if (extra.textError) warnings.push("text_extraction_error");
   if (extra.ocrFallbackUsed) warnings.push("ocr_fallback_used");
+  if (Number(extra.ocrRepairAttemptedPageCount) > 0) warnings.push("ocr_auto_repair_used");
+  if (Number(extra.ocrRepairFailedPageCount) > 0) warnings.push("ocr_repair_failed_pages");
   if (extra.ocrFullDocumentUsed) warnings.push("ocr_full_document_used");
   if (Number(extra.ocrTruncatedPageCount) > 0) warnings.push("ocr_page_limit_reached");
   if (extra.ocrFallbackAttempted && !extra.ocrFallbackUsed) warnings.push("ocr_fallback_no_text");
@@ -608,6 +696,9 @@ function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
     ocrMaxPages: Number(extra.ocrMaxPages) || pdfOcrMaxPages(args.maxOcrPages, args),
     ocrRequestedPageCount: Number(extra.ocrRequestedPageCount) || 0,
     ocrTruncatedPageCount: Number(extra.ocrTruncatedPageCount) || 0,
+    ocrRepairAttemptedPageCount: Number(extra.ocrRepairAttemptedPageCount) || 0,
+    ocrRepairRecoveredPageCount: Number(extra.ocrRepairRecoveredPageCount) || 0,
+    ocrRepairFailedPageCount: Number(extra.ocrRepairFailedPageCount) || 0,
     ocrPageSignals,
     ocrReadablePageCount: ocrPageSignals.filter((signal) => signal.status === "ok").length,
     ocrLowConfidencePageCount,
@@ -616,7 +707,7 @@ function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
   };
 }
 
-function pdfOcrPageSignal({ page, text = "", error = "", language = "" } = {}) {
+function pdfOcrPageSignal({ page, text = "", error = "", language = "", repair = null } = {}) {
   const textChars = String(text || "").trim().length;
   const warnings = [];
   const status = error ? "error" : textChars ? "ok" : "empty";
@@ -634,6 +725,12 @@ function pdfOcrPageSignal({ page, text = "", error = "", language = "" } = {}) {
   } else {
     warnings.push("ocr_page_empty");
   }
+  const repairAttempted = Boolean(repair?.attempted);
+  if (repairAttempted && status === "ok") {
+    warnings.push("ocr_page_repaired");
+  } else if (repairAttempted) {
+    warnings.push("ocr_page_repair_failed");
+  }
   return {
     page,
     pageLabel: String(page || ""),
@@ -643,6 +740,13 @@ function pdfOcrPageSignal({ page, text = "", error = "", language = "" } = {}) {
     textChars,
     ocrConfidence,
     warnings,
+    ...(repairAttempted ? {
+      repairAttempted: true,
+      repairDpi: Number(repair?.dpi) || pdfOcrRepairDpi(),
+      repairStatus: status === "ok" ? "recovered" : "failed",
+      previousStatus: repair?.previousStatus || "",
+      ...(repair?.previousError ? { previousError: repair.previousError } : {})
+    } : {}),
     ...(error ? { error } : {})
   };
 }
@@ -680,6 +784,16 @@ function pdfOcrPageTimeoutSeconds(value, maxPages) {
 
 function pdfOcrFallbackEnabled(args = {}) {
   return args.ocrFallback === true || args.ocrFallback === "true" || args.ocrFallback === 1;
+}
+
+function pdfOcrAutoRepairEnabled(args = {}) {
+  return args.ocrAutoRepair !== false && args.ocrAutoRepair !== "false" && args.ocrAutoRepair !== 0;
+}
+
+function pdfOcrRepairDpi(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 300;
+  return Math.min(Math.max(Math.round(parsed), 220), 450);
 }
 
 function shouldRunPdfOcrFallback(args = {}, pages = [], pageSlots = []) {
