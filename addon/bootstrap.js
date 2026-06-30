@@ -2311,15 +2311,17 @@ async function writeCrossCollectionSynthesisIndex(settings, collectionContext, r
   const gapBoard = crossCollectionGapEntries(collections, labels);
   const themeBridgeBoard = crossCollectionThemeBridgeEntries(collections, labels);
   const themeMergeBoard = crossCollectionThemeMergeEntries(collections, labels);
+  const clusterMap = crossCollectionClusterMapEntries(collections, labels);
   const payload = {
     templateVersion: "cross-collection-index-v1",
     generatedAt: new Date().toISOString(),
     outputLanguage,
     stats: crossCollectionStats(collections),
+    clusterMap,
     gapBoard,
     themeBridgeBoard,
     themeMergeBoard,
-    priorityBoard: crossCollectionPriorityEntries(collections, gapBoard, labels, themeMergeBoard),
+    priorityBoard: crossCollectionPriorityEntries(collections, gapBoard, labels, themeMergeBoard, clusterMap),
     collections
   };
   await writeText(indexPath, JSON.stringify(payload, null, 2));
@@ -2443,6 +2445,14 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
     "",
     renderCrossCollectionThemeRows(collections, labels),
     "",
+    `## ${labels.crossCollectionClusterMap}`,
+    "",
+    renderCrossCollectionClusterRows(indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels), labels),
+    "",
+    `## ${labels.crossCollectionClusterEvidenceCards}`,
+    "",
+    renderCrossCollectionClusterEvidenceCards(indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels), labels),
+    "",
     `## ${labels.crossCollectionThemeMergeBoard}`,
     "",
     renderCrossCollectionThemeMergeRows(indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels), labels),
@@ -2457,7 +2467,13 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
     "",
     `## ${labels.crossCollectionPriorityBoard}`,
     "",
-    renderCrossCollectionPriorityRows(indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels, indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels)), labels),
+    renderCrossCollectionPriorityRows(indexPayload?.priorityBoard || crossCollectionPriorityEntries(
+      collections,
+      indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels),
+      labels,
+      indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels),
+      indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels)
+    ), labels),
     "",
     `## ${labels.crossCollectionReviewPack}`,
     "",
@@ -2473,10 +2489,23 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
 function renderCrossCollectionReviewPack(indexPayload, labels) {
   const collections = Array.isArray(indexPayload?.collections) ? indexPayload.collections : [];
   const mergeBoard = indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels);
-  const priorityBoard = indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels, mergeBoard);
+  const clusterMap = indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels);
+  const priorityBoard = indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels, mergeBoard, clusterMap);
   const bridgeBoard = indexPayload?.themeBridgeBoard || crossCollectionThemeBridgeEntries(collections, labels);
   const gapBoard = indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels);
   const rows = [];
+  for (const entry of (clusterMap || []).filter((cluster) => Number(cluster?.collectionCount || 0) >= 2).slice(0, 4)) {
+    const scope = entry.title || labels.clusterOther;
+    const gap = uniqueInsightLines(entry.gapSignals || []).slice(0, 3).join("; ") || labels.gapMatrixPendingEvidence;
+    rows.push(crossCollectionReviewPackRow({
+      scope,
+      collections: entry.collections || [],
+      evidence: uniqueInsightLines([...(entry.themes || []), ...(entry.methodSignals || [])]).slice(0, 5),
+      gap,
+      prompt: entry.synthesisPrompt || labels.crossCollectionClusterPrompt(scope, entry.collectionCount || 0),
+      manualReview: entry.reviewAction || labels.crossCollectionClusterReviewAction(scope)
+    }, labels));
+  }
   for (const entry of (priorityBoard || []).slice(0, 6)) {
     const scope = entry.priority || labels.crossCollectionPriorityPending;
     const gap = entry.reason || labels.crossCollectionPriorityReasonPending;
@@ -2518,6 +2547,42 @@ function renderCrossCollectionReviewPack(indexPayload, labels) {
     "| --- | --- | --- | --- | --- | --- |",
     uniqueRows.join("\n") || "|  |  |  |  |  |  |"
   ].join("\n");
+}
+
+function renderCrossCollectionClusterRows(clusterEntries, labels) {
+  const rows = (clusterEntries || []).slice(0, 16)
+    .map((entry) => [
+      escapeMarkdownTable(entry.title || labels.clusterOther),
+      escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
+      escapeMarkdownTable(entry.paperCount || 0),
+      escapeMarkdownTable((entry.themes || []).join("; ") || labels.clusterOther),
+      escapeMarkdownTable(entry.supportLevel || labels.crossCollectionClusterSupport(0, 0)),
+      escapeMarkdownTable(entry.reviewAction || labels.crossCollectionClusterReviewAction(entry.title || labels.clusterOther))
+    ].join(" | "))
+    .map((row) => `| ${row} |`);
+  return [
+    `| ${labels.crossCollectionClusterScopeColumn} | ${labels.collectionColumn} | ${labels.paperColumn} | ${labels.crossCollectionThemeCandidatesColumn} | ${labels.crossCollectionSupportColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    rows.join("\n") || "|  |  |  |  |  |  |"
+  ].join("\n");
+}
+
+function renderCrossCollectionClusterEvidenceCards(clusterEntries, labels) {
+  const cards = (clusterEntries || []).slice(0, 12).map((entry) => [
+    `### ${entry.title || labels.clusterOther}`,
+    "",
+    `- ${labels.collectionColumn}: ${(entry.collections || []).join("; ") || labels.noSummary}`,
+    `- ${labels.crossCollectionThemeCandidatesColumn}: ${(entry.themes || []).join("; ") || labels.clusterOther}`,
+    `- ${labels.supportLevelColumn}: ${entry.supportLevel || labels.crossCollectionClusterSupport(0, 0)}`,
+    `- ${labels.methodSignalColumn}: ${(entry.methodSignals || []).join("; ") || labels.pendingInsight}`,
+    `- ${labels.gapSignalColumn}: ${(entry.gapSignals || []).join("; ") || labels.gapMatrixPendingEvidence}`,
+    `- ${labels.roadmapCandidateQueryColumn}: ${(entry.candidateQueries || []).join("; ") || labels.roadmapCandidateQueryColumn}`,
+    `- ${labels.evidenceAnchorColumn}: ${(entry.evidenceAnchors || []).join("; ") || labels.pendingSummaryPath}`,
+    `- ${labels.modelDeepeningPromptColumn}: ${entry.synthesisPrompt || labels.crossCollectionClusterPrompt(entry.title || labels.clusterOther, entry.collectionCount || 0)}`,
+    `- ${labels.reviewActionColumn}: ${entry.reviewAction || labels.crossCollectionClusterReviewAction(entry.title || labels.clusterOther)}`,
+    ""
+  ].join("\n"));
+  return cards.join("\n") || labels.crossCollectionClusterNoEvidence;
 }
 
 function crossCollectionReviewPackRow(entry, labels) {
@@ -2809,7 +2874,91 @@ function crossCollectionUniqueMergeCandidate() {
   };
 }
 
-function crossCollectionPriorityEntries(collections = [], gapEntries = [], labels = collectionTemplateLabels("zh-CN"), themeMergeEntries = []) {
+function crossCollectionClusterMapEntries(collections = [], labels = collectionTemplateLabels("zh-CN")) {
+  const records = crossCollectionThemeRecords(collections, labels).map((record, index) => ({ ...record, index }));
+  if (!records.length) return [];
+  const parents = records.map((_, index) => index);
+  const find = (index) => {
+    while (parents[index] !== index) {
+      parents[index] = parents[parents[index]];
+      index = parents[index];
+    }
+    return index;
+  };
+  const connect = (left, right) => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot !== rightRoot) parents[rightRoot] = leftRoot;
+  };
+  for (let i = 0; i < records.length; i += 1) {
+    for (let j = i + 1; j < records.length; j += 1) {
+      const left = records[i];
+      const right = records[j];
+      if (!left.themeKey || !right.themeKey) continue;
+      if (left.themeKey === right.themeKey) {
+        connect(i, j);
+        continue;
+      }
+      if (left.collectionName === right.collectionName) continue;
+      const sharedTokens = left.tokens.filter((token) => right.tokens.includes(token));
+      if (crossCollectionMergeCandidateStrongEnough(sharedTokens, left, right)) {
+        connect(i, j);
+      }
+    }
+  }
+  const groups = new Map();
+  records.forEach((record, index) => {
+    const root = find(index);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(record);
+  });
+  return Array.from(groups.values())
+    .map((group) => crossCollectionClusterMapEntry(group, labels))
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftCross = Number(left.collectionCount || 0) >= 2 ? 1 : 0;
+      const rightCross = Number(right.collectionCount || 0) >= 2 ? 1 : 0;
+      return rightCross - leftCross
+        || right.collectionCount - left.collectionCount
+        || right.paperCount - left.paperCount
+        || right.themeCount - left.themeCount
+        || left.title.localeCompare(right.title);
+    })
+    .slice(0, 30);
+}
+
+function crossCollectionClusterMapEntry(group, labels) {
+  const collections = uniqueInsightLines(group.map((record) => record.collectionName).filter(Boolean)).slice(0, 12);
+  const themes = uniqueInsightLines(group.map((record) => record.theme).filter(Boolean)).slice(0, 12);
+  const paperCount = group.reduce((sum, record) => sum + Number(record.paperCount || 0), 0);
+  const methodSignals = uniqueInsightLines(group.flatMap((record) => record.methodSignals || [])).slice(0, 8);
+  const gapSignals = uniqueInsightLines(group.flatMap((record) => record.gapSignals || [])).slice(0, 8);
+  const candidateQueries = uniqueInsightLines(group.flatMap((record) => record.candidateQueries || [])).slice(0, 8);
+  const evidenceAnchors = uniqueInsightLines(group.map((record) => [
+    record.collectionName,
+    record.theme,
+    record.paperCount ? `${record.paperCount} ${labels.paperColumn}` : ""
+  ].filter(Boolean).join(": "))).slice(0, 10);
+  const title = labels.crossCollectionClusterTitle(themes);
+  const collectionCount = collections.length;
+  return {
+    title,
+    collectionCount,
+    themeCount: themes.length,
+    paperCount,
+    collections,
+    themes,
+    methodSignals,
+    gapSignals,
+    candidateQueries,
+    evidenceAnchors,
+    supportLevel: labels.crossCollectionClusterSupport(collectionCount, paperCount),
+    synthesisPrompt: labels.crossCollectionClusterPrompt(title, collectionCount),
+    reviewAction: labels.crossCollectionClusterReviewAction(title)
+  };
+}
+
+function crossCollectionPriorityEntries(collections = [], gapEntries = [], labels = collectionTemplateLabels("zh-CN"), themeMergeEntries = [], clusterMapEntries = []) {
   const entries = [];
   for (const merge of themeMergeEntries || []) {
     entries.push({
@@ -2820,6 +2969,22 @@ function crossCollectionPriorityEntries(collections = [], gapEntries = [], label
       collections: merge?.collections || [],
       evidence: merge?.sharedSignals || [],
       nextAction: merge?.reviewAction || labels.crossCollectionMergeAction(merge?.scope || labels.crossCollectionMergePending)
+    });
+  }
+  for (const cluster of clusterMapEntries || []) {
+    const count = Number(cluster?.collectionCount || 0);
+    if (count < 2) continue;
+    entries.push({
+      kind: "cross_collection_cluster",
+      score: 85 + count * 10 + Math.min(Number(cluster?.paperCount || 0), 20),
+      priority: labels.crossCollectionPriorityCluster(cluster?.title || labels.clusterOther, count),
+      reason: labels.crossCollectionPriorityClusterReason(count),
+      collections: cluster?.collections || [],
+      evidence: uniqueInsightLines([
+        ...(cluster?.themes || []).map((theme) => `${labels.clusterColumn}: ${theme}`),
+        ...(cluster?.gapSignals || []).map((gap) => `${labels.gapSignalColumn}: ${gap}`)
+      ]).slice(0, 5),
+      nextAction: cluster?.reviewAction || labels.crossCollectionClusterReviewAction(cluster?.title || labels.clusterOther)
     });
   }
   for (const gap of gapEntries || []) {
@@ -3707,11 +3872,15 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionSynthesisNote: "Aggregates the latest collection workspaces into one review-planning surface. Use it to compare themes across collections before writing a broader review.",
       crossCollectionInventory: "Collection Inventory",
       crossCollectionThemeMap: "Cross-Collection Theme Map",
+      crossCollectionClusterMap: "Cross-Collection Cluster Map",
+      crossCollectionClusterEvidenceCards: "Cluster Evidence Cards",
       crossCollectionThemeMergeBoard: "Theme Merge Review Board",
       crossCollectionBridgeBoard: "Cross-Collection Bridge Board",
       crossCollectionGapBoard: "Cross-Collection Gap Board",
       crossCollectionPriorityBoard: "Cross-Collection Priority Board",
       crossCollectionReviewPack: "Cross-Collection Review Pack",
+      crossCollectionClusterScopeColumn: "Cluster Scope",
+      crossCollectionSupportColumn: "Cross-Collection Support",
       crossCollectionPriorityColumn: "Priority",
       crossCollectionReasonColumn: "Reason",
       crossCollectionScopeColumn: "Review Scope",
@@ -3733,10 +3902,19 @@ function collectionTemplateLabels(outputLanguage) {
         : `Scope check: ${gap}`,
       crossCollectionPriorityMergeThemes: (themes) => `Review possible theme merge: ${themes}`,
       crossCollectionPriorityMergeReason: "Different theme labels share evidence signals",
+      crossCollectionPriorityCluster: (cluster, count) => `Write cross-collection section: ${cluster}`,
+      crossCollectionPriorityClusterReason: (count) => `Cluster spans ${count} collections`,
       crossCollectionPriorityWeakTheme: (theme, count) => count >= 2
         ? `Review theme gaps: ${theme}`
         : `Add support for theme: ${theme}`,
       crossCollectionPriorityWeakThemeAction: (theme) => `Open the collection report, verify ${theme}, and run candidate search if evidence is thin.`,
+      crossCollectionClusterTitle: (themes) => (themes || []).slice(0, 3).join(" / ") || "Unlabeled cross-collection cluster",
+      crossCollectionClusterSupport: (count, papers) => count >= 2
+        ? `${count} collections, ${papers} papers`
+        : `single collection, ${papers} papers`,
+      crossCollectionClusterPrompt: (cluster, count) => `Turn ${cluster} into a review section plan across ${count || "the relevant"} collections; separate shared claims, scope-specific claims, and missing evidence.`,
+      crossCollectionClusterReviewAction: (cluster) => `Verify the source collection reports for ${cluster}; keep only evidence-backed shared claims.`,
+      crossCollectionClusterNoEvidence: "No cluster evidence cards are available yet.",
       collectionColumn: "Collection",
       reportColumn: "Report",
       crossCollectionStatsLine: (stats) => `Collections ${stats.collections}, papers ${stats.totalPapers}, available summaries ${stats.availableSummaries}, skipped without PDF ${stats.skippedNoPdf}, failed ${stats.failed}.`,
@@ -3922,11 +4100,15 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionSynthesisNote: "最新の collection workspace を横断的なレビュー計画面に集約します。より広いレビューを書く前に、collection 間のテーマを比較するために使います。",
       crossCollectionInventory: "Collection 一覧",
       crossCollectionThemeMap: "Collection 横断テーママップ",
+      crossCollectionClusterMap: "Collection 横断クラスタマップ",
+      crossCollectionClusterEvidenceCards: "クラスタ証拠カード",
       crossCollectionThemeMergeBoard: "テーマ統合確認ボード",
       crossCollectionBridgeBoard: "Collection 横断ブリッジボード",
       crossCollectionGapBoard: "Collection 横断ギャップボード",
       crossCollectionPriorityBoard: "Collection 横断優先度ボード",
       crossCollectionReviewPack: "Collection 横断レビュー執筆パック",
+      crossCollectionClusterScopeColumn: "クラスタ範囲",
+      crossCollectionSupportColumn: "横断支持",
       crossCollectionPriorityColumn: "優先項目",
       crossCollectionReasonColumn: "理由",
       crossCollectionScopeColumn: "レビュー範囲",
@@ -3948,10 +4130,19 @@ function collectionTemplateLabels(outputLanguage) {
         : `範囲確認: ${gap}`,
       crossCollectionPriorityMergeThemes: (themes) => `テーマ統合候補を確認: ${themes}`,
       crossCollectionPriorityMergeReason: "異なるテーマ名が証拠シグナルを共有している",
+      crossCollectionPriorityCluster: (cluster, count) => `横断レビュー節を書く: ${cluster}`,
+      crossCollectionPriorityClusterReason: (count) => `${count} 件の collection にまたがるクラスタ`,
       crossCollectionPriorityWeakTheme: (theme, count) => count >= 2
         ? `テーマギャップを確認: ${theme}`
         : `テーマの支持を追加: ${theme}`,
       crossCollectionPriorityWeakThemeAction: (theme) => `Collection 報告書を開き、${theme} を確認し、証拠が薄い場合は候補論文検索を実行する。`,
+      crossCollectionClusterTitle: (themes) => (themes || []).slice(0, 3).join(" / ") || "ラベル未設定の横断クラスタ",
+      crossCollectionClusterSupport: (count, papers) => count >= 2
+        ? `${count} 件の collection、${papers} 本の論文`
+        : `単一 collection、${papers} 本の論文`,
+      crossCollectionClusterPrompt: (cluster, count) => `${cluster} を ${count || "関連する"} 件の collection にまたがるレビュー節計画に変換し、共通主張、範囲固有の主張、不足証拠を分ける。`,
+      crossCollectionClusterReviewAction: (cluster) => `${cluster} の元 collection 報告書を確認し、証拠で支えられる共通主張だけを残す。`,
+      crossCollectionClusterNoEvidence: "利用できるクラスタ証拠カードはまだありません。",
       collectionColumn: "Collection",
       reportColumn: "報告書",
       crossCollectionStatsLine: (stats) => `Collection ${stats.collections} 件、論文 ${stats.totalPapers} 件、利用可能な要約 ${stats.availableSummaries} 件、PDF なしスキップ ${stats.skippedNoPdf} 件、失敗 ${stats.failed} 件。`,
@@ -4136,11 +4327,15 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionSynthesisNote: "把最近生成的 collection workspace 汇总为一个跨集合综述规划入口，用于在更大范围综述写作前比较不同集合之间的主题、证据和缺口。",
     crossCollectionInventory: "集合清单",
     crossCollectionThemeMap: "跨集合主题地图",
+    crossCollectionClusterMap: "跨集合聚类图谱",
+    crossCollectionClusterEvidenceCards: "聚类证据卡",
     crossCollectionThemeMergeBoard: "主题归并复核板",
     crossCollectionBridgeBoard: "跨集合主题桥接板",
     crossCollectionGapBoard: "跨集合缺口看板",
     crossCollectionPriorityBoard: "跨集合优先级看板",
     crossCollectionReviewPack: "跨集合综述写作包",
+    crossCollectionClusterScopeColumn: "聚类范围",
+    crossCollectionSupportColumn: "跨集合支持",
     crossCollectionPriorityColumn: "优先项",
     crossCollectionReasonColumn: "原因",
     crossCollectionScopeColumn: "综述范围",
@@ -4162,10 +4357,19 @@ function collectionTemplateLabels(outputLanguage) {
       : `范围核对：${gap}`,
     crossCollectionPriorityMergeThemes: (themes) => `复核主题归并候选：${themes}`,
     crossCollectionPriorityMergeReason: "不同主题名称共享证据线索",
+    crossCollectionPriorityCluster: (cluster, count) => `撰写跨集合小节：${cluster}`,
+    crossCollectionPriorityClusterReason: (count) => `该聚类横跨 ${count} 个集合`,
     crossCollectionPriorityWeakTheme: (theme, count) => count >= 2
       ? `核对主题缺口：${theme}`
       : `补充主题支持：${theme}`,
     crossCollectionPriorityWeakThemeAction: (theme) => `打开集合报告核对“${theme}”，证据薄弱时继续运行候选论文检索。`,
+    crossCollectionClusterTitle: (themes) => (themes || []).slice(0, 3).join(" / ") || "未命名跨集合聚类",
+    crossCollectionClusterSupport: (count, papers) => count >= 2
+      ? `${count} 个集合，${papers} 篇论文`
+      : `单集合，${papers} 篇论文`,
+    crossCollectionClusterPrompt: (cluster, count) => `把“${cluster}”整理成横跨 ${count || "相关"} 个集合的综述小节计划，区分共同主张、范围特有主张和缺失证据。`,
+    crossCollectionClusterReviewAction: (cluster) => `核对“${cluster}”对应的集合报告，只保留有证据支撑的共同主张。`,
+    crossCollectionClusterNoEvidence: "暂时没有可用的聚类证据卡。",
     collectionColumn: "集合",
     reportColumn: "报告",
     crossCollectionStatsLine: (stats) => `集合 ${stats.collections} 个，论文 ${stats.totalPapers} 篇，可用总结 ${stats.availableSummaries} 篇，无 PDF 跳过 ${stats.skippedNoPdf} 篇，失败 ${stats.failed} 篇。`,
