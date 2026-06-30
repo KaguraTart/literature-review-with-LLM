@@ -817,6 +817,9 @@ describe("batch papers index", () => {
         collectionCount: 2,
         collections: expect.arrayContaining(["Old Collection", "New Collection"]),
         themes: expect.arrayContaining(["Safety / Risk", "Transportation / Urban Airspace"]),
+        clusterScore: expect.any(Number),
+        linkSignals: expect.arrayContaining([expect.stringContaining("same normalized theme")]),
+        reviewRisk: expect.any(String),
         methodSignals: expect.arrayContaining(["Bayesian route planner", "PPO-based CTDE scheduler with safety constraints."]),
         gapSignals: expect.arrayContaining(["No field deployment", "No deployment evidence."])
       })
@@ -825,8 +828,12 @@ describe("batch papers index", () => {
       expect.objectContaining({
         kind: "cross_collection_cluster",
         priority: expect.stringContaining("Write cross-collection section"),
-        reason: "Cluster spans 2 collections",
-        collections: expect.arrayContaining(["Old Collection", "New Collection"])
+        reason: expect.stringContaining("Cluster spans 2 collections; score"),
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        evidence: expect.arrayContaining([
+          expect.stringContaining("Cluster Score:"),
+          expect.stringContaining("Link Evidence:")
+        ])
       }),
       expect.objectContaining({
         kind: "recurring_gap",
@@ -839,6 +846,9 @@ describe("batch papers index", () => {
     expect(synthesis).toContain("Cross-Collection Synthesis Map");
     expect(synthesis).toContain("Cross-Collection Cluster Map");
     expect(synthesis).toContain("Cluster Evidence Cards");
+    expect(synthesis).toContain("Cluster Score");
+    expect(synthesis).toContain("Link Evidence");
+    expect(synthesis).toContain("Review Risk");
     expect(synthesis).toContain("Theme Merge Review Board");
     expect(synthesis).toContain("Cross-Collection Bridge Board");
     expect(synthesis).toContain("Cross-Collection Gap Board");
