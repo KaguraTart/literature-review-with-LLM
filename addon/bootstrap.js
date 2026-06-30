@@ -2770,7 +2770,11 @@ function crossCollectionEntry(collectionContext, results, outputLanguage, summar
   const claims = synthesisClaimEntries(results, summaryInsights, labels).slice(0, 6).map((entry) => ({
     cluster: entry.cluster,
     claim: entry.claim,
+    claimSupportScore: entry.claimSupportScore,
+    claimRisk: entry.claimRisk,
+    evidenceTrace: entry.evidenceTrace,
     supportingPapers: entry.supportingPapers.slice(0, 6),
+    evidence: entry.evidence.slice(0, 6),
     gaps: entry.gaps.slice(0, 4),
     validations: entry.validations.slice(0, 4)
   }));
@@ -4383,18 +4387,21 @@ function renderSynthesisClaimsMatrix(collectionContext, results, outputLanguage 
   const rows = entries.map((entry) => [
     escapeMarkdownTable(entry.cluster),
     escapeMarkdownTable(entry.claim),
+    escapeMarkdownTable(entry.claimSupportScore),
+    escapeMarkdownTable(entry.claimRisk),
     escapeMarkdownTable(entry.supportingPapers.join("; ") || labels.noSummary),
+    escapeMarkdownTable(entry.evidenceTrace),
     escapeMarkdownTable(entry.evidence.join("; ") || labels.pendingSummaryPath),
     escapeMarkdownTable(entry.gaps.join("; ") || labels.gapMatrixPendingEvidence),
     escapeMarkdownTable(entry.validations.join("; ") || labels.gapMatrixPendingValidation)
-  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |";
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |  |";
   return [
     `# ${collectionContext.name || collectionContext.key} ${labels.synthesisClaims}`,
     "",
     labels.synthesisClaimsNote,
     "",
-    `| ${labels.clusterColumn} | ${labels.claimColumn} | ${labels.supportingPapersColumn} | ${labels.evidenceColumn} | ${labels.counterGapColumn} | ${labels.validationColumn} |`,
-    "| --- | --- | --- | --- | --- | --- |",
+    `| ${labels.clusterColumn} | ${labels.claimColumn} | ${labels.claimSupportScoreColumn} | ${labels.claimRiskColumn} | ${labels.supportingPapersColumn} | ${labels.evidenceTraceColumn} | ${labels.evidenceColumn} | ${labels.counterGapColumn} | ${labels.validationColumn} |`,
+    "| --- | --- | ---: | --- | --- | --- | --- | --- | --- |",
     rows,
     "",
     `## ${labels.claimRiskChecklist}`,
@@ -4411,17 +4418,19 @@ function renderSynthesisConflictLedger(collectionContext, results, outputLanguag
     escapeMarkdownTable(entry.cluster),
     escapeMarkdownTable(entry.claim),
     escapeMarkdownTable(entry.supportLevel),
+    escapeMarkdownTable(entry.claimSupportScore),
+    escapeMarkdownTable(entry.claimRisk),
     escapeMarkdownTable(entry.counterGap),
     escapeMarkdownTable(entry.validation),
     escapeMarkdownTable(entry.reviewAction)
-  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |";
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |  |";
   return [
     `# ${collectionContext.name || collectionContext.key} ${labels.synthesisConflictLedger}`,
     "",
     labels.synthesisConflictLedgerNote,
     "",
-    `| ${labels.clusterColumn} | ${labels.claimColumn} | ${labels.supportLevelColumn} | ${labels.counterGapColumn} | ${labels.validationColumn} | ${labels.reviewActionColumn} |`,
-    "| --- | --- | --- | --- | --- | --- |",
+    `| ${labels.clusterColumn} | ${labels.claimColumn} | ${labels.supportLevelColumn} | ${labels.claimSupportScoreColumn} | ${labels.claimRiskColumn} | ${labels.counterGapColumn} | ${labels.validationColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | --- | --- | ---: | --- | --- | --- | --- |",
     rows,
     "",
     `## ${labels.conflictReviewChecklist}`,
@@ -4438,12 +4447,14 @@ function renderSynthesisRoadmap(collectionContext, results, outputLanguage = "zh
   const routeRows = entries.map((entry) => [
     escapeMarkdownTable(entry.cluster),
     escapeMarkdownTable(entry.question),
+    escapeMarkdownTable(entry.claimSupportScore),
+    escapeMarkdownTable(entry.claimRisk),
     escapeMarkdownTable(entry.supportingPapers.join("; ") || labels.noSummary),
     escapeMarkdownTable(entry.methodSignal),
     escapeMarkdownTable(entry.openGap),
     escapeMarkdownTable(entry.nextValidation),
     escapeMarkdownTable(entry.candidateQuery)
-  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |";
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |  |  |";
   const outline = entries.map((entry, index) => `${index + 1}. ${entry.sectionPlan}`).join("\n") || `1. ${labels.roadmapSectionText(1, labels.clusterOther, labels.pendingInsight, labels.gapMatrixPendingEvidence)}`;
   const evidenceRows = items.map((item) => {
     const insight = summaryInsights.get(item.itemKey) || {};
@@ -4464,8 +4475,8 @@ function renderSynthesisRoadmap(collectionContext, results, outputLanguage = "zh
     "",
     `## ${labels.roadmapEvidenceMap}`,
     "",
-    `| ${labels.clusterColumn} | ${labels.roadmapQuestionColumn} | ${labels.supportingPapersColumn} | ${labels.methodSignalColumn} | ${labels.gapSignalColumn} | ${labels.validationColumn} | ${labels.roadmapCandidateQueryColumn} |`,
-    "| --- | --- | --- | --- | --- | --- | --- |",
+    `| ${labels.clusterColumn} | ${labels.roadmapQuestionColumn} | ${labels.claimSupportScoreColumn} | ${labels.claimRiskColumn} | ${labels.supportingPapersColumn} | ${labels.methodSignalColumn} | ${labels.gapSignalColumn} | ${labels.validationColumn} | ${labels.roadmapCandidateQueryColumn} |`,
+    "| --- | --- | ---: | --- | --- | --- | --- | --- | --- |",
     routeRows,
     "",
     `## ${labels.roadmapSectionPlan}`,
@@ -4505,15 +4516,42 @@ function synthesisClaimEntries(results, summaryInsights = new Map(), labels = co
     const validations = uniqueInsightLines(cluster.items.flatMap(({ insight }) => insightValues(insight.validationNeeds, insight.rejectConditions))).slice(0, 3);
     const supportingPapers = cluster.items.map(({ item }) => `${item.title || item.itemKey} (${item.year || "n.d."})`).slice(0, 8);
     const evidence = uniqueInsightLines(cluster.items.flatMap(({ item, insight }) => insightValues(insight.evidence, item.summaryPath))).slice(0, 6);
+    const audit = synthesisClaimEvidenceAudit({ supportingPapers, evidence, gaps, validations }, labels);
     return {
       cluster: cluster.label,
       claim: labels.synthesisClaimText(cluster.label, methods.join("; ") || labels.pendingInsight, gaps[0] || labels.gapMatrixPendingEvidence),
       supportingPapers,
       evidence,
       gaps,
-      validations
+      validations,
+      ...audit
     };
   });
+}
+
+function synthesisClaimEvidenceAudit(entry = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const supportCount = (entry.supportingPapers || []).length;
+  const evidenceCount = (entry.evidence || []).length;
+  const gapCount = (entry.gaps || []).length;
+  const validationCount = (entry.validations || []).length;
+  const score = Math.max(0, Math.min(100, Math.round(
+    Math.min(supportCount, 4) * 24
+    + Math.min(evidenceCount, 6) * 7
+    + Math.min(validationCount, 4) * 5
+    - Math.min(gapCount, 4) * 6
+  )));
+  const claimRisk = supportCount >= 2 && score >= 70
+    ? labels.claimRiskLow
+    : supportCount >= 2 && score >= 50
+      ? labels.claimRiskMedium
+      : labels.claimRiskHigh;
+  const evidenceTrace = labels.claimEvidenceTrace(supportCount, evidenceCount, validationCount);
+  return {
+    claimSupportScore: score,
+    claimRisk,
+    evidenceTrace,
+    claimAuditAction: labels.claimAuditAction(claimRisk, score)
+  };
 }
 
 function synthesisConflictEntries(results, summaryInsights = new Map(), labels = collectionTemplateLabels("zh-CN")) {
@@ -4530,14 +4568,18 @@ function synthesisConflictEntries(results, summaryInsights = new Map(), labels =
       cluster: entry.cluster,
       claim: entry.claim,
       supportLevel,
+      claimSupportScore: entry.claimSupportScore,
+      claimRisk: entry.claimRisk,
+      evidenceTrace: entry.evidenceTrace,
       counterGap,
       validation,
-      reviewAction: labels.conflictReviewAction(supportCount, counterGap, validation)
+      reviewAction: `${labels.conflictReviewAction(supportCount, counterGap, validation)} ${entry.claimAuditAction || ""}`.trim()
     };
   });
 }
 
 function synthesisRoadmapEntries(results, summaryInsights = new Map(), labels = collectionTemplateLabels("zh-CN")) {
+  const claimByCluster = new Map(synthesisClaimEntries(results, summaryInsights, labels).map((entry) => [entry.cluster, entry]));
   return topicClusterEntries(results, summaryInsights, labels).map((cluster, index) => {
     const methods = uniqueInsightLines(cluster.items.map(({ insight }) => insight.method).filter(Boolean)).slice(0, 3);
     const gaps = uniqueInsightLines(cluster.items.flatMap(({ insight }) => insightValues(insight.limitations, insight.missingEvidence))).slice(0, 3);
@@ -4546,9 +4588,12 @@ function synthesisRoadmapEntries(results, summaryInsights = new Map(), labels = 
     const methodSignal = methods[0] || labels.pendingInsight;
     const openGap = gaps[0] || labels.gapMatrixPendingEvidence;
     const nextValidation = validations.join("; ") || labels.gapMatrixPendingValidation;
+    const claim = claimByCluster.get(cluster.label) || synthesisClaimEvidenceAudit({ supportingPapers, evidence: [], gaps, validations }, labels);
     return {
       cluster: cluster.label,
       question: labels.roadmapQuestionText(cluster.label, methodSignal, openGap),
+      claimSupportScore: claim.claimSupportScore,
+      claimRisk: claim.claimRisk,
       supportingPapers,
       methodSignal,
       openGap,
@@ -4722,6 +4767,10 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     "",
     reportSynthesisClaims(synthesisClaims, labels),
     "",
+    `## ${labels.reportClaimEvidenceAudit}`,
+    "",
+    reportClaimEvidenceAudit(synthesisClaims, labels),
+    "",
     `## ${labels.reportSynthesisConflicts}`,
     "",
     reportSynthesisConflicts(synthesisConflicts, labels),
@@ -4770,7 +4819,7 @@ function renderCollectionSynthesisWritingPack(collectionContext, clusters, synth
       escapeMarkdownTable(cluster.label),
       escapeMarkdownTable(labels.synthesisWritingTask(cluster.label, method, gap)),
       escapeMarkdownTable(evidence.join("; ") || papers.join("; ") || labels.pendingSummaryPath),
-      escapeMarkdownTable(conflict.reviewAction || labels.synthesisConflictCheck(draftClaim, gap)),
+      escapeMarkdownTable(claim.claimAuditAction || conflict.reviewAction || labels.synthesisConflictCheck(draftClaim, gap)),
       escapeMarkdownTable(labels.synthesisModelPrompt(cluster.label, method, gap, draftClaim)),
       escapeMarkdownTable(labels.synthesisManualReview(collectionContext?.name || collectionContext?.key || "", cluster.label, papers.join("; ") || labels.noSummary))
     ].join(" | ");
@@ -4832,11 +4881,31 @@ function reportSynthesisClaims(entries, labels) {
     `### ${entry.cluster}`,
     "",
     `- ${labels.claimColumn}: ${entry.claim}`,
+    `- ${labels.claimSupportScoreColumn}: ${entry.claimSupportScore}`,
+    `- ${labels.claimRiskColumn}: ${entry.claimRisk}`,
+    `- ${labels.evidenceTraceColumn}: ${entry.evidenceTrace}`,
     `- ${labels.supportingPapersColumn}: ${entry.supportingPapers.join("; ") || labels.noSummary}`,
     `- ${labels.evidenceColumn}: ${entry.evidence.join("; ") || labels.pendingSummaryPath}`,
     `- ${labels.counterGapColumn}: ${entry.gaps.join("; ") || labels.gapMatrixPendingEvidence}`,
-    `- ${labels.validationColumn}: ${entry.validations.join("; ") || labels.gapMatrixPendingValidation}`
+    `- ${labels.validationColumn}: ${entry.validations.join("; ") || labels.gapMatrixPendingValidation}`,
+    `- ${labels.reviewActionColumn}: ${entry.claimAuditAction || labels.claimAuditAction(entry.claimRisk || labels.claimRiskHigh, entry.claimSupportScore || 0)}`
   ].join("\n")).join("\n\n");
+}
+
+function reportClaimEvidenceAudit(entries, labels) {
+  const rows = (entries || []).slice(0, 12).map((entry) => [
+    escapeMarkdownTable(entry.cluster),
+    escapeMarkdownTable(entry.claimSupportScore),
+    escapeMarkdownTable(entry.claimRisk),
+    escapeMarkdownTable(entry.evidenceTrace),
+    escapeMarkdownTable((entry.supportingPapers || []).join("; ") || labels.noSummary),
+    escapeMarkdownTable(entry.claimAuditAction || labels.claimAuditAction(entry.claimRisk || labels.claimRiskHigh, entry.claimSupportScore || 0))
+  ].join(" | ")).map((row) => `| ${row} |`);
+  return [
+    `| ${labels.clusterColumn} | ${labels.claimSupportScoreColumn} | ${labels.claimRiskColumn} | ${labels.evidenceTraceColumn} | ${labels.supportingPapersColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | ---: | --- | --- | --- | --- |",
+    rows.join("\n") || "|  | 0 |  |  |  |  |"
+  ].join("\n");
 }
 
 function reportSynthesisConflicts(entries, labels) {
@@ -4846,6 +4915,9 @@ function reportSynthesisConflicts(entries, labels) {
     "",
     `- ${labels.claimColumn}: ${entry.claim}`,
     `- ${labels.supportLevelColumn}: ${entry.supportLevel}`,
+    `- ${labels.claimSupportScoreColumn}: ${entry.claimSupportScore}`,
+    `- ${labels.claimRiskColumn}: ${entry.claimRisk}`,
+    `- ${labels.evidenceTraceColumn}: ${entry.evidenceTrace}`,
     `- ${labels.counterGapColumn}: ${entry.counterGap}`,
     `- ${labels.validationColumn}: ${entry.validation}`,
     `- ${labels.reviewActionColumn}: ${entry.reviewAction}`
@@ -5054,6 +5126,9 @@ function collectionTemplateLabels(outputLanguage) {
       yearColumn: "Year",
       clusterColumn: "Cluster",
       claimColumn: "Draft Claim",
+      claimSupportScoreColumn: "Claim Support Score",
+      claimRiskColumn: "Claim Risk",
+      evidenceTraceColumn: "Evidence Trace",
       supportingPapersColumn: "Supporting Papers",
       evidenceColumn: "Evidence Sources",
       evidenceAnchorColumn: "Evidence Anchors",
@@ -5071,6 +5146,11 @@ function collectionTemplateLabels(outputLanguage) {
       validationColumn: "Validation Need",
       summaryColumn: "Summary",
       synthesisClaimText: (cluster, methods, gap) => `${cluster}: current summaries suggest ${methods}; the main unresolved gap is ${gap}.`,
+      claimRiskLow: "low: multi-paper support with traceable evidence",
+      claimRiskMedium: "medium: traceable evidence but unresolved gaps remain",
+      claimRiskHigh: "high: single-paper or thin evidence",
+      claimEvidenceTrace: (papers, evidence, validations) => `${papers || 0} paper(s), ${evidence || 0} evidence source(s), ${validations || 0} validation cue(s)`,
+      claimAuditAction: (risk, score) => `Audit claim (${score || 0}/100): ${risk || "risk pending"}; verify trace before final writing.`,
       claimRiskChecklist: "Claim Risk Checklist",
       claimRiskChecklistItems: [
         "- [ ] Verify that every draft claim has at least two supporting papers or mark it as single-paper evidence.",
@@ -5154,6 +5234,7 @@ function collectionTemplateLabels(outputLanguage) {
       reportDataAndEvidence: "Data, Scenario, and Metric Evidence",
       reportTopicSynthesis: "Topic-level Synthesis",
       reportSynthesisClaims: "Evidence-backed Synthesis Claims",
+      reportClaimEvidenceAudit: "Claim Evidence Audit",
       reportSynthesisConflicts: "Synthesis Conflicts and Evidence Gaps",
       reportResearchGaps: "Research Gaps and Validation Needs",
       reportDraftOutline: "Review Draft Outline",
@@ -5359,6 +5440,9 @@ function collectionTemplateLabels(outputLanguage) {
       yearColumn: "年",
       clusterColumn: "クラスタ",
       claimColumn: "主張草案",
+      claimSupportScoreColumn: "主張支持スコア",
+      claimRiskColumn: "主張リスク",
+      evidenceTraceColumn: "証拠トレース",
       supportingPapersColumn: "支持する論文",
       evidenceColumn: "証拠ソース",
       evidenceAnchorColumn: "証拠アンカー",
@@ -5376,6 +5460,11 @@ function collectionTemplateLabels(outputLanguage) {
       validationColumn: "検証ニーズ",
       summaryColumn: "要約",
       synthesisClaimText: (cluster, methods, gap) => `${cluster}: 現在の要約は ${methods} を示すが、主な未解決ギャップは ${gap} である。`,
+      claimRiskLow: "低: 複数論文に支えられ証拠を追跡可能",
+      claimRiskMedium: "中: 証拠は追跡可能だが未解決ギャップが残る",
+      claimRiskHigh: "高: 単一論文または薄い証拠",
+      claimEvidenceTrace: (papers, evidence, validations) => `論文 ${papers || 0} 件、証拠源 ${evidence || 0} 件、検証手がかり ${validations || 0} 件`,
+      claimAuditAction: (risk, score) => `主張を監査 (${score || 0}/100): ${risk || "リスク未確認"}。最終執筆前に証拠トレースを確認する。`,
       claimRiskChecklist: "主張リスクチェックリスト",
       claimRiskChecklistItems: [
         "- [ ] 各主張草案が少なくとも 2 本の支持論文を持つか、単一論文の証拠として明示する。",
@@ -5459,6 +5548,7 @@ function collectionTemplateLabels(outputLanguage) {
       reportDataAndEvidence: "データ・シナリオ・指標の証拠",
       reportTopicSynthesis: "トピック別統合",
       reportSynthesisClaims: "証拠に基づく統合主張",
+      reportClaimEvidenceAudit: "主張証拠監査",
       reportSynthesisConflicts: "統合コンフリクトと証拠ギャップ",
       reportResearchGaps: "研究ギャップと検証ニーズ",
       reportDraftOutline: "レビュー草稿アウトライン",
@@ -5663,6 +5753,9 @@ function collectionTemplateLabels(outputLanguage) {
     yearColumn: "年份",
     clusterColumn: "主题",
     claimColumn: "主张草稿",
+    claimSupportScoreColumn: "主张支持分",
+    claimRiskColumn: "主张风险",
+    evidenceTraceColumn: "证据轨迹",
     supportingPapersColumn: "支持论文",
     evidenceColumn: "证据来源",
     evidenceAnchorColumn: "证据锚点",
@@ -5680,6 +5773,11 @@ function collectionTemplateLabels(outputLanguage) {
     validationColumn: "验证需求",
     summaryColumn: "总结",
     synthesisClaimText: (cluster, methods, gap) => `围绕“${cluster}”，当前总结显示 ${methods}；主要未解决缺口是 ${gap}。`,
+    claimRiskLow: "低：多篇论文支持且证据可追溯",
+    claimRiskMedium: "中：证据可追溯但仍有未解决缺口",
+    claimRiskHigh: "高：单篇论文或证据偏薄",
+    claimEvidenceTrace: (papers, evidence, validations) => `${papers || 0} 篇论文，${evidence || 0} 条证据来源，${validations || 0} 条验证线索`,
+    claimAuditAction: (risk, score) => `审计主张（${score || 0}/100）：${risk || "待判断风险"}；进入最终写作前核对证据轨迹。`,
     claimRiskChecklist: "主张风险检查清单",
     claimRiskChecklistItems: [
       "- [ ] 检查每条主张草稿是否至少有两篇支持论文；否则标记为单篇证据。",
@@ -5763,6 +5861,7 @@ function collectionTemplateLabels(outputLanguage) {
     reportDataAndEvidence: "数据、场景与指标证据",
     reportTopicSynthesis: "主题级综合",
     reportSynthesisClaims: "有证据支持的综合主张",
+    reportClaimEvidenceAudit: "主张证据审计",
     reportSynthesisConflicts: "综合冲突与证据缺口",
     reportResearchGaps: "研究空白与验证需求",
     reportDraftOutline: "综述正文大纲",

@@ -398,6 +398,9 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.topicClustersPath)).toContain("主题聚类");
     expect(writes.get(artifacts.topicClustersPath)).toContain("综合线索");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("综合主张矩阵");
+    expect(writes.get(artifacts.synthesisClaimsPath)).toContain("主张支持分");
+    expect(writes.get(artifacts.synthesisClaimsPath)).toContain("主张风险");
+    expect(writes.get(artifacts.synthesisClaimsPath)).toContain("证据轨迹");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("主张风险检查清单");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("综合冲突与缺口台账");
     expect(JSON.parse(writes.get(artifacts.crossCollectionIndexPath) || "{}")).toMatchObject({
@@ -413,6 +416,12 @@ describe("batch papers index", () => {
           })
         })
       ]
+    });
+    expect(JSON.parse(writes.get(artifacts.crossCollectionIndexPath) || "{}").collections[0].claims[0]).toMatchObject({
+      claimSupportScore: expect.any(Number),
+      claimRisk: expect.any(String),
+      evidenceTrace: expect.any(String),
+      evidence: expect.any(Array)
     });
     expect(writes.get(artifacts.chartReviewBatchIndexPath)).toContain("图表复核批量索引");
     expect(writes.get(artifacts.chartReviewBatchIndexPath)).toContain("当前批量条目没有找到对应的 visual-extraction JSON 报告");
@@ -739,16 +748,25 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("PPO-based CTDE scheduler");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("Only tested in grid simulation");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("Stress-test under mixed priority flights");
+    expect(writes.get(artifacts.synthesisClaimsPath)).toContain("主张支持分");
+    expect(writes.get(artifacts.synthesisClaimsPath)).toContain("主张风险");
+    expect(writes.get(artifacts.synthesisClaimsPath)).toContain("证据轨迹");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("单篇证据支持");
+    expect(writes.get(artifacts.synthesisConflictsPath)).toContain("主张支持分");
+    expect(writes.get(artifacts.synthesisConflictsPath)).toContain("主张风险");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("Only tested in grid simulation");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("Stress-test under mixed priority flights");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("PPO-based CTDE scheduler");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("主张支持分");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("主张风险");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("No field data or ablation");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("Stress-test under mixed priority flights");
     expect(writes.get(artifacts.reviewReportPath)).toContain("PPO-based CTDE scheduler");
     expect(writes.get(artifacts.reviewReportPath)).toContain("Conflict rate and delay minutes");
     expect(writes.get(artifacts.reviewReportPath)).toContain("No field data or ablation");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合冲突与证据缺口");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("主张证据审计");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("审计主张");
     expect(writes.get(artifacts.reviewReportPath)).toContain("Stress-test under mixed priority flights");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合写作包");
     expect(writes.get(artifacts.reviewReportPath)).toContain("基于已引用的总结深化");
