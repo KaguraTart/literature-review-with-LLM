@@ -79,6 +79,7 @@ describe("local agent stdio MCP runtime", () => {
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrFallback).toMatchObject({
         type: "boolean"
       });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrFallback.description).toContain("per-page OCR confidence signals");
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.maxOcrPages).toMatchObject({
         type: "number"
       });
@@ -238,20 +239,124 @@ describe("local agent stdio MCP runtime", () => {
             pagesWithText: 2,
             emptyPageCount: 0,
             ocrFallbackUsed: true,
+            ocrReadablePageCount: 2,
+            ocrLowConfidencePageCount: 0,
+            ocrErrorPageCount: 0,
             warnings: ["ocr_fallback_used"]
           },
           pages: [
             {
               page: 1,
               pageLabel: "1",
-              text: "OCR method text from scanned page."
+              text: "OCR method text from scanned page.",
+              ocr: {
+                page: 1,
+                status: "ok",
+                textChars: 34,
+                ocrConfidence: "medium",
+                warnings: []
+              }
             },
             {
               page: 2,
               pageLabel: "2",
-              text: "OCR method text from scanned page."
+              text: "OCR method text from scanned page.",
+              ocr: {
+                page: 2,
+                status: "ok",
+                textChars: 34,
+                ocrConfidence: "medium",
+                warnings: []
+              }
             }
           ]
+        });
+        expect(parsed.quality.ocrPageSignals).toHaveLength(2);
+        expect(parsed.quality.ocrPageSignals[0]).toMatchObject({
+          page: 1,
+          engine: "tesseract",
+          language: "eng",
+          status: "ok",
+          textChars: 34,
+          ocrConfidence: "medium"
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports per-page OCR fallback confidence for empty and failed scanned PDF pages", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", "");
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 3);
+      const tesseractBin = fakeTesseractByPageBin(dir, "tesseract", {
+        1: "dense enough OCR text for a readable scanned page",
+        2: "",
+        3: { error: "unreadable bitmap", code: 2 }
+      });
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 11,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF scanned partial").toString("base64"),
+              name: "partial-scan.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              maxOcrPages: 3,
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "partial-scan.pdf",
+          pageCount: 1,
+          ocrFallbackUsed: true,
+          ocrRenderedPageCount: 3,
+          ocrEmptyPageCount: 2,
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 1,
+            emptyPageCount: 2,
+            ocrReadablePageCount: 1,
+            ocrLowConfidencePageCount: 0,
+            ocrErrorPageCount: 1
+          }
+        });
+        expect(parsed.quality.warnings).toEqual([
+          "ocr_fallback_used",
+          "empty_or_unread_pages",
+          "ocr_page_errors"
+        ]);
+        expect(parsed.quality.ocrPageSignals).toEqual([
+          expect.objectContaining({ page: 1, status: "ok", ocrConfidence: "medium", textChars: 49, warnings: [] }),
+          expect.objectContaining({ page: 2, status: "empty", ocrConfidence: "none", textChars: 0, warnings: ["ocr_page_empty"] }),
+          expect.objectContaining({ page: 3, status: "error", ocrConfidence: "error", textChars: 0, warnings: ["ocr_page_error"] })
+        ]);
+        expect(parsed.quality.ocrPageSignals[2].error).toContain("unreadable bitmap");
+        expect(parsed.pages).toHaveLength(1);
+        expect(parsed.pages[0]).toMatchObject({
+          page: 1,
+          text: "dense enough OCR text for a readable scanned page",
+          ocr: { status: "ok", ocrConfidence: "medium" }
         });
       } finally {
         runtime.stop();
@@ -632,6 +737,26 @@ function fakePdfToPpmBin(dir: string, name: string, pageCount: number) {
     "for (let page = 1; page <= pageCount; page += 1) {",
     "  fs.writeFileSync(`${prefix}-${page}.png`, `fake page ${page}`);",
     "}",
+    ""
+  ].join("\n"));
+  chmodSync(path, 0o755);
+  return path;
+}
+
+function fakeTesseractByPageBin(dir: string, name: string, outputs: Record<number, string | { error: string; code?: number }>) {
+  const path = join(dir, name);
+  writeFileSync(path, [
+    "#!/usr/bin/env node",
+    "const imagePath = process.argv[2] || '';",
+    "const match = /-(\\d+)\\.[^.]+$/.exec(imagePath);",
+    "const page = match ? Number(match[1]) : 0;",
+    `const outputs = ${JSON.stringify(outputs)};`,
+    "const output = outputs[page] ?? '';",
+    "if (output && typeof output === 'object') {",
+    "  process.stderr.write(output.error || 'ocr failed');",
+    "  process.exit(output.code || 1);",
+    "}",
+    "process.stdout.write(String(output || ''));",
     ""
   ].join("\n"));
   chmodSync(path, 0o755);

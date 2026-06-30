@@ -228,7 +228,7 @@ function pdfPagesSchema() {
       },
       ocrFallback: {
         type: "boolean",
-        description: "When true, render and OCR the first PDF pages if pdftotext returns little or no text."
+        description: "When true, render and OCR the first PDF pages if pdftotext returns little or no text. The result includes per-page OCR confidence signals."
       },
       ocrLanguage: {
         type: "string",
@@ -426,6 +426,7 @@ async function extractPdfPages(args = {}) {
           ocrFallbackAttempted: true,
           ocrRenderedPageCount: ocrResult.renderedPageCount,
           ocrEmptyPageCount: ocrResult.emptyPageCount,
+          ocrPageSignals: ocrResult.pageSignals,
           ocrLanguage: ocrResult.language,
           ocrMaxPages: ocrResult.maxPages,
           textError: textError ? cleanPdfPageText(textError.message || String(textError)).slice(0, 500) : ""
@@ -439,6 +440,7 @@ async function extractPdfPages(args = {}) {
       textPageCount: pages.length,
       ocrRenderedPageCount: ocrResult?.renderedPageCount || 0,
       ocrEmptyPageCount: ocrResult?.emptyPageCount || 0,
+      ocrPageSignals: ocrResult?.pageSignals || [],
       ocrLanguage: ocrResult?.language || "",
       ocrMaxPages: ocrResult?.maxPages || 0
     }));
@@ -460,28 +462,39 @@ async function extractPdfOcrPages(sourcePath, args = {}) {
     });
     const rendered = await pdfRenderedImagePaths(renderDir);
     const pages = [];
+    const pageSignals = [];
     const pageTimeout = pdfOcrPageTimeoutSeconds(args.timeoutSeconds, maxPages);
     for (const imagePath of rendered.slice(0, maxPages)) {
       const page = pdfRenderedImagePage(imagePath) || (pages.length + 1);
-      const text = await runCommand(TESSERACT_BIN, [imagePath, "stdout", "-l", language], {
-        cwd: renderDir,
-        timeoutSeconds: pageTimeout,
-        requireOutput: false
-      });
-      const cleaned = cleanPdfPageText(text === "(empty response)" ? "" : text);
+      let cleaned = "";
+      let error = "";
+      try {
+        const text = await runCommand(TESSERACT_BIN, [imagePath, "stdout", "-l", language], {
+          cwd: renderDir,
+          timeoutSeconds: pageTimeout,
+          requireOutput: false
+        });
+        cleaned = cleanPdfPageText(text === "(empty response)" ? "" : text);
+      } catch (err) {
+        error = cleanPdfPageText(err?.message || String(err)).slice(0, 500);
+      }
+      const signal = pdfOcrPageSignal({ page, text: cleaned, error, language });
+      pageSignals.push(signal);
       if (cleaned) {
         pages.push({
           page,
           pageLabel: String(page),
-          text: cleaned
+          text: cleaned,
+          ocr: signal
         });
       }
     }
     const renderedPageCount = Math.min(rendered.length, maxPages);
     return {
       pages,
+      pageSignals,
       renderedPageCount,
-      emptyPageCount: Math.max(renderedPageCount - pages.length, 0),
+      emptyPageCount: pageSignals.filter((signal) => signal.status !== "ok").length || Math.max(renderedPageCount - pages.length, 0),
       maxPages,
       language
     };
@@ -503,6 +516,7 @@ function pdfPagesResult(args, pdf, filePath, engine, pages, extra = {}) {
 
 function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
   const normalizedPages = Array.isArray(pages) ? pages : [];
+  const ocrPageSignals = Array.isArray(extra.ocrPageSignals) ? extra.ocrPageSignals : [];
   const totalTextChars = pdfPagesTotalTextLength(normalizedPages);
   const pagesWithText = normalizedPages.filter((page) => String(page?.text || "").trim()).length;
   const expectedPageCount = Math.max(
@@ -510,6 +524,8 @@ function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
     normalizedPages.length
   );
   const emptyPageCount = Math.max(expectedPageCount - pagesWithText, Number(extra.ocrEmptyPageCount) || 0);
+  const ocrLowConfidencePageCount = ocrPageSignals.filter((signal) => signal.ocrConfidence === "low").length;
+  const ocrErrorPageCount = ocrPageSignals.filter((signal) => signal.status === "error").length;
   const minTextChars = pdfOcrFallbackMinChars(args.minTextChars);
   const warnings = [];
   if (extra.textError) warnings.push("text_extraction_error");
@@ -518,6 +534,8 @@ function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
   if (!pagesWithText) warnings.push("no_text_extracted");
   if (totalTextChars > 0 && totalTextChars < minTextChars) warnings.push("sparse_text");
   if (emptyPageCount > 0) warnings.push("empty_or_unread_pages");
+  if (ocrLowConfidencePageCount > 0) warnings.push("ocr_low_confidence_pages");
+  if (ocrErrorPageCount > 0) warnings.push("ocr_page_errors");
   return {
     status: pagesWithText ? (warnings.length ? "warning" : "pass") : "fail",
     engine,
@@ -529,7 +547,42 @@ function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
     averageTextCharsPerPage: pagesWithText ? Math.round(totalTextChars / pagesWithText) : 0,
     minTextChars,
     ocrFallbackUsed: Boolean(extra.ocrFallbackUsed),
+    ocrPageSignals,
+    ocrReadablePageCount: ocrPageSignals.filter((signal) => signal.status === "ok").length,
+    ocrLowConfidencePageCount,
+    ocrErrorPageCount,
     warnings
+  };
+}
+
+function pdfOcrPageSignal({ page, text = "", error = "", language = "" } = {}) {
+  const textChars = String(text || "").trim().length;
+  const warnings = [];
+  const status = error ? "error" : textChars ? "ok" : "empty";
+  let ocrConfidence = "none";
+  if (status === "error") {
+    ocrConfidence = "error";
+    warnings.push("ocr_page_error");
+  } else if (textChars >= 120) {
+    ocrConfidence = "high";
+  } else if (textChars >= 24) {
+    ocrConfidence = "medium";
+  } else if (textChars > 0) {
+    ocrConfidence = "low";
+    warnings.push("ocr_page_sparse_text");
+  } else {
+    warnings.push("ocr_page_empty");
+  }
+  return {
+    page,
+    pageLabel: String(page || ""),
+    engine: "tesseract",
+    language: language || "",
+    status,
+    textChars,
+    ocrConfidence,
+    warnings,
+    ...(error ? { error } : {})
   };
 }
 
