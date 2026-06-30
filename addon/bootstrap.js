@@ -2711,6 +2711,7 @@ async function writeCrossCollectionSynthesisIndex(settings, collectionContext, r
   const themeBridgeBoard = crossCollectionThemeBridgeEntries(collections, labels);
   const themeMergeBoard = crossCollectionThemeMergeEntries(collections, labels);
   const clusterMap = crossCollectionClusterMapEntries(collections, labels);
+  const layoutBoard = crossCollectionSynthesisLayoutEntries(clusterMap, labels);
   const clusterCalibrationBoard = crossCollectionClusterCalibrationEntries(clusterMap, labels);
   const chartReviewTriage = crossCollectionChartReviewTriageEntries(collections);
   const payload = {
@@ -2719,6 +2720,7 @@ async function writeCrossCollectionSynthesisIndex(settings, collectionContext, r
     outputLanguage,
     stats: crossCollectionStats(collections),
     clusterMap,
+    layoutBoard,
     clusterCalibrationBoard,
     gapBoard,
     themeBridgeBoard,
@@ -3102,6 +3104,13 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
     "",
     renderCrossCollectionClusterRows(indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels), labels),
     "",
+    `## ${labels.crossCollectionSynthesisLayoutBoard}`,
+    "",
+    renderCrossCollectionSynthesisLayoutRows(indexPayload?.layoutBoard || crossCollectionSynthesisLayoutEntries(
+      indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels),
+      labels
+    ), labels),
+    "",
     `## ${labels.crossCollectionClusterCalibrationBoard}`,
     "",
     renderCrossCollectionClusterCalibrationRows(indexPayload?.clusterCalibrationBoard || crossCollectionClusterCalibrationEntries(
@@ -3236,6 +3245,88 @@ function renderCrossCollectionClusterRows(clusterEntries, labels) {
     "| --- | --- | --- | --- | ---: | --- | --- | --- |",
     rows.join("\n") || "|  |  |  |  |  |  |  |  |"
   ].join("\n");
+}
+
+function renderCrossCollectionSynthesisLayoutRows(layoutEntries, labels) {
+  const rows = (layoutEntries || []).slice(0, 16)
+    .map((entry) => [
+      escapeMarkdownTable(entry.lane || labels.crossCollectionLayoutLaneSupport),
+      escapeMarkdownTable(entry.order || ""),
+      escapeMarkdownTable(entry.cluster || labels.clusterOther),
+      escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
+      escapeMarkdownTable(entry.layoutWeight || 0),
+      escapeMarkdownTable((entry.evidence || []).join("; ") || labels.pendingInsight),
+      escapeMarkdownTable(entry.nextAction || labels.crossCollectionClusterReviewAction(entry.cluster || labels.clusterOther))
+    ].join(" | "))
+    .map((row) => `| ${row} |`);
+  return [
+    `| ${labels.crossCollectionLayoutLaneColumn} | ${labels.crossCollectionLayoutOrderColumn} | ${labels.crossCollectionClusterScopeColumn} | ${labels.collectionColumn} | ${labels.crossCollectionLayoutWeightColumn} | ${labels.evidenceColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | ---: | --- | --- | ---: | --- | --- |",
+    rows.join("\n") || "|  |  |  |  | 0 |  |  |"
+  ].join("\n");
+}
+
+function crossCollectionSynthesisLayoutEntries(clusterEntries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const laneOrder = {
+    [labels.crossCollectionLayoutLaneCore]: 0,
+    [labels.crossCollectionLayoutLaneBoundary]: 1,
+    [labels.crossCollectionLayoutLaneGap]: 2,
+    [labels.crossCollectionLayoutLaneSupport]: 3
+  };
+  const grouped = new Map();
+  for (const cluster of crossCollectionClusterEvidenceCardEntries(clusterEntries, labels)) {
+    const calibration = crossCollectionClusterCalibration(cluster, labels);
+    const rank = Number(cluster.evidenceCardRank || 0);
+    const collectionCount = Number(cluster.collectionCount || 0);
+    const linkCount = (cluster.linkSignals || []).length;
+    const gapCount = (cluster.gapSignals || []).length;
+    const highRisk = /high|高|広/.test(String(cluster.reviewRisk || calibration.reviewRisk || "").toLowerCase());
+    const lane = highRisk || calibration.key === "split"
+      ? labels.crossCollectionLayoutLaneBoundary
+      : (collectionCount >= 2 && calibration.key === "merge" && rank >= 120)
+        ? labels.crossCollectionLayoutLaneCore
+        : gapCount || calibration.key === "gather"
+          ? labels.crossCollectionLayoutLaneGap
+          : labels.crossCollectionLayoutLaneSupport;
+    const layoutWeight = Math.round(
+      rank
+      + Math.min(Number(cluster.clusterScore || 0), 100)
+      + Math.min(collectionCount, 6) * 12
+      + Math.min(linkCount, 6) * 8
+      + Math.min(gapCount, 6) * 3
+    );
+    const evidence = uniqueInsightLines([
+      `${labels.crossCollectionEvidenceRankColumn}: ${rank}`,
+      `${labels.crossCollectionClusterScoreColumn}: ${cluster.clusterScore || 0}`,
+      `${labels.crossCollectionClusterLinkColumn}: ${(cluster.linkSignals || []).slice(0, 2).join("; ") || labels.crossCollectionClusterLinkPending}`,
+      `${labels.crossCollectionClusterRecommendationColumn}: ${calibration.recommendation || labels.crossCollectionClusterCalibrationReview}`,
+      gapCount ? `${labels.gapSignalColumn}: ${(cluster.gapSignals || []).slice(0, 2).join("; ")}` : ""
+    ]).slice(0, 5);
+    const entry = {
+      lane,
+      laneRank: laneOrder[lane] ?? 9,
+      cluster: cluster.title || labels.clusterOther,
+      collections: cluster.collections || [],
+      layoutWeight,
+      evidence,
+      nextAction: labels.crossCollectionLayoutAction(lane, cluster.title || labels.clusterOther)
+    };
+    if (!grouped.has(lane)) grouped.set(lane, []);
+    grouped.get(lane).push(entry);
+  }
+  const entries = [];
+  for (const lane of Object.keys(laneOrder)) {
+    const rows = (grouped.get(lane) || [])
+      .sort((left, right) => Number(right.layoutWeight || 0) - Number(left.layoutWeight || 0) || String(left.cluster || "").localeCompare(String(right.cluster || "")));
+    rows.forEach((entry, index) => entries.push({
+      ...entry,
+      order: index + 1
+    }));
+  }
+  return entries
+    .sort((left, right) => Number(left.laneRank || 0) - Number(right.laneRank || 0) || Number(left.order || 0) - Number(right.order || 0))
+    .slice(0, 16)
+    .map(({ laneRank: _laneRank, ...entry }) => entry);
 }
 
 function renderCrossCollectionClusterCalibrationRows(calibrationEntries, labels) {
@@ -4805,6 +4896,7 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionInventory: "Collection Inventory",
       crossCollectionThemeMap: "Cross-Collection Theme Map",
       crossCollectionClusterMap: "Cross-Collection Cluster Map",
+      crossCollectionSynthesisLayoutBoard: "Cross-Collection Synthesis Layout Board",
       crossCollectionClusterCalibrationBoard: "Cluster Threshold Calibration Board",
       crossCollectionClusterEvidenceCards: "Cluster Evidence Cards",
       crossCollectionThemeMergeBoard: "Theme Merge Review Board",
@@ -4825,6 +4917,13 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionClusterLinkColumn: "Link Evidence",
       crossCollectionClusterRiskColumn: "Review Risk",
       crossCollectionSupportColumn: "Cross-Collection Support",
+      crossCollectionLayoutLaneColumn: "Layout Lane",
+      crossCollectionLayoutOrderColumn: "Lane Order",
+      crossCollectionLayoutWeightColumn: "Layout Weight",
+      crossCollectionLayoutLaneCore: "Core shared section",
+      crossCollectionLayoutLaneBoundary: "Boundary review before writing",
+      crossCollectionLayoutLaneGap: "Evidence gap follow-up",
+      crossCollectionLayoutLaneSupport: "Supporting context",
       crossCollectionPriorityColumn: "Priority",
       crossCollectionReasonColumn: "Reason",
       crossCollectionScopeColumn: "Review Scope",
@@ -4865,6 +4964,7 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionGapPriorityQueries: (count) => `candidate queries: ${count || 0}`,
       crossCollectionGapPriorityRecurring: (count) => `recurring gap across ${count || 0} collections`,
       crossCollectionGapPrioritySingle: "single-collection gap",
+      crossCollectionLayoutAction: (lane, cluster) => `${lane}: verify source reports for ${cluster}, then draft or defer the review section according to the lane.`,
       crossCollectionClusterPrompt: (cluster, count) => `Turn ${cluster} into a review section plan across ${count || "the relevant"} collections; separate shared claims, scope-specific claims, and missing evidence.`,
       crossCollectionClusterReviewAction: (cluster) => `Verify the source collection reports for ${cluster}; keep only evidence-backed shared claims.`,
       crossCollectionClusterNoEvidence: "No cluster evidence cards are available yet.",
@@ -5101,6 +5201,7 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionInventory: "Collection 一覧",
       crossCollectionThemeMap: "Collection 横断テーママップ",
       crossCollectionClusterMap: "Collection 横断クラスタマップ",
+      crossCollectionSynthesisLayoutBoard: "Collection 横断統合レイアウトボード",
       crossCollectionClusterCalibrationBoard: "クラスタしきい値確認ボード",
       crossCollectionClusterEvidenceCards: "クラスタ証拠カード",
       crossCollectionThemeMergeBoard: "テーマ統合確認ボード",
@@ -5121,6 +5222,13 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionClusterLinkColumn: "接続根拠",
       crossCollectionClusterRiskColumn: "確認リスク",
       crossCollectionSupportColumn: "横断支持",
+      crossCollectionLayoutLaneColumn: "レイアウトレーン",
+      crossCollectionLayoutOrderColumn: "レーン順",
+      crossCollectionLayoutWeightColumn: "レイアウト重み",
+      crossCollectionLayoutLaneCore: "中核共有節",
+      crossCollectionLayoutLaneBoundary: "執筆前の境界確認",
+      crossCollectionLayoutLaneGap: "不足証拠フォローアップ",
+      crossCollectionLayoutLaneSupport: "補助的背景",
       crossCollectionPriorityColumn: "優先項目",
       crossCollectionReasonColumn: "理由",
       crossCollectionScopeColumn: "レビュー範囲",
@@ -5161,6 +5269,7 @@ function collectionTemplateLabels(outputLanguage) {
       crossCollectionGapPriorityQueries: (count) => `候補検索クエリ: ${count || 0} 件`,
       crossCollectionGapPriorityRecurring: (count) => `${count || 0} 件の collection に反復`,
       crossCollectionGapPrioritySingle: "単一 collection ギャップ",
+      crossCollectionLayoutAction: (lane, cluster) => `${lane}: ${cluster} の元レポートを確認し、このレーンに従ってレビュー節を書くか保留する。`,
       crossCollectionClusterPrompt: (cluster, count) => `${cluster} を ${count || "関連する"} 件の collection にまたがるレビュー節計画に変換し、共通主張、範囲固有の主張、不足証拠を分ける。`,
       crossCollectionClusterReviewAction: (cluster) => `${cluster} の元 collection 報告書を確認し、証拠で支えられる共通主張だけを残す。`,
       crossCollectionClusterNoEvidence: "利用できるクラスタ証拠カードはまだありません。",
@@ -5396,6 +5505,7 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionInventory: "集合清单",
     crossCollectionThemeMap: "跨集合主题地图",
     crossCollectionClusterMap: "跨集合聚类图谱",
+    crossCollectionSynthesisLayoutBoard: "跨集合综合布局板",
     crossCollectionClusterCalibrationBoard: "聚类阈值校准板",
     crossCollectionClusterEvidenceCards: "聚类证据卡",
     crossCollectionThemeMergeBoard: "主题归并复核板",
@@ -5416,6 +5526,13 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionClusterLinkColumn: "连接证据",
     crossCollectionClusterRiskColumn: "复核风险",
     crossCollectionSupportColumn: "跨集合支持",
+    crossCollectionLayoutLaneColumn: "布局分区",
+    crossCollectionLayoutOrderColumn: "分区顺序",
+    crossCollectionLayoutWeightColumn: "布局权重",
+    crossCollectionLayoutLaneCore: "核心共享小节",
+    crossCollectionLayoutLaneBoundary: "写作前边界复核",
+    crossCollectionLayoutLaneGap: "证据缺口跟进",
+    crossCollectionLayoutLaneSupport: "支撑背景",
     crossCollectionPriorityColumn: "优先项",
     crossCollectionReasonColumn: "原因",
     crossCollectionScopeColumn: "综述范围",
@@ -5456,6 +5573,7 @@ function collectionTemplateLabels(outputLanguage) {
     crossCollectionGapPriorityQueries: (count) => `候选检索词：${count || 0} 条`,
     crossCollectionGapPriorityRecurring: (count) => `在 ${count || 0} 个集合中重复出现`,
     crossCollectionGapPrioritySingle: "单集合缺口",
+    crossCollectionLayoutAction: (lane, cluster) => `${lane}：核对“${cluster}”的来源报告，再按该分区决定撰写、拆分或暂缓综述小节。`,
     crossCollectionClusterPrompt: (cluster, count) => `把“${cluster}”整理成横跨 ${count || "相关"} 个集合的综述小节计划，区分共同主张、范围特有主张和缺失证据。`,
     crossCollectionClusterReviewAction: (cluster) => `核对“${cluster}”对应的集合报告，只保留有证据支撑的共同主张。`,
     crossCollectionClusterNoEvidence: "暂时没有可用的聚类证据卡。",

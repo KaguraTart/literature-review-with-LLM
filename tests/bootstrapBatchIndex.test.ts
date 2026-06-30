@@ -1019,6 +1019,20 @@ describe("batch papers index", () => {
         gapSignals: expect.arrayContaining(["No field deployment", "No deployment evidence."])
       })
     ]));
+    expect(payload.layoutBoard).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        cluster: expect.stringContaining("Transportation / Urban Airspace"),
+        lane: expect.stringMatching(/Core shared section|Boundary review before writing|Evidence gap follow-up|Supporting context/),
+        order: expect.any(Number),
+        layoutWeight: expect.any(Number),
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        evidence: expect.arrayContaining([
+          expect.stringContaining("Evidence Card Rank:"),
+          expect.stringContaining("Cluster Score:")
+        ]),
+        nextAction: expect.any(String)
+      })
+    ]));
     expect(payload.clusterCalibrationBoard).toEqual(expect.arrayContaining([
       expect.objectContaining({
         cluster: expect.stringContaining("Transportation / Urban Airspace"),
@@ -1060,6 +1074,10 @@ describe("batch papers index", () => {
     const synthesis = writes.get(artifacts.crossCollectionSynthesisPath) || "";
     expect(synthesis).toContain("Cross-Collection Synthesis Map");
     expect(synthesis).toContain("Cross-Collection Cluster Map");
+    expect(synthesis).toContain("Cross-Collection Synthesis Layout Board");
+    expect(synthesis).toContain("Layout Lane");
+    expect(synthesis).toContain("Layout Weight");
+    expect(synthesis).toContain("Evidence gap follow-up");
     expect(synthesis).toContain("Cluster Threshold Calibration Board");
     expect(synthesis).toContain("Cluster Evidence Cards");
     expect(synthesis).toContain("Evidence Card Rank");
