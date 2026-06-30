@@ -8,10 +8,12 @@ function loadBootstrapHelpers(files = new Map<string, string>()) {
   const directories: string[] = [];
   const linkedAttachments: any[] = [];
   const fetchCalls: Array<{ url: string; body: any; headers: Record<string, string> }> = [];
+  const searchFetchCalls: Array<{ url: string; headers: Record<string, string> }> = [];
   const providerCode = readFileSync(resolve(process.cwd(), "addon/content/bootstrap-provider.js"), "utf8");
   const settingsCode = readFileSync(resolve(process.cwd(), "addon/content/bootstrap-settings.js"), "utf8");
   const summaryStoreCode = readFileSync(resolve(process.cwd(), "addon/content/bootstrap-summary-store.js"), "utf8");
   const zoteroItemCode = readFileSync(resolve(process.cwd(), "addon/content/bootstrap-zotero-item.js"), "utf8");
+  const candidateSourcesCode = readFileSync(resolve(process.cwd(), "addon/content/candidate-sources.js"), "utf8");
   const uiCode = readFileSync(resolve(process.cwd(), "addon/content/bootstrap-ui.js"), "utf8");
   const code = readFileSync(resolve(process.cwd(), "addon/bootstrap.js"), "utf8");
   const sandbox: any = {
@@ -52,7 +54,21 @@ function loadBootstrapHelpers(files = new Map<string, string>()) {
         files.set(path, text);
       }
     },
-    fetch: async (url: string, init: any) => {
+    fetch: async (url: string, init: any = {}) => {
+      if (!init?.body) {
+        searchFetchCalls.push({
+          url,
+          headers: init.headers || {}
+        });
+        const text = searchResponseText(url);
+        return {
+          ok: true,
+          status: 200,
+          headers: {},
+          json: async () => JSON.parse(text),
+          text: async () => text
+        };
+      }
       fetchCalls.push({
         url,
         body: JSON.parse(init.body),
@@ -87,6 +103,7 @@ function loadBootstrapHelpers(files = new Map<string, string>()) {
   runInContext(settingsCode, context, { filename: "bootstrap-settings.js" });
   runInContext(summaryStoreCode, context, { filename: "bootstrap-summary-store.js" });
   runInContext(zoteroItemCode, context, { filename: "bootstrap-zotero-item.js" });
+  runInContext(candidateSourcesCode, context, { filename: "candidate-sources.js" });
   runInContext(code, context, { filename: "bootstrap.js" });
   runInContext(uiCode, context, { filename: "bootstrap-ui.js" });
   return {
@@ -94,6 +111,7 @@ function loadBootstrapHelpers(files = new Map<string, string>()) {
     directories,
     linkedAttachments,
     fetchCalls,
+    searchFetchCalls,
     helpers: context as {
       batchStats: (results: any[]) => any;
       writeBatchPapersIndex: (settings: any, collectionContext: any, results: any[]) => Promise<string>;
@@ -108,6 +126,60 @@ function loadBootstrapHelpers(files = new Map<string, string>()) {
       currentListRegularItems: (collection?: any) => Promise<any[]>;
     }
   };
+}
+
+function searchResponseText(url: string): string {
+  if (url.includes("export.arxiv.org")) {
+    return [
+      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+      "<feed xmlns=\"http://www.w3.org/2005/Atom\">",
+      "<entry>",
+      "<title>Mean-field reinforcement learning for UAV routing survey</title>",
+      "<id>https://arxiv.org/abs/2601.00001</id>",
+      "<published>2026-01-02T00:00:00Z</published>",
+      "<summary>A survey of reinforcement learning methods for UAV routing and safety.</summary>",
+      "<author><name>Lee</name></author>",
+      "<link rel=\"alternate\" href=\"https://arxiv.org/abs/2601.00001\"/>",
+      "<link title=\"pdf\" href=\"https://arxiv.org/pdf/2601.00001\"/>",
+      "</entry>",
+      "</feed>"
+    ].join("");
+  }
+  if (url.includes("semanticscholar.org")) {
+    return JSON.stringify({
+      data: [
+        {
+          paperId: "S2-REVIEW",
+          title: "Multi-UAV reinforcement learning survey",
+          authors: [{ name: "Chen" }],
+          year: 2025,
+          abstract: "A review of multi-UAV reinforcement learning, safety constraints, and traffic scenarios.",
+          venue: "Journal of Autonomous Systems",
+          url: "https://semanticscholar.org/paper/S2-REVIEW",
+          externalIds: { DOI: "10.1234/uav-survey" },
+          citationCount: 42
+        }
+      ]
+    });
+  }
+  if (url.includes("crossref.org")) {
+    return JSON.stringify({
+      message: {
+        items: [
+          {
+            DOI: "10.5555/safe-uav-review",
+            title: ["Safe UAV traffic management literature review"],
+            author: [{ given: "A.", family: "Reviewer" }],
+            issued: { "date-parts": [[2024]] },
+            "container-title": ["Transportation Review"],
+            URL: "https://doi.org/10.5555/safe-uav-review",
+            abstract: "Reviews safe UAV traffic management and cross-paper evidence gaps."
+          }
+        ]
+      }
+    });
+  }
+  return JSON.stringify({});
 }
 
 describe("batch papers index", () => {
@@ -300,9 +372,12 @@ describe("batch papers index", () => {
       synthesisConflictsPath: "/out/collections/COL/knowledge/synthesis-conflicts.zh-CN.md",
       synthesisRoadmapPath: "/out/collections/COL/knowledge/synthesis-roadmap.zh-CN.md",
       researchQuestionCardsPath: "/out/collections/COL/knowledge/research-question-cards.zh-CN.md",
+      literatureSearchEvidencePath: "/out/collections/COL/knowledge/literature-search-evidence.zh-CN.md",
+      literatureSearchRecordsPath: "/out/collections/COL/knowledge/literature-search-candidates.json",
       reviewDraftPath: "/out/collections/COL/writing/manual-review-draft.zh-CN.md",
       reviewReportPath: "/out/collections/COL/writing/formal-review-report.zh-CN.md",
       modelReviewPath: "/out/collections/COL/writing/model-literature-review.zh-CN.md",
+      collectionReviewPath: "/out/collections/COL/writing/collection-literature-review.zh-CN.md",
       ideaListPath: "/out/collections/COL/writing/idea-list.zh-CN.md",
       crossCollectionIndexPath: "/out/collections/index.json",
       crossCollectionSynthesisPath: "/out/collections/cross-collection-synthesis.zh-CN.md"
@@ -361,6 +436,8 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.ideaListPath)).toContain("研究想法列表");
     expect(writes.get(artifacts.ideaListPath)).toContain("推翻条件");
     expect(writes.has(artifacts.modelReviewPath)).toBe(false);
+    expect(writes.has(artifacts.collectionReviewPath)).toBe(false);
+    expect(writes.has(artifacts.literatureSearchEvidencePath)).toBe(false);
   });
 
   it("writes an optional model-generated collection literature review from paper summaries", async () => {
@@ -421,12 +498,67 @@ describe("batch papers index", () => {
     );
 
     expect(writes.get(artifacts.modelReviewPath)).toContain("summaryType: literature-review-synthesis");
+    expect(writes.get(artifacts.collectionReviewPath)).toContain("reviewMode: collection-literature-review");
     expect(writes.get(artifacts.modelReviewPath)).toContain("模型生成的分类文献综述");
     expect(writes.get(artifacts.modelReviewPath)).toContain("相关方向放入一个大框架");
     expect(fetchCalls).toHaveLength(1);
     expect(JSON.stringify(fetchCalls[0].body)).toContain("小方向不一样但问题相近");
     expect(JSON.stringify(fetchCalls[0].body)).toContain("完全不相关的论文");
     expect(JSON.stringify(fetchCalls[0].body)).toContain("Safe UAV Routing");
+  });
+
+  it("adds online search evidence to collection literature review generation", async () => {
+    const { writes, fetchCalls, searchFetchCalls, helpers } = loadBootstrapHelpers();
+    const results = [
+      {
+        status: "generated",
+        itemKey: "A",
+        title: "Safe UAV Routing",
+        year: "2026",
+        pdfKey: "PA",
+        summaryPath: "/out/a.md",
+        summaryText: [
+          "# Safe UAV Routing",
+          "## 方法",
+          "- Uses graph reinforcement learning for UAV routing.",
+          "## 局限",
+          "- Lacks field validation and survey comparison."
+        ].join("\n")
+      }
+    ];
+
+    const artifacts = await helpers.writeCollectionWorkspace(
+      {
+        outputLanguage: "zh-CN",
+        summaryVersion: "1",
+        outputDir: "/out",
+        provider: "openai",
+        protocol: "openai_chat",
+        baseURL: "https://api.example.test/v1",
+        apiKey: "test-key",
+        model: "model-a",
+        temperature: 0.2,
+        maxOutputTokens: 4096,
+        stream: false,
+        customHeaders: {},
+        bodyExtra: {},
+        capabilities: {}
+      },
+      { key: "COL", name: "UAV Safety", type: "collection", parentLibraryID: 1, outputDir: "/out/collections/COL" },
+      results,
+      { modelReview: true, onlineSearch: true }
+    );
+
+    expect(searchFetchCalls.length).toBeGreaterThanOrEqual(3);
+    expect(searchFetchCalls.some((call) => call.url.includes("semanticscholar.org"))).toBe(true);
+    expect(writes.get(artifacts.literatureSearchEvidencePath)).toContain("联网文献检索证据");
+    expect(writes.get(artifacts.literatureSearchEvidencePath)).toContain("Multi-UAV reinforcement learning survey");
+    expect(JSON.parse(writes.get(artifacts.literatureSearchRecordsPath) || "{}").records.length).toBeGreaterThan(0);
+    expect(writes.get(artifacts.collectionReviewPath)).toContain("onlineSearchRecordCount:");
+    expect(fetchCalls).toHaveLength(1);
+    expect(JSON.stringify(fetchCalls[0].body)).toContain("联网文献检索证据");
+    expect(JSON.stringify(fetchCalls[0].body)).toContain("External candidates");
+    expect(JSON.stringify(fetchCalls[0].body)).toContain("Multi-UAV reinforcement learning survey");
   });
 
   it("links key collection Markdown artifacts back to the selected collection when possible", async () => {

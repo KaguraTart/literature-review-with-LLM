@@ -75,6 +75,16 @@ export const defaultSkills: SkillDefinition[] = [
     outputSchema: "literature-review-synthesis-v1"
   },
   {
+    id: "collection-literature-review",
+    titleMessageId: "skill-collection-literature-review-title",
+    descriptionMessageId: "skill-collection-literature-review-description",
+    version: "1",
+    inputScope: "current_or_comparison_papers",
+    evidencePolicy: "fulltext_or_abstract",
+    templatePath: "skills/collection-literature-review.md",
+    outputSchema: "collection-literature-review-v1"
+  },
+  {
     id: "citation-audit",
     titleMessageId: "skill-citation-audit-title",
     descriptionMessageId: "skill-citation-audit-description",
@@ -184,6 +194,9 @@ export function builtInSkillTemplate(skillId: SkillId, outputLanguage: OutputLan
   if (skillId === "literature-review-synthesis") {
     return literatureReviewSynthesisTemplate(common, outputLanguage);
   }
+  if (skillId === "collection-literature-review") {
+    return collectionLiteratureReviewTemplate(common, outputLanguage);
+  }
   if (skillId === "citation-audit") {
     return `${common}\n\nAudit the current summary or answer. List unsupported claims, weak evidence, and what source is needed.`;
   }
@@ -239,6 +252,21 @@ function literatureReviewSynthesisTemplate(common: string, outputLanguage: Outpu
     return `${common}\n\n複数論文を横断したレビュー統合を作成してください。Comparison paper がある場合は焦点論文と比較論文をまとめて扱い、現在の論文だけの場合は拡張可能なレビュー枠組みを提示し、比較論文が不足していることを明記してください。論文を 1 本ずつ並べるのではなく、テーマ、問題、手法ファミリー、シナリオ、証拠強度、相違点、研究ギャップで統合してください。近いが小方向が異なる論文は大きな枠組みの下にまとめ、完全に無関係な論文は独立したレビュー節として分けてください。レビュー範囲、統合フレーム、研究系譜、方法軸とエビデンス行列、合意と相違、批判的コメント、研究ギャップ、本文用段落案、追加確認リストを含めてください。判断には [chunk:<id>]、[paper2:<id>]、または [metadata] を付け、根拠が弱い場合は低信頼と明記してください。`;
   }
   return `${common}\n\nCreate a cross-paper synthesis for a literature review. If Comparison papers are present, organize the focal paper and every comparison paper together; if only the current paper is available, produce an expandable review framework and state that comparison papers are missing. Do not summarize papers one by one. Use synthesis matrix thinking: group by theme, research problem, method family, scenario, evidence strength, disagreement, and research gap. Group related but smaller different directions under a larger framework; split completely unrelated papers into independent sections instead of forcing a merger. Explain the research lineage and relationships: what each group inherits, extends, challenges, or leaves unresolved. Include review scope, synthesis framework, paper groups and lineage, method dimensions and evidence matrix, consensus and key disagreements, critical review, research gaps, draft literature-review paragraphs, and follow-up literature/search checklist. Cite every judgment with [chunk:<id>], [paper2:<id>], or [metadata]. Mark weak evidence as low-confidence.`;
+}
+
+function collectionLiteratureReviewTemplate(common: string, outputLanguage: OutputLanguage): string {
+  const extra = [
+    "The input may contain a full Zotero collection, local paper summaries, deterministic matrices, and online search evidence.",
+    "Treat online search evidence as external candidates and gap-checking context; do not treat external candidates as fully read collection papers unless the input provides their summaries.",
+    "Separate in-collection evidence from external candidate evidence in the output."
+  ].join("\n");
+  if (outputLanguage === "zh-CN") {
+    return `${common}\n${extra}\n\n请为整个 Zotero 分类写一份可直接保存为 Markdown 的 collection-level literature review。目标不是逐篇摘要，而是梳理分类内所有论文之间的问题脉络、方法谱系、证据强弱和研究空白。请把小方向不同但可归入同一大问题的论文放进更大的分析框架；完全不相关的论文必须分开成独立小节。若输入包含联网检索证据，请单独列出“外部候选文献与后续检索”，说明它们如何补充、校验或挑战分类内论文。固定章节：综述范围、分类内论文地图、综合框架、研究谱系、方法与场景对比、共识与分歧、批判性评论、研究空白、外部候选文献与后续检索、可写入正文的综述段落。`;
+  }
+  if (outputLanguage === "ja-JP") {
+    return `${common}\n${extra}\n\nZotero collection 全体を対象に、Markdown として保存できる collection-level literature review を作成してください。1 本ずつ要約するのではなく、問題系譜、方法ファミリー、証拠強度、研究ギャップを統合してください。小方向が異なっても大きな問題の下に整理できる論文は同じ枠組みに置き、完全に無関係な論文は独立節に分けてください。オンライン検索証拠がある場合は、外部候補と追加検索として別節にしてください。`;
+  }
+  return `${common}\n${extra}\n\nWrite a collection-level literature review for the whole Zotero collection as Markdown. Do not summarize papers one by one. Build a research map across problem lineage, method families, evidence strength, scenarios, disagreements, and research gaps. Group related smaller directions under a larger analytical framework; split completely unrelated papers into independent sections. If online search evidence is present, add a separate External Candidates and Follow-up Search section explaining how those candidates supplement, validate, or challenge the in-collection papers.`;
 }
 
 function paperDeepSummaryTemplate(common: string, outputLanguage: OutputLanguage): string {

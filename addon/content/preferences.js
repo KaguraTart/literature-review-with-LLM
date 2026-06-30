@@ -10,6 +10,7 @@ const ZMS_BUILT_IN_SKILL_IDS = [
   "figure-table-extractor",
   "literature-matrix-builder",
   "literature-review-synthesis",
+  "collection-literature-review",
   "citation-audit",
   "custom-summary",
   "ask-gemini",
@@ -7496,6 +7497,9 @@ function builtInSkillTemplate(skillId, outputLanguage) {
   if (skillId === "literature-review-synthesis") {
     return literatureReviewSynthesisTemplate(common, outputLanguage);
   }
+  if (skillId === "collection-literature-review") {
+    return collectionLiteratureReviewTemplate(common, outputLanguage);
+  }
   if (skillId === "citation-audit") {
     return `${common}\n\nAudit the current summary or answer. List unsupported claims, weak evidence, and the source needed to verify each claim.`;
   }
@@ -7551,6 +7555,21 @@ function literatureReviewSynthesisTemplate(common, outputLanguage) {
     return `${common}\n\n文献レビュー執筆に使える横断的な統合を作成してください。Comparison papers がある場合は焦点論文と比較論文をまとめて扱い、ない場合は単一論文のレビュー骨子として不足を明記してください。各判断には [metadata]、[chunk:<id>]、[paper2:<id>] などの根拠ラベルを付けてください。`;
   }
   return `${common}\n\nCreate a cross-paper synthesis for literature-review writing. If the context contains Comparison papers, synthesize the focal paper together with every comparison paper; otherwise produce a single-paper review scaffold and state that comparison papers are missing. Include review scope, paper groups and lineage, shared problem and consensus, method/data/experiment comparison, disagreements and evidence strength, research gaps, draft review paragraphs, and follow-up verification. Every judgment must cite evidence labels such as [metadata], [chunk:<id>], or [paper2:<id>]. Mark low-confidence inferences explicitly.`;
+}
+
+function collectionLiteratureReviewTemplate(common, outputLanguage) {
+  const extra = [
+    "The input may contain a full Zotero collection, local paper summaries, deterministic matrices, and online search evidence.",
+    "Treat online search evidence as external candidates and gap-checking context; do not treat external candidates as fully read collection papers unless the input provides their summaries.",
+    "Separate in-collection evidence from external candidate evidence in the output."
+  ].join("\n");
+  if (outputLanguage === "zh-CN") {
+    return `${common}\n${extra}\n\n请为整个 Zotero 分类写一份可直接保存为 Markdown 的 collection-level literature review。目标不是逐篇摘要，而是梳理分类内所有论文之间的问题脉络、方法谱系、证据强弱和研究空白。请把小方向不同但可归入同一大问题的论文放进更大的分析框架；完全不相关的论文必须分开成独立小节。若输入包含联网检索证据，请单独列出“外部候选文献与后续检索”，说明它们如何补充、校验或挑战分类内论文。固定章节：综述范围、分类内论文地图、综合框架、研究谱系、方法与场景对比、共识与分歧、批判性评论、研究空白、外部候选文献与后续检索、可写入正文的综述段落。`;
+  }
+  if (outputLanguage === "ja-JP") {
+    return `${common}\n${extra}\n\nZotero collection 全体を対象に、Markdown として保存できる collection-level literature review を作成してください。1 本ずつ要約するのではなく、問題系譜、方法ファミリー、証拠強度、研究ギャップを統合してください。小方向が異なっても大きな問題の下に整理できる論文は同じ枠組みに置き、完全に無関係な論文は独立節に分けてください。オンライン検索証拠がある場合は、外部候補と追加検索として別節にしてください。`;
+  }
+  return `${common}\n${extra}\n\nWrite a collection-level literature review for the whole Zotero collection as Markdown. Do not summarize papers one by one. Build a research map across problem lineage, method families, evidence strength, scenarios, disagreements, and research gaps. Group related smaller directions under a larger analytical framework; split completely unrelated papers into independent sections. If online search evidence is present, add a separate External Candidates and Follow-up Search section explaining how those candidates supplement, validate, or challenge the in-collection papers.`;
 }
 
 function paperDeepSummaryTemplate(common, outputLanguage) {

@@ -10,6 +10,7 @@ describe("skills", () => {
       "figure-table-extractor",
       "literature-matrix-builder",
       "literature-review-synthesis",
+      "collection-literature-review",
       "citation-audit",
       "custom-summary",
       "ask-gemini",
@@ -36,6 +37,9 @@ describe("skills", () => {
     expect(builtInSkillTemplate("literature-review-synthesis", "en-US")).toContain("split completely unrelated papers into independent sections");
     expect(builtInSkillTemplate("literature-review-synthesis", "zh-CN")).toContain("更大的分析框架");
     expect(builtInSkillTemplate("literature-review-synthesis", "zh-CN")).toContain("完全不相关的论文");
+    expect(builtInSkillTemplate("collection-literature-review", "en-US")).toContain("collection-level literature review");
+    expect(builtInSkillTemplate("collection-literature-review", "en-US")).toContain("online search evidence");
+    expect(builtInSkillTemplate("collection-literature-review", "zh-CN")).toContain("外部候选文献");
     expect(builtInSkillTemplate("paper-deep-summary", "ja-JP")).toContain("日本語");
   });
 
