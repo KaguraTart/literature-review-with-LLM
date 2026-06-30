@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">Local provider setup card</title>
+  <desc id="desc">Reference configuration cards for Ollama, LM Studio, and Local Agents provider profiles.</desc>
+  <rect width="1200" height="680" rx="28" fill="#f7faf7"/>
+  <rect x="36" y="36" width="1128" height="608" rx="22" fill="#ffffff" stroke="#d5dce8"/>
+  <text x="72" y="96" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="34" font-weight="700" fill="#172033">Local profiles</text>
+  <text x="72" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#5e6a7d">Use these when inference or helper tools run on the same machine.</text>
+
+  <g transform="translate(72 188)">
+    <rect width="320" height="386" rx="18" fill="#fbfcff" stroke="#cfd8e6"/>
+    <text x="26" y="48" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="26" font-weight="700" fill="#166534">Ollama</text>
+    <text x="26" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Provider</text>
+    <text x="26" y="119" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">Ollama</text>
+    <text x="26" y="164" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Base URL</text>
+    <text x="26" y="191" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#172033">http://localhost:11434/v1</text>
+    <text x="26" y="236" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">API Key</text>
+    <text x="26" y="263" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">Usually empty</text>
+    <text x="26" y="314" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">Start Ollama before running</text>
+    <text x="26" y="342" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">Save and Test.</text>
+  </g>
+
+  <g transform="translate(440 188)">
+    <rect width="320" height="386" rx="18" fill="#fbfcff" stroke="#cfd8e6"/>
+    <text x="26" y="48" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="26" font-weight="700" fill="#7c2d12">LM Studio</text>
+    <text x="26" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Provider</text>
+    <text x="26" y="119" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">LM Studio</text>
+    <text x="26" y="164" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Base URL</text>
+    <text x="26" y="191" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#172033">http://127.0.0.1:1234/v1</text>
+    <text x="26" y="236" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Model</text>
+    <text x="26" y="263" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">Loaded local model id</text>
+    <text x="26" y="314" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">Enable the OpenAI-compatible</text>
+    <text x="26" y="342" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">server first.</text>
+  </g>
+
+  <g transform="translate(808 188)">
+    <rect width="320" height="386" rx="18" fill="#fbfcff" stroke="#cfd8e6"/>
+    <text x="26" y="48" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="26" font-weight="700" fill="#9333ea">Local Agents</text>
+    <text x="26" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Provider</text>
+    <text x="26" y="119" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">Local Agents</text>
+    <text x="26" y="164" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Bridge</text>
+    <text x="26" y="191" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#172033">http://127.0.0.1:3333/mcp</text>
+    <text x="26" y="236" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Tools</text>
+    <text x="26" y="263" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">Gemini / Claude / opencode</text>
+    <text x="26" y="314" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">Run local-agent service check</text>
+    <text x="26" y="342" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">before using helper skills.</text>
+  </g>
+</svg>

@@ -269,6 +269,37 @@ const SOURCE_MARKERS = [
     markers: ["zms-providerGuide", "zms-doctor-button", "checkProviderConfig", "providerConfigDoctor", "doctorOk", "providerSetupGuide", "providerLiveVerifyGuide", "envTemplateCommand", "dotenvTemplateCommand", "doctorCommand", "envFileCommand", "imageCommand", "pdfCommand", "providerCapabilityOverrideCommands", "CAPABILITIES_JSON", "--env-template", "--dotenv-template", "--doctor", "--provider-env-file", "OPENAI_COMPATIBLE_BASE_URL", "ANTHROPIC_COMPATIBLE_BASE_URL", "not.toContain", "routed-secret", "providerGuide"]
   },
   {
+    id: "docs.provider-setup-examples",
+    description: "README links provider-specific visual setup cards and short tutorial recipes",
+    files: [
+      "README.md",
+      "README.zh-CN.md",
+      "docs/provider-setup-examples.md",
+      "docs/provider-setup-examples.zh-CN.md",
+      "docs/assets/provider-card-openai-compatible.svg",
+      "docs/assets/provider-card-aggregators.svg",
+      "docs/assets/provider-card-local.svg"
+    ],
+    markers: [
+      "Provider setup examples",
+      "大模型厂商配置示例",
+      "provider-card-openai-compatible.svg",
+      "provider-card-aggregators.svg",
+      "provider-card-local.svg",
+      "MiniMax",
+      "DeepSeek",
+      "Gemini OpenAI Compatible",
+      "OpenRouter",
+      "Cline API",
+      "Vercel AI Gateway",
+      "Ollama",
+      "LM Studio",
+      "Local Agents",
+      "Save and Test",
+      "保存并测试"
+    ]
+  },
+  {
     id: "preferences.output-dir-picker",
     description: "Settings page lets users choose the output directory with the native folder picker and saves the selected path",
     files: ["addon/content/preferences.xhtml", "addon/content/preferences.js", "addon/content/messages.js", "tests/preferencesLocalAgent.test.ts"],
