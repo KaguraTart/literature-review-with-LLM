@@ -189,7 +189,7 @@ http://127.0.0.1:3333/mcp
 - bridge 暴露 `ocr_image` 工具，默认 OCR 命令是 `/opt/homebrew/bin/tesseract`，默认 OCR 语言是 `eng`。
 - 启动服务前可用 `LOCAL_AGENT_TESSERACT_BIN=/path/to/tesseract` 覆盖 OCR 命令，用 `LOCAL_AGENT_TESSERACT_LANG=eng+chi_sim` 覆盖服务默认语言；工作台设置面板也可以修改本地 OCR endpoint、工具名和单次请求语言。中文 OCR 需要本机已安装对应 Tesseract 语言包。
 - 在工作台设置面板启用 `Local OCR` 后，图片提问会先尝试记录本地 OCR 文本；OCR 失败只会写入本机会话元数据，不会阻断远程模型请求。
-- 同一个 bridge 也暴露 `extract_pdf_pages` 工具，用于对本地 PDF 文件或内存中的 PDF 字节做 best-effort 页级文本抽取。默认文本抽取命令是 `/opt/homebrew/bin/pdftotext`，启动服务前可用 `LOCAL_AGENT_PDFTOTEXT_BIN=/path/to/pdftotext` 覆盖；当抽取文本过少且调用方启用 OCR fallback 时，bridge 会用 `/opt/homebrew/bin/pdftoppm` 渲染有限页数，再用 Tesseract OCR。渲染命令可用 `LOCAL_AGENT_PDFTOPPM_BIN=/path/to/pdftoppm` 覆盖。返回 JSON 会包含 `quality` 对象，记录文本长度、可读页数、空页数、是否使用 OCR fallback、逐页 OCR 信号（`textChars`、`ocrConfidence`、空页/错误页告警），以及 `ocr_fallback_used`、`sparse_text` 等告警。
+- 同一个 bridge 也暴露 `extract_pdf_pages` 工具，用于对本地 PDF 文件或内存中的 PDF 字节做 best-effort 页级文本抽取。默认文本抽取命令是 `/opt/homebrew/bin/pdftotext`，启动服务前可用 `LOCAL_AGENT_PDFTOTEXT_BIN=/path/to/pdftotext` 覆盖；当抽取文本过少且调用方启用 OCR fallback 时，bridge 会用 `/opt/homebrew/bin/pdftoppm` 渲染有限页数，再用 Tesseract OCR。`ocrPageStrategy: "sparse"` 会利用 `pdftotext` 的分页信号优先 OCR 全文中的空页或低文本页，然后把恢复出来的 OCR 页和普通文本页合并。渲染命令可用 `LOCAL_AGENT_PDFTOPPM_BIN=/path/to/pdftoppm` 覆盖。返回 JSON 会包含 `quality` 对象，记录文本长度、可读页数、空页数、是否使用 OCR fallback、逐页 OCR 信号（`textChars`、`ocrConfidence`、空页/错误页告警），以及 `ocr_fallback_used`、`sparse_text` 等告警。
 
 ## 开发
 
@@ -336,7 +336,7 @@ build/update.json
 - 已支持单轮图片附件提问和 `图表/截图解析` 技能，并加入可复核校正的本地 OCR 元数据、结构化视觉 OCR / 表格重建输出契约、最近一次图表解析回答的 Markdown 导出报告、从重建 Markdown 表格解析出的 JSON/CSV sidecar、从表格/OCR/文本抽取的低置信图表数据草稿、从专门图表表格识别出的密集点位数据草稿、从模型回答中抽取的像素/坐标数据草稿、显式坐标轴校准锚点导出、有足够锚点时对像素点做线性/对数/分段轴值补全、断轴区间行校准、多面板 panel 覆盖诊断、axis segment 布局诊断、密集点置信度检查、针对坐标轴校准/校准锚点质量/断轴分段覆盖/置信度/证据标签/点位覆盖的自动质量审阅，以及图表批量复核看板、collection 级跨报告图表复核索引、带可展开下钻卡片和机器可读批量状态回写目标的跨集合图表复核分诊、带默认 `todo` 状态的图表复核任务队列、复核人/期限/备注工作台编辑、完成条件和重新导出状态保留能力；图表、表格和手写笔记的理解质量仍取决于模型能力和本地 OCR 语言包，密集点位、像素坐标、校准锚点和补全轴值都是可复核草稿，不是精确自动数字化结果。
 - 公式渲染仍是轻量支持，不是完整 TeX 引擎。
 - 论文阅读日志和正式综述草稿目前是带证据摘录和人工填写字段的结构化 Markdown 草稿。期刊/报告提纲已加入期刊研究论文、会议论文、综述论文、技术报告和政策/管理简报的投稿类型写作结构，但仍需要人工编辑后才能作为完整长篇综述或投稿稿件使用。
-- 候选论文发现已加入可解释排序、重复项协调、可配置的受控引用网络扩展、人工审阅备注、结构化全文筛选阶段、排除理由、高置信建议应用、审阅状态看板、证据链复核队列、来源证据摘录、已导入且附加 PDF 候选项的 Zotero 全文索引证据摘录（含命中上下文、匹配到的批注页标签、来自已有页文本、本地文件路径或内存 PDF 字节的 PDF 页级文本定位、扫描版 PDF 的受控 OCR fallback、结构化抽取质量诊断、逐页 OCR 置信度信号、校准后的 OCR 置信度摘要和风险标签、indexed-text 定位、重复页眉/页脚清理、目录/参考文献噪声降权、简单断词恢复、分页符或 `Page 12` 这类独占页标记存在时的 best-effort 页提示和短哈希）和 Markdown 候选审阅报告。bridge 页文本抽取仍依赖可访问的 PDF 字节以及本机 Poppler/Tesseract 工具；整篇扫描件 OCR 和 PDF 字节不可访问的场景还需要继续加强。
+- 候选论文发现已加入可解释排序、重复项协调、可配置的受控引用网络扩展、人工审阅备注、结构化全文筛选阶段、排除理由、高置信建议应用、审阅状态看板、证据链复核队列、来源证据摘录、已导入且附加 PDF 候选项的 Zotero 全文索引证据摘录（含命中上下文、匹配到的批注页标签、来自已有页文本、本地文件路径或内存 PDF 字节的 PDF 页级文本定位、扫描版 PDF 的稀疏页 OCR fallback、结构化抽取质量诊断、逐页 OCR 置信度信号、校准后的 OCR 置信度摘要和风险标签、indexed-text 定位、重复页眉/页脚清理、目录/参考文献噪声降权、简单断词恢复、分页符或 `Page 12` 这类独占页标记存在时的 best-effort 页提示和短哈希）和 Markdown 候选审阅报告。bridge 页文本抽取仍依赖可访问的 PDF 字节以及本机 Poppler/Tesseract 工具；超出受控 OCR 窗口的整篇扫描件 OCR 和 PDF 字节不可访问的场景还需要继续加强。
 - 工作台 UI 仍在打磨，部分控件和设置项后续会继续简化。
 - 原始 PDF 输入依赖厂商能力，很多厂商仍主要使用 Zotero 抽取文本。
 - 本地 agent 调用依赖本机 CLI 工具及其认证状态。
@@ -347,7 +347,7 @@ build/update.json
 
 - 在当前启发式聚类评分、综合布局分区、主张支持分/风险标签/证据轨迹、路线图就绪分/动作建议、证据卡排序分、缺口优先级分、连接证据、复核风险标注和阈值校准板基础上，继续校准综合路线图和最终报告生成。
 - 在当前可复核校正的本地 OCR、提示词级视觉 OCR 契约、JSON/CSV 表格 sidecar 导出、可复核图表数据草稿、密集点位数据草稿解析、模型估计像素/坐标草稿、坐标轴校准锚点导出、线性/对数/分段轴值补全、断轴区间行校准、多面板布局诊断、axis segment 覆盖诊断、密集点置信度检查、自动质量审阅、图表批量复核看板、collection 级跨报告图表复核索引、跨集合图表复核分诊、下钻卡片、批量状态回写目标、可跨重新导出保留状态的图表复核任务队列和工作台内复核状态编辑基础上，继续增强自动 panel 分割、视觉不连续断轴校准和更高置信度的密集图表抽取。
-- 在当前 Zotero 页文本、本地路径/base64 bridge、受控 OCR fallback、候选报告抽取质量行、结构化抽取质量诊断、逐页 OCR 置信度信号和 OCR 风险摘要基础上，继续增强整篇扫描件 OCR、PDF 字节不可访问场景和无 bridge 原始字节抽取。
+- 在当前 Zotero 页文本、本地路径/base64 bridge、带稀疏页选择的受控 OCR fallback、候选报告抽取质量行、结构化抽取质量诊断、逐页 OCR 置信度信号和 OCR 风险摘要基础上，继续增强超出受控 OCR 窗口的整篇扫描件 OCR、PDF 字节不可访问场景和无 bridge 原始字节抽取。
 - 在内置配置指南之外，继续补充更多厂商配置截图和教程。
 - 在当前按提示模板包生成的开题/课题申报笔记、期刊/报告提纲领域写作结构、投稿类型写作结构、证据要求和清单基础上，继续补充更细的学科写作风格模板。
 

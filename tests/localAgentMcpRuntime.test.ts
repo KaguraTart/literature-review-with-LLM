@@ -83,6 +83,10 @@ describe("local agent stdio MCP runtime", () => {
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.maxOcrPages).toMatchObject({
         type: "number"
       });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPageStrategy).toMatchObject({
+        type: "string"
+      });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPages.description).toContain("1,3-5");
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.minTextChars).toMatchObject({
         type: "number"
       });
@@ -358,6 +362,92 @@ describe("local agent stdio MCP runtime", () => {
           text: "dense enough OCR text for a readable scanned page",
           ocr: { status: "ok", ocrConfidence: "medium" }
         });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("OCRs sparse middle PDF pages and merges them with pdftotext pages", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(
+        dir,
+        "pdftotext",
+        [
+          "The proposed method uses graph attention on page one.",
+          "Experiments evaluate delay metrics on page two.",
+          "",
+          "Limitations include missing weather robustness checks on page four."
+        ].join("\f")
+      );
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 4);
+      const tesseractBin = fakeTesseractByPageBin(dir, "tesseract", {
+        3: "OCR recovered scanned middle page with contribution details."
+      });
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 12,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF sparse middle page").toString("base64"),
+              name: "sparse-middle.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              ocrPageStrategy: "sparse",
+              maxOcrPages: 2,
+              minTextChars: 40,
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "pdftotext+tesseract",
+          name: "sparse-middle.pdf",
+          pageCount: 4,
+          ocrFallbackUsed: true,
+          textPageCount: 3,
+          textSlotCount: 4,
+          ocrRenderedPageCount: 1,
+          ocrEmptyPageCount: 0,
+          quality: {
+            status: "warning",
+            engine: "pdftotext+tesseract",
+            pagesWithText: 4,
+            expectedPageCount: 4,
+            emptyPageCount: 0,
+            ocrFallbackUsed: true,
+            warnings: ["ocr_fallback_used"]
+          }
+        });
+        expect(parsed.pages.map((page: any) => page.page)).toEqual([1, 2, 3, 4]);
+        expect(parsed.pages[2]).toMatchObject({
+          page: 3,
+          pageLabel: "3",
+          text: "OCR recovered scanned middle page with contribution details.",
+          ocr: {
+            page: 3,
+            status: "ok",
+            ocrConfidence: "medium"
+          }
+        });
+        expect(parsed.quality.ocrPageSignals).toEqual([
+          expect.objectContaining({ page: 3, status: "ok", textChars: 60 })
+        ]);
       } finally {
         runtime.stop();
       }
@@ -734,7 +824,13 @@ function fakePdfToPpmBin(dir: string, name: string, pageCount: number) {
     "const args = process.argv.slice(2);",
     "const prefix = args[args.length - 1];",
     `const pageCount = ${pageCount};`,
-    "for (let page = 1; page <= pageCount; page += 1) {",
+    "const flagValue = (flag, fallback) => {",
+    "  const index = args.indexOf(flag);",
+    "  return index >= 0 ? Number(args[index + 1]) : fallback;",
+    "};",
+    "const firstPage = Math.max(1, flagValue('-f', 1));",
+    "const lastPage = Math.min(pageCount, Math.max(firstPage, flagValue('-l', pageCount)));",
+    "for (let page = firstPage; page <= lastPage; page += 1) {",
     "  fs.writeFileSync(`${prefix}-${page}.png`, `fake page ${page}`);",
     "}",
     ""

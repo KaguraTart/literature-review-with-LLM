@@ -16197,7 +16197,8 @@ async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
             ...bridgeArguments,
             timeoutSeconds: 50,
             ocrFallback: true,
-            maxOcrPages: 3,
+            ocrPageStrategy: "sparse",
+            maxOcrPages: 6,
             minTextChars: 40
           }
         }

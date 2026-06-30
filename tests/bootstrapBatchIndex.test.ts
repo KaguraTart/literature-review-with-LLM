@@ -121,6 +121,7 @@ function loadBootstrapHelpers(files = new Map<string, string>()) {
       crossCollectionIndexPath: (settings: any) => string;
       crossCollectionSynthesisPath: (settings: any, outputLanguage: string) => string;
       renderCrossCollectionSynthesis: (indexPayload: any, outputLanguage?: string) => string;
+      applyConfiguredAddonAutoUpdatePolicy: () => Promise<any>;
       renderMarkdown: (item: any, pdf: any, settings: any, result: any) => string;
       linkOrUpdateAttachment: (item: any, outputPath: string, existing?: any) => Promise<any>;
       linkCollectionWorkspaceMarkdownArtifacts: (collectionContext: any, artifacts: any) => Promise<any[]>;
@@ -184,6 +185,30 @@ function searchResponseText(url: string): string {
 }
 
 describe("batch papers index", () => {
+  it("applies the configured automatic update policy at startup defaults and opt-out", async () => {
+    const { helpers } = loadBootstrapHelpers();
+    const prefValues = new Map<string, any>();
+    const policyCalls: Array<{ enabled: boolean; addonId: string }> = [];
+    (helpers as any).pluginID = "zotero-markdown-summary@diantao.local";
+    (helpers as any).Zotero.Prefs = {
+      get: (key: string) => prefValues.get(key),
+      set: (key: string, value: any) => prefValues.set(key, value)
+    };
+    (helpers as any).zmsApplyAddonAutoUpdatePreference = async (enabled: boolean, options: any = {}) => {
+      policyCalls.push({ enabled, addonId: options.addonId });
+      return { ok: true, enabled };
+    };
+
+    await expect(helpers.applyConfiguredAddonAutoUpdatePolicy()).resolves.toMatchObject({ ok: true, enabled: true });
+    prefValues.set("extensions.zoteroMarkdownSummary.autoUpdateEnabled", false);
+    await expect(helpers.applyConfiguredAddonAutoUpdatePolicy()).resolves.toMatchObject({ ok: true, enabled: false });
+
+    expect(policyCalls).toEqual([
+      { enabled: true, addonId: "zotero-markdown-summary@diantao.local" },
+      { enabled: false, addonId: "zotero-markdown-summary@diantao.local" }
+    ]);
+  });
+
   it("prefers explicit collection children when building a collection batch", async () => {
     const { helpers } = loadBootstrapHelpers();
     const collectionItem = { id: 1, key: "COLITEM", isRegularItem: () => true };

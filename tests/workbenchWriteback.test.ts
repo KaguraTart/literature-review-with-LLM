@@ -6728,7 +6728,8 @@ describe("workbench writeback helpers", () => {
           filePath: "/tmp/candidate.pdf",
           name: "candidate.pdf",
           ocrFallback: true,
-          maxOcrPages: 3,
+          ocrPageStrategy: "sparse",
+          maxOcrPages: 6,
           minTextChars: 40
         }
       }
@@ -6836,7 +6837,8 @@ describe("workbench writeback helpers", () => {
       pdfBase64,
       name: "memory.pdf",
       ocrFallback: true,
-      maxOcrPages: 3
+      ocrPageStrategy: "sparse",
+      maxOcrPages: 6
     });
     expect(fetchCalls[0].body.params.arguments).not.toHaveProperty("filePath");
     expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({

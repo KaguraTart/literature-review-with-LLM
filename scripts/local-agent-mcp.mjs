@@ -238,6 +238,17 @@ function pdfPagesSchema() {
         type: "number",
         description: "Maximum number of pages to OCR during fallback. Defaults to 3 and is capped at 12."
       },
+      ocrPageStrategy: {
+        type: "string",
+        description: "OCR fallback page selection strategy: first, sparse, or all. sparse uses pdftotext page breaks to OCR empty or low-text pages across the document before falling back to the first pages."
+      },
+      ocrPages: {
+        anyOf: [
+          { type: "string" },
+          { type: "array", items: { type: "number" } }
+        ],
+        description: "Optional explicit pages or ranges to OCR, for example 1,3-5. This is still bounded by maxOcrPages."
+      },
       minTextChars: {
         type: "number",
         description: "Minimum extracted character count before OCR fallback is skipped. Defaults to 40."
@@ -404,25 +415,32 @@ async function extractPdfPages(args = {}) {
       await writeFile(sourcePath, Buffer.from(pdfBase64, "base64"));
     }
     let pages = [];
+    let pageSlots = [];
     try {
       const output = await runCommand(PDFTOTEXT_BIN, ["-layout", sourcePath, "-"], {
         cwd: dir || currentDirectory(),
         timeoutSeconds: pdfTextTimeoutSeconds(args.timeoutSeconds),
         requireOutput: false
       });
-      pages = pdfPageEntriesFromText(output === "(empty response)" ? "" : output);
+      const textOutput = output === "(empty response)" ? "" : output;
+      pageSlots = pdfPageEntriesFromText(textOutput, { includeEmpty: true });
+      pages = pageSlots.filter((entry) => entry.text);
     } catch (error) {
       textError = error;
       if (!pdfOcrFallbackEnabled(args)) throw error;
     }
     let ocrResult = null;
-    const shouldAttemptOcr = shouldRunPdfOcrFallback(args, pages);
+    const shouldAttemptOcr = shouldRunPdfOcrFallback(args, pages, pageSlots);
     if (shouldAttemptOcr) {
-      ocrResult = await extractPdfOcrPages(sourcePath, args);
+      ocrResult = await extractPdfOcrPages(sourcePath, { ...args, textPageSlots: pageSlots });
       if (ocrResult.pages.length) {
-        return JSON.stringify(pdfPagesResult(args, pdf, filePath, "tesseract", ocrResult.pages, {
+        const mergedPages = pages.length
+          ? pdfMergeTextAndOcrPages(pageSlots, pages, ocrResult.pages)
+          : ocrResult.pages;
+        return JSON.stringify(pdfPagesResult(args, pdf, filePath, pages.length ? "pdftotext+tesseract" : "tesseract", mergedPages, {
           ocrFallbackUsed: true,
           textPageCount: pages.length,
+          textSlotCount: pageSlots.length,
           ocrFallbackAttempted: true,
           ocrRenderedPageCount: ocrResult.renderedPageCount,
           ocrEmptyPageCount: ocrResult.emptyPageCount,
@@ -438,6 +456,7 @@ async function extractPdfPages(args = {}) {
       ocrFallbackUsed: false,
       ocrFallbackAttempted: shouldAttemptOcr,
       textPageCount: pages.length,
+      textSlotCount: pageSlots.length,
       ocrRenderedPageCount: ocrResult?.renderedPageCount || 0,
       ocrEmptyPageCount: ocrResult?.emptyPageCount || 0,
       ocrPageSignals: ocrResult?.pageSignals || [],
@@ -451,15 +470,18 @@ async function extractPdfPages(args = {}) {
 
 async function extractPdfOcrPages(sourcePath, args = {}) {
   const renderDir = await mkdtemp(join(tmpdir(), "zms-pdf-ocr-"));
-  const prefix = join(renderDir, "page");
   const maxPages = pdfOcrMaxPages(args.maxOcrPages);
+  const pageNumbers = pdfOcrPageNumbers(args, args.textPageSlots || []);
   const language = pdfOcrLanguage(args.ocrLanguage || args.language);
   try {
-    await runCommand(PDFTOPPM_BIN, ["-png", "-r", "200", "-f", "1", "-l", String(maxPages), sourcePath, prefix], {
-      cwd: renderDir,
-      timeoutSeconds: pdfRenderTimeoutSeconds(args.timeoutSeconds),
-      requireOutput: false
-    });
+    for (const pageNumber of pageNumbers) {
+      const prefix = join(renderDir, `page-${pageNumber}`);
+      await runCommand(PDFTOPPM_BIN, ["-png", "-r", "200", "-f", String(pageNumber), "-l", String(pageNumber), sourcePath, prefix], {
+        cwd: renderDir,
+        timeoutSeconds: pdfRenderTimeoutSeconds(args.timeoutSeconds),
+        requireOutput: false
+      });
+    }
     const rendered = await pdfRenderedImagePaths(renderDir);
     const pages = [];
     const pageSignals = [];
@@ -496,11 +518,25 @@ async function extractPdfOcrPages(sourcePath, args = {}) {
       renderedPageCount,
       emptyPageCount: pageSignals.filter((signal) => signal.status !== "ok").length || Math.max(renderedPageCount - pages.length, 0),
       maxPages,
+      pageNumbers,
       language
     };
   } finally {
     await rm(renderDir, { recursive: true, force: true });
   }
+}
+
+function pdfMergeTextAndOcrPages(pageSlots = [], textPages = [], ocrPages = []) {
+  const textByPage = new Map((textPages || []).map((page) => [Number(page.page), page]));
+  const ocrByPage = new Map((ocrPages || []).map((page) => [Number(page.page), page]));
+  const pageNumbers = Array.from(new Set([
+    ...(pageSlots || []).map((page) => Number(page.page)),
+    ...(textPages || []).map((page) => Number(page.page)),
+    ...(ocrPages || []).map((page) => Number(page.page))
+  ].filter((page) => Number.isFinite(page) && page > 0))).sort((left, right) => left - right);
+  return pageNumbers
+    .map((pageNumber) => ocrByPage.get(pageNumber) || textByPage.get(pageNumber) || (pageSlots || []).find((page) => Number(page.page) === pageNumber))
+    .filter((page) => String(page?.text || "").trim());
 }
 
 function pdfPagesResult(args, pdf, filePath, engine, pages, extra = {}) {
@@ -521,6 +557,7 @@ function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
   const pagesWithText = normalizedPages.filter((page) => String(page?.text || "").trim()).length;
   const expectedPageCount = Math.max(
     Number(extra.ocrRenderedPageCount) || 0,
+    Number(extra.textSlotCount) || 0,
     normalizedPages.length
   );
   const emptyPageCount = Math.max(expectedPageCount - pagesWithText, Number(extra.ocrEmptyPageCount) || 0);
@@ -621,9 +658,12 @@ function pdfOcrFallbackEnabled(args = {}) {
   return args.ocrFallback === true || args.ocrFallback === "true" || args.ocrFallback === 1;
 }
 
-function shouldRunPdfOcrFallback(args = {}, pages = []) {
+function shouldRunPdfOcrFallback(args = {}, pages = [], pageSlots = []) {
   if (!pdfOcrFallbackEnabled(args)) return false;
-  return pdfPagesTotalTextLength(pages) < pdfOcrFallbackMinChars(args.minTextChars);
+  if (pdfPagesTotalTextLength(pages) < pdfOcrFallbackMinChars(args.minTextChars)) return true;
+  const strategy = pdfOcrPageStrategy(args.ocrPageStrategy);
+  if (strategy === "first") return false;
+  return pdfOcrPageNumbers(args, pageSlots).length > 0;
 }
 
 function pdfOcrFallbackMinChars(value) {
@@ -636,6 +676,53 @@ function pdfOcrMaxPages(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 3;
   return Math.min(Math.max(Math.round(parsed), 1), 12);
+}
+
+function pdfOcrPageStrategy(value) {
+  const normalized = String(value || "first").trim().toLowerCase().replace(/[_\s]+/g, "-");
+  if (normalized === "sparse" || normalized === "sparse-pages" || normalized === "empty-or-sparse") return "sparse";
+  if (normalized === "all" || normalized === "all-pages") return "all";
+  return "first";
+}
+
+function pdfOcrPageNumbers(args = {}, pageSlots = []) {
+  const maxPages = pdfOcrMaxPages(args.maxOcrPages);
+  const explicit = pdfExplicitOcrPages(args.ocrPages);
+  if (explicit.length) return explicit.slice(0, maxPages);
+  const slots = Array.isArray(pageSlots) ? pageSlots : [];
+  const strategy = pdfOcrPageStrategy(args.ocrPageStrategy);
+  if (strategy === "all" && slots.length) {
+    return slots.map((slot) => Number(slot.page)).filter((page) => Number.isFinite(page) && page > 0).slice(0, maxPages);
+  }
+  if (strategy === "sparse" && slots.length) {
+    const minChars = pdfOcrFallbackMinChars(args.minTextChars);
+    const sparse = slots
+      .filter((slot) => String(slot?.text || "").trim().length < minChars)
+      .map((slot) => Number(slot.page))
+      .filter((page) => Number.isFinite(page) && page > 0);
+    if (sparse.length) return Array.from(new Set(sparse)).slice(0, maxPages);
+    return [];
+  }
+  return Array.from({ length: maxPages }, (_value, index) => index + 1);
+}
+
+function pdfExplicitOcrPages(value) {
+  const raw = Array.isArray(value) ? value.join(",") : String(value || "");
+  const pages = new Set();
+  for (const token of raw.split(/[,\s]+/)) {
+    const trimmed = token.trim();
+    if (!trimmed) continue;
+    const range = trimmed.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (range) {
+      const start = Math.max(1, Number(range[1]));
+      const end = Math.max(start, Number(range[2]));
+      for (let page = start; page <= end && page <= start + 200; page += 1) pages.add(page);
+      continue;
+    }
+    const page = Number(trimmed);
+    if (Number.isFinite(page) && page > 0) pages.add(Math.round(page));
+  }
+  return Array.from(pages).sort((left, right) => left - right);
 }
 
 function pdfOcrLanguage(value) {
@@ -659,15 +746,20 @@ function pdfRenderedImagePage(path) {
   return match ? Number(match[1]) : 0;
 }
 
-function pdfPageEntriesFromText(text) {
-  return String(text || "")
-    .split(/\f+/)
+function pdfPageEntriesFromText(text, options = {}) {
+  const raw = String(text || "");
+  if (options.includeEmpty && !raw.trim() && !raw.includes("\f")) return [];
+  const parts = options.includeEmpty ? raw.split(/\f/) : raw.split(/\f+/);
+  if (options.includeEmpty && parts.length > 1 && parts[parts.length - 1] === "" && raw.endsWith("\f")) {
+    parts.pop();
+  }
+  return parts
     .map((pageText, index) => ({
       page: index + 1,
       pageLabel: String(index + 1),
       text: cleanPdfPageText(pageText)
     }))
-    .filter((entry) => entry.text);
+    .filter((entry) => options.includeEmpty || entry.text);
 }
 
 function cleanPdfPageText(pageText) {
