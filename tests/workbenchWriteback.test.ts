@@ -9437,7 +9437,7 @@ describe("workbench writeback helpers", () => {
       contextSourceHash: "sourcehash"
     });
 
-    expect(outline).toContain("templateVersion: journal-outline-v3");
+    expect(outline).toContain("templateVersion: journal-outline-v4");
     expect(outline).toContain('promptPackId: "ai-ml"');
     expect(outline).toContain("# 期刊/报告写作提纲");
     expect(outline).toContain("## 投稿/报告定位");
@@ -9451,6 +9451,10 @@ describe("workbench writeback helpers", () => {
     expect(outline).toContain("| 投稿类型 | 写法重点 | 证据要求 | 适配核查 |");
     expect(outline).toContain("会议论文");
     expect(outline).toContain("政策/管理简报");
+    expect(outline).toContain("### 投稿类型审稿标准");
+    expect(outline).toContain("| 投稿类型 | 审稿关注 | 应展示证据 | 常见退稿风险 | 修订动作 |");
+    expect(outline).toContain("审稿人会优先判断新颖性");
+    expect(outline).toContain("只有主结果，没有稳健性");
     expect(outline).toContain("### 学科写作示例");
     expect(outline).toContain("| 写作场景 | 可套用表达 | 证据锚点 | 修订检查 |");
     expect(outline).toContain("引言任务段");
@@ -9467,6 +9471,11 @@ describe("workbench writeback helpers", () => {
     expect(outline).toContain("| 段落用途 | 容易被质疑的写法 | 建议改写 | 需要补齐的证据 |");
     expect(outline).toContain("在{数据集}和{评价协议}下");
     expect(outline).toContain("失败主要集中在");
+    expect(outline).toContain("### 长篇正文段落示例");
+    expect(outline).toContain("| 正文位置 | 示例段落 | 证据包 | 修订提示 |");
+    expect(outline).toContain("引言末段");
+    expect(outline).toContain("本文将问题限定为{任务}");
+    expect(outline).toContain("实验讨论段");
     expect(outline).toContain("### 写作清单");
     expect(outline).toContain("模型类别、数据与评价协议");
     expect(outline).toContain("## 正文提纲");
@@ -9536,6 +9545,10 @@ describe("workbench writeback helpers", () => {
     expect(files.get(outlinePath)).toContain("| Venue type | Writing pattern | Evidence requirement | Fit check |");
     expect(files.get(outlinePath)).toContain("Review article");
     expect(files.get(outlinePath)).toContain("Technical report");
+    expect(files.get(outlinePath)).toContain("### Venue-Specific Reviewer Criteria");
+    expect(files.get(outlinePath)).toContain("| Venue type | Reviewer expectation | Evidence to show | Common rejection risk | Revision action |");
+    expect(files.get(outlinePath)).toContain("Reviewers will judge whether the taxonomy creates synthesis");
+    expect(files.get(outlinePath)).toContain("Paper-by-paper listing");
     expect(files.get(outlinePath)).toContain("### Discipline-Style Writing Examples");
     expect(files.get(outlinePath)).toContain("| Writing scenario | Reusable expression | Evidence anchor | Revision check |");
     expect(files.get(outlinePath)).toContain("Review introduction paragraph");
@@ -9552,6 +9565,11 @@ describe("workbench writeback helpers", () => {
     expect(files.get(outlinePath)).toContain("| Paragraph use | Questionable wording | Suggested revision | Evidence to add |");
     expect(files.get(outlinePath)).toContain("Taxonomy paragraph");
     expect(files.get(outlinePath)).toContain("The remaining gap comes from");
+    expect(files.get(outlinePath)).toContain("### Longer Manuscript Paragraph Examples");
+    expect(files.get(outlinePath)).toContain("| Manuscript section | Draft paragraph | Evidence package | Revision cue |");
+    expect(files.get(outlinePath)).toContain("Review introduction paragraph");
+    expect(files.get(outlinePath)).toContain("does not list papers one by one");
+    expect(files.get(outlinePath)).toContain("Synthesis evaluation paragraph");
     expect(files.get(outlinePath)).toContain("### Writing Checklist");
     expect(files.get(outlinePath)).toContain("Organize related work by taxonomy dimensions");
     expect(files.get(outlinePath)).toContain("Comparison Evidence Paper");
