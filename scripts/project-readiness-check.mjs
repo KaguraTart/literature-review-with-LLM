@@ -506,7 +506,9 @@ const SOURCE_MARKERS = [
       "templateVersion: journal-outline-v1",
       "journalDomainChecklist",
       "journalDomainWritingStructure",
+      "journalVenueWritingStructures",
       "Domain Writing Format",
+      "Venue-Specific Writing Patterns",
       "Writing Structure",
       "proposalNoteDone",
       "journalOutlineDone"

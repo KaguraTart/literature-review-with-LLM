@@ -8914,6 +8914,10 @@ describe("workbench writeback helpers", () => {
     expect(outline).toContain("| 结构单元 | 写作目标 | 证据要求 |");
     expect(outline).toContain("引言：任务与评价协议");
     expect(outline).toContain("主结果到消融链条");
+    expect(outline).toContain("### 投稿类型写作结构");
+    expect(outline).toContain("| 投稿类型 | 写法重点 | 证据要求 | 适配核查 |");
+    expect(outline).toContain("会议论文");
+    expect(outline).toContain("政策/管理简报");
     expect(outline).toContain("### 写作清单");
     expect(outline).toContain("模型类别、数据与评价协议");
     expect(outline).toContain("## 正文提纲");
@@ -8979,6 +8983,10 @@ describe("workbench writeback helpers", () => {
     expect(files.get(outlinePath)).toContain("| Structure unit | Writing goal | Evidence requirement |");
     expect(files.get(outlinePath)).toContain("Body: taxonomy frame");
     expect(files.get(outlinePath)).toContain("Synthesis: consensus and disagreement");
+    expect(files.get(outlinePath)).toContain("### Venue-Specific Writing Patterns");
+    expect(files.get(outlinePath)).toContain("| Venue type | Writing pattern | Evidence requirement | Fit check |");
+    expect(files.get(outlinePath)).toContain("Review article");
+    expect(files.get(outlinePath)).toContain("Technical report");
     expect(files.get(outlinePath)).toContain("### Writing Checklist");
     expect(files.get(outlinePath)).toContain("Organize related work by taxonomy dimensions");
     expect(files.get(outlinePath)).toContain("Comparison Evidence Paper");

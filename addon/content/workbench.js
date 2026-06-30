@@ -7541,6 +7541,21 @@ function domainWritingStructureLines(rows, labels) {
   ];
 }
 
+function venueWritingStructureLines(rows, labels) {
+  return [
+    `### ${labels.venueWritingExamples}`,
+    "",
+    `| ${labels.venueType} | ${labels.writingPattern} | ${labels.evidenceRequirement} | ${labels.fitCheck} |`,
+    "| --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.venueType,
+      row.pattern,
+      row.evidence,
+      row.fit
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
 function proposalDomainWritingStructure(promptPackId, labels) {
   const id = normalizePromptPackId(promptPackId);
   const zh = labels.language === "zh-CN";
@@ -7843,6 +7858,7 @@ function renderJournalOutlineMarkdown(context, options = {}) {
   const promptPackId = normalizePromptPackId(options.promptPackId || "general");
   const domainChecklist = journalDomainChecklist(promptPackId, labels);
   const domainStructure = journalDomainWritingStructure(promptPackId, labels);
+  const venueStructures = journalVenueWritingStructures(labels);
   const sections = journalOutlineSections(labels);
   const lines = [
     "---",
@@ -7876,6 +7892,8 @@ function renderJournalOutlineMarkdown(context, options = {}) {
     `- ${labels.promptPack}: ${mdText(domainChecklist.title)}`,
     "",
     ...domainWritingStructureLines(domainStructure, labels),
+    "",
+    ...venueWritingStructureLines(venueStructures, labels),
     "",
     `### ${labels.writingChecklist}`,
     "",
@@ -8098,6 +8116,24 @@ function journalDomainChecklist(promptPackId, labels) {
   return { title, items: packs[id] || packs.general };
 }
 
+function journalVenueWritingStructures(labels) {
+  const zh = labels.language === "zh-CN";
+  const rows = zh ? [
+    ["期刊研究论文", "按引言问题压力、方法细节、主结果、稳健性和局限组织，强调可审稿的证据闭环。", "摘要/引言中的主张、方法细节、主结果表、消融或稳健性、局限证据。", "核心主张能否被图表和实验链条直接支撑。"],
+    ["会议论文", "突出问题新颖性、方法差异、紧凑实验和可复现要点，减少过长背景。", "贡献列表、算法或系统流程、关键对照、消融、开源或复现条件。", "读者是否能在短篇幅内看清差异化贡献。"],
+    ["综述论文", "以分类框架、证据强弱、共识/分歧和研究议程组织，不逐篇罗列。", "检索边界、纳入标准、方法矩阵、综合主张、反证和缺口台账。", "每个综合判断是否能回到代表论文和证据标签。"],
+    ["技术报告", "先写适用场景、系统/方法设计、工程约束和复现实操，再写边界。", "部署场景、接口或流程、数据来源、失败案例、成本和运维约束。", "读者是否能按报告复现或评估落地风险。"],
+    ["政策/管理简报", "用问题、影响、证据、选项、风险和建议组织，避免方法细节压过决策信息。", "政策背景、量化影响、案例证据、利益相关方、风险和可执行建议。", "结论是否能支持明确的行动或决策。"]
+  ] : [
+    ["Journal research article", "Organize problem pressure, method detail, main results, robustness, and limitations into a reviewable evidence chain.", "Abstract/introduction claim, method detail, main-result table, ablation or robustness evidence, and limitation evidence.", "Whether the central claim is directly supported by figures, tables, and experiment flow."],
+    ["Conference paper", "Emphasize novelty, method difference, compact experiments, and reproducibility cues while keeping background short.", "Contribution list, algorithm or system flow, key baselines, ablation, and open or reproduction conditions.", "Whether readers can see the differentiated contribution within a short format."],
+    ["Review article", "Organize by taxonomy, evidence strength, consensus/disagreement, and research agenda instead of paper-by-paper notes.", "Search boundary, inclusion criteria, method matrix, synthesis claims, counter-evidence, and gap ledger.", "Whether each synthesis judgment traces back to representative papers and evidence labels."],
+    ["Technical report", "Start from use case, system/method design, engineering constraints, and reproduction procedure, then state boundaries.", "Deployment scenario, interface or workflow, data source, failure case, cost, and operations constraint.", "Whether readers can reproduce the workflow or assess deployment risk from the report."],
+    ["Policy or management brief", "Use problem, impact, evidence, options, risk, and recommendation; keep methods subordinate to decision needs.", "Policy context, quantified impact, case evidence, stakeholders, risk, and actionable recommendation.", "Whether the conclusion supports a concrete action or decision."]
+  ];
+  return rows.map(([venueType, pattern, evidence, fit]) => ({ venueType, pattern, evidence, fit }));
+}
+
 function journalOutlineLabels(outputLanguage) {
   const zh = /^zh/i.test(String(outputLanguage || ""));
   if (zh) {
@@ -8119,6 +8155,10 @@ function journalOutlineLabels(outputLanguage) {
       domainWritingFormat: "领域化写作格式",
       promptPack: "提示模板包",
       writingStructure: "写作结构",
+      venueWritingExamples: "投稿类型写作结构",
+      venueType: "投稿类型",
+      writingPattern: "写法重点",
+      fitCheck: "适配核查",
       writingChecklist: "写作清单",
       structureSection: "结构单元",
       writingGoal: "写作目标",
@@ -8183,6 +8223,10 @@ function journalOutlineLabels(outputLanguage) {
     domainWritingFormat: "Domain Writing Format",
     promptPack: "Prompt pack",
     writingStructure: "Writing Structure",
+    venueWritingExamples: "Venue-Specific Writing Patterns",
+    venueType: "Venue type",
+    writingPattern: "Writing pattern",
+    fitCheck: "Fit check",
     writingChecklist: "Writing Checklist",
     structureSection: "Structure unit",
     writingGoal: "Writing goal",
