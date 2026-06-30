@@ -7,6 +7,7 @@ pref("inputMode", "text");
 pref("maxOutputTokens", 8192);
 pref("temperature", 1);
 pref("stream", true);
+pref("autoUpdateEnabled", true);
 pref("localOcrEnabled", false);
 pref("localOcrEndpoint", "http://127.0.0.1:3333/mcp");
 pref("localOcrTool", "ocr_image");

@@ -4,6 +4,7 @@
       onload="ZoteroMarkdownSummaryPrefs.init()">
   <script src="chrome://zotero-markdown-summary/content/messages.js"/>
   <script src="chrome://zotero-markdown-summary/content/provider-models.js"/>
+  <script src="chrome://zotero-markdown-summary/content/auto-update.js"/>
   <groupbox>
     <label><html:h2 id="zms-title">Literature Review with LLM</html:h2></label>
     <vbox class="zms-form">
@@ -164,6 +165,13 @@
       <hbox align="center" class="zms-row">
         <label class="zms-label" id="zms-stream-label" value="流式输出"/>
         <checkbox id="zms-stream"/>
+      </hbox>
+      <hbox align="start" class="zms-row">
+        <label class="zms-label" id="zms-autoUpdate-label" value="插件更新"/>
+        <vbox class="zms-checkbox-stack">
+          <checkbox id="zms-autoUpdateEnabled" label="自动同步更新" oncommand="ZoteroMarkdownSummaryPrefs.saveAutoUpdatePreference()"/>
+          <html:label id="zms-autoUpdateHelp" class="zms-small-note">默认开启。关闭后插件会停止自动同步更新提示，并尝试禁用当前扩展的后台更新。</html:label>
+        </vbox>
       </hbox>
       <html:details class="zms-advanced-settings">
         <html:summary id="zms-advancedSettings-summary">高级设置</html:summary>

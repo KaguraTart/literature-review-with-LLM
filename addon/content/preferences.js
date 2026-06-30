@@ -45,6 +45,7 @@ var ZoteroMarkdownSummaryPrefs = {
     "maxOutputTokens",
     "temperature",
     "stream",
+    "autoUpdateEnabled",
     "systemPrompt",
     "userPrompt",
     "uiLanguage",
@@ -66,7 +67,7 @@ var ZoteroMarkdownSummaryPrefs = {
         }
         value = resolved;
       }
-      if (field === "stream") element.checked = !!value;
+      if (field === "stream" || field === "autoUpdateEnabled") element.checked = value !== false;
       else element.value = value ?? "";
     }
     this.applyLanguage();
@@ -144,7 +145,7 @@ var ZoteroMarkdownSummaryPrefs = {
     for (const field of this.fields) {
       const element = document.getElementById(`zms-${field}`);
       if (!element) continue;
-      let value = field === "stream" ? element.checked : element.value;
+      let value = (field === "stream" || field === "autoUpdateEnabled") ? element.checked : element.value;
       if (field === "outputDir") {
         value = resolvedOutputDir(value);
         element.value = value;
@@ -154,12 +155,39 @@ var ZoteroMarkdownSummaryPrefs = {
       if (field === "temperature") value = Number(value) || 1;
       Zotero.Prefs.set(`${this.prefix}.${field}`, value, true);
     }
+    this.applyAutoUpdatePreference({ updateStatus: false });
     this.refreshProfileOptions();
     this.applyLanguage();
     this.refreshProfileStatus();
     this.refreshProviderGuide();
     if (options.statusKey !== "") this.setStatus(this.t(options.statusKey || "saved"));
     return true;
+  },
+
+  async saveAutoUpdatePreference() {
+    const element = document.getElementById("zms-autoUpdateEnabled");
+    if (!element) return false;
+    Zotero.Prefs.set(`${this.prefix}.autoUpdateEnabled`, !!element.checked, true);
+    const result = await this.applyAutoUpdatePreference({ updateStatus: true });
+    if (result?.ok) {
+      this.setStatus(this.t(element.checked ? "autoUpdateOn" : "autoUpdateOff"));
+      return true;
+    }
+    this.setStatus(`${this.t("autoUpdateSavedButNotApplied")}: ${result?.reason || this.t("autoUpdateUnavailable")}`);
+    return false;
+  },
+
+  async applyAutoUpdatePreference(options = {}) {
+    const element = document.getElementById("zms-autoUpdateEnabled");
+    const enabled = element ? !!element.checked : Zotero.Prefs.get(`${this.prefix}.autoUpdateEnabled`, true) !== false;
+    if (typeof zmsApplyAddonAutoUpdatePreference !== "function") {
+      return { ok: false, reason: this.t("autoUpdateUnavailable") };
+    }
+    const result = await zmsApplyAddonAutoUpdatePreference(enabled);
+    if (!result?.ok && options.updateStatus) {
+      this.setStatus(`${this.t("autoUpdateSavedButNotApplied")}: ${result?.reason || this.t("autoUpdateUnavailable")}`);
+    }
+    return result;
   },
 
   async saveOutputDir() {
@@ -911,7 +939,7 @@ var ZoteroMarkdownSummaryPrefs = {
       const element = document.getElementById(id);
       if (!element) return;
       const text = this.t(key, lang);
-      if (element.localName === "button") {
+      if (element.localName === "button" || element.localName === "checkbox" || id === "zms-autoUpdateEnabled") {
         element.setAttribute("label", text);
         element.label = text;
         element.textContent = text;
@@ -947,6 +975,7 @@ var ZoteroMarkdownSummaryPrefs = {
       "maxOutputTokens",
       "temperature",
       "stream",
+      "autoUpdate",
       "profileEditor",
       "profileName",
       "profileProtocol",
@@ -973,6 +1002,7 @@ var ZoteroMarkdownSummaryPrefs = {
       setLabel(`zms-${key}-label`, key);
     }
     setLabel("zms-save-button", "save");
+    setLabel("zms-autoUpdateEnabled", "autoUpdateEnabled");
     setLabel("zms-doctor-button", "doctor");
     setLabel("zms-choose-outputDir-button", "chooseOutputDir");
     setLabel("zms-save-outputDir-button", "saveOutputDir");
@@ -1042,6 +1072,15 @@ function prefFallbackMessage(key, lang) {
     maxOutputTokens: zh ? "最大输出 token" : "Max output tokens",
     temperature: zh ? "温度" : "Temperature",
     stream: zh ? "流式输出" : "Streaming",
+    autoUpdate: zh ? "插件更新" : "Plugin updates",
+    autoUpdateEnabled: zh ? "自动同步更新" : "Automatically sync updates",
+    autoUpdateHelp: zh
+      ? "默认开启。插件会通过发布页 update.json 接收更新；关闭后会尝试禁用当前扩展的后台更新并停止主动更新提示。Zotero 的全局扩展更新策略仍由 Zotero 管理。"
+      : "Enabled by default. The plugin receives updates through the release update.json. Turning this off tries to disable this add-on's background updates and stops proactive update prompts. Zotero still controls the global extension update policy.",
+    autoUpdateOn: zh ? "自动同步更新已开启" : "Automatic update sync enabled",
+    autoUpdateOff: zh ? "自动同步更新已关闭" : "Automatic update sync disabled",
+    autoUpdateUnavailable: zh ? "当前 Zotero 运行时不支持插件直接修改后台更新策略" : "This Zotero runtime cannot change the add-on background update policy directly",
+    autoUpdateSavedButNotApplied: zh ? "设置已保存，但后台更新策略未能立即同步" : "Setting saved, but the background update policy could not be applied immediately",
     profileEditor: zh ? "接口档案编辑器" : "Provider profile editor",
     profileName: zh ? "档案名称" : "Profile name",
     profileProtocol: zh ? "接口协议" : "Protocol",
@@ -1279,6 +1318,9 @@ function applyPreferenceTextLabels(lang) {
     "zms-model-help": zh
       ? "先选接口厂商，推荐模型会自动显示；OpenRouter、LiteLLM、Cline API 这类聚合服务可再选模型厂商。只有私有部署或列表里没有的模型才需要自定义；有 API Key 时点“加载在线模型”会追加厂商实时返回的模型。"
       : "Choose a provider first; recommended models appear automatically. For aggregators such as OpenRouter, LiteLLM, or Cline API, choose a model vendor and then pick a concrete model from the dropdown. Use custom only for private deployments or missing models; Load online models appends provider-returned models when an API key is available.",
+    "zms-autoUpdateHelp": zh
+      ? "默认开启。插件会通过发布页 update.json 接收更新；关闭后会尝试禁用当前扩展的后台更新并停止主动更新提示。Zotero 的全局扩展更新策略仍由 Zotero 管理。"
+      : "Enabled by default. The plugin receives updates through the release update.json. Turning this off tries to disable this add-on's background updates and stops proactive update prompts. Zotero still controls the global extension update policy.",
     "zms-advancedSettings-summary": zh ? "高级设置" : "Advanced settings",
     "zms-advancedSettings-help": zh
       ? "通常不需要修改；用于自定义接口协议、请求头、提示词和技能模板。"

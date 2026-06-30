@@ -27,6 +27,7 @@ async function startup({ id, rootURI: startupRootURI }) {
   await Zotero.unlockPromise;
   await Zotero.uiReadyPromise;
   loadSharedMessages();
+  loadAutoUpdatePolicyModule();
   loadProviderModelCatalog();
   loadBootstrapProviderModule();
   loadBootstrapSettingsModule();
@@ -40,6 +41,7 @@ async function startup({ id, rootURI: startupRootURI }) {
   registerToolbarButtons();
   registerSidenavButtons();
   installMainWindowObserver();
+  await applyConfiguredAddonAutoUpdatePolicy();
 }
 
 function shutdown() {
@@ -4300,6 +4302,28 @@ function loadSharedMessages() {
   if (typeof ZMS_I18N !== "undefined") {
     UI_MESSAGES = ZMS_I18N || {};
   }
+}
+
+function loadAutoUpdatePolicyModule() {
+  if (typeof zmsApplyAddonAutoUpdatePreference === "function") return;
+  if (!rootURI || typeof Services?.scriptloader?.loadSubScript !== "function") return;
+  try {
+    Services.scriptloader.loadSubScript(`${rootURI}content/auto-update.js`);
+  } catch (_err) {
+    // Zotero's manifest update_url still remains available if this helper cannot load.
+  }
+}
+
+async function applyConfiguredAddonAutoUpdatePolicy() {
+  if (typeof zmsApplyAddonAutoUpdatePreference !== "function") return { ok: false };
+  const enabled = pref("autoUpdateEnabled") !== false;
+  const result = await zmsApplyAddonAutoUpdatePreference(enabled, { addonId: pluginID });
+  if (!result?.ok) {
+    try {
+      Zotero.debug(`[Markdown Summary] Failed to apply add-on auto update policy: ${safeError(result?.reason || "unknown")}`);
+    } catch (_err) {}
+  }
+  return result;
 }
 
 function loadProviderModelCatalog() {

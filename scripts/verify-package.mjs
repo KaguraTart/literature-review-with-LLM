@@ -123,6 +123,7 @@ const requiredEntries = [
   "bootstrap.js",
   "manifest.json",
   "prefs.js",
+  "content/auto-update.js",
   "content/bootstrap-provider.js",
   "content/bootstrap-settings.js",
   "content/bootstrap-summary-store.js",
@@ -150,6 +151,7 @@ for (const entry of requiredEntries) {
 }
 
 const bootstrap = unzipText("bootstrap.js");
+const autoUpdateJs = unzipText("content/auto-update.js");
 const bootstrapProvider = unzipText("content/bootstrap-provider.js");
 const bootstrapSettings = unzipText("content/bootstrap-settings.js");
 const bootstrapSummaryStore = unzipText("content/bootstrap-summary-store.js");
@@ -250,6 +252,9 @@ const requiredMarkers = [
   [bootstrap, "defaultSummaryUserPrompt", "localized direct paper summary template in bootstrap"],
   [bootstrap, "typeof ZMS_I18N === \"undefined\"", "safe bootstrap message loading"],
   [bootstrap, "loadSharedMessages", "shared message loader"],
+  [bootstrap, "applyConfiguredAddonAutoUpdatePolicy", "add-on auto update preference sync"],
+  [autoUpdateJs, "applyBackgroundUpdates", "add-on background update policy setter"],
+  [autoUpdateJs, "AddonManager.sys.mjs", "modern add-on manager import"],
   [bootstrapProvider, "setHeaderIfMissing(headers", "custom auth header preservation in bootstrap provider"],
   [bootstrapProvider, "extractAnthropicStreamText", "Anthropic stream parser in bootstrap provider"],
   [bootstrapProvider, "isNonAnswerStreamEvent", "bootstrap provider stream non-answer event guard"],

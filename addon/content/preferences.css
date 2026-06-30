@@ -53,6 +53,16 @@ hbox.zms-row {
   white-space: nowrap;
 }
 
+.zms-checkbox-stack {
+  flex: 1 1 24em;
+  min-width: 0;
+  max-width: 58em;
+}
+
+.zms-checkbox-stack .zms-small-note {
+  margin: 2px 0 0 0;
+}
+
 .zms-outputDir-row {
   max-width: 58em;
   width: 100%;
@@ -154,6 +164,7 @@ hbox.zms-row {
 
   .zms-field,
   .zms-row menulist,
+  .zms-checkbox-stack,
   .zms-model-picker,
   .zms-model-picker-controls,
   .zms-model-select,

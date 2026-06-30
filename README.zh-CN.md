@@ -326,6 +326,8 @@ build/update.json
 
 `addon/manifest.json` 会把 Zotero 指向稳定的 GitHub Releases `update.json` 地址。`update.json` 会记录当前版本的 XPI 下载地址、XPI `sha256` 校验值和 Zotero 兼容版本范围。发布时上传 `literature-review-with-llm.xpi` 和 `update.json` 两个产物，仓库本身不提交构建产物。
 
+插件默认开启自动同步更新。用户可以在 Zotero 的 `Literature Review with LLM` 设置页关闭 `自动同步更新`；关闭后插件会停止主动更新提示，并尽量把当前扩展的后台更新策略切换为禁用。Zotero 的全局扩展更新策略仍由 Zotero 自身管理。
+
 ## 当前局限
 
 - 多篇论文对比目前限制在工作台上下文内，默认最多纳入 5 篇对比论文，并已支持导出包含证据覆盖、综合主张台账、两两对比和缺口台账的 Markdown 文献矩阵；collection 批量生成已加入启发式主题聚类、有证据来源的综合主张矩阵、综合冲突与缺口台账、综合路线图、正式综述报告草稿，以及带主题归并复核板、主题桥接板、重复缺口看板和优先级看板的跨集合综合地图，但聚类和矩阵综合都是确定性规则，报告在正式写作前仍需要人工复核。

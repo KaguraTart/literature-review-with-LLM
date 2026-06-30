@@ -4,6 +4,7 @@ import { createContext, runInContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
 function loadPreferencesHelpers() {
+  const autoUpdateCode = readFileSync(resolve(process.cwd(), "addon/content/auto-update.js"), "utf8");
   const providerModelsCode = readFileSync(resolve(process.cwd(), "addon/content/provider-models.js"), "utf8");
   const code = readFileSync(resolve(process.cwd(), "addon/content/preferences.js"), "utf8");
   const context = createContext({
@@ -14,9 +15,11 @@ function loadPreferencesHelpers() {
     URL,
     console
   });
+  runInContext(autoUpdateCode, context, { filename: "auto-update.js" });
   runInContext(providerModelsCode, context, { filename: "provider-models.js" });
   runInContext(code, context, { filename: "preferences.js" });
   return context as {
+    zmsApplyAddonAutoUpdatePreference: (enabled: boolean, options?: any) => Promise<any>;
     parseLocalAgentConfig: (raw: any) => any;
     providerBodyExtra: (bodyExtra: any) => Record<string, any>;
     connectionTestRequestForProfile: (profile: any) => any;
@@ -64,12 +67,14 @@ function loadPreferencesController(options: {
   filePickerReturn?: number;
   filePickerExistingPaths?: string[];
   filePickerExtraProps?: Record<string, any>;
+  addonManagerUnavailable?: boolean;
   filePickerWindowBrowsingContext?: boolean;
   zoteroMainWindowBrowsingContext?: boolean;
   filePickerUseZoteroWrapper?: boolean;
   noZmsMessage?: boolean;
   makeDirectoryThrows?: boolean;
 } = {}) {
+  const autoUpdateCode = readFileSync(resolve(process.cwd(), "addon/content/auto-update.js"), "utf8");
   const providerModelsCode = readFileSync(resolve(process.cwd(), "addon/content/provider-models.js"), "utf8");
   const code = readFileSync(resolve(process.cwd(), "addon/content/preferences.js"), "utf8");
   const elements = new Map<string, any>();
@@ -83,6 +88,7 @@ function loadPreferencesController(options: {
     returnReplace: 2
   };
   const filePickerCalls: Array<{ title: string; mode: number; parent?: string | null; displayDirectory?: string }> = [];
+  const addonUpdateModes: any[] = [];
   const messageMap: Record<string, string> = {
     apiKeyMissing: "API key missing",
     chooseOutputDir: "Choose Folder...",
@@ -101,6 +107,11 @@ function loadPreferencesController(options: {
     modelFeatureReasoning: "reasoning",
     modelFeatureFast: "fast",
     modelFeatureLocal: "local",
+    autoUpdateEnabled: "Automatic update sync",
+    autoUpdateOn: "Automatic update sync enabled",
+    autoUpdateOff: "Automatic update sync disabled",
+    autoUpdateSavedButNotApplied: "Setting saved, but not applied",
+    autoUpdateUnavailable: "Auto update policy unavailable",
     profilesReset: "Default provider profiles restored",
     resetProfiles: "Reset default profiles",
     testOk: "Connection OK",
@@ -225,7 +236,10 @@ function loadPreferencesController(options: {
   createElement("zms-doctor-button", { localName: "button" });
   createElement("zms-test-button", { localName: "button" });
   createElement("zms-load-models-button", { localName: "button" });
+  createElement("zms-autoUpdate-label", { localName: "label" });
+  createElement("zms-autoUpdateHelp", { localName: "label" });
   setChecked("zms-stream", false);
+  setChecked("zms-autoUpdateEnabled", true);
   setChecked("zms-profileLocalAgentFallback", false);
   setChecked("zms-profileLocalAgentEnabled", false);
   setChecked("zms-cap-text", true);
@@ -386,10 +400,31 @@ function loadPreferencesController(options: {
   if (!options.noZmsMessage) {
     contextValues.zmsMessage = (_scope: string, key: string) => messageMap[key] || key;
   }
-  if (options.filePickerUseZoteroWrapper) {
+  const addon = { _applyBackgroundUpdates: undefined as any };
+  Object.defineProperty(addon, "applyBackgroundUpdates", {
+    get() {
+      return this._applyBackgroundUpdates;
+    },
+    set(value: any) {
+      this._applyBackgroundUpdates = value;
+      addonUpdateModes.push(value);
+    }
+  });
+  const addonManager = {
+    AUTOUPDATE_ENABLE: "enable",
+    AUTOUPDATE_DISABLE: "disable",
+    getAddonByID: async () => addon
+  };
+  if (options.filePickerUseZoteroWrapper || !options.addonManagerUnavailable) {
     contextValues.ChromeUtils = {
-      importESModule: () => ({
-        FilePicker: class FilePicker {
+      importESModule: (url: string) => {
+        if (String(url).includes("AddonManager")) {
+          if (options.addonManagerUnavailable) throw new Error("addon manager unavailable");
+          return { AddonManager: addonManager };
+        }
+        if (options.filePickerUseZoteroWrapper && String(url).includes("filePicker")) {
+          return {
+            FilePicker: class FilePicker {
           modeGetFolder = filePickerConstants.modeGetFolder;
           returnOK = filePickerConstants.returnOK;
           returnCancel = filePickerConstants.returnCancel;
@@ -411,11 +446,17 @@ function loadPreferencesController(options: {
             return options.filePickerReturn ?? filePickerConstants.returnOK;
           }
         }
-      })
+          };
+        }
+        return {};
+      }
     };
+  }
+  if (options.filePickerUseZoteroWrapper) {
     windowObject.browsingContext = { zmsKind: "browsingContext" };
   }
   const context = createContext(contextValues);
+  runInContext(autoUpdateCode, context, { filename: "auto-update.js" });
   runInContext(providerModelsCode, context, { filename: "provider-models.js" });
   runInContext(code, context, { filename: "preferences.js" });
   return {
@@ -425,7 +466,8 @@ function loadPreferencesController(options: {
     delayCalls,
     prefValues,
     madeDirectories,
-    filePickerCalls
+    filePickerCalls,
+    addonUpdateModes
   };
 }
 
@@ -3104,6 +3146,30 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toContain("Output directory failed");
   });
 
+  it("persists and applies the add-on automatic update setting", async () => {
+    const { controller, elements, prefValues, addonUpdateModes } = loadPreferencesController();
+    elements.get("zms-autoUpdateEnabled").checked = false;
+
+    await expect(controller.saveAutoUpdatePreference()).resolves.toBe(true);
+
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.autoUpdateEnabled")).toBe(false);
+    expect(addonUpdateModes).toEqual(["disable"]);
+    expect(elements.get("zms-status").value).toBe("Automatic update sync disabled");
+  });
+
+  it("keeps the add-on automatic update preference saved when the runtime policy API is unavailable", async () => {
+    const { controller, elements, prefValues, addonUpdateModes } = loadPreferencesController({
+      addonManagerUnavailable: true
+    });
+    elements.get("zms-autoUpdateEnabled").checked = true;
+
+    await expect(controller.saveAutoUpdatePreference()).resolves.toBe(false);
+
+    expect(prefValues.get("extensions.zoteroMarkdownSummary.autoUpdateEnabled")).toBe(true);
+    expect(addonUpdateModes).toEqual([]);
+    expect(elements.get("zms-status").value).toContain("Setting saved, but not applied");
+  });
+
   it("localizes output directory button labels and tooltips", () => {
     const { controller, elements } = loadPreferencesController();
 
@@ -3137,6 +3203,9 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-advancedSettings-help").textContent).toContain("通常不需要修改");
     expect(elements.get("zms-load-models-button").label).toBe("加载在线模型");
     expect(elements.get("zms-test-button").label).toBe("保存并测试");
+    expect(elements.get("zms-autoUpdate-label").value).toBe("插件更新");
+    expect(elements.get("zms-autoUpdateEnabled").label).toBe("自动同步更新");
+    expect(elements.get("zms-autoUpdateHelp").textContent).toContain("默认开启");
     expect(elements.get("zms-temperature-label").value).toBe("温度");
     expect(elements.get("zms-profileProtocol-label").value).toBe("接口协议");
     expect(elements.get("zms-profileEndpointMode-label").value).toBe("接口模式");
