@@ -8579,6 +8579,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `chartLayoutStatus: ${yamlScalar(chartLayoutDiagnostics.status || "")}`,
     `chartPanelCount: ${Number(chartLayoutDiagnostics.panelCount) || 0}`,
     `chartAxisSegmentCount: ${Number(chartLayoutDiagnostics.axisSegmentCount) || 0}`,
+    `chartAxisSegmentCalibrationMapCount: ${Number(chartLayoutDiagnostics.axisSegmentCalibrationMapCount) || 0}`,
     `chartPanelSplitCandidateCount: ${Number(chartLayoutDiagnostics.panelSplitCandidateCount) || 0}`,
     `pixelDataDraftCount: ${pixelDataDrafts.length}`,
     `calibrationAnchorCount: ${calibrationAnchors.length}`,
@@ -9025,6 +9026,16 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       ["status", segment.status || ""],
       ["anchorCount", segment.anchorCount === null || segment.anchorCount === undefined ? "" : segment.anchorCount],
       ["pixelSpan", segment.pixelSpan === null || segment.pixelSpan === undefined ? "" : segment.pixelSpan],
+      ["pixelStart", segment.pixelStart === null || segment.pixelStart === undefined ? "" : segment.pixelStart],
+      ["pixelEnd", segment.pixelEnd === null || segment.pixelEnd === undefined ? "" : segment.pixelEnd],
+      ["valueStart", segment.valueStart === null || segment.valueStart === undefined ? "" : segment.valueStart],
+      ["valueEnd", segment.valueEnd === null || segment.valueEnd === undefined ? "" : segment.valueEnd],
+      ["valueSpan", segment.valueSpan === null || segment.valueSpan === undefined ? "" : segment.valueSpan],
+      ["unit", segment.unit || ""],
+      ["scale", segment.scale || ""],
+      ["direction", segment.direction || ""],
+      ["pixelGapToNextSegment", segment.pixelGapToNextSegment === null || segment.pixelGapToNextSegment === undefined ? "" : segment.pixelGapToNextSegment],
+      ["valueGapToNextSegment", segment.valueGapToNextSegment === null || segment.valueGapToNextSegment === undefined ? "" : segment.valueGapToNextSegment],
       ["detail", segment.detail || ""]
     ]) {
       if (value === "") continue;
@@ -9987,6 +9998,7 @@ function visualExtractionChartLayoutDiagnostics(answer, tables = [], chartDataDr
     status,
     panelCount: panels.length,
     axisSegmentCount: axisSegments.length,
+    axisSegmentCalibrationMapCount: axisSegments.filter((segment) => segment.status === "covered").length,
     panelSplitCandidateCount: panelSplitCandidates.reduce((sum, candidate) => sum + (candidate.boxes || []).length, 0),
     multiPanelDetected: !!multiPanelMentioned,
     discontinuousAxisDetected: !!discontinuousAxisDetected,
@@ -10118,25 +10130,106 @@ function visualExtractionAxisSegmentDiagnostics(calibrationAnchors = []) {
     if (!grouped.has(key)) grouped.set(key, { axis, segment, anchors: [] });
     grouped.get(key).anchors.push(anchor);
   }
-  return Array.from(grouped.values()).map((group) => {
+  const segments = Array.from(grouped.values()).map((group) => {
     const numericAnchors = group.anchors
-      .map((anchor) => ({ ...anchor, numericValue: visualExtractionNumber(anchor.value) }))
+      .map((anchor) => ({
+        ...anchor,
+        pixel: Number(anchor.pixel),
+        numericValue: visualExtractionNumber(anchor.value),
+        scale: visualExtractionAxisScaleName(anchor.scale),
+        segment: mdText(anchor.segment || "")
+      }))
       .filter((anchor) => anchor.numericValue !== null && Number.isFinite(Number(anchor.pixel)));
     const pixels = numericAnchors.map((anchor) => Number(anchor.pixel));
     const pixelSpan = pixels.length >= 2 ? Math.max(...pixels) - Math.min(...pixels) : 0;
     const covered = numericAnchors.length >= 2 && pixelSpan > 0;
+    const endpointPair = covered ? visualExtractionAxisSegmentEndpointPair(numericAnchors) : null;
+    const valueSpan = endpointPair ? Math.abs(Number(endpointPair.end.numericValue) - Number(endpointPair.start.numericValue)) : 0;
+    const unit = mdText(endpointPair?.start?.unit || endpointPair?.end?.unit || "");
+    const scale = visualExtractionAxisScaleName(endpointPair?.start?.scale || endpointPair?.end?.scale || "");
+    const direction = endpointPair ? visualExtractionAxisSegmentDirection(endpointPair.start, endpointPair.end) : "";
+    const valueRange = endpointPair
+      ? `${visualExtractionFormatCalibratedAxisValue(endpointPair.start.numericValue, unit)} -> ${visualExtractionFormatCalibratedAxisValue(endpointPair.end.numericValue, unit)}`
+      : "";
     return {
       axis: group.axis,
       segment: group.segment,
       anchorCount: numericAnchors.length,
       pixelSpan,
+      pixelStart: endpointPair ? Number(endpointPair.start.pixel) : null,
+      pixelEnd: endpointPair ? Number(endpointPair.end.pixel) : null,
+      valueStart: endpointPair ? Number(endpointPair.start.numericValue) : null,
+      valueEnd: endpointPair ? Number(endpointPair.end.numericValue) : null,
+      valueSpan,
+      unit,
+      scale,
+      direction,
+      minPixel: pixels.length ? Math.min(...pixels) : null,
+      maxPixel: pixels.length ? Math.max(...pixels) : null,
+      minValue: numericAnchors.length ? Math.min(...numericAnchors.map((anchor) => Number(anchor.numericValue))) : null,
+      maxValue: numericAnchors.length ? Math.max(...numericAnchors.map((anchor) => Number(anchor.numericValue))) : null,
+      pixelGapToNextSegment: null,
+      valueGapToNextSegment: null,
       status: covered ? "covered" : "needs-review",
       detail: covered
-        ? `${numericAnchors.length} numeric anchor(s), ${pixelSpan} px span`
+        ? `${numericAnchors.length} numeric anchor(s), ${pixelSpan} px span, ${valueRange}`
         : `${numericAnchors.length}/2 numeric anchors; segment needs visible start/end anchors`,
       evidenceLabels: Array.from(new Set(group.anchors.flatMap((anchor) => anchor.evidenceLabels || [])))
     };
-  }).sort((left, right) => `${left.axis}:${left.segment}`.localeCompare(`${right.axis}:${right.segment}`, undefined, { numeric: true }));
+  });
+  return visualExtractionAnnotateAxisSegmentGaps(segments)
+    .sort((left, right) => `${left.axis}:${left.segment}`.localeCompare(`${right.axis}:${right.segment}`, undefined, { numeric: true }));
+}
+
+function visualExtractionAxisSegmentEndpointPair(numericAnchors = []) {
+  const start = (numericAnchors || []).find((anchor) => mdText(anchor.rangeEndpoint || "").toLowerCase() === "start");
+  const end = (numericAnchors || []).find((anchor) => mdText(anchor.rangeEndpoint || "").toLowerCase() === "end");
+  if (start && end && start !== end) return { start, end };
+  const pair = visualExtractionAxisCalibrationPair(numericAnchors, visualExtractionPreferredAxisScale(numericAnchors));
+  return pair ? { start: pair.left, end: pair.right } : null;
+}
+
+function visualExtractionAxisSegmentDirection(start, end) {
+  const pixelDirection = Number(end?.pixel) > Number(start?.pixel)
+    ? "pixel-asc"
+    : Number(end?.pixel) < Number(start?.pixel)
+      ? "pixel-desc"
+      : "pixel-flat";
+  const valueDirection = Number(end?.numericValue) > Number(start?.numericValue)
+    ? "value-asc"
+    : Number(end?.numericValue) < Number(start?.numericValue)
+      ? "value-desc"
+      : "value-flat";
+  return `${pixelDirection}/${valueDirection}`;
+}
+
+function visualExtractionAnnotateAxisSegmentGaps(segments = []) {
+  const next = (segments || []).map((segment) => ({ ...segment }));
+  const byAxis = new Map();
+  for (const segment of next) {
+    if (!segment.axis) continue;
+    if (!byAxis.has(segment.axis)) byAxis.set(segment.axis, []);
+    byAxis.get(segment.axis).push(segment);
+  }
+  for (const axisSegments of byAxis.values()) {
+    const pixelOrdered = axisSegments
+      .filter((segment) => segment.status === "covered" && Number.isFinite(Number(segment.minPixel)) && Number.isFinite(Number(segment.maxPixel)))
+      .sort((left, right) => Number(left.minPixel) - Number(right.minPixel));
+    for (let index = 0; index < pixelOrdered.length - 1; index += 1) {
+      const current = pixelOrdered[index];
+      const following = pixelOrdered[index + 1];
+      current.pixelGapToNextSegment = visualExtractionRoundedCoordinate(Math.max(0, Number(following.minPixel) - Number(current.maxPixel)));
+    }
+    const valueOrdered = axisSegments
+      .filter((segment) => segment.status === "covered" && Number.isFinite(Number(segment.minValue)) && Number.isFinite(Number(segment.maxValue)))
+      .sort((left, right) => Number(left.minValue) - Number(right.minValue));
+    for (let index = 0; index < valueOrdered.length - 1; index += 1) {
+      const current = valueOrdered[index];
+      const following = valueOrdered[index + 1];
+      current.valueGapToNextSegment = visualExtractionRoundedCoordinate(Math.max(0, Number(following.minValue) - Number(current.maxValue)));
+    }
+  }
+  return next;
 }
 
 function visualExtractionChartLayoutDiagnosticsMarkdown(diagnostics = {}, labels) {
@@ -10147,6 +10240,7 @@ function visualExtractionChartLayoutDiagnosticsMarkdown(diagnostics = {}, labels
     `- ${labels.layoutStatus}: ${diagnostics?.status || labels.unknown}`,
     `- ${labels.panelCount}: ${Number(diagnostics?.panelCount) || 0}`,
     `- ${labels.axisSegmentCount}: ${Number(diagnostics?.axisSegmentCount) || 0}`,
+    `- ${labels.axisSegmentCalibrationMapCount}: ${Number(diagnostics?.axisSegmentCalibrationMapCount) || 0}`,
     `- ${labels.panelSplitCandidateCount}: ${Number(diagnostics?.panelSplitCandidateCount) || 0}`,
     "",
     `### ${labels.panelCoverage}`,
@@ -10159,7 +10253,13 @@ function visualExtractionChartLayoutDiagnosticsMarkdown(diagnostics = {}, labels
     "",
     `### ${labels.axisSegmentCoverage}`,
     "",
-    segments.length ? visualExtractionAxisSegmentCoverageMarkdown(segments, labels) : `- ${labels.noAxisSegmentDiagnostics}`
+    segments.length ? visualExtractionAxisSegmentCoverageMarkdown(segments, labels) : `- ${labels.noAxisSegmentDiagnostics}`,
+    "",
+    `### ${labels.brokenAxisCalibrationMap}`,
+    "",
+    segments.some((segment) => segment.status === "covered")
+      ? visualExtractionBrokenAxisCalibrationMapMarkdown(segments, labels)
+      : `- ${labels.noBrokenAxisCalibrationMap}`
   ].join("\n");
 }
 
@@ -10217,6 +10317,32 @@ function visualExtractionAxisSegmentCoverageMarkdown(segments = [], labels) {
       markdownTableCell((segment.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
     ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
   ].join("\n");
+}
+
+function visualExtractionBrokenAxisCalibrationMapMarkdown(segments = [], labels) {
+  const lines = [
+    `| ${labels.axis} | ${labels.segment} | ${labels.pixelStart} | ${labels.pixelEnd} | ${labels.valueStart} | ${labels.valueEnd} | ${labels.unit} | ${labels.scale} | ${labels.direction} | ${labels.pixelGapToNextSegment} | ${labels.valueGapToNextSegment} | ${labels.reviewStatus} | ${labels.detail} |`,
+    "| --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | --- | --- |"
+  ];
+  for (const segment of segments || []) {
+    if (segment.status !== "covered") continue;
+    lines.push([
+      markdownTableCell(segment.axis || ""),
+      markdownTableCell(segment.segment || ""),
+      segment.pixelStart === null || segment.pixelStart === undefined ? "" : segment.pixelStart,
+      segment.pixelEnd === null || segment.pixelEnd === undefined ? "" : segment.pixelEnd,
+      segment.valueStart === null || segment.valueStart === undefined ? "" : segment.valueStart,
+      segment.valueEnd === null || segment.valueEnd === undefined ? "" : segment.valueEnd,
+      markdownTableCell(segment.unit || ""),
+      markdownTableCell(segment.scale || ""),
+      markdownTableCell(segment.direction || ""),
+      segment.pixelGapToNextSegment === null || segment.pixelGapToNextSegment === undefined ? "" : segment.pixelGapToNextSegment,
+      segment.valueGapToNextSegment === null || segment.valueGapToNextSegment === undefined ? "" : segment.valueGapToNextSegment,
+      markdownTableCell(segment.status || ""),
+      markdownTableCell(segment.detail || "")
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+  }
+  return lines.join("\n");
 }
 
 function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDrafts = [], options = {}) {
@@ -11075,10 +11201,12 @@ function visualExtractionReportLabels(outputLanguage) {
       layoutStatus: "布局状态",
       panelCount: "面板数",
       axisSegmentCount: "轴段数",
+      axisSegmentCalibrationMapCount: "断轴校准映射数",
       panelSplitCandidateCount: "候选分割框数",
       panelCoverage: "面板覆盖",
       panelSplitCandidates: "自动 panel 分割候选",
       axisSegmentCoverage: "轴段覆盖",
+      brokenAxisCalibrationMap: "断轴校准映射",
       panel: "面板",
       chartPointCount: "图表点数",
       pixelPointCount: "像素点数",
@@ -11086,12 +11214,20 @@ function visualExtractionReportLabels(outputLanguage) {
       sourceTables: "来源表格",
       anchorCount: "锚点数",
       pixelSpan: "像素跨度",
+      pixelStart: "像素起点",
+      pixelEnd: "像素终点",
+      valueStart: "数值起点",
+      valueEnd: "数值终点",
+      direction: "方向",
+      pixelGapToNextSegment: "到下一段像素间隙",
+      valueGapToNextSegment: "到下一段数值间隙",
       splitLayout: "分割布局",
       width: "宽度",
       height: "高度",
       noPanelDiagnostics: "未检测到多面板结构；如原图包含多个 panel，请要求模型在点表和校准锚点中加入 Panel/Subplot 列。",
       noPanelSplitCandidates: "没有生成 panel 分割候选；如原图包含多个 panel，请在回答中标注 Panel A/B/C 或提供图片宽高后重新导出。",
       noAxisSegmentDiagnostics: "未检测到断轴或分段轴；如原图存在视觉不连续轴段，请要求模型为每个 Segment 单独列出锚点。",
+      noBrokenAxisCalibrationMap: "没有可复核的断轴校准映射；每个断轴区段至少需要两个清晰锚点。",
       chartBatchReviewBoard: "图表批量复核看板",
       chartReviewActions: "图表人工复核任务",
       qualityStatus: "质量状态",
@@ -11224,10 +11360,12 @@ function visualExtractionReportLabels(outputLanguage) {
     layoutStatus: "Layout status",
     panelCount: "Panel count",
     axisSegmentCount: "Axis segment count",
+    axisSegmentCalibrationMapCount: "Broken-axis calibration maps",
     panelSplitCandidateCount: "Panel split candidate boxes",
     panelCoverage: "Panel Coverage",
     panelSplitCandidates: "Automatic Panel Split Candidates",
     axisSegmentCoverage: "Axis Segment Coverage",
+    brokenAxisCalibrationMap: "Broken-Axis Calibration Map",
     panel: "Panel",
     chartPointCount: "Chart points",
     pixelPointCount: "Pixel points",
@@ -11235,12 +11373,20 @@ function visualExtractionReportLabels(outputLanguage) {
     sourceTables: "Source tables",
     anchorCount: "Anchors",
     pixelSpan: "Pixel span",
+    pixelStart: "Pixel Start",
+    pixelEnd: "Pixel End",
+    valueStart: "Value Start",
+    valueEnd: "Value End",
+    direction: "Direction",
+    pixelGapToNextSegment: "Pixel gap to next segment",
+    valueGapToNextSegment: "Value gap to next segment",
     splitLayout: "Split layout",
     width: "Width",
     height: "Height",
     noPanelDiagnostics: "No multi-panel structure was detected. If the original figure has multiple panels, ask for a Panel/Subplot column in point tables and calibration anchors.",
     noPanelSplitCandidates: "No panel split candidate was generated. If the original figure has multiple panels, label Panel A/B/C in the answer or include image dimensions and export again.",
     noAxisSegmentDiagnostics: "No broken or segmented axis was detected. If the original figure has visual discontinuities, ask for separate Segment anchors.",
+    noBrokenAxisCalibrationMap: "No reviewable broken-axis calibration map was generated. Each visible broken-axis segment needs at least two clear anchors.",
     chartBatchReviewBoard: "Chart Batch Review Board",
     chartReviewActions: "Chart Review Action Queue",
     qualityStatus: "Quality status",
