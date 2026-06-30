@@ -6775,6 +6775,122 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("ocr_fallback_used, empty_or_unread_pages");
   });
 
+  it("passes explicit full-document OCR options to local bridge PDF extraction", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    (loaded as any).fetch = async (url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ url, body });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  engine: "pdftotext+tesseract",
+                  pageCount: 12,
+                  pages: [
+                    { page: 1, pageLabel: "1", text: "The proposed method uses graph attention on scanned page one." },
+                    { page: 12, pageLabel: "12", text: "Limitations include missing weather robustness checks on scanned page twelve." }
+                  ],
+                  quality: {
+                    status: "warning",
+                    engine: "pdftotext+tesseract",
+                    pageCount: 12,
+                    expectedPageCount: 24,
+                    pagesWithText: 12,
+                    emptyPageCount: 0,
+                    totalTextChars: 960,
+                    averageTextCharsPerPage: 80,
+                    minTextChars: 40,
+                    ocrFallbackUsed: true,
+                    ocrFullDocumentUsed: true,
+                    ocrPageStrategy: "all",
+                    ocrMaxPages: 24,
+                    ocrRequestedPageCount: 30,
+                    ocrTruncatedPageCount: 6,
+                    ocrPageSignals: [
+                      { page: 1, status: "ok", textChars: 80, ocrConfidence: "medium", warnings: [] },
+                      { page: 12, status: "ok", textChars: 82, ocrConfidence: "medium", warnings: [] }
+                    ],
+                    warnings: ["ocr_fallback_used", "ocr_full_document_used", "ocr_page_limit_reached"]
+                  }
+                })
+              }
+            ]
+          }
+        })
+      };
+    };
+    loaded.__zoteroItems.set(82, {
+      id: 82,
+      key: "ITEM82",
+      getAttachments: () => [83]
+    });
+    loaded.__zoteroItems.set(83, {
+      id: 83,
+      key: "PDF83",
+      attachmentContentType: "application/pdf",
+      getFilePathAsync: async () => "/tmp/full-scan.pdf",
+      getField: (field: string) => field === "title" ? "full-scan.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/full-ocr",
+        title: "Full OCR Candidate",
+        decision: "include",
+        zoteroItemID: 82,
+        zoteroItemKey: "ITEM82",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" },
+        review: {
+          pdfFullDocumentOcr: true,
+          pdfMaxOcrPages: 24
+        }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].body.params.arguments).toMatchObject({
+      filePath: "/tmp/full-scan.pdf",
+      name: "full-scan.pdf",
+      ocrFallback: true,
+      ocrPageStrategy: "all",
+      fullDocumentOcr: true,
+      maxOcrPages: 24,
+      minTextChars: 40
+    });
+    expect(enriched[0].review.pdfExtractionQuality).toMatchObject({
+      status: "warning",
+      engine: "pdftotext+tesseract",
+      pagesWithText: 12,
+      expectedPageCount: 24,
+      ocrFallbackUsed: true,
+      ocrFullDocumentUsed: true,
+      ocrPageStrategy: "all",
+      ocrMaxPages: 24,
+      ocrRequestedPageCount: 30,
+      ocrTruncatedPageCount: 6,
+      warnings: ["ocr_fallback_used", "ocr_full_document_used", "ocr_page_limit_reached"]
+    });
+    const report = loaded.renderCandidateReviewMarkdown(enriched, {
+      outputLanguage: "en-US",
+      item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+    expect(report).toContain("OCR scope: all");
+    expect(report).toContain("OCR page cap/requested: 24/30");
+    expect(report).toContain("full-document OCR: yes");
+    expect(report).toContain("ocr_fallback_used, ocr_full_document_used, ocr_page_limit_reached");
+    expect(report).toContain("The OCR page cap was reached");
+  });
+
   it("records PDF byte access diagnostics and falls back to indexed text evidence", async () => {
     const loaded = loadWorkbenchHelpers();
     const fetchCalls: any[] = [];

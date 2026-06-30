@@ -16671,6 +16671,9 @@ function candidatePdfExtractionQualitySummary(quality, labels) {
     `${labels.pdfQualityEmptyPages}: ${quality?.emptyPageCount || 0}`,
     `${labels.pdfQualityTotalText}: ${quality?.totalTextChars || 0}`,
     `${labels.pdfQualityOcrFallback}: ${quality?.ocrFallbackUsed ? labels.pdfQualityYes : labels.pdfQualityNo}`,
+    quality?.ocrPageStrategy ? `${labels.pdfQualityOcrStrategy}: ${quality.ocrPageStrategy}` : "",
+    quality?.ocrMaxPages ? `${labels.pdfQualityOcrPageCap}: ${quality.ocrMaxPages}${quality?.ocrRequestedPageCount ? `/${quality.ocrRequestedPageCount}` : ""}` : "",
+    `${labels.pdfQualityOcrFullDocument}: ${quality?.ocrFullDocumentUsed ? labels.pdfQualityYes : labels.pdfQualityNo}`,
     quality?.ocrConfidenceSummary ? `${labels.pdfQualityOcrConfidence}: ${quality.ocrConfidenceSummary}` : "",
     quality?.ocrConfidenceRisk ? `${labels.pdfQualityOcrRisk}: ${quality.ocrConfidenceRisk}` : "",
     `${labels.pdfQualityWarnings}: ${warnings}`,
@@ -16694,6 +16697,7 @@ function candidatePdfExtractionQualityNextAction(quality, labels) {
   if (warnings.has("local_bridge_fetch_unavailable") || warnings.has("local_bridge_endpoint_missing")) return labels.pdfQualityActionStartBridge;
   if (warnings.has("local_bridge_request_failed")) return labels.pdfQualityActionCheckBridge;
   if (warnings.has("indexed_text_fallback_used")) return labels.pdfQualityActionVerifyIndexedText;
+  if (warnings.has("ocr_page_limit_reached")) return labels.pdfQualityActionIncreaseOcrLimit;
   return mdText(quality?.nextAction || "");
 }
 
@@ -16942,6 +16946,8 @@ async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
   const [signal, clearPdfTextTimeout] = typeof setTimeout === "function"
     ? createAbortController(null, 50000)
     : [undefined, () => {}];
+  const fullDocumentOcr = candidatePdfFullDocumentOcrEnabled(record);
+  const maxOcrPages = candidatePdfMaxOcrPages(record, fullDocumentOcr ? 60 : 6);
   try {
     const payload = await assertLocalAgentRequestOk({
       url: endpoint,
@@ -16957,8 +16963,9 @@ async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
             ...bridgeArguments,
             timeoutSeconds: 50,
             ocrFallback: true,
-            ocrPageStrategy: "sparse",
-            maxOcrPages: 6,
+            ocrPageStrategy: fullDocumentOcr ? "all" : "sparse",
+            maxOcrPages,
+            ...(fullDocumentOcr ? { fullDocumentOcr: true } : {}),
             minTextChars: 40
           }
         }
@@ -17073,6 +17080,11 @@ function candidatePdfExtractionQualityFromResult(result, pages = []) {
     averageTextCharsPerPage: Number.isFinite(Number(quality?.averageTextCharsPerPage)) ? Number(quality.averageTextCharsPerPage) : 0,
     minTextChars: Number.isFinite(Number(quality?.minTextChars)) ? Number(quality.minTextChars) : 0,
     ocrFallbackUsed: quality?.ocrFallbackUsed === true || quality?.ocrFallbackUsed === "true" || warnings.includes("ocr_fallback_used"),
+    ocrFullDocumentUsed: quality?.ocrFullDocumentUsed === true || quality?.ocrFullDocumentUsed === "true" || warnings.includes("ocr_full_document_used"),
+    ocrPageStrategy: mdText(quality?.ocrPageStrategy || result?.ocrPageStrategy || ""),
+    ocrMaxPages: Number.isFinite(Number(quality?.ocrMaxPages)) ? Number(quality.ocrMaxPages) : 0,
+    ocrRequestedPageCount: Number.isFinite(Number(quality?.ocrRequestedPageCount)) ? Number(quality.ocrRequestedPageCount) : 0,
+    ocrTruncatedPageCount: Number.isFinite(Number(quality?.ocrTruncatedPageCount)) ? Number(quality.ocrTruncatedPageCount) : 0,
     ocrPageSignals,
     ocrConfidenceCounts,
     ocrConfidenceSummary: candidatePdfOcrConfidenceSummary(ocrConfidenceCounts),
@@ -17081,6 +17093,26 @@ function candidatePdfExtractionQualityFromResult(result, pages = []) {
     lastError: mdText(quality?.lastError || result?.lastError || ""),
     warnings
   };
+}
+
+function candidatePdfFullDocumentOcrEnabled(record = {}) {
+  const review = record?.review && typeof record.review === "object" && !Array.isArray(record.review) ? record.review : {};
+  return review.pdfFullDocumentOcr === true
+    || review.fullDocumentOcr === true
+    || record?.pdfFullDocumentOcr === true
+    || record?.fullDocumentOcr === true;
+}
+
+function candidatePdfMaxOcrPages(record = {}, fallback = 6) {
+  const review = record?.review && typeof record.review === "object" && !Array.isArray(record.review) ? record.review : {};
+  const value = Number(
+    review.pdfMaxOcrPages
+    ?? review.maxOcrPages
+    ?? record?.pdfMaxOcrPages
+    ?? record?.maxOcrPages
+  );
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.min(Math.max(Math.round(value), 1), 200);
 }
 
 function candidatePdfOcrPageSignals(quality, pages = []) {
@@ -17872,6 +17904,9 @@ function candidateReviewLabels(outputLanguage) {
       pdfQualityEmptyPages: "空页",
       pdfQualityTotalText: "文本字符",
       pdfQualityOcrFallback: "OCR fallback",
+      pdfQualityOcrStrategy: "OCR 范围",
+      pdfQualityOcrPageCap: "OCR 页数上限/请求页",
+      pdfQualityOcrFullDocument: "整篇 OCR",
       pdfQualityOcrConfidence: "OCR 置信度",
       pdfQualityOcrRisk: "OCR 风险",
       pdfQualityWarnings: "告警",
@@ -17880,6 +17915,7 @@ function candidateReviewLabels(outputLanguage) {
       pdfQualityActionStartBridge: "启动本地 bridge，并确认 PDF 页文本抽取 endpoint 可访问。",
       pdfQualityActionCheckBridge: "检查本地 bridge 日志、Poppler/Tesseract 安装和 PDF 文件权限。",
       pdfQualityActionVerifyIndexedText: "当前已回退到 Zotero indexed text；请打开原文核对页码和上下文。",
+      pdfQualityActionIncreaseOcrLimit: "OCR 页数达到上限；如确实需要整篇扫描件，请提高 maxOcrPages 后重新抽取，并人工核对剩余页。",
       pdfQualityNoWarnings: "无",
       pdfQualityYes: "是",
       pdfQualityNo: "否",
@@ -18042,6 +18078,9 @@ function candidateReviewLabels(outputLanguage) {
     pdfQualityEmptyPages: "empty pages",
     pdfQualityTotalText: "text chars",
     pdfQualityOcrFallback: "OCR fallback",
+    pdfQualityOcrStrategy: "OCR scope",
+    pdfQualityOcrPageCap: "OCR page cap/requested",
+    pdfQualityOcrFullDocument: "full-document OCR",
     pdfQualityOcrConfidence: "OCR confidence",
     pdfQualityOcrRisk: "OCR risk",
     pdfQualityWarnings: "warnings",
@@ -18050,6 +18089,7 @@ function candidateReviewLabels(outputLanguage) {
     pdfQualityActionStartBridge: "Start the local bridge and verify the PDF page extraction endpoint.",
     pdfQualityActionCheckBridge: "Check local bridge logs, Poppler/Tesseract installation, and PDF file permissions.",
     pdfQualityActionVerifyIndexedText: "The report fell back to Zotero indexed text; verify page and context in the original PDF.",
+    pdfQualityActionIncreaseOcrLimit: "The OCR page cap was reached. Increase maxOcrPages only when full scanned-document extraction is needed, then verify remaining pages manually.",
     pdfQualityNoWarnings: "none",
     pdfQualityYes: "yes",
     pdfQualityNo: "no",

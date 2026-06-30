@@ -80,6 +80,9 @@ describe("local agent stdio MCP runtime", () => {
         type: "boolean"
       });
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrFallback.description).toContain("per-page OCR confidence signals");
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.fullDocumentOcr).toMatchObject({
+        type: "boolean"
+      });
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.maxOcrPages).toMatchObject({
         type: "number"
       });
@@ -448,6 +451,87 @@ describe("local agent stdio MCP runtime", () => {
         expect(parsed.quality.ocrPageSignals).toEqual([
           expect.objectContaining({ page: 3, status: "ok", textChars: 60 })
         ]);
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows explicit full-document OCR beyond the default page cap", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", Array(15).fill("").join("\f"));
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 15);
+      const ocrOutputs: Record<number, string> = {};
+      for (let page = 1; page <= 15; page += 1) {
+        ocrOutputs[page] = `Full document OCR recovered page ${page} with method evidence and experiment details.`;
+      }
+      const tesseractBin = fakeTesseractByPageBin(dir, "tesseract", ocrOutputs);
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage(10000);
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 13,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF full scanned document").toString("base64"),
+              name: "full-scan.pdf",
+              timeoutSeconds: 30,
+              ocrFallback: true,
+              ocrPageStrategy: "all",
+              fullDocumentOcr: true,
+              maxOcrPages: 15,
+              minTextChars: 40,
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "full-scan.pdf",
+          pageCount: 15,
+          ocrFallbackUsed: true,
+          ocrRenderedPageCount: 15,
+          ocrEmptyPageCount: 0,
+          ocrMaxPages: 15,
+          ocrPageStrategy: "all",
+          ocrRequestedPageCount: 15,
+          ocrTruncatedPageCount: 0,
+          ocrFullDocumentUsed: true,
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 15,
+            expectedPageCount: 15,
+            emptyPageCount: 0,
+            ocrFallbackUsed: true,
+            ocrFullDocumentUsed: true,
+            ocrPageStrategy: "all",
+            ocrMaxPages: 15,
+            ocrRequestedPageCount: 15,
+            ocrTruncatedPageCount: 0,
+            warnings: ["ocr_fallback_used", "ocr_full_document_used"]
+          }
+        });
+        expect(parsed.pages.map((page: any) => page.page)).toEqual(Array.from({ length: 15 }, (_value, index) => index + 1));
+        expect(parsed.quality.ocrPageSignals).toHaveLength(15);
+        expect(parsed.quality.ocrPageSignals[14]).toMatchObject({
+          page: 15,
+          status: "ok",
+          ocrConfidence: "medium"
+        });
       } finally {
         runtime.stop();
       }
