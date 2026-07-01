@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">Aggregator provider setup card</title>
+  <desc id="desc">Reference configuration cards for OpenRouter, Cline API, and Vercel AI Gateway provider profiles.</desc>
+  <rect width="1200" height="680" rx="28" fill="#f7f9fb"/>
+  <rect x="36" y="36" width="1128" height="608" rx="22" fill="#ffffff" stroke="#d5dce8"/>
+  <text x="72" y="96" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="34" font-weight="700" fill="#172033">Aggregator and router profiles</text>
+  <text x="72" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#5e6a7d">Pick the router first, then use Model vendor and Model to choose the routed backend.</text>
+
+  <g transform="translate(72 188)">
+    <rect width="320" height="386" rx="18" fill="#fbfcff" stroke="#cfd8e6"/>
+    <text x="26" y="48" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="26" font-weight="700" fill="#111827">OpenRouter</text>
+    <text x="26" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Provider</text>
+    <text x="26" y="119" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">OpenRouter</text>
+    <text x="26" y="164" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Base URL</text>
+    <text x="26" y="191" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#172033">https://openrouter.ai/api/v1</text>
+    <text x="26" y="236" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Model vendor</text>
+    <text x="26" y="263" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">Anthropic / Gemini / ...</text>
+    <text x="26" y="314" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">Optional headers can go in the</text>
+    <text x="26" y="342" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">advanced custom JSON fields.</text>
+  </g>
+
+  <g transform="translate(440 188)">
+    <rect width="320" height="386" rx="18" fill="#fbfcff" stroke="#cfd8e6"/>
+    <text x="26" y="48" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="26" font-weight="700" fill="#dc2626">Cline API</text>
+    <text x="26" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Provider</text>
+    <text x="26" y="119" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">Cline API</text>
+    <text x="26" y="164" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Base URL</text>
+    <text x="26" y="191" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#172033">https://api.cline.bot/api/v1</text>
+    <text x="26" y="236" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Model</text>
+    <text x="26" y="263" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">provider/model route id</text>
+    <text x="26" y="314" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">Use Save and Test after changing</text>
+    <text x="26" y="342" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">the routed model.</text>
+  </g>
+
+  <g transform="translate(808 188)">
+    <rect width="320" height="386" rx="18" fill="#fbfcff" stroke="#cfd8e6"/>
+    <text x="26" y="48" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="26" font-weight="700" fill="#059669">Vercel AI Gateway</text>
+    <text x="26" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Provider</text>
+    <text x="26" y="119" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">Chat / Responses / Anthropic</text>
+    <text x="26" y="164" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Base URL</text>
+    <text x="26" y="191" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#172033">https://ai-gateway.vercel.sh</text>
+    <text x="26" y="236" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Protocol</text>
+    <text x="26" y="263" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">Choose matching preset</text>
+    <text x="26" y="314" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">Pick Responses when PDF input</text>
+    <text x="26" y="342" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">is needed and supported.</text>
+  </g>
+</svg>

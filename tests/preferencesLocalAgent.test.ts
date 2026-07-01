@@ -3170,6 +3170,39 @@ describe("preferences local-agent config helpers", () => {
     expect(elements.get("zms-status").value).toContain("Setting saved, but not applied");
   });
 
+  it("falls back to AddonManager numeric auto-update modes when constants are unavailable", async () => {
+    const autoUpdateCode = readFileSync(resolve(process.cwd(), "addon/content/auto-update.js"), "utf8");
+    const modes: number[] = [];
+    const addon = { _mode: undefined as number | undefined };
+    Object.defineProperty(addon, "applyBackgroundUpdates", {
+      get() {
+        return this._mode;
+      },
+      set(value: number) {
+        this._mode = value;
+        modes.push(value);
+      }
+    });
+    const context = createContext({
+      window: {},
+      ChromeUtils: {
+        importESModule: (url: string) => {
+          if (String(url).includes("AddonManager")) {
+            return { AddonManager: { getAddonByID: async () => addon } };
+          }
+          return {};
+        }
+      },
+      console
+    });
+    runInContext(autoUpdateCode, context, { filename: "auto-update.js" });
+
+    await expect((context as any).zmsApplyAddonAutoUpdatePreference(true)).resolves.toMatchObject({ ok: true, mode: 2 });
+    await expect((context as any).zmsApplyAddonAutoUpdatePreference(false)).resolves.toMatchObject({ ok: true, mode: 0 });
+
+    expect(modes).toEqual([2, 0]);
+  });
+
   it("localizes output directory button labels and tooltips", () => {
     const { controller, elements } = loadPreferencesController();
 

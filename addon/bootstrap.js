@@ -1631,6 +1631,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results, op
   const modelReviewPath = artifacts.modelReviewPath;
   const collectionReviewPath = artifacts.collectionReviewPath;
   const ideaListPath = artifacts.ideaListPath;
+  const chartReviewBatchIndexPath = artifacts.chartReviewBatchIndexPath;
   await writeText(paperNotesIndexPath, renderPaperNotesIndex(collectionContext, results, outputLanguage));
   await writeText(methodMatrixPath, renderMethodMatrix(collectionContext, results, outputLanguage, summaryInsights));
   await writeText(gapMatrixPath, renderResearchGapMatrix(collectionContext, results, outputLanguage, summaryInsights));
@@ -1655,6 +1656,13 @@ async function writeCollectionWorkspace(settings, collectionContext, results, op
     }, literatureSearchEvidence);
   }
   await writeText(ideaListPath, renderIdeaList(collectionContext, results, outputLanguage, summaryInsights));
+  const chartReviewBatchIndex = await loadCollectionChartReviewBatchIndex(
+    { ...collectionContext, outputDir: baseDir },
+    results,
+    artifacts,
+    outputLanguage
+  );
+  await writeText(chartReviewBatchIndexPath, renderCollectionChartReviewBatchIndex(chartReviewBatchIndex, outputLanguage));
   const crossCollectionArtifacts = await writeCrossCollectionSynthesisIndex(
     settings,
     { ...collectionContext, outputDir: baseDir },
@@ -1678,7 +1686,9 @@ async function writeCollectionWorkspace(settings, collectionContext, results, op
       literatureSearchRecordsPath,
       modelReviewPath,
       collectionReviewPath,
-      ideaListPath
+      ideaListPath,
+      chartReviewBatchIndexPath,
+      chartReviewBatchIndex
     }
   );
   return {
@@ -1699,6 +1709,7 @@ async function writeCollectionWorkspace(settings, collectionContext, results, op
     modelReviewPath,
     collectionReviewPath,
     ideaListPath,
+    chartReviewBatchIndexPath,
     ...crossCollectionArtifacts
   };
 }
@@ -1729,7 +1740,394 @@ function collectionWorkspaceArtifactPaths(dirs, outputLanguage) {
     reviewReportPath: PathUtils.join(dirs.writing, `formal-review-report.${language}.md`),
     modelReviewPath: PathUtils.join(dirs.writing, `model-literature-review.${language}.md`),
     collectionReviewPath: PathUtils.join(dirs.writing, `collection-literature-review.${language}.md`),
-    ideaListPath: PathUtils.join(dirs.writing, `idea-list.${language}.md`)
+    ideaListPath: PathUtils.join(dirs.writing, `idea-list.${language}.md`),
+    chartReviewBatchIndexPath: PathUtils.join(dirs.writing, `chart-review-batch-index.${language}.md`)
+  };
+}
+
+async function loadCollectionChartReviewBatchIndex(collectionContext, results, artifacts = {}, outputLanguage = "zh-CN") {
+  const reports = await loadCollectionVisualExtractionReports(collectionContext, results, artifacts);
+  const rows = collectionChartReviewBatchRows(reports);
+  return {
+    templateVersion: "collection-chart-review-batch-index-v1",
+    generatedAt: new Date().toISOString(),
+    outputLanguage: collectionOutputLanguage({ outputLanguage }),
+    collection: {
+      key: collectionContext.key || "",
+      name: collectionContext.name || collectionContext.key || "",
+      type: collectionContext.type || "collection",
+      parentLibraryID: collectionContext.parentLibraryID || null
+    },
+    stats: collectionChartReviewBatchStats(reports, rows),
+    reports,
+    rows
+  };
+}
+
+async function loadCollectionVisualExtractionReports(collectionContext, results, artifacts = {}) {
+  const reports = [];
+  const seen = new Set();
+  for (const item of batchReportItems(results)) {
+    const itemKey = item.itemKey || "";
+    if (!itemKey || seen.has(itemKey)) continue;
+    seen.add(itemKey);
+    const jsonPath = collectionVisualExtractionJsonPath(collectionContext, itemKey);
+    try {
+      if (!await IOUtils.exists(jsonPath)) continue;
+      const parsed = JSON.parse(await readText(jsonPath));
+      reports.push(normalizeCollectionVisualExtractionReport(parsed, item, jsonPath));
+    } catch (err) {
+      reports.push(collectionVisualExtractionReportFailure(item, jsonPath, err));
+    }
+  }
+  if (artifacts?.chartReviewBatchIndexPath) {
+    reports.sort((left, right) => String(left.itemKey || "").localeCompare(String(right.itemKey || "")));
+  }
+  return reports;
+}
+
+function collectionVisualExtractionJsonPath(collectionContext, itemKey) {
+  const baseDir = collectionContext.outputDir || "";
+  return PathUtils.join(baseDir, "writing", `visual-extraction-${sanitizeFilename(itemKey || "paper")}.json`);
+}
+
+function normalizeCollectionVisualExtractionReport(parsed, item, jsonPath) {
+  const actions = Array.isArray(parsed?.chartReviewActions) ? parsed.chartReviewActions : [];
+  const batchRows = Array.isArray(parsed?.chartBatchReviewBoard)
+    ? parsed.chartBatchReviewBoard
+    : collectionChartReviewRowsFromActions(actions);
+  return {
+    itemKey: parsed?.itemKey || item.itemKey || "",
+    title: parsed?.metadata?.title || item.title || parsed?.itemKey || item.itemKey || "",
+    generatedAt: parsed?.generatedAt || "",
+    reportPath: parsed?.reportPath || jsonPath.replace(/\.json$/i, ".md"),
+    jsonPath,
+    chartQualityStatus: parsed?.chartQualityReview?.status || "",
+    chartReviewActionCount: actions.length,
+    chartReviewBatchCount: batchRows.length,
+    batchRows: batchRows.map((row) => ({
+      priority: row.priority || "medium",
+      reviewState: normalizeCollectionChartReviewState(row.reviewState || "todo"),
+      count: Number(row.count) || 0,
+      blockingIssue: row.blockingIssue || "",
+      batchAction: row.batchAction || row.nextStep || "",
+      doneCriteria: row.doneCriteria || ""
+    }))
+  };
+}
+
+function collectionVisualExtractionReportFailure(item, jsonPath, err) {
+  return {
+    itemKey: item.itemKey || "",
+    title: item.title || item.itemKey || "",
+    generatedAt: "",
+    reportPath: jsonPath.replace(/\.json$/i, ".md"),
+    jsonPath,
+    chartQualityStatus: "unreadable-report",
+    chartReviewActionCount: 1,
+    chartReviewBatchCount: 1,
+    batchRows: [{
+      priority: "high",
+      reviewState: "blocked",
+      count: 1,
+      blockingIssue: safeError(err),
+      batchAction: "Repair or regenerate the visual extraction JSON before chart review.",
+      doneCriteria: "The visual extraction JSON opens and exposes chart review rows."
+    }]
+  };
+}
+
+function collectionChartReviewRowsFromActions(actions = []) {
+  const groups = new Map();
+  for (const action of actions || []) {
+    const priority = action?.priority || "medium";
+    const reviewState = normalizeCollectionChartReviewState(action?.reviewState || "todo");
+    const actionId = action?.actionId || "manual-review";
+    const batchAction = action?.nextStep || actionId;
+    const doneCriteria = action?.doneCriteria || "";
+    const key = [priority, reviewState, actionId, batchAction, doneCriteria].join("::");
+    if (!groups.has(key)) {
+      groups.set(key, {
+        priority,
+        reviewState,
+        count: 0,
+        blockingIssues: [],
+        batchAction,
+        doneCriteria
+      });
+    }
+    const group = groups.get(key);
+    group.count += 1;
+    const relatedCheck = `${action?.checkId || ""}${action?.status ? ` (${action.status})` : ""}`;
+    const issue = [actionId, relatedCheck, action?.detail || ""].filter(Boolean).join(" - ");
+    if (issue && !group.blockingIssues.includes(issue)) group.blockingIssues.push(issue);
+  }
+  return Array.from(groups.values()).map((group) => ({
+    priority: group.priority,
+    reviewState: group.reviewState,
+    count: group.count,
+    blockingIssue: collectionChartReviewIssueSummary(group.blockingIssues),
+    batchAction: group.batchAction,
+    doneCriteria: group.doneCriteria
+  }));
+}
+
+function collectionChartReviewBatchRows(reports = []) {
+  const groups = new Map();
+  for (const report of reports || []) {
+    for (const row of report.batchRows || []) {
+      const priority = row.priority || "medium";
+      const reviewState = normalizeCollectionChartReviewState(row.reviewState || "todo");
+      const batchAction = row.batchAction || "";
+      const doneCriteria = row.doneCriteria || "";
+      const key = [priority, reviewState, batchAction, doneCriteria].join("::");
+      if (!groups.has(key)) {
+        groups.set(key, {
+          priority,
+          reviewState,
+          count: 0,
+          paperKeys: new Set(),
+          papers: [],
+          sourceReports: [],
+          blockingIssues: [],
+          batchAction,
+          doneCriteria
+        });
+      }
+      const group = groups.get(key);
+      const count = Number(row.count) || 1;
+      group.count += count;
+      if (report.itemKey && !group.paperKeys.has(report.itemKey)) {
+        group.paperKeys.add(report.itemKey);
+        group.papers.push(report.title || report.itemKey);
+      }
+      if (report.reportPath && !group.sourceReports.includes(report.reportPath)) group.sourceReports.push(report.reportPath);
+      if (row.blockingIssue && !group.blockingIssues.includes(row.blockingIssue)) group.blockingIssues.push(row.blockingIssue);
+    }
+  }
+  return Array.from(groups.values()).map((group) => ({
+    priority: group.priority,
+    reviewState: group.reviewState,
+    count: group.count,
+    paperCount: group.paperKeys.size,
+    papers: group.papers.slice(0, 8),
+    blockingIssue: collectionChartReviewIssueSummary(group.blockingIssues),
+    batchAction: group.batchAction,
+    doneCriteria: group.doneCriteria,
+    sourceReports: group.sourceReports.slice(0, 8)
+  })).sort(collectionChartReviewBatchSort);
+}
+
+function collectionChartReviewIssueSummary(issues = []) {
+  const visible = (issues || []).filter(Boolean).slice(0, 3);
+  const hidden = Math.max(0, (issues || []).filter(Boolean).length - visible.length);
+  return hidden ? `${visible.join("; ")}; +${hidden} more` : visible.join("; ");
+}
+
+function collectionChartReviewBatchSort(left, right) {
+  const priorityRank = { high: 0, medium: 1, low: 2 };
+  const stateRank = { todo: 0, blocked: 1, "in-review": 2, done: 3, discarded: 4 };
+  const priorityDelta = (priorityRank[left?.priority] ?? 9) - (priorityRank[right?.priority] ?? 9);
+  if (priorityDelta) return priorityDelta;
+  const stateDelta = (stateRank[left?.reviewState] ?? 9) - (stateRank[right?.reviewState] ?? 9);
+  if (stateDelta) return stateDelta;
+  return (Number(right?.count) || 0) - (Number(left?.count) || 0);
+}
+
+function normalizeCollectionChartReviewState(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "in_review" || normalized === "in review" || normalized === "reviewing") return "in-review";
+  if (normalized === "complete" || normalized === "completed") return "done";
+  if (["todo", "in-review", "done", "blocked", "discarded"].includes(normalized)) return normalized;
+  return "todo";
+}
+
+function collectionChartReviewBatchStats(reports = [], rows = []) {
+  const actionCount = rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+  const openActionCount = rows
+    .filter((row) => !["done", "discarded"].includes(normalizeCollectionChartReviewState(row.reviewState)))
+    .reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+  return {
+    visualReports: reports.length,
+    batchRows: rows.length,
+    chartReviewActions: actionCount,
+    openChartReviewActions: openActionCount,
+    highPriorityActions: rows.filter((row) => row.priority === "high").reduce((sum, row) => sum + (Number(row.count) || 0), 0),
+    blockedActions: rows.filter((row) => normalizeCollectionChartReviewState(row.reviewState) === "blocked").reduce((sum, row) => sum + (Number(row.count) || 0), 0)
+  };
+}
+
+function renderCollectionChartReviewBatchIndex(index, outputLanguage = "zh-CN") {
+  const labels = collectionChartReviewBatchLabels(outputLanguage);
+  const stats = index?.stats || collectionChartReviewBatchStats(index?.reports || [], index?.rows || []);
+  const rows = Array.isArray(index?.rows) ? index.rows : [];
+  const reports = Array.isArray(index?.reports) ? index.reports : [];
+  return [
+    "---",
+    `templateVersion: ${frontmatterScalar(index?.templateVersion || "collection-chart-review-batch-index-v1")}`,
+    `collectionKey: ${frontmatterScalar(index?.collection?.key || "")}`,
+    `outputLanguage: ${frontmatterScalar(collectionOutputLanguage({ outputLanguage }))}`,
+    `generatedAt: ${frontmatterScalar(index?.generatedAt || "")}`,
+    `visualReportCount: ${stats.visualReports || 0}`,
+    `chartReviewActionCount: ${stats.chartReviewActions || 0}`,
+    `openChartReviewActionCount: ${stats.openChartReviewActions || 0}`,
+    "---",
+    "",
+    `# ${index?.collection?.name || index?.collection?.key || ""} ${labels.title}`,
+    "",
+    labels.note,
+    "",
+    `- ${labels.visualReports}: ${stats.visualReports || 0}`,
+    `- ${labels.batchRows}: ${stats.batchRows || 0}`,
+    `- ${labels.chartReviewActions}: ${stats.chartReviewActions || 0}`,
+    `- ${labels.openChartReviewActions}: ${stats.openChartReviewActions || 0}`,
+    `- ${labels.highPriorityActions}: ${stats.highPriorityActions || 0}`,
+    `- ${labels.blockedActions}: ${stats.blockedActions || 0}`,
+    "",
+    `## ${labels.batchBoard}`,
+    "",
+    rows.length ? collectionChartReviewBatchTable(rows, labels) : `- ${labels.noBatchRows}`,
+    "",
+    `## ${labels.sourceReports}`,
+    "",
+    reports.length ? collectionChartReviewSourceReportsTable(reports, labels) : `- ${labels.noReports}`,
+    "",
+    `## ${labels.reviewChecklist}`,
+    "",
+    labels.reviewChecklistItems,
+    ""
+  ].join("\n");
+}
+
+function collectionChartReviewBatchTable(rows, labels) {
+  return [
+    `| ${labels.priority} | ${labels.reviewState} | ${labels.count} | ${labels.papers} | ${labels.blockingIssue} | ${labels.batchAction} | ${labels.doneCriteria} | ${labels.sourceReports} |`,
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      escapeMarkdownTable(row.priority),
+      escapeMarkdownTable(row.reviewState),
+      Number(row.count) || 0,
+      escapeMarkdownTable((row.papers || []).join("; ")),
+      escapeMarkdownTable(row.blockingIssue || ""),
+      escapeMarkdownTable(row.batchAction || ""),
+      escapeMarkdownTable(row.doneCriteria || ""),
+      escapeMarkdownTable((row.sourceReports || []).join("; "))
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
+function collectionChartReviewSourceReportsTable(reports, labels) {
+  return [
+    `| ${labels.paper} | ${labels.qualityStatus} | ${labels.batchRows} | ${labels.chartReviewActions} | ${labels.reportFile} | ${labels.jsonFile} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    ...reports.map((report) => [
+      escapeMarkdownTable(report.title || report.itemKey || ""),
+      escapeMarkdownTable(report.chartQualityStatus || ""),
+      Number(report.chartReviewBatchCount) || 0,
+      Number(report.chartReviewActionCount) || 0,
+      escapeMarkdownTable(report.reportPath || ""),
+      escapeMarkdownTable(report.jsonPath || "")
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
+function collectionChartReviewBatchLabels(outputLanguage) {
+  if (outputLanguage === "en-US") {
+    return {
+      title: "Chart Review Batch Index",
+      note: "This index aggregates chart review tasks from visual-extraction JSON reports in this collection. Use it to batch similar chart checks before reusing extracted values.",
+      visualReports: "visual reports",
+      batchRows: "batch rows",
+      chartReviewActions: "chart review actions",
+      openChartReviewActions: "open chart review actions",
+      highPriorityActions: "high-priority actions",
+      blockedActions: "blocked actions",
+      batchBoard: "Cross-Report Batch Review Board",
+      sourceReports: "Source Visual Reports",
+      noBatchRows: "No chart review action was found in the current collection visual reports.",
+      noReports: "No visual-extraction JSON report was found for the current batch items.",
+      priority: "Priority",
+      reviewState: "Review state",
+      count: "Actions",
+      papers: "Papers",
+      blockingIssue: "Blocking issue",
+      batchAction: "Batch action",
+      doneCriteria: "Done criteria",
+      paper: "Paper",
+      qualityStatus: "Quality status",
+      reportFile: "Report",
+      jsonFile: "JSON",
+      reviewChecklist: "Batch Review Checklist",
+      reviewChecklistItems: [
+        "- [ ] Work through high-priority and blocked rows before reusing chart data.",
+        "- [ ] Open every source visual report listed in a row and check the original figure.",
+        "- [ ] Mark completed rows back in each visual report before exporting again."
+      ].join("\n")
+    };
+  }
+  if (outputLanguage === "ja-JP") {
+    return {
+      title: "図表レビュー一括インデックス",
+      note: "このインデックスは collection 内の visual-extraction JSON レポートから図表レビュータスクを集約します。抽出値を再利用する前に類似タスクをまとめて確認してください。",
+      visualReports: "図表レポート数",
+      batchRows: "一括行数",
+      chartReviewActions: "図表レビュータスク数",
+      openChartReviewActions: "未完了タスク数",
+      highPriorityActions: "高優先度タスク数",
+      blockedActions: "ブロック中タスク数",
+      batchBoard: "レポート横断一括レビューボード",
+      sourceReports: "元図表レポート",
+      noBatchRows: "現在の collection 図表レポートにレビュータスクはありません。",
+      noReports: "現在のバッチ項目に対応する visual-extraction JSON レポートは見つかりません。",
+      priority: "優先度",
+      reviewState: "レビュー状態",
+      count: "タスク数",
+      papers: "論文",
+      blockingIssue: "阻害要因",
+      batchAction: "一括処理",
+      doneCriteria: "完了条件",
+      paper: "論文",
+      qualityStatus: "品質状態",
+      reportFile: "レポート",
+      jsonFile: "JSON",
+      reviewChecklist: "一括レビュー確認リスト",
+      reviewChecklistItems: [
+        "- [ ] 図表データを再利用する前に高優先度・ブロック中の行を処理する。",
+        "- [ ] 各行の元図表レポートを開き、原図を確認する。",
+        "- [ ] 完了した状態を各図表レポートに戻してから再エクスポートする。"
+      ].join("\n")
+    };
+  }
+  return {
+    title: "图表复核批量索引",
+    note: "本索引汇总当前 collection 内 visual-extraction JSON 报告里的图表复核任务，用于在复用抽取数值前批量处理相似问题。",
+    visualReports: "图表报告数",
+    batchRows: "批量行数",
+    chartReviewActions: "图表复核任务数",
+    openChartReviewActions: "未完成复核任务数",
+    highPriorityActions: "高优先级任务数",
+    blockedActions: "阻塞任务数",
+    batchBoard: "跨报告批量复核看板",
+    sourceReports: "来源图表报告",
+    noBatchRows: "当前 collection 的图表报告里没有检测到复核任务。",
+    noReports: "当前批量条目没有找到对应的 visual-extraction JSON 报告。",
+    priority: "优先级",
+    reviewState: "复核状态",
+    count: "任务数",
+    papers: "论文",
+    blockingIssue: "阻塞问题",
+    batchAction: "批量处理动作",
+    doneCriteria: "完成条件",
+    paper: "论文",
+    qualityStatus: "质量状态",
+    reportFile: "报告",
+    jsonFile: "JSON",
+    reviewChecklist: "批量复核清单",
+    reviewChecklistItems: [
+      "- [ ] 先处理高优先级和阻塞状态的行，再复用图表数据。",
+      "- [ ] 打开每一行列出的来源图表报告，并回到原图核对。",
+      "- [ ] 在各图表报告里回填完成状态后再重新导出。"
+    ].join("\n")
   };
 }
 
@@ -2226,7 +2624,8 @@ const COLLECTION_MARKDOWN_ARTIFACT_KEYS = [
   "synthesisConflictsPath",
   "synthesisRoadmapPath",
   "gapMatrixPath",
-  "ideaListPath"
+  "ideaListPath",
+  "chartReviewBatchIndexPath"
 ];
 
 async function linkCollectionWorkspaceMarkdownArtifacts(collectionContext, artifacts) {
@@ -2311,15 +2710,23 @@ async function writeCrossCollectionSynthesisIndex(settings, collectionContext, r
   const gapBoard = crossCollectionGapEntries(collections, labels);
   const themeBridgeBoard = crossCollectionThemeBridgeEntries(collections, labels);
   const themeMergeBoard = crossCollectionThemeMergeEntries(collections, labels);
+  const clusterMap = crossCollectionClusterMapEntries(collections, labels);
+  const layoutBoard = crossCollectionSynthesisLayoutEntries(clusterMap, labels);
+  const clusterCalibrationBoard = crossCollectionClusterCalibrationEntries(clusterMap, labels);
+  const chartReviewTriage = crossCollectionChartReviewTriageEntries(collections);
   const payload = {
     templateVersion: "cross-collection-index-v1",
     generatedAt: new Date().toISOString(),
     outputLanguage,
     stats: crossCollectionStats(collections),
+    clusterMap,
+    layoutBoard,
+    clusterCalibrationBoard,
     gapBoard,
     themeBridgeBoard,
     themeMergeBoard,
-    priorityBoard: crossCollectionPriorityEntries(collections, gapBoard, labels, themeMergeBoard),
+    chartReviewTriage,
+    priorityBoard: crossCollectionPriorityEntries(collections, gapBoard, labels, themeMergeBoard, clusterMap),
     collections
   };
   await writeText(indexPath, JSON.stringify(payload, null, 2));
@@ -2363,7 +2770,11 @@ function crossCollectionEntry(collectionContext, results, outputLanguage, summar
   const claims = synthesisClaimEntries(results, summaryInsights, labels).slice(0, 6).map((entry) => ({
     cluster: entry.cluster,
     claim: entry.claim,
+    claimSupportScore: entry.claimSupportScore,
+    claimRisk: entry.claimRisk,
+    evidenceTrace: entry.evidenceTrace,
     supportingPapers: entry.supportingPapers.slice(0, 6),
+    evidence: entry.evidence.slice(0, 6),
     gaps: entry.gaps.slice(0, 4),
     validations: entry.validations.slice(0, 4)
   }));
@@ -2387,8 +2798,10 @@ function crossCollectionEntry(collectionContext, results, outputLanguage, summar
       reviewReportPath: artifacts.reviewReportPath || "",
       modelReviewPath: artifacts.modelReviewPath || "",
       collectionReviewPath: artifacts.collectionReviewPath || "",
-      ideaListPath: artifacts.ideaListPath || ""
+      ideaListPath: artifacts.ideaListPath || "",
+      chartReviewBatchIndexPath: artifacts.chartReviewBatchIndexPath || ""
     },
+    chartReview: crossCollectionChartReviewSummary(artifacts.chartReviewBatchIndex, artifacts.chartReviewBatchIndexPath || ""),
     clusters,
     claims,
     openGaps: uniqueInsightLines(roadmap.map((entry) => entry.openGap).filter(Boolean)).slice(0, 8),
@@ -2414,6 +2827,254 @@ function crossCollectionStats(collections = []) {
     stats.failed += Number(itemStats.failed || 0);
     return stats;
   }, { collections: 0, totalPapers: 0, availableSummaries: 0, skippedNoPdf: 0, failed: 0 });
+}
+
+function crossCollectionChartReviewSummary(chartReviewBatchIndex, path = "") {
+  const rows = Array.isArray(chartReviewBatchIndex?.rows) ? chartReviewBatchIndex.rows : [];
+  const stats = chartReviewBatchIndex?.stats || collectionChartReviewBatchStats(chartReviewBatchIndex?.reports || [], rows);
+  return {
+    path,
+    stats: {
+      visualReports: Number(stats.visualReports) || 0,
+      batchRows: Number(stats.batchRows) || rows.length,
+      chartReviewActions: Number(stats.chartReviewActions) || 0,
+      openChartReviewActions: Number(stats.openChartReviewActions) || 0,
+      highPriorityActions: Number(stats.highPriorityActions) || 0,
+      blockedActions: Number(stats.blockedActions) || 0
+    },
+    rows: rows.slice(0, 12).map((row) => ({
+      priority: row.priority || "medium",
+      reviewState: normalizeCollectionChartReviewState(row.reviewState || "todo"),
+      count: Number(row.count) || 0,
+      paperCount: Number(row.paperCount) || 0,
+      papers: Array.isArray(row.papers) ? row.papers.slice(0, 8) : [],
+      blockingIssue: row.blockingIssue || "",
+      batchAction: row.batchAction || "",
+      doneCriteria: row.doneCriteria || "",
+      sourceReports: Array.isArray(row.sourceReports) ? row.sourceReports.slice(0, 8) : []
+    }))
+  };
+}
+
+function crossCollectionChartReviewTriageEntries(collections = []) {
+  const groups = new Map();
+  for (const collection of collections || []) {
+    const chartReview = collection?.chartReview || {};
+    const rows = Array.isArray(chartReview.rows) ? chartReview.rows : [];
+    for (const row of rows) {
+      const priority = row.priority || "medium";
+      const reviewState = normalizeCollectionChartReviewState(row.reviewState || "todo");
+      const batchAction = row.batchAction || "";
+      const doneCriteria = row.doneCriteria || "";
+      const key = [priority, reviewState, batchAction, doneCriteria].join("::");
+      if (!groups.has(key)) {
+        groups.set(key, {
+          priority,
+          reviewState,
+          count: 0,
+          paperCount: 0,
+          collectionKeys: new Set(),
+          collections: [],
+          sourceIndexes: [],
+          blockingIssues: [],
+          details: [],
+          batchAction,
+          doneCriteria
+        });
+      }
+      const group = groups.get(key);
+      const count = Number(row.count) || 1;
+      group.count += count;
+      group.paperCount += Number(row.paperCount) || 0;
+      if (collection?.key && !group.collectionKeys.has(collection.key)) {
+        group.collectionKeys.add(collection.key);
+        group.collections.push(collection.name || collection.key);
+      }
+      if (chartReview.path && !group.sourceIndexes.includes(chartReview.path)) group.sourceIndexes.push(chartReview.path);
+      if (row.blockingIssue && !group.blockingIssues.includes(row.blockingIssue)) group.blockingIssues.push(row.blockingIssue);
+      group.details.push({
+        collectionKey: collection?.key || "",
+        collectionName: collection?.name || collection?.key || "",
+        priority,
+        reviewState,
+        count,
+        paperCount: Number(row.paperCount) || 0,
+        papers: Array.isArray(row.papers) ? row.papers.slice(0, 8) : [],
+        blockingIssue: row.blockingIssue || "",
+        batchAction,
+        doneCriteria,
+        sourceReports: Array.isArray(row.sourceReports) ? row.sourceReports.slice(0, 8) : [],
+        sourceIndex: chartReview.path || ""
+      });
+    }
+  }
+  return Array.from(groups.values()).map((group) => ({
+    priority: group.priority,
+    reviewState: group.reviewState,
+    count: group.count,
+    collectionCount: group.collectionKeys.size,
+    paperCount: group.paperCount,
+    collections: group.collections.slice(0, 8),
+    blockingIssue: collectionChartReviewIssueSummary(group.blockingIssues),
+    batchAction: group.batchAction,
+    doneCriteria: group.doneCriteria,
+    sourceIndexes: group.sourceIndexes.slice(0, 8),
+    details: group.details.slice(0, 16),
+    writebackTargets: crossCollectionChartReviewWritebackTargets({
+      priority: group.priority,
+      reviewState: group.reviewState,
+      blockingIssue: collectionChartReviewIssueSummary(group.blockingIssues),
+      batchAction: group.batchAction,
+      doneCriteria: group.doneCriteria,
+      details: group.details.slice(0, 16)
+    })
+  })).sort(collectionChartReviewBatchSort);
+}
+
+function crossCollectionChartReviewWritebackTargets(entry) {
+  const details = Array.isArray(entry?.details) ? entry.details : [];
+  return details.map((detail, index) => {
+    const currentState = normalizeCollectionChartReviewState(detail.reviewState || entry.reviewState || "todo");
+    const targetState = nextCollectionChartReviewWritebackState(currentState);
+    const priority = detail.priority || entry.priority || "medium";
+    const batchAction = detail.batchAction || entry.batchAction || "";
+    const doneCriteria = detail.doneCriteria || entry.doneCriteria || "";
+    const sourceReports = Array.isArray(detail.sourceReports) ? detail.sourceReports.slice(0, 8) : [];
+    const notes = [
+      `triagePriority=${priority}`,
+      detail.blockingIssue || entry.blockingIssue || "",
+      doneCriteria ? `doneCriteria=${doneCriteria}` : ""
+    ].filter(Boolean).join("; ");
+    return {
+      targetId: `chart-review-status:${priority}:${currentState}:${detail.collectionKey || detail.collectionName || index + 1}:${index + 1}`,
+      collectionKey: detail.collectionKey || "",
+      collectionName: detail.collectionName || detail.collectionKey || "",
+      priority,
+      currentState,
+      targetState,
+      actionCount: Number(detail.count) || 0,
+      paperCount: Number(detail.paperCount) || 0,
+      papers: Array.isArray(detail.papers) ? detail.papers.slice(0, 8) : [],
+      sourceIndex: detail.sourceIndex || "",
+      sourceReports,
+      match: {
+        priority,
+        reviewState: currentState,
+        batchAction,
+        doneCriteria,
+        sourceReports
+      },
+      statusPatch: {
+        reviewState: targetState,
+        reviewer: "",
+        due: "",
+        notes
+      }
+    };
+  });
+}
+
+function nextCollectionChartReviewWritebackState(reviewState) {
+  const normalized = normalizeCollectionChartReviewState(reviewState || "todo");
+  if (normalized === "done" || normalized === "discarded") return normalized;
+  if (normalized === "in-review") return "done";
+  return "in-review";
+}
+
+function renderCrossCollectionChartReviewTriageRows(entries, labels) {
+  const rows = (entries || []).slice(0, 16).map((entry) => [
+    escapeMarkdownTable(entry.priority || ""),
+    escapeMarkdownTable(entry.reviewState || ""),
+    Number(entry.count) || 0,
+    Number(entry.collectionCount) || 0,
+    Number(entry.paperCount) || 0,
+    escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
+    escapeMarkdownTable(entry.blockingIssue || labels.crossCollectionChartReviewNoIssue),
+    escapeMarkdownTable(entry.batchAction || labels.crossCollectionChartReviewActionPending),
+    escapeMarkdownTable(entry.doneCriteria || labels.crossCollectionChartReviewDonePending),
+    escapeMarkdownTable((entry.sourceIndexes || []).join("; ") || labels.crossCollectionChartReviewIndexPending)
+  ].join(" | ")).map((row) => `| ${row} |`);
+  return [
+    `| ${labels.crossCollectionPriorityColumn} | ${labels.crossCollectionChartReviewStateColumn} | ${labels.crossCollectionChartReviewActionCountColumn} | ${labels.crossCollectionChartReviewCollectionCountColumn || labels.collectionColumn} | ${labels.crossCollectionChartReviewPaperCountColumn || labels.paperColumn} | ${labels.crossCollectionChartReviewCollectionsColumn} | ${labels.crossCollectionChartReviewBlockingColumn} | ${labels.crossCollectionChartReviewBatchActionColumn} | ${labels.crossCollectionChartReviewDoneColumn} | ${labels.crossCollectionChartReviewIndexColumn} |`,
+    "| --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- |",
+    rows.join("\n") || `|  |  | 0 | 0 | 0 |  | ${escapeMarkdownTable(labels.crossCollectionChartReviewEmpty)} |  |  |  |`
+  ].join("\n");
+}
+
+function renderCrossCollectionChartReviewDrilldown(entries, labels) {
+  const visible = (entries || []).slice(0, 10);
+  if (!visible.length) return `- ${labels.crossCollectionChartReviewEmpty}`;
+  return visible.map((entry, index) => {
+    const title = labels.crossCollectionChartReviewDrilldownSummary?.(index + 1, entry) || `${index + 1}. ${entry.priority || ""} ${entry.reviewState || ""}`;
+    const details = Array.isArray(entry.details) ? entry.details : [];
+    const writebackTargets = Array.isArray(entry.writebackTargets)
+      ? entry.writebackTargets
+      : crossCollectionChartReviewWritebackTargets(entry);
+    const detailRows = details.map((detail) => [
+      escapeMarkdownTable(detail.collectionName || detail.collectionKey || ""),
+      Number(detail.count) || 0,
+      Number(detail.paperCount) || 0,
+      escapeMarkdownTable((detail.papers || []).join("; ") || labels.noSummary),
+      escapeMarkdownTable(detail.blockingIssue || labels.crossCollectionChartReviewNoIssue),
+      escapeMarkdownTable((detail.sourceReports || []).join("; ") || labels.pendingSummaryPath),
+      escapeMarkdownTable(detail.sourceIndex || labels.crossCollectionChartReviewIndexPending)
+    ].join(" | ")).map((row) => `| ${row} |`);
+    const writebackRows = writebackTargets.map((target) => [
+      escapeMarkdownTable(target.collectionName || target.collectionKey || ""),
+      escapeMarkdownTable(target.currentState || ""),
+      escapeMarkdownTable(target.targetState || ""),
+      Number(target.actionCount) || 0,
+      escapeMarkdownTable(crossCollectionChartReviewStatusPatchText(target.statusPatch, labels)),
+      escapeMarkdownTable(crossCollectionChartReviewMatchText(target.match, labels)),
+      escapeMarkdownTable(target.sourceIndex || labels.crossCollectionChartReviewIndexPending)
+    ].join(" | ")).map((row) => `| ${row} |`);
+    return [
+      "<details>",
+      `<summary>${escapeHtmlText(title)}</summary>`,
+      "",
+      `- ${labels.crossCollectionChartReviewBatchActionColumn}: ${entry.batchAction || labels.crossCollectionChartReviewActionPending}`,
+      `- ${labels.crossCollectionChartReviewDoneColumn}: ${entry.doneCriteria || labels.crossCollectionChartReviewDonePending}`,
+      `- ${labels.crossCollectionChartReviewBlockingColumn}: ${entry.blockingIssue || labels.crossCollectionChartReviewNoIssue}`,
+      "",
+      `| ${labels.collectionColumn} | ${labels.crossCollectionChartReviewActionCountColumn} | ${labels.crossCollectionChartReviewPaperCountColumn || labels.paperColumn} | ${labels.paperColumn} | ${labels.crossCollectionChartReviewBlockingColumn} | ${labels.reportColumn} | ${labels.crossCollectionChartReviewIndexColumn} |`,
+      "| --- | ---: | ---: | --- | --- | --- | --- |",
+      detailRows.join("\n") || `|  | 0 | 0 |  | ${escapeMarkdownTable(labels.crossCollectionChartReviewEmpty)} |  |  |`,
+      "",
+      `#### ${labels.crossCollectionChartReviewWritebackTargets}`,
+      "",
+      `| ${labels.collectionColumn} | ${labels.crossCollectionChartReviewCurrentStateColumn} | ${labels.crossCollectionChartReviewTargetStateColumn} | ${labels.crossCollectionChartReviewActionCountColumn} | ${labels.crossCollectionChartReviewStatusPatchColumn} | ${labels.crossCollectionChartReviewMatchColumn} | ${labels.crossCollectionChartReviewIndexColumn} |`,
+      "| --- | --- | --- | ---: | --- | --- | --- |",
+      writebackRows.join("\n") || `|  |  |  | 0 |  |  | ${escapeMarkdownTable(labels.crossCollectionChartReviewIndexPending)} |`,
+      "",
+      `- [ ] ${labels.crossCollectionChartReviewChecklistOpenIndexes}`,
+      `- [ ] ${labels.crossCollectionChartReviewChecklistVerifyPapers}`,
+      `- [ ] ${labels.crossCollectionChartReviewChecklistUpdateState}`,
+      "",
+      "</details>"
+    ].join("\n");
+  }).join("\n\n");
+}
+
+function crossCollectionChartReviewStatusPatchText(statusPatch = {}, labels = {}) {
+  const state = statusPatch.reviewState || "";
+  const reviewer = statusPatch.reviewer || "";
+  const due = statusPatch.due || "";
+  const notes = statusPatch.notes || "";
+  return [
+    `${labels.crossCollectionChartReviewStateColumn || "state"}=${state}`,
+    `reviewer=${reviewer}`,
+    `due=${due}`,
+    notes ? `notes=${notes}` : ""
+  ].filter(Boolean).join("; ");
+}
+
+function crossCollectionChartReviewMatchText(match = {}, labels = {}) {
+  return [
+    `priority=${match.priority || ""}`,
+    `${labels.crossCollectionChartReviewStateColumn || "state"}=${match.reviewState || ""}`,
+    `action=${match.batchAction || ""}`,
+    match.doneCriteria ? `done=${match.doneCriteria}` : ""
+  ].filter(Boolean).join("; ");
 }
 
 function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") {
@@ -2443,6 +3104,28 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
     "",
     renderCrossCollectionThemeRows(collections, labels),
     "",
+    `## ${labels.crossCollectionClusterMap}`,
+    "",
+    renderCrossCollectionClusterRows(indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels), labels),
+    "",
+    `## ${labels.crossCollectionSynthesisLayoutBoard}`,
+    "",
+    renderCrossCollectionSynthesisLayoutRows(indexPayload?.layoutBoard || crossCollectionSynthesisLayoutEntries(
+      indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels),
+      labels
+    ), labels),
+    "",
+    `## ${labels.crossCollectionClusterCalibrationBoard}`,
+    "",
+    renderCrossCollectionClusterCalibrationRows(indexPayload?.clusterCalibrationBoard || crossCollectionClusterCalibrationEntries(
+      indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels),
+      labels
+    ), labels),
+    "",
+    `## ${labels.crossCollectionClusterEvidenceCards}`,
+    "",
+    renderCrossCollectionClusterEvidenceCards(indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels), labels),
+    "",
     `## ${labels.crossCollectionThemeMergeBoard}`,
     "",
     renderCrossCollectionThemeMergeRows(indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels), labels),
@@ -2457,7 +3140,21 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
     "",
     `## ${labels.crossCollectionPriorityBoard}`,
     "",
-    renderCrossCollectionPriorityRows(indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels, indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels)), labels),
+    renderCrossCollectionPriorityRows(indexPayload?.priorityBoard || crossCollectionPriorityEntries(
+      collections,
+      indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels),
+      labels,
+      indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels),
+      indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels)
+    ), labels),
+    "",
+    `## ${labels.crossCollectionChartReviewTriage}`,
+    "",
+    renderCrossCollectionChartReviewTriageRows(indexPayload?.chartReviewTriage || crossCollectionChartReviewTriageEntries(collections), labels),
+    "",
+    `### ${labels.crossCollectionChartReviewDrilldown}`,
+    "",
+    renderCrossCollectionChartReviewDrilldown(indexPayload?.chartReviewTriage || crossCollectionChartReviewTriageEntries(collections), labels),
     "",
     `## ${labels.crossCollectionReviewPack}`,
     "",
@@ -2473,10 +3170,24 @@ function renderCrossCollectionSynthesis(indexPayload, outputLanguage = "zh-CN") 
 function renderCrossCollectionReviewPack(indexPayload, labels) {
   const collections = Array.isArray(indexPayload?.collections) ? indexPayload.collections : [];
   const mergeBoard = indexPayload?.themeMergeBoard || crossCollectionThemeMergeEntries(collections, labels);
-  const priorityBoard = indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels, mergeBoard);
+  const clusterMap = indexPayload?.clusterMap || crossCollectionClusterMapEntries(collections, labels);
+  const rankedClusterCards = crossCollectionClusterEvidenceCardEntries(clusterMap, labels);
+  const priorityBoard = indexPayload?.priorityBoard || crossCollectionPriorityEntries(collections, indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels), labels, mergeBoard, clusterMap);
   const bridgeBoard = indexPayload?.themeBridgeBoard || crossCollectionThemeBridgeEntries(collections, labels);
   const gapBoard = indexPayload?.gapBoard || crossCollectionGapEntries(collections, labels);
   const rows = [];
+  for (const entry of (rankedClusterCards || []).filter((cluster) => Number(cluster?.collectionCount || 0) >= 2).slice(0, 4)) {
+    const scope = entry.title || labels.clusterOther;
+    const gap = uniqueInsightLines(entry.gapSignals || []).slice(0, 3).join("; ") || labels.gapMatrixPendingEvidence;
+    rows.push(crossCollectionReviewPackRow({
+      scope,
+      collections: entry.collections || [],
+      evidence: uniqueInsightLines([...(entry.themes || []), ...(entry.methodSignals || [])]).slice(0, 5),
+      gap,
+      prompt: entry.synthesisPrompt || labels.crossCollectionClusterPrompt(scope, entry.collectionCount || 0),
+      manualReview: entry.reviewAction || labels.crossCollectionClusterReviewAction(scope)
+    }, labels));
+  }
   for (const entry of (priorityBoard || []).slice(0, 6)) {
     const scope = entry.priority || labels.crossCollectionPriorityPending;
     const gap = entry.reason || labels.crossCollectionPriorityReasonPending;
@@ -2518,6 +3229,208 @@ function renderCrossCollectionReviewPack(indexPayload, labels) {
     "| --- | --- | --- | --- | --- | --- |",
     uniqueRows.join("\n") || "|  |  |  |  |  |  |"
   ].join("\n");
+}
+
+function renderCrossCollectionClusterRows(clusterEntries, labels) {
+  const rows = (clusterEntries || []).slice(0, 16)
+    .map((entry) => [
+      escapeMarkdownTable(entry.title || labels.clusterOther),
+      escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
+      escapeMarkdownTable(entry.paperCount || 0),
+      escapeMarkdownTable((entry.themes || []).join("; ") || labels.clusterOther),
+      escapeMarkdownTable(entry.clusterScore || 0),
+      escapeMarkdownTable(entry.supportLevel || labels.crossCollectionClusterSupport(0, 0)),
+      escapeMarkdownTable((entry.linkSignals || []).slice(0, 3).join("; ") || labels.crossCollectionClusterLinkPending),
+      escapeMarkdownTable(entry.reviewAction || labels.crossCollectionClusterReviewAction(entry.title || labels.clusterOther))
+    ].join(" | "))
+    .map((row) => `| ${row} |`);
+  return [
+    `| ${labels.crossCollectionClusterScopeColumn} | ${labels.collectionColumn} | ${labels.paperColumn} | ${labels.crossCollectionThemeCandidatesColumn} | ${labels.crossCollectionClusterScoreColumn} | ${labels.crossCollectionSupportColumn} | ${labels.crossCollectionClusterLinkColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | --- | --- | --- | ---: | --- | --- | --- |",
+    rows.join("\n") || "|  |  |  |  |  |  |  |  |"
+  ].join("\n");
+}
+
+function renderCrossCollectionSynthesisLayoutRows(layoutEntries, labels) {
+  const rows = (layoutEntries || []).slice(0, 16)
+    .map((entry) => [
+      escapeMarkdownTable(entry.lane || labels.crossCollectionLayoutLaneSupport),
+      escapeMarkdownTable(entry.order || ""),
+      escapeMarkdownTable(entry.cluster || labels.clusterOther),
+      escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
+      escapeMarkdownTable(entry.layoutWeight || 0),
+      escapeMarkdownTable((entry.evidence || []).join("; ") || labels.pendingInsight),
+      escapeMarkdownTable(entry.nextAction || labels.crossCollectionClusterReviewAction(entry.cluster || labels.clusterOther))
+    ].join(" | "))
+    .map((row) => `| ${row} |`);
+  return [
+    `| ${labels.crossCollectionLayoutLaneColumn} | ${labels.crossCollectionLayoutOrderColumn} | ${labels.crossCollectionClusterScopeColumn} | ${labels.collectionColumn} | ${labels.crossCollectionLayoutWeightColumn} | ${labels.evidenceColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | ---: | --- | --- | ---: | --- | --- |",
+    rows.join("\n") || "|  |  |  |  | 0 |  |  |"
+  ].join("\n");
+}
+
+function crossCollectionSynthesisLayoutEntries(clusterEntries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const laneOrder = {
+    [labels.crossCollectionLayoutLaneCore]: 0,
+    [labels.crossCollectionLayoutLaneBoundary]: 1,
+    [labels.crossCollectionLayoutLaneGap]: 2,
+    [labels.crossCollectionLayoutLaneSupport]: 3
+  };
+  const grouped = new Map();
+  for (const cluster of crossCollectionClusterEvidenceCardEntries(clusterEntries, labels)) {
+    const calibration = crossCollectionClusterCalibration(cluster, labels);
+    const rank = Number(cluster.evidenceCardRank || 0);
+    const collectionCount = Number(cluster.collectionCount || 0);
+    const linkCount = (cluster.linkSignals || []).length;
+    const gapCount = (cluster.gapSignals || []).length;
+    const highRisk = /high|高|広/.test(String(cluster.reviewRisk || calibration.reviewRisk || "").toLowerCase());
+    const lane = highRisk || calibration.key === "split"
+      ? labels.crossCollectionLayoutLaneBoundary
+      : (collectionCount >= 2 && calibration.key === "merge" && rank >= 120)
+        ? labels.crossCollectionLayoutLaneCore
+        : gapCount || calibration.key === "gather"
+          ? labels.crossCollectionLayoutLaneGap
+          : labels.crossCollectionLayoutLaneSupport;
+    const layoutWeight = Math.round(
+      rank
+      + Math.min(Number(cluster.clusterScore || 0), 100)
+      + Math.min(collectionCount, 6) * 12
+      + Math.min(linkCount, 6) * 8
+      + Math.min(gapCount, 6) * 3
+    );
+    const evidence = uniqueInsightLines([
+      `${labels.crossCollectionEvidenceRankColumn}: ${rank}`,
+      `${labels.crossCollectionClusterScoreColumn}: ${cluster.clusterScore || 0}`,
+      `${labels.crossCollectionClusterLinkColumn}: ${(cluster.linkSignals || []).slice(0, 2).join("; ") || labels.crossCollectionClusterLinkPending}`,
+      `${labels.crossCollectionClusterRecommendationColumn}: ${calibration.recommendation || labels.crossCollectionClusterCalibrationReview}`,
+      gapCount ? `${labels.gapSignalColumn}: ${(cluster.gapSignals || []).slice(0, 2).join("; ")}` : ""
+    ]).slice(0, 5);
+    const entry = {
+      lane,
+      laneRank: laneOrder[lane] ?? 9,
+      cluster: cluster.title || labels.clusterOther,
+      collections: cluster.collections || [],
+      layoutWeight,
+      evidence,
+      nextAction: labels.crossCollectionLayoutAction(lane, cluster.title || labels.clusterOther)
+    };
+    if (!grouped.has(lane)) grouped.set(lane, []);
+    grouped.get(lane).push(entry);
+  }
+  const entries = [];
+  for (const lane of Object.keys(laneOrder)) {
+    const rows = (grouped.get(lane) || [])
+      .sort((left, right) => Number(right.layoutWeight || 0) - Number(left.layoutWeight || 0) || String(left.cluster || "").localeCompare(String(right.cluster || "")));
+    rows.forEach((entry, index) => entries.push({
+      ...entry,
+      order: index + 1
+    }));
+  }
+  return entries
+    .sort((left, right) => Number(left.laneRank || 0) - Number(right.laneRank || 0) || Number(left.order || 0) - Number(right.order || 0))
+    .slice(0, 16)
+    .map(({ laneRank: _laneRank, ...entry }) => entry);
+}
+
+function renderCrossCollectionClusterCalibrationRows(calibrationEntries, labels) {
+  const rows = (calibrationEntries || []).slice(0, 16)
+    .map((entry) => [
+      escapeMarkdownTable(entry.cluster || labels.clusterOther),
+      escapeMarkdownTable(entry.recommendation || labels.crossCollectionClusterCalibrationReview),
+      escapeMarkdownTable(entry.thresholdBand || labels.crossCollectionClusterThresholdPending),
+      escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
+      escapeMarkdownTable((entry.evidence || []).join("; ") || labels.crossCollectionClusterLinkPending),
+      escapeMarkdownTable(entry.nextAction || labels.crossCollectionClusterCalibrationAction(entry.cluster || labels.clusterOther, entry.recommendation || ""))
+    ].join(" | "))
+    .map((row) => `| ${row} |`);
+  return [
+    `| ${labels.crossCollectionClusterScopeColumn} | ${labels.crossCollectionClusterRecommendationColumn} | ${labels.crossCollectionClusterThresholdColumn} | ${labels.collectionColumn} | ${labels.evidenceColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    rows.join("\n") || "|  |  |  |  |  |  |"
+  ].join("\n");
+}
+
+function renderCrossCollectionClusterEvidenceCards(clusterEntries, labels) {
+  const cards = crossCollectionClusterEvidenceCardEntries(clusterEntries, labels).map((entry) => [
+    `### ${entry.title || labels.clusterOther}`,
+    "",
+    `- ${labels.collectionColumn}: ${(entry.collections || []).join("; ") || labels.noSummary}`,
+    `- ${labels.crossCollectionThemeCandidatesColumn}: ${(entry.themes || []).join("; ") || labels.clusterOther}`,
+    `- ${labels.crossCollectionEvidenceRankColumn}: ${entry.evidenceCardRank || 0}`,
+    `- ${labels.crossCollectionEvidenceRankSignalsColumn}: ${(entry.evidenceCardRankSignals || []).join("; ") || labels.crossCollectionClusterLinkPending}`,
+    `- ${labels.crossCollectionClusterScoreColumn}: ${entry.clusterScore || 0}`,
+    `- ${labels.supportLevelColumn}: ${entry.supportLevel || labels.crossCollectionClusterSupport(0, 0)}`,
+    `- ${labels.crossCollectionClusterLinkColumn}: ${(entry.linkSignals || []).join("; ") || labels.crossCollectionClusterLinkPending}`,
+    `- ${labels.crossCollectionClusterThresholdColumn}: ${entry.thresholdBand || labels.crossCollectionClusterThresholdPending}`,
+    `- ${labels.crossCollectionClusterRecommendationColumn}: ${entry.calibrationRecommendation || labels.crossCollectionClusterCalibrationReview}`,
+    `- ${labels.crossCollectionClusterRiskColumn}: ${entry.reviewRisk || labels.crossCollectionClusterRiskPending}`,
+    `- ${labels.methodSignalColumn}: ${(entry.methodSignals || []).join("; ") || labels.pendingInsight}`,
+    `- ${labels.gapSignalColumn}: ${(entry.gapSignals || []).join("; ") || labels.gapMatrixPendingEvidence}`,
+    `- ${labels.roadmapCandidateQueryColumn}: ${(entry.candidateQueries || []).join("; ") || labels.roadmapCandidateQueryColumn}`,
+    `- ${labels.evidenceAnchorColumn}: ${(entry.evidenceAnchors || []).join("; ") || labels.pendingSummaryPath}`,
+    `- ${labels.modelDeepeningPromptColumn}: ${entry.synthesisPrompt || labels.crossCollectionClusterPrompt(entry.title || labels.clusterOther, entry.collectionCount || 0)}`,
+    `- ${labels.reviewActionColumn}: ${entry.reviewAction || labels.crossCollectionClusterReviewAction(entry.title || labels.clusterOther)}`,
+    ""
+  ].join("\n"));
+  return cards.join("\n") || labels.crossCollectionClusterNoEvidence;
+}
+
+function crossCollectionClusterEvidenceCardEntries(clusterEntries = [], labels = collectionTemplateLabels("zh-CN")) {
+  return (clusterEntries || [])
+    .map((entry) => {
+      const ranking = crossCollectionClusterEvidenceCardRanking(entry, labels);
+      return {
+        ...entry,
+        evidenceCardRank: ranking.score,
+        evidenceCardRankSignals: ranking.signals
+      };
+    })
+    .sort((left, right) => Number(right.evidenceCardRank || 0) - Number(left.evidenceCardRank || 0)
+      || Number(right.clusterScore || 0) - Number(left.clusterScore || 0)
+      || Number(right.collectionCount || 0) - Number(left.collectionCount || 0)
+      || String(left.title || "").localeCompare(String(right.title || "")))
+    .slice(0, 12);
+}
+
+function crossCollectionClusterEvidenceCardRanking(cluster = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const calibration = crossCollectionClusterCalibration(cluster, labels);
+  const collectionCount = Number(cluster?.collectionCount || 0);
+  const paperCount = Number(cluster?.paperCount || 0);
+  const clusterScore = Number(cluster?.clusterScore || 0);
+  const linkCount = (cluster?.linkSignals || []).length;
+  const methodCount = (cluster?.methodSignals || []).length;
+  const gapCount = (cluster?.gapSignals || []).length;
+  const queryCount = (cluster?.candidateQueries || []).length;
+  const riskText = String(cluster?.reviewRisk || calibration.reviewRisk || "").toLowerCase();
+  const highRisk = /high|高|広/.test(riskText);
+  const mediumRisk = /medium|中/.test(riskText);
+  const recommendationKey = calibration.key || "review";
+  const recommendationBonus = {
+    merge: 28,
+    review: 20,
+    split: 16,
+    gather: 6
+  }[recommendationKey] || 12;
+  const riskBonus = highRisk ? 14 : mediumRisk ? 9 : 3;
+  const score = Math.round(
+    clusterScore
+    + Math.min(collectionCount, 6) * 14
+    + Math.min(linkCount, 6) * 10
+    + Math.min(paperCount, 20)
+    + Math.min(methodCount, 6) * 3
+    + Math.min(gapCount, 6) * 3
+    + Math.min(queryCount, 4) * 2
+    + recommendationBonus
+    + riskBonus
+  );
+  const signals = uniqueInsightLines([
+    labels.crossCollectionEvidenceRankCoverage(collectionCount, paperCount),
+    labels.crossCollectionEvidenceRankLinks(linkCount),
+    labels.crossCollectionEvidenceRankCalibration(calibration.recommendation),
+    labels.crossCollectionEvidenceRankRisk(cluster?.reviewRisk || calibration.reviewRisk || labels.crossCollectionClusterRiskPending)
+  ]).slice(0, 4);
+  return { score, signals };
 }
 
 function crossCollectionReviewPackRow(entry, labels) {
@@ -2589,6 +3502,8 @@ function renderCrossCollectionGapRows(gapEntries, labels) {
   const rows = (gapEntries || []).slice(0, 12)
     .map((entry) => [
       escapeMarkdownTable(entry.gap || labels.gapMatrixPendingEvidence),
+      escapeMarkdownTable(entry.gapPriorityScore || 0),
+      escapeMarkdownTable((entry.gapPrioritySignals || []).join("; ") || labels.crossCollectionGapPriorityPending),
       escapeMarkdownTable((entry.collections || []).join("; ") || labels.noSummary),
       escapeMarkdownTable((entry.themes || []).join("; ") || labels.clusterOther),
       escapeMarkdownTable((entry.candidateQueries || []).slice(0, 3).join("; ") || labels.roadmapCandidateQueryColumn),
@@ -2596,9 +3511,9 @@ function renderCrossCollectionGapRows(gapEntries, labels) {
     ].join(" | "))
     .map((row) => `| ${row} |`);
   return [
-    `| ${labels.gapSignalColumn} | ${labels.collectionColumn} | ${labels.clusterColumn} | ${labels.roadmapCandidateQueryColumn} | ${labels.reviewActionColumn} |`,
-    "| --- | --- | --- | --- | --- |",
-    rows.join("\n") || "|  |  |  |  |  |"
+    `| ${labels.gapSignalColumn} | ${labels.crossCollectionGapPriorityColumn} | ${labels.crossCollectionGapPrioritySignalsColumn} | ${labels.collectionColumn} | ${labels.clusterColumn} | ${labels.roadmapCandidateQueryColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    rows.join("\n") || "|  |  |  |  |  |  |  |"
   ].join("\n");
 }
 
@@ -2629,17 +3544,48 @@ function crossCollectionGapEntries(collections = [], labels = collectionTemplate
       const collections = uniqueInsightLines(entry.collections).slice(0, 8);
       const themes = uniqueInsightLines(entry.themes).slice(0, 8);
       const candidateQueries = uniqueInsightLines(entry.candidateQueries).slice(0, 5);
+      const priorityRanking = crossCollectionGapPriorityRanking({
+        ...entry,
+        collectionCount: collections.length,
+        collections,
+        themes,
+        candidateQueries
+      }, labels);
       return {
         gap: entry.gap,
         collectionCount: collections.length,
         collections,
         themes,
         candidateQueries,
+        gapPriorityScore: priorityRanking.score,
+        gapPrioritySignals: priorityRanking.signals,
         nextAction: labels.crossCollectionGapAction(collections.length, entry.gap)
       };
     })
-    .sort((left, right) => right.collectionCount - left.collectionCount || left.gap.localeCompare(right.gap))
+    .sort((left, right) => (right.gapPriorityScore || 0) - (left.gapPriorityScore || 0) || right.collectionCount - left.collectionCount || left.gap.localeCompare(right.gap))
     .slice(0, 20);
+}
+
+function crossCollectionGapPriorityRanking(gap = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const collectionCount = Number(gap.collectionCount || (gap.collections || []).length || 0);
+  const themeCount = uniqueInsightLines(gap.themes || []).length;
+  const queryCount = uniqueInsightLines(gap.candidateQueries || []).length;
+  const recurringBonus = collectionCount >= 2 ? 12 : 0;
+  const score = Math.min(100, Math.round(
+    Math.min(collectionCount, 6) * 28
+    + Math.min(themeCount, 8) * 4
+    + Math.min(queryCount, 5) * 4
+    + recurringBonus
+  ));
+  return {
+    score,
+    signals: uniqueInsightLines([
+      labels.crossCollectionGapPriorityCoverage(collectionCount),
+      labels.crossCollectionGapPriorityThemes(themeCount),
+      labels.crossCollectionGapPriorityQueries(queryCount),
+      collectionCount >= 2 ? labels.crossCollectionGapPriorityRecurring(collectionCount) : labels.crossCollectionGapPrioritySingle
+    ]).filter(Boolean)
+  };
 }
 
 function crossCollectionThemeBridgeEntries(collections = [], labels = collectionTemplateLabels("zh-CN")) {
@@ -2809,7 +3755,225 @@ function crossCollectionUniqueMergeCandidate() {
   };
 }
 
-function crossCollectionPriorityEntries(collections = [], gapEntries = [], labels = collectionTemplateLabels("zh-CN"), themeMergeEntries = []) {
+function crossCollectionClusterMapEntries(collections = [], labels = collectionTemplateLabels("zh-CN")) {
+  const records = crossCollectionThemeRecords(collections, labels).map((record, index) => ({ ...record, index }));
+  if (!records.length) return [];
+  const parents = records.map((_, index) => index);
+  const linkEvidence = [];
+  const find = (index) => {
+    while (parents[index] !== index) {
+      parents[index] = parents[parents[index]];
+      index = parents[index];
+    }
+    return index;
+  };
+  const connect = (left, right) => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot !== rightRoot) parents[rightRoot] = leftRoot;
+  };
+  for (let i = 0; i < records.length; i += 1) {
+    for (let j = i + 1; j < records.length; j += 1) {
+      const left = records[i];
+      const right = records[j];
+      if (!left.themeKey || !right.themeKey) continue;
+      if (left.themeKey === right.themeKey) {
+        linkEvidence.push(crossCollectionClusterLinkEvidence(left, right, [], labels, "same_theme"));
+        connect(i, j);
+        continue;
+      }
+      if (left.collectionName === right.collectionName) continue;
+      const sharedTokens = left.tokens.filter((token) => right.tokens.includes(token));
+      const evidence = crossCollectionClusterLinkEvidence(left, right, sharedTokens, labels, "shared_signals");
+      if (evidence.strong) {
+        linkEvidence.push(evidence);
+        connect(i, j);
+      }
+    }
+  }
+  const groups = new Map();
+  records.forEach((record, index) => {
+    const root = find(index);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(record);
+  });
+  return Array.from(groups.values())
+    .map((group) => {
+      const ids = new Set(group.map((record) => record.index));
+      return crossCollectionClusterMapEntry(group, labels, linkEvidence.filter((link) => ids.has(link.leftIndex) && ids.has(link.rightIndex)));
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftCross = Number(left.collectionCount || 0) >= 2 ? 1 : 0;
+      const rightCross = Number(right.collectionCount || 0) >= 2 ? 1 : 0;
+      return rightCross - leftCross
+        || right.clusterScore - left.clusterScore
+        || right.collectionCount - left.collectionCount
+        || right.paperCount - left.paperCount
+        || right.themeCount - left.themeCount
+        || left.title.localeCompare(right.title);
+    })
+    .slice(0, 30);
+}
+
+function crossCollectionClusterMapEntry(group, labels, links = []) {
+  const collections = uniqueInsightLines(group.map((record) => record.collectionName).filter(Boolean)).slice(0, 12);
+  const themes = uniqueInsightLines(group.map((record) => record.theme).filter(Boolean)).slice(0, 12);
+  const paperCount = group.reduce((sum, record) => sum + Number(record.paperCount || 0), 0);
+  const methodSignals = uniqueInsightLines(group.flatMap((record) => record.methodSignals || [])).slice(0, 8);
+  const gapSignals = uniqueInsightLines(group.flatMap((record) => record.gapSignals || [])).slice(0, 8);
+  const candidateQueries = uniqueInsightLines(group.flatMap((record) => record.candidateQueries || [])).slice(0, 8);
+  const linkSignals = crossCollectionClusterLinkSignals(links, labels);
+  const evidenceAnchors = uniqueInsightLines(group.map((record) => [
+    record.collectionName,
+    record.theme,
+    record.paperCount ? `${record.paperCount} ${labels.paperColumn}` : ""
+  ].filter(Boolean).join(": "))).slice(0, 10);
+  const title = labels.crossCollectionClusterTitle(themes);
+  const collectionCount = collections.length;
+  const clusterScore = crossCollectionClusterScore({
+    collectionCount,
+    paperCount,
+    themeCount: themes.length,
+    methodSignals,
+    gapSignals,
+    candidateQueries,
+    linkSignals
+  });
+  const reviewRisk = labels.crossCollectionClusterRisk(collectionCount, themes.length, linkSignals.length);
+  const calibration = crossCollectionClusterCalibration({
+    title,
+    collectionCount,
+    themeCount: themes.length,
+    paperCount,
+    clusterScore,
+    linkSignals,
+    reviewRisk
+  }, labels);
+  return {
+    title,
+    collectionCount,
+    themeCount: themes.length,
+    paperCount,
+    collections,
+    themes,
+    methodSignals,
+    gapSignals,
+    candidateQueries,
+    evidenceAnchors,
+    linkSignals,
+    clusterScore,
+    thresholdBand: calibration.thresholdBand,
+    calibrationRecommendation: calibration.recommendation,
+    calibrationAction: calibration.nextAction,
+    reviewRisk,
+    supportLevel: labels.crossCollectionClusterSupport(collectionCount, paperCount),
+    synthesisPrompt: labels.crossCollectionClusterPrompt(title, collectionCount),
+    reviewAction: labels.crossCollectionClusterReviewAction(title)
+  };
+}
+
+function crossCollectionClusterCalibrationEntries(clusterEntries = [], labels = collectionTemplateLabels("zh-CN")) {
+  return (clusterEntries || []).map((cluster) => {
+    const calibration = crossCollectionClusterCalibration(cluster, labels);
+    return {
+      cluster: cluster?.title || labels.clusterOther,
+      recommendation: cluster?.calibrationRecommendation || calibration.recommendation,
+      thresholdBand: cluster?.thresholdBand || calibration.thresholdBand,
+      collections: cluster?.collections || [],
+      evidence: uniqueInsightLines([
+        `${labels.crossCollectionClusterScoreColumn}: ${Number(cluster?.clusterScore || 0)}`,
+        `${labels.crossCollectionClusterThresholdColumn}: ${cluster?.thresholdBand || calibration.thresholdBand}`,
+        `${labels.crossCollectionSupportColumn}: ${cluster?.supportLevel || labels.crossCollectionClusterSupport(Number(cluster?.collectionCount || 0), Number(cluster?.paperCount || 0))}`,
+        `${labels.crossCollectionClusterLinkColumn}: ${(cluster?.linkSignals || []).slice(0, 2).join("; ") || labels.crossCollectionClusterLinkPending}`,
+        `${labels.crossCollectionClusterRiskColumn}: ${cluster?.reviewRisk || calibration.reviewRisk || labels.crossCollectionClusterRiskPending}`
+      ]).slice(0, 5),
+      nextAction: cluster?.calibrationAction || calibration.nextAction,
+      rankScore: calibration.rankScore
+    };
+  })
+    .filter((entry) => entry.cluster)
+    .sort((left, right) => Number(right.rankScore || 0) - Number(left.rankScore || 0) || left.cluster.localeCompare(right.cluster))
+    .slice(0, 20)
+    .map(({ rankScore: _rankScore, ...entry }) => entry);
+}
+
+function crossCollectionClusterCalibration(cluster = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const score = Number(cluster?.clusterScore || 0);
+  const collectionCount = Number(cluster?.collectionCount || 0);
+  const themeCount = Number(cluster?.themeCount || 0);
+  const paperCount = Number(cluster?.paperCount || 0);
+  const linkCount = (cluster?.linkSignals || []).length;
+  const riskText = String(cluster?.reviewRisk || "").toLowerCase();
+  const highRisk = /high|高|広/.test(riskText);
+  const mediumRisk = /medium|中/.test(riskText);
+  let key = "gather";
+  if (collectionCount >= 2 && score >= 75 && linkCount >= 2 && !highRisk) {
+    key = "merge";
+  } else if (collectionCount >= 2 && score >= 55 && linkCount >= 1) {
+    key = "review";
+  } else if (collectionCount >= 2 && (themeCount >= 3 || highRisk || mediumRisk)) {
+    key = "split";
+  }
+  const recommendation = labels.crossCollectionClusterCalibrationRecommendation(key);
+  return {
+    key,
+    recommendation,
+    thresholdBand: labels.crossCollectionClusterThresholdBand(score, collectionCount, linkCount),
+    nextAction: labels.crossCollectionClusterCalibrationAction(cluster?.title || cluster?.cluster || labels.clusterOther, recommendation),
+    reviewRisk: cluster?.reviewRisk || "",
+    rankScore: score + collectionCount * 10 + linkCount * 8 + Math.min(paperCount, 20) + (key === "merge" ? 40 : key === "review" ? 25 : key === "split" ? 18 : 0)
+  };
+}
+
+function crossCollectionClusterLinkEvidence(left, right, sharedTokens = [], labels = collectionTemplateLabels("zh-CN"), mode = "shared_signals") {
+  const sameTheme = mode === "same_theme" || left.themeKey === right.themeKey;
+  const strongTokens = (sharedTokens || []).filter((token) => token.length >= 5);
+  const hasMethodOverlap = crossCollectionSignalsShareToken(left.methodSignals, right.methodSignals, sharedTokens);
+  const hasGapOverlap = crossCollectionSignalsShareToken(left.gapSignals, right.gapSignals, sharedTokens);
+  const hasQueryOverlap = crossCollectionSignalsShareToken(left.candidateQueries, right.candidateQueries, sharedTokens);
+  const reasons = uniqueInsightLines([
+    sameTheme ? labels.crossCollectionClusterLinkSameTheme(left.theme || right.theme || labels.clusterOther) : "",
+    sharedTokens.length >= 3 ? labels.crossCollectionClusterLinkSharedTokens(sharedTokens.length) : "",
+    strongTokens.length >= 2 ? labels.crossCollectionClusterLinkStrongTokens(strongTokens.slice(0, 4).join(", ")) : "",
+    hasMethodOverlap ? labels.crossCollectionClusterLinkMethodOverlap : "",
+    hasGapOverlap ? labels.crossCollectionClusterLinkGapOverlap : "",
+    hasQueryOverlap ? labels.crossCollectionClusterLinkQueryOverlap : ""
+  ]).filter(Boolean);
+  return {
+    leftIndex: left.index,
+    rightIndex: right.index,
+    strong: sameTheme || crossCollectionMergeCandidateStrongEnough(sharedTokens, left, right),
+    reasons,
+    tokens: sharedTokens.slice(0, 6),
+    collections: uniqueInsightLines([left.collectionName, right.collectionName]).filter(Boolean),
+    themes: uniqueInsightLines([left.theme, right.theme]).filter(Boolean)
+  };
+}
+
+function crossCollectionClusterLinkSignals(links = [], labels = collectionTemplateLabels("zh-CN")) {
+  const signals = [];
+  for (const link of links || []) {
+    const scope = (link.themes || []).join(" / ") || labels.clusterOther;
+    const reason = (link.reasons || []).slice(0, 2).join("; ") || labels.crossCollectionClusterLinkPending;
+    signals.push(`${scope}: ${reason}`);
+  }
+  return uniqueInsightLines(signals).slice(0, 8);
+}
+
+function crossCollectionClusterScore(entry = {}) {
+  return Math.min(100, Math.round(
+    Math.min(Number(entry.collectionCount || 0), 6) * 18
+    + Math.min(Number(entry.paperCount || 0), 12) * 2
+    + Math.min(Number(entry.themeCount || 0), 8) * 3
+    + Math.min((entry.methodSignals || []).length, 6) * 2
+    + Math.min((entry.gapSignals || []).length, 6) * 2
+    + Math.min((entry.candidateQueries || []).length, 4)
+    + Math.min((entry.linkSignals || []).length, 6) * 5
+  ));
+}
+
+function crossCollectionPriorityEntries(collections = [], gapEntries = [], labels = collectionTemplateLabels("zh-CN"), themeMergeEntries = [], clusterMapEntries = []) {
   const entries = [];
   for (const merge of themeMergeEntries || []) {
     entries.push({
@@ -2822,15 +3986,43 @@ function crossCollectionPriorityEntries(collections = [], gapEntries = [], label
       nextAction: merge?.reviewAction || labels.crossCollectionMergeAction(merge?.scope || labels.crossCollectionMergePending)
     });
   }
+  for (const cluster of clusterMapEntries || []) {
+    const count = Number(cluster?.collectionCount || 0);
+    if (count < 2) continue;
+    const cardRanking = crossCollectionClusterEvidenceCardRanking(cluster, labels);
+    entries.push({
+      kind: "cross_collection_cluster",
+      score: 85 + Number(cardRanking.score || 0),
+      priority: labels.crossCollectionPriorityCluster(cluster?.title || labels.clusterOther, count),
+      reason: labels.crossCollectionPriorityClusterReason(count, cluster?.clusterScore || 0),
+      collections: cluster?.collections || [],
+      evidence: uniqueInsightLines([
+        cardRanking.score ? `${labels.crossCollectionEvidenceRankColumn}: ${cardRanking.score}` : "",
+        ...(cardRanking.signals || []).map((signal) => `${labels.crossCollectionEvidenceRankSignalsColumn}: ${signal}`),
+        cluster?.clusterScore ? `${labels.crossCollectionClusterScoreColumn}: ${cluster.clusterScore}` : "",
+        cluster?.calibrationRecommendation ? `${labels.crossCollectionClusterRecommendationColumn}: ${cluster.calibrationRecommendation}` : "",
+        cluster?.thresholdBand ? `${labels.crossCollectionClusterThresholdColumn}: ${cluster.thresholdBand}` : "",
+        ...(cluster?.linkSignals || []).map((signal) => `${labels.crossCollectionClusterLinkColumn}: ${signal}`),
+        ...(cluster?.themes || []).map((theme) => `${labels.clusterColumn}: ${theme}`),
+        ...(cluster?.gapSignals || []).map((gap) => `${labels.gapSignalColumn}: ${gap}`)
+      ]).slice(0, 10),
+      nextAction: cluster?.calibrationAction || cluster?.reviewAction || labels.crossCollectionClusterReviewAction(cluster?.title || labels.clusterOther)
+    });
+  }
   for (const gap of gapEntries || []) {
     const count = Number(gap?.collectionCount || 0);
+    const priorityRanking = gap?.gapPriorityScore
+      ? { score: gap.gapPriorityScore, signals: gap.gapPrioritySignals || [] }
+      : crossCollectionGapPriorityRanking(gap, labels);
     const evidence = uniqueInsightLines([
+      priorityRanking.score ? `${labels.crossCollectionGapPriorityColumn}: ${priorityRanking.score}` : "",
+      ...(priorityRanking.signals || []).map((signal) => `${labels.crossCollectionGapPrioritySignalsColumn}: ${signal}`),
       ...(gap?.themes || []).map((theme) => `${labels.clusterColumn}: ${theme}`),
       ...(gap?.candidateQueries || []).map((query) => `${labels.roadmapCandidateQueryColumn}: ${query}`)
-    ]).slice(0, 5);
+    ]).slice(0, 8);
     entries.push({
       kind: "recurring_gap",
-      score: count * 100 + evidence.length,
+      score: 70 + Number(priorityRanking.score || 0),
       priority: labels.crossCollectionPriorityGap(count, gap?.gap || labels.gapMatrixPendingEvidence),
       reason: count >= 2 ? labels.crossCollectionPriorityRecurringReason(count) : labels.crossCollectionPrioritySingleReason,
       collections: gap?.collections || [],
@@ -3195,18 +4387,21 @@ function renderSynthesisClaimsMatrix(collectionContext, results, outputLanguage 
   const rows = entries.map((entry) => [
     escapeMarkdownTable(entry.cluster),
     escapeMarkdownTable(entry.claim),
+    escapeMarkdownTable(entry.claimSupportScore),
+    escapeMarkdownTable(entry.claimRisk),
     escapeMarkdownTable(entry.supportingPapers.join("; ") || labels.noSummary),
+    escapeMarkdownTable(entry.evidenceTrace),
     escapeMarkdownTable(entry.evidence.join("; ") || labels.pendingSummaryPath),
     escapeMarkdownTable(entry.gaps.join("; ") || labels.gapMatrixPendingEvidence),
     escapeMarkdownTable(entry.validations.join("; ") || labels.gapMatrixPendingValidation)
-  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |";
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |  |";
   return [
     `# ${collectionContext.name || collectionContext.key} ${labels.synthesisClaims}`,
     "",
     labels.synthesisClaimsNote,
     "",
-    `| ${labels.clusterColumn} | ${labels.claimColumn} | ${labels.supportingPapersColumn} | ${labels.evidenceColumn} | ${labels.counterGapColumn} | ${labels.validationColumn} |`,
-    "| --- | --- | --- | --- | --- | --- |",
+    `| ${labels.clusterColumn} | ${labels.claimColumn} | ${labels.claimSupportScoreColumn} | ${labels.claimRiskColumn} | ${labels.supportingPapersColumn} | ${labels.evidenceTraceColumn} | ${labels.evidenceColumn} | ${labels.counterGapColumn} | ${labels.validationColumn} |`,
+    "| --- | --- | ---: | --- | --- | --- | --- | --- | --- |",
     rows,
     "",
     `## ${labels.claimRiskChecklist}`,
@@ -3223,17 +4418,19 @@ function renderSynthesisConflictLedger(collectionContext, results, outputLanguag
     escapeMarkdownTable(entry.cluster),
     escapeMarkdownTable(entry.claim),
     escapeMarkdownTable(entry.supportLevel),
+    escapeMarkdownTable(entry.claimSupportScore),
+    escapeMarkdownTable(entry.claimRisk),
     escapeMarkdownTable(entry.counterGap),
     escapeMarkdownTable(entry.validation),
     escapeMarkdownTable(entry.reviewAction)
-  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |";
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |  |";
   return [
     `# ${collectionContext.name || collectionContext.key} ${labels.synthesisConflictLedger}`,
     "",
     labels.synthesisConflictLedgerNote,
     "",
-    `| ${labels.clusterColumn} | ${labels.claimColumn} | ${labels.supportLevelColumn} | ${labels.counterGapColumn} | ${labels.validationColumn} | ${labels.reviewActionColumn} |`,
-    "| --- | --- | --- | --- | --- | --- |",
+    `| ${labels.clusterColumn} | ${labels.claimColumn} | ${labels.supportLevelColumn} | ${labels.claimSupportScoreColumn} | ${labels.claimRiskColumn} | ${labels.counterGapColumn} | ${labels.validationColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | --- | --- | ---: | --- | --- | --- | --- |",
     rows,
     "",
     `## ${labels.conflictReviewChecklist}`,
@@ -3246,16 +4443,21 @@ function renderSynthesisConflictLedger(collectionContext, results, outputLanguag
 function renderSynthesisRoadmap(collectionContext, results, outputLanguage = "zh-CN", summaryInsights = new Map()) {
   const labels = collectionTemplateLabels(outputLanguage);
   const entries = synthesisRoadmapEntries(results, summaryInsights, labels);
+  const readinessEntries = synthesisRoadmapReadinessEntries(entries, labels);
+  const finalReportCalibrationEntries = roadmapFinalReportCalibrationEntries(readinessEntries, labels);
+  const finalReportActionPlanEntries = roadmapFinalReportActionPlanEntries(finalReportCalibrationEntries, labels);
   const items = batchReportItems(results).filter((item) => item.status === "generated" || item.status === "skipped_existing");
   const routeRows = entries.map((entry) => [
     escapeMarkdownTable(entry.cluster),
     escapeMarkdownTable(entry.question),
+    escapeMarkdownTable(entry.claimSupportScore),
+    escapeMarkdownTable(entry.claimRisk),
     escapeMarkdownTable(entry.supportingPapers.join("; ") || labels.noSummary),
     escapeMarkdownTable(entry.methodSignal),
     escapeMarkdownTable(entry.openGap),
     escapeMarkdownTable(entry.nextValidation),
     escapeMarkdownTable(entry.candidateQuery)
-  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |";
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |  |  |";
   const outline = entries.map((entry, index) => `${index + 1}. ${entry.sectionPlan}`).join("\n") || `1. ${labels.roadmapSectionText(1, labels.clusterOther, labels.pendingInsight, labels.gapMatrixPendingEvidence)}`;
   const evidenceRows = items.map((item) => {
     const insight = summaryInsights.get(item.itemKey) || {};
@@ -3276,13 +4478,25 @@ function renderSynthesisRoadmap(collectionContext, results, outputLanguage = "zh
     "",
     `## ${labels.roadmapEvidenceMap}`,
     "",
-    `| ${labels.clusterColumn} | ${labels.roadmapQuestionColumn} | ${labels.supportingPapersColumn} | ${labels.methodSignalColumn} | ${labels.gapSignalColumn} | ${labels.validationColumn} | ${labels.roadmapCandidateQueryColumn} |`,
-    "| --- | --- | --- | --- | --- | --- | --- |",
+    `| ${labels.clusterColumn} | ${labels.roadmapQuestionColumn} | ${labels.claimSupportScoreColumn} | ${labels.claimRiskColumn} | ${labels.supportingPapersColumn} | ${labels.methodSignalColumn} | ${labels.gapSignalColumn} | ${labels.validationColumn} | ${labels.roadmapCandidateQueryColumn} |`,
+    "| --- | --- | ---: | --- | --- | --- | --- | --- | --- |",
     routeRows,
     "",
     `## ${labels.roadmapSectionPlan}`,
     "",
     outline,
+    "",
+    `## ${labels.roadmapReadinessBoard}`,
+    "",
+    renderSynthesisRoadmapReadinessRows(readinessEntries, labels),
+    "",
+    `## ${labels.finalReportCalibrationMatrix}`,
+    "",
+    renderRoadmapFinalReportCalibrationRows(finalReportCalibrationEntries, labels),
+    "",
+    `## ${labels.finalReportActionPlan}`,
+    "",
+    renderRoadmapFinalReportActionPlanRows(finalReportActionPlanEntries, labels),
     "",
     `## ${labels.roadmapEvidenceIndex}`,
     "",
@@ -3317,15 +4531,42 @@ function synthesisClaimEntries(results, summaryInsights = new Map(), labels = co
     const validations = uniqueInsightLines(cluster.items.flatMap(({ insight }) => insightValues(insight.validationNeeds, insight.rejectConditions))).slice(0, 3);
     const supportingPapers = cluster.items.map(({ item }) => `${item.title || item.itemKey} (${item.year || "n.d."})`).slice(0, 8);
     const evidence = uniqueInsightLines(cluster.items.flatMap(({ item, insight }) => insightValues(insight.evidence, item.summaryPath))).slice(0, 6);
+    const audit = synthesisClaimEvidenceAudit({ supportingPapers, evidence, gaps, validations }, labels);
     return {
       cluster: cluster.label,
       claim: labels.synthesisClaimText(cluster.label, methods.join("; ") || labels.pendingInsight, gaps[0] || labels.gapMatrixPendingEvidence),
       supportingPapers,
       evidence,
       gaps,
-      validations
+      validations,
+      ...audit
     };
   });
+}
+
+function synthesisClaimEvidenceAudit(entry = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const supportCount = (entry.supportingPapers || []).length;
+  const evidenceCount = (entry.evidence || []).length;
+  const gapCount = (entry.gaps || []).length;
+  const validationCount = (entry.validations || []).length;
+  const score = Math.max(0, Math.min(100, Math.round(
+    Math.min(supportCount, 4) * 24
+    + Math.min(evidenceCount, 6) * 7
+    + Math.min(validationCount, 4) * 5
+    - Math.min(gapCount, 4) * 6
+  )));
+  const claimRisk = supportCount >= 2 && score >= 70
+    ? labels.claimRiskLow
+    : supportCount >= 2 && score >= 50
+      ? labels.claimRiskMedium
+      : labels.claimRiskHigh;
+  const evidenceTrace = labels.claimEvidenceTrace(supportCount, evidenceCount, validationCount);
+  return {
+    claimSupportScore: score,
+    claimRisk,
+    evidenceTrace,
+    claimAuditAction: labels.claimAuditAction(claimRisk, score)
+  };
 }
 
 function synthesisConflictEntries(results, summaryInsights = new Map(), labels = collectionTemplateLabels("zh-CN")) {
@@ -3342,14 +4583,18 @@ function synthesisConflictEntries(results, summaryInsights = new Map(), labels =
       cluster: entry.cluster,
       claim: entry.claim,
       supportLevel,
+      claimSupportScore: entry.claimSupportScore,
+      claimRisk: entry.claimRisk,
+      evidenceTrace: entry.evidenceTrace,
       counterGap,
       validation,
-      reviewAction: labels.conflictReviewAction(supportCount, counterGap, validation)
+      reviewAction: `${labels.conflictReviewAction(supportCount, counterGap, validation)} ${entry.claimAuditAction || ""}`.trim()
     };
   });
 }
 
 function synthesisRoadmapEntries(results, summaryInsights = new Map(), labels = collectionTemplateLabels("zh-CN")) {
+  const claimByCluster = new Map(synthesisClaimEntries(results, summaryInsights, labels).map((entry) => [entry.cluster, entry]));
   return topicClusterEntries(results, summaryInsights, labels).map((cluster, index) => {
     const methods = uniqueInsightLines(cluster.items.map(({ insight }) => insight.method).filter(Boolean)).slice(0, 3);
     const gaps = uniqueInsightLines(cluster.items.flatMap(({ insight }) => insightValues(insight.limitations, insight.missingEvidence))).slice(0, 3);
@@ -3358,9 +4603,12 @@ function synthesisRoadmapEntries(results, summaryInsights = new Map(), labels = 
     const methodSignal = methods[0] || labels.pendingInsight;
     const openGap = gaps[0] || labels.gapMatrixPendingEvidence;
     const nextValidation = validations.join("; ") || labels.gapMatrixPendingValidation;
+    const claim = claimByCluster.get(cluster.label) || synthesisClaimEvidenceAudit({ supportingPapers, evidence: [], gaps, validations }, labels);
     return {
       cluster: cluster.label,
       question: labels.roadmapQuestionText(cluster.label, methodSignal, openGap),
+      claimSupportScore: claim.claimSupportScore,
+      claimRisk: claim.claimRisk,
       supportingPapers,
       methodSignal,
       openGap,
@@ -3369,6 +4617,156 @@ function synthesisRoadmapEntries(results, summaryInsights = new Map(), labels = 
       sectionPlan: labels.roadmapSectionText(index + 1, cluster.label, methodSignal, openGap)
     };
   });
+}
+
+function synthesisRoadmapReadinessEntries(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  return (entries || []).map((entry) => {
+    const supportScore = Number(entry.claimSupportScore) || 0;
+    const paperCount = Array.isArray(entry.supportingPapers) ? entry.supportingPapers.length : 0;
+    const risk = String(entry.claimRisk || "");
+    const hasHighRisk = risk === labels.claimRiskHigh || /high|高|高度|暫定|薄い/i.test(risk);
+    const hasMediumRisk = risk === labels.claimRiskMedium || /medium|中/i.test(risk);
+    const missingGap = !entry.openGap || entry.openGap === labels.gapMatrixPendingEvidence;
+    const missingValidation = !entry.nextValidation || entry.nextValidation === labels.gapMatrixPendingValidation;
+    const unresolvedGap = entry.openGap && !missingGap ? entry.openGap : "";
+    const score = Math.max(0, Math.min(100, Math.round(
+      supportScore
+      + Math.min(paperCount, 4) * 5
+      + (entry.candidateQuery ? 4 : 0)
+      - (hasHighRisk ? 24 : hasMediumRisk ? 10 : 0)
+      - (missingGap ? 14 : 6)
+      - (missingValidation ? 12 : 4)
+    )));
+    const level = score >= 70 && paperCount >= 2 && !hasHighRisk
+      ? labels.roadmapReadinessReady
+      : paperCount < 2 || hasHighRisk
+        ? labels.roadmapReadinessNeedsEvidence
+        : missingValidation
+          ? labels.roadmapReadinessNeedsValidation
+          : score < 40
+            ? labels.roadmapReadinessDefer
+            : labels.roadmapReadinessNeedsValidation;
+    const blockingIssue = level === labels.roadmapReadinessReady
+      ? labels.roadmapReadinessNoBlocking
+      : paperCount < 2 || hasHighRisk
+        ? labels.roadmapReadinessBlockingEvidence(paperCount, risk)
+        : missingValidation
+          ? labels.roadmapReadinessBlockingValidation
+          : unresolvedGap
+            ? labels.roadmapReadinessBlockingGap(unresolvedGap)
+            : labels.roadmapReadinessBlockingScore(score);
+    return {
+      ...entry,
+      roadmapReadinessScore: score,
+      roadmapReadinessLevel: level,
+      roadmapBlockingIssue: blockingIssue,
+      roadmapNextAction: labels.roadmapReadinessAction(level, entry.cluster, blockingIssue, entry.candidateQuery)
+    };
+  });
+}
+
+function renderSynthesisRoadmapReadinessRows(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const rows = (entries || []).map((entry) => [
+    escapeMarkdownTable(entry.cluster),
+    escapeMarkdownTable(entry.roadmapReadinessScore),
+    escapeMarkdownTable(entry.roadmapReadinessLevel),
+    escapeMarkdownTable(entry.claimSupportScore),
+    escapeMarkdownTable(entry.claimRisk),
+    escapeMarkdownTable(entry.roadmapBlockingIssue),
+    escapeMarkdownTable(entry.candidateQuery),
+    escapeMarkdownTable(entry.roadmapNextAction)
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |  |";
+  return [
+    `| ${labels.clusterColumn} | ${labels.roadmapReadinessScoreColumn} | ${labels.roadmapReadinessLevelColumn} | ${labels.claimSupportScoreColumn} | ${labels.claimRiskColumn} | ${labels.roadmapBlockingIssueColumn} | ${labels.roadmapCandidateQueryColumn} | ${labels.roadmapNextActionColumn} |`,
+    "| --- | ---: | --- | ---: | --- | --- | --- | --- |",
+    rows
+  ].join("\n");
+}
+
+function roadmapFinalReportCalibrationEntries(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  return (entries || []).map((entry) => {
+    const paperCount = Array.isArray(entry.supportingPapers) ? entry.supportingPapers.length : 0;
+    const readinessScore = Number(entry.roadmapReadinessScore) || 0;
+    const supportScore = Number(entry.claimSupportScore) || 0;
+    const ready = entry.roadmapReadinessLevel === labels.roadmapReadinessReady;
+    const needsEvidence = entry.roadmapReadinessLevel === labels.roadmapReadinessNeedsEvidence;
+    const needsValidation = entry.roadmapReadinessLevel === labels.roadmapReadinessNeedsValidation;
+    const placement = ready
+      ? labels.finalReportCalibrationPlacementReady
+      : needsEvidence
+        ? labels.finalReportCalibrationPlacementEvidence
+        : needsValidation
+          ? labels.finalReportCalibrationPlacementValidation
+          : labels.finalReportCalibrationPlacementDeferred;
+    const citationMode = paperCount >= 2 && supportScore >= 60
+      ? labels.finalReportCalibrationCitationMulti(paperCount)
+      : paperCount === 1
+        ? labels.finalReportCalibrationCitationSingle
+        : labels.finalReportCalibrationCitationThin;
+    const blocker = entry.roadmapBlockingIssue || labels.roadmapReadinessNoBlocking;
+    return {
+      ...entry,
+      finalReportThreshold: labels.finalReportCalibrationThreshold(readinessScore, supportScore, paperCount),
+      finalReportPlacement: placement,
+      finalReportCitationMode: citationMode,
+      finalReportAction: labels.finalReportCalibrationAction(placement, entry.cluster, blocker, entry.candidateQuery)
+    };
+  });
+}
+
+function renderRoadmapFinalReportCalibrationRows(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const rows = (entries || []).map((entry) => [
+    escapeMarkdownTable(entry.cluster),
+    escapeMarkdownTable(entry.roadmapReadinessScore),
+    escapeMarkdownTable(entry.finalReportThreshold),
+    escapeMarkdownTable(entry.finalReportPlacement),
+    escapeMarkdownTable(entry.finalReportCitationMode),
+    escapeMarkdownTable(entry.roadmapBlockingIssue),
+    escapeMarkdownTable(entry.finalReportAction)
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |  |";
+  return [
+    `| ${labels.clusterColumn} | ${labels.roadmapReadinessScoreColumn} | ${labels.finalReportCalibrationThresholdColumn} | ${labels.finalReportCalibrationPlacementColumn} | ${labels.finalReportCalibrationCitationColumn} | ${labels.roadmapBlockingIssueColumn} | ${labels.finalReportCalibrationActionColumn} |`,
+    "| --- | ---: | --- | --- | --- | --- | --- |",
+    rows
+  ].join("\n");
+}
+
+function roadmapFinalReportActionPlanEntries(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  return (entries || []).map((entry) => ({
+    cluster: entry.cluster,
+    finalReportPlacement: entry.finalReportPlacement,
+    evidenceGap: entry.roadmapBlockingIssue || labels.roadmapReadinessNoBlocking,
+    requiredMaterial: labels.finalReportActionPlanMaterial(
+      entry.finalReportPlacement,
+      entry.cluster,
+      entry.openGap || labels.gapMatrixPendingEvidence,
+      entry.nextValidation || labels.gapMatrixPendingValidation,
+      entry.candidateQuery
+    ),
+    citationStrategy: entry.finalReportCitationMode || labels.finalReportCalibrationCitationThin,
+    nextAction: entry.finalReportAction || labels.finalReportCalibrationAction(
+      entry.finalReportPlacement || labels.finalReportCalibrationPlacementDeferred,
+      entry.cluster || labels.clusterOther,
+      entry.roadmapBlockingIssue || labels.roadmapReadinessNoBlocking,
+      entry.candidateQuery
+    )
+  }));
+}
+
+function renderRoadmapFinalReportActionPlanRows(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const rows = (entries || []).map((entry) => [
+    escapeMarkdownTable(entry.cluster),
+    escapeMarkdownTable(entry.finalReportPlacement),
+    escapeMarkdownTable(entry.evidenceGap),
+    escapeMarkdownTable(entry.requiredMaterial),
+    escapeMarkdownTable(entry.citationStrategy),
+    escapeMarkdownTable(entry.nextAction)
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |";
+  return [
+    `| ${labels.clusterColumn} | ${labels.finalReportCalibrationPlacementColumn} | ${labels.finalReportEvidenceGapColumn} | ${labels.finalReportRequiredMaterialColumn} | ${labels.finalReportCalibrationCitationColumn} | ${labels.finalReportCalibrationActionColumn} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    rows
+  ].join("\n");
 }
 
 function roadmapCandidateQuery(clusterLabel, methods = [], gaps = [], validations = []) {
@@ -3491,6 +4889,8 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
   const clusters = topicClusterEntries(results, summaryInsights, labels);
   const synthesisClaims = synthesisClaimEntries(results, summaryInsights, labels);
   const synthesisConflicts = synthesisConflictEntries(results, summaryInsights, labels);
+  const roadmapReadiness = synthesisRoadmapReadinessEntries(synthesisRoadmapEntries(results, summaryInsights, labels), labels);
+  const finalReportCalibrationEntries = roadmapFinalReportCalibrationEntries(roadmapReadiness, labels);
   const methodSignals = uniqueInsightLines(generatedItems.map((item) => summaryInsights.get(item.itemKey)?.method).filter(Boolean)).slice(0, 6);
   const dataSignals = uniqueInsightLines(generatedItems.flatMap((item) => {
     const insight = summaryInsights.get(item.itemKey) || {};
@@ -3500,6 +4900,18 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     const insight = summaryInsights.get(item.itemKey) || {};
     return insightValues(insight.limitations, insight.missingEvidence, insight.validationNeeds);
   })).slice(0, 8);
+  const sectionReadiness = formalReportSectionReadinessEntries({
+    generatedItems,
+    clusters,
+    synthesisClaims,
+    roadmapReadiness,
+    methodSignals,
+    dataSignals,
+    gapSignals,
+    stats
+  }, labels);
+  const finalReportActionPlanEntries = roadmapFinalReportActionPlanEntries(finalReportCalibrationEntries, labels);
+  const sectionActionPlanEntries = formalReportSectionActionPlanEntries(sectionReadiness, labels);
   return [
     `# ${collectionContext.name || collectionContext.key} ${labels.formalReviewReport}`,
     "",
@@ -3513,6 +4925,26 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     `- ${labels.availableSummaries}: ${generatedItems.length}`,
     `- ${labels.summaryColumn}: ${labels.reportSourceFiles}`,
     labels.reportEvidenceWarning,
+    "",
+    `## ${labels.reportWritingReadinessGate}`,
+    "",
+    renderFormalReportWritingReadinessGate(synthesisClaims, roadmapReadiness, gapSignals, stats, labels),
+    "",
+    `## ${labels.reportSectionReadinessMatrix}`,
+    "",
+    renderFormalReportSectionReadinessMatrix(sectionReadiness, labels),
+    "",
+    `## ${labels.reportSectionActionPlan}`,
+    "",
+    renderFormalReportSectionActionPlanRows(sectionActionPlanEntries, labels),
+    "",
+    `## ${labels.finalReportCalibrationMatrix}`,
+    "",
+    renderRoadmapFinalReportCalibrationRows(finalReportCalibrationEntries, labels),
+    "",
+    `## ${labels.finalReportActionPlan}`,
+    "",
+    renderRoadmapFinalReportActionPlanRows(finalReportActionPlanEntries, labels),
     "",
     `## ${labels.reportPaperInventory}`,
     "",
@@ -3534,6 +4966,10 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     "",
     reportSynthesisClaims(synthesisClaims, labels),
     "",
+    `## ${labels.reportClaimEvidenceAudit}`,
+    "",
+    reportClaimEvidenceAudit(synthesisClaims, labels),
+    "",
     `## ${labels.reportSynthesisConflicts}`,
     "",
     reportSynthesisConflicts(synthesisConflicts, labels),
@@ -3545,6 +4981,10 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     `## ${labels.reportDraftOutline}`,
     "",
     reportDraftOutline(clusters, labels),
+    "",
+    `## ${labels.roadmapReadinessBoard}`,
+    "",
+    renderSynthesisRoadmapReadinessRows(roadmapReadiness, labels),
     "",
     `## ${labels.reportSynthesisWritingPack}`,
     "",
@@ -3559,6 +4999,250 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     labels.reportNextActionItems,
     ""
   ].join("\n");
+}
+
+function renderFormalReportWritingReadinessGate(synthesisClaims = [], roadmapReadiness = [], gapSignals = [], stats = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const summary = formalReportWritingReadinessSummary(synthesisClaims, roadmapReadiness, gapSignals, stats, labels);
+  const rows = (summary.checks || []).map((check) => [
+    escapeMarkdownTable(check.check),
+    escapeMarkdownTable(check.status),
+    escapeMarkdownTable(check.evidence),
+    escapeMarkdownTable(check.action)
+  ].join(" | ")).map((row) => `| ${row} |`);
+  return [
+    `- ${labels.reportWritingReadinessScore}: ${summary.score}/100`,
+    `- ${labels.reportWritingReadinessLevel}: ${summary.level}`,
+    `- ${labels.reportWritingReadinessBlockers}: ${summary.blockers.join("; ") || labels.reportWritingReadinessNoBlockers}`,
+    "",
+    `| ${labels.reportWritingReadinessCheckColumn} | ${labels.reportWritingReadinessStatusColumn} | ${labels.evidenceColumn} | ${labels.roadmapNextActionColumn} |`,
+    "| --- | --- | --- | --- |",
+    rows.join("\n") || `| ${escapeMarkdownTable(labels.reportWritingReadinessCheckColumn)} | ${escapeMarkdownTable(labels.reportReadinessBlocked)} | ${escapeMarkdownTable(labels.noSummary)} | ${escapeMarkdownTable(labels.reportReadinessDefaultAction(labels.reportReadinessBlocked))} |`
+  ].join("\n");
+}
+
+function formalReportWritingReadinessSummary(synthesisClaims = [], roadmapReadiness = [], gapSignals = [], stats = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const available = Number(stats.generated || 0) + Number(stats.skippedExisting || 0);
+  const skippedNoPdf = Number(stats.skippedNoPdf || 0);
+  const failed = Number(stats.failed || 0);
+  const scores = (synthesisClaims || []).map((entry) => Number(entry.claimSupportScore || 0)).filter((score) => Number.isFinite(score));
+  const averageClaimScore = scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : 0;
+  const highRiskClaims = (synthesisClaims || []).filter((entry) => formalReportRiskMatches(entry?.claimRisk, labels.claimRiskHigh, /high|高|高度|暫定|薄い/i)).length;
+  const mediumRiskClaims = (synthesisClaims || []).filter((entry) => formalReportRiskMatches(entry?.claimRisk, labels.claimRiskMedium, /medium|中/i)).length;
+  const readyRoutes = (roadmapReadiness || []).filter((entry) => entry?.roadmapReadinessLevel === labels.roadmapReadinessReady).length;
+  const evidenceThinRoutes = (roadmapReadiness || []).filter((entry) => entry?.roadmapReadinessLevel === labels.roadmapReadinessNeedsEvidence).length;
+  const validationRoutes = (roadmapReadiness || []).filter((entry) => entry?.roadmapReadinessLevel === labels.roadmapReadinessNeedsValidation).length;
+  const unresolvedGapCount = uniqueInsightLines(gapSignals || []).length;
+  const score = Math.max(0, Math.min(100, Math.round(
+    averageClaimScore * 0.45
+    + Math.min(available, 8) * 4
+    + readyRoutes * 8
+    + Math.min(unresolvedGapCount, 6) * 2
+    - highRiskClaims * 12
+    - mediumRiskClaims * 4
+    - evidenceThinRoutes * 6
+    - validationRoutes * 4
+    - skippedNoPdf * 3
+    - failed * 5
+  )));
+  const level = score >= 75 && highRiskClaims === 0 && readyRoutes > 0
+    ? labels.reportReadinessReady
+    : score >= 50
+      ? labels.reportReadinessRevise
+      : labels.reportReadinessBlocked;
+  const blockers = uniqueInsightLines([
+    highRiskClaims ? labels.reportReadinessHighRiskBlocker(highRiskClaims) : "",
+    evidenceThinRoutes ? labels.reportReadinessEvidenceBlocker(evidenceThinRoutes) : "",
+    validationRoutes ? labels.reportReadinessValidationBlocker(validationRoutes) : "",
+    skippedNoPdf || failed ? labels.reportReadinessCoverageBlocker(skippedNoPdf, failed) : "",
+    !unresolvedGapCount ? labels.reportReadinessGapBlocker : ""
+  ].filter(Boolean)).slice(0, 6);
+  return {
+    score,
+    level,
+    blockers,
+    checks: [
+      {
+        check: labels.reportReadinessEvidenceBase,
+        status: available >= 2 && skippedNoPdf === 0 ? labels.reportReadinessPass : available ? labels.reportReadinessReview : labels.reportReadinessFail,
+        evidence: labels.reportReadinessEvidenceBaseEvidence(available, skippedNoPdf, failed),
+        action: skippedNoPdf || failed ? labels.reportReadinessCoverageAction : labels.reportReadinessProceedAction
+      },
+      {
+        check: labels.reportReadinessClaimRisk,
+        status: highRiskClaims ? labels.reportReadinessFail : mediumRiskClaims ? labels.reportReadinessReview : labels.reportReadinessPass,
+        evidence: labels.reportReadinessClaimRiskEvidence(highRiskClaims, mediumRiskClaims, averageClaimScore),
+        action: highRiskClaims ? labels.reportReadinessClaimRiskAction : labels.reportReadinessProceedAction
+      },
+      {
+        check: labels.reportReadinessRoadmap,
+        status: readyRoutes ? labels.reportReadinessPass : roadmapReadiness.length ? labels.reportReadinessReview : labels.reportReadinessFail,
+        evidence: labels.reportReadinessRoadmapEvidence(readyRoutes, evidenceThinRoutes, validationRoutes),
+        action: labels.reportReadinessRoadmapAction
+      },
+      {
+        check: labels.reportReadinessGapTrace,
+        status: unresolvedGapCount ? labels.reportReadinessReview : labels.reportReadinessFail,
+        evidence: labels.reportReadinessGapTraceEvidence(unresolvedGapCount),
+        action: unresolvedGapCount ? labels.reportReadinessGapTraceAction : labels.reportReadinessGapBlocker
+      }
+    ]
+  };
+}
+
+function renderFormalReportSectionReadinessMatrix(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const rows = (entries || []).map((entry) => [
+    escapeMarkdownTable(entry.section),
+    escapeMarkdownTable(entry.score),
+    escapeMarkdownTable(entry.level),
+    escapeMarkdownTable(entry.evidence),
+    escapeMarkdownTable(entry.blocker || labels.reportSectionNoBlocker),
+    escapeMarkdownTable(entry.action)
+  ].join(" | ")).map((row) => `| ${row} |`);
+  return [
+    `| ${labels.reportSectionColumn} | ${labels.reportSectionReadinessScoreColumn} | ${labels.reportSectionReadinessLevelColumn} | ${labels.reportSectionEvidenceColumn} | ${labels.reportSectionBlockerColumn} | ${labels.reportSectionActionColumn} |`,
+    "| --- | ---: | --- | --- | --- | --- |",
+    rows.join("\n") || `| ${escapeMarkdownTable(labels.reportSectionColumn)} | 0 | ${escapeMarkdownTable(labels.reportSectionBlocked)} | ${escapeMarkdownTable(labels.noSummary)} | ${escapeMarkdownTable(labels.reportReadinessGapBlocker)} | ${escapeMarkdownTable(labels.reportReadinessDefaultAction(labels.reportSectionBlocked))} |`
+  ].join("\n");
+}
+
+function formalReportSectionReadinessEntries(context = {}, labels = collectionTemplateLabels("zh-CN")) {
+  const stats = context.stats || {};
+  const available = Number(stats.generated || 0) + Number(stats.skippedExisting || 0);
+  const skippedNoPdf = Number(stats.skippedNoPdf || 0);
+  const failed = Number(stats.failed || 0);
+  const clusters = Array.isArray(context.clusters) ? context.clusters : [];
+  const synthesisClaims = Array.isArray(context.synthesisClaims) ? context.synthesisClaims : [];
+  const roadmapReadiness = Array.isArray(context.roadmapReadiness) ? context.roadmapReadiness : [];
+  const methodSignals = uniqueInsightLines(context.methodSignals || []);
+  const dataSignals = uniqueInsightLines(context.dataSignals || []);
+  const gapSignals = uniqueInsightLines(context.gapSignals || []);
+  const claimScores = synthesisClaims.map((entry) => Number(entry.claimSupportScore || 0)).filter((score) => Number.isFinite(score));
+  const roadmapScores = roadmapReadiness.map((entry) => Number(entry.roadmapReadinessScore || 0)).filter((score) => Number.isFinite(score));
+  const averageClaimScore = claimScores.length ? Math.round(claimScores.reduce((sum, score) => sum + score, 0) / claimScores.length) : 0;
+  const averageRoadmapScore = roadmapScores.length ? Math.round(roadmapScores.reduce((sum, score) => sum + score, 0) / roadmapScores.length) : 0;
+  const highRiskClaims = synthesisClaims.filter((entry) => formalReportRiskMatches(entry?.claimRisk, labels.claimRiskHigh, /high|高|高度|暫定|薄い/i)).length;
+  const mediumRiskClaims = synthesisClaims.filter((entry) => formalReportRiskMatches(entry?.claimRisk, labels.claimRiskMedium, /medium|中/i)).length;
+  const readyRoutes = roadmapReadiness.filter((entry) => entry?.roadmapReadinessLevel === labels.roadmapReadinessReady).length;
+  const evidenceThinRoutes = roadmapReadiness.filter((entry) => entry?.roadmapReadinessLevel === labels.roadmapReadinessNeedsEvidence).length;
+  const validationRoutes = roadmapReadiness.filter((entry) => entry?.roadmapReadinessLevel === labels.roadmapReadinessNeedsValidation).length;
+  const coverageBlocker = skippedNoPdf || failed
+    ? labels.reportReadinessCoverageBlocker(skippedNoPdf, failed)
+    : "";
+  return [
+    formalReportSectionEntry(
+      labels.reportScopeAndEvidence,
+      formalReportClampScore(available * 12 + (available >= 2 ? 20 : 0) - skippedNoPdf * 8 - failed * 10),
+      labels.reportReadinessEvidenceBaseEvidence(available, skippedNoPdf, failed),
+      coverageBlocker || (!available ? labels.noSummary : ""),
+      coverageBlocker ? labels.reportReadinessCoverageAction : labels.reportReadinessProceedAction,
+      labels
+    ),
+    formalReportSectionEntry(
+      labels.reportMethodTaxonomy,
+      formalReportClampScore(methodSignals.length * 18 + Math.min(available, 5) * 5),
+      labels.reportSectionSignalEvidence(methodSignals.length, available),
+      methodSignals.length ? "" : labels.reportSectionMissingMethodSignals,
+      labels.reportSectionActionMethod,
+      labels
+    ),
+    formalReportSectionEntry(
+      labels.reportDataAndEvidence,
+      formalReportClampScore(dataSignals.length * 14 + Math.min(available, 5) * 4),
+      labels.reportSectionSignalEvidence(dataSignals.length, available),
+      dataSignals.length ? "" : labels.reportSectionMissingDataSignals,
+      labels.reportSectionActionData,
+      labels
+    ),
+    formalReportSectionEntry(
+      labels.reportTopicSynthesis,
+      formalReportClampScore(clusters.length * 16 + Math.min(available, 6) * 4),
+      labels.reportSectionClusterEvidence(clusters.length, available),
+      clusters.length ? "" : labels.reportSectionMissingClusters,
+      labels.reportSectionActionTopic,
+      labels
+    ),
+    formalReportSectionEntry(
+      labels.reportSynthesisClaims,
+      formalReportClampScore(averageClaimScore + synthesisClaims.length * 5 - highRiskClaims * 20 - mediumRiskClaims * 8),
+      labels.reportReadinessClaimRiskEvidence(highRiskClaims, mediumRiskClaims, averageClaimScore),
+      synthesisClaims.length ? (highRiskClaims ? labels.reportReadinessHighRiskBlocker(highRiskClaims) : "") : labels.reportSectionMissingClaims,
+      highRiskClaims ? labels.reportReadinessClaimRiskAction : labels.reportSectionActionClaim,
+      labels
+    ),
+    formalReportSectionEntry(
+      labels.reportSynthesisConflicts,
+      formalReportClampScore(gapSignals.length * 12 + (synthesisClaims.length ? 15 : 0)),
+      labels.reportReadinessGapTraceEvidence(gapSignals.length),
+      gapSignals.length ? "" : labels.reportSectionMissingGaps,
+      labels.reportSectionActionGap,
+      labels
+    ),
+    formalReportSectionEntry(
+      `${labels.reportDraftOutline} / ${labels.synthesisRoadmap}`,
+      formalReportClampScore(averageRoadmapScore * 0.55 + readyRoutes * 18 - evidenceThinRoutes * 8 - validationRoutes * 5),
+      labels.reportReadinessRoadmapEvidence(readyRoutes, evidenceThinRoutes, validationRoutes),
+      readyRoutes ? "" : labels.reportSectionNoReadyRoadmap,
+      labels.reportSectionActionRoadmap,
+      labels
+    )
+  ];
+}
+
+function formalReportSectionActionPlanEntries(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  return (entries || []).map((entry) => ({
+    section: entry.section,
+    level: entry.level,
+    evidenceGap: entry.blocker || labels.reportSectionNoBlocker,
+    requiredMaterial: labels.reportSectionActionPlanMaterial(
+      entry.section,
+      entry.level,
+      entry.evidence || labels.noSummary,
+      entry.blocker || ""
+    ),
+    nextAction: entry.action || labels.reportReadinessDefaultAction(entry.level || labels.reportSectionBlocked)
+  }));
+}
+
+function renderFormalReportSectionActionPlanRows(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const rows = (entries || []).map((entry) => [
+    escapeMarkdownTable(entry.section),
+    escapeMarkdownTable(entry.level),
+    escapeMarkdownTable(entry.evidenceGap),
+    escapeMarkdownTable(entry.requiredMaterial),
+    escapeMarkdownTable(entry.nextAction)
+  ].join(" | ")).map((row) => `| ${row} |`);
+  return [
+    `| ${labels.reportSectionColumn} | ${labels.reportSectionReadinessLevelColumn} | ${labels.finalReportEvidenceGapColumn} | ${labels.finalReportRequiredMaterialColumn} | ${labels.reportSectionActionColumn} |`,
+    "| --- | --- | --- | --- | --- |",
+    rows.join("\n") || `| ${escapeMarkdownTable(labels.reportSectionColumn)} | ${escapeMarkdownTable(labels.reportSectionBlocked)} | ${escapeMarkdownTable(labels.reportReadinessGapBlocker)} | ${escapeMarkdownTable(labels.noSummary)} | ${escapeMarkdownTable(labels.reportReadinessDefaultAction(labels.reportSectionBlocked))} |`
+  ].join("\n");
+}
+
+function formalReportSectionEntry(section, score, evidence, blocker, action, labels = collectionTemplateLabels("zh-CN")) {
+  const normalizedScore = formalReportClampScore(score);
+  const normalizedBlocker = String(blocker || "").trim();
+  const level = normalizedScore >= 75 && !normalizedBlocker
+    ? labels.reportSectionReady
+    : normalizedScore >= 50
+      ? labels.reportSectionNeedsRevision
+      : labels.reportSectionBlocked;
+  return {
+    section,
+    score: normalizedScore,
+    level,
+    evidence,
+    blocker: normalizedBlocker,
+    action
+  };
+}
+
+function formalReportClampScore(score) {
+  return Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
+}
+
+function formalReportRiskMatches(value, localizedValue, pattern) {
+  const text = String(value || "");
+  return !!text && (text === localizedValue || pattern.test(text));
 }
 
 function renderCollectionSynthesisWritingPack(collectionContext, clusters, synthesisClaims, synthesisConflicts, gapSignals, labels) {
@@ -3582,7 +5266,7 @@ function renderCollectionSynthesisWritingPack(collectionContext, clusters, synth
       escapeMarkdownTable(cluster.label),
       escapeMarkdownTable(labels.synthesisWritingTask(cluster.label, method, gap)),
       escapeMarkdownTable(evidence.join("; ") || papers.join("; ") || labels.pendingSummaryPath),
-      escapeMarkdownTable(conflict.reviewAction || labels.synthesisConflictCheck(draftClaim, gap)),
+      escapeMarkdownTable(claim.claimAuditAction || conflict.reviewAction || labels.synthesisConflictCheck(draftClaim, gap)),
       escapeMarkdownTable(labels.synthesisModelPrompt(cluster.label, method, gap, draftClaim)),
       escapeMarkdownTable(labels.synthesisManualReview(collectionContext?.name || collectionContext?.key || "", cluster.label, papers.join("; ") || labels.noSummary))
     ].join(" | ");
@@ -3644,11 +5328,31 @@ function reportSynthesisClaims(entries, labels) {
     `### ${entry.cluster}`,
     "",
     `- ${labels.claimColumn}: ${entry.claim}`,
+    `- ${labels.claimSupportScoreColumn}: ${entry.claimSupportScore}`,
+    `- ${labels.claimRiskColumn}: ${entry.claimRisk}`,
+    `- ${labels.evidenceTraceColumn}: ${entry.evidenceTrace}`,
     `- ${labels.supportingPapersColumn}: ${entry.supportingPapers.join("; ") || labels.noSummary}`,
     `- ${labels.evidenceColumn}: ${entry.evidence.join("; ") || labels.pendingSummaryPath}`,
     `- ${labels.counterGapColumn}: ${entry.gaps.join("; ") || labels.gapMatrixPendingEvidence}`,
-    `- ${labels.validationColumn}: ${entry.validations.join("; ") || labels.gapMatrixPendingValidation}`
+    `- ${labels.validationColumn}: ${entry.validations.join("; ") || labels.gapMatrixPendingValidation}`,
+    `- ${labels.reviewActionColumn}: ${entry.claimAuditAction || labels.claimAuditAction(entry.claimRisk || labels.claimRiskHigh, entry.claimSupportScore || 0)}`
   ].join("\n")).join("\n\n");
+}
+
+function reportClaimEvidenceAudit(entries, labels) {
+  const rows = (entries || []).slice(0, 12).map((entry) => [
+    escapeMarkdownTable(entry.cluster),
+    escapeMarkdownTable(entry.claimSupportScore),
+    escapeMarkdownTable(entry.claimRisk),
+    escapeMarkdownTable(entry.evidenceTrace),
+    escapeMarkdownTable((entry.supportingPapers || []).join("; ") || labels.noSummary),
+    escapeMarkdownTable(entry.claimAuditAction || labels.claimAuditAction(entry.claimRisk || labels.claimRiskHigh, entry.claimSupportScore || 0))
+  ].join(" | ")).map((row) => `| ${row} |`);
+  return [
+    `| ${labels.clusterColumn} | ${labels.claimSupportScoreColumn} | ${labels.claimRiskColumn} | ${labels.evidenceTraceColumn} | ${labels.supportingPapersColumn} | ${labels.reviewActionColumn} |`,
+    "| --- | ---: | --- | --- | --- | --- |",
+    rows.join("\n") || "|  | 0 |  |  |  |  |"
+  ].join("\n");
 }
 
 function reportSynthesisConflicts(entries, labels) {
@@ -3658,6 +5362,9 @@ function reportSynthesisConflicts(entries, labels) {
     "",
     `- ${labels.claimColumn}: ${entry.claim}`,
     `- ${labels.supportLevelColumn}: ${entry.supportLevel}`,
+    `- ${labels.claimSupportScoreColumn}: ${entry.claimSupportScore}`,
+    `- ${labels.claimRiskColumn}: ${entry.claimRisk}`,
+    `- ${labels.evidenceTraceColumn}: ${entry.evidenceTrace}`,
     `- ${labels.counterGapColumn}: ${entry.counterGap}`,
     `- ${labels.validationColumn}: ${entry.validation}`,
     `- ${labels.reviewActionColumn}: ${entry.reviewAction}`
@@ -3703,15 +5410,72 @@ function collectionTemplateLabels(outputLanguage) {
       roadmapCandidateQueryColumn: "Candidate-search Query",
       roadmapSectionPlan: "Section Plan",
       roadmapEvidenceIndex: "Evidence Index",
+      roadmapReadinessBoard: "Roadmap Readiness Board",
+      roadmapReadinessScoreColumn: "Readiness Score",
+      roadmapReadinessLevelColumn: "Readiness Level",
+      roadmapBlockingIssueColumn: "Blocking Issue",
+      roadmapNextActionColumn: "Next Action",
+      roadmapReadinessReady: "Ready for draft",
+      roadmapReadinessNeedsEvidence: "Needs evidence",
+      roadmapReadinessNeedsValidation: "Needs validation",
+      roadmapReadinessDefer: "Defer",
+      roadmapReadinessNoBlocking: "No immediate blocker",
+      roadmapReadinessBlockingEvidence: (count, risk) => `Evidence is thin: ${count || 0} supporting paper(s); ${risk || "risk pending"}`,
+      roadmapReadinessBlockingValidation: "Validation plan is still pending",
+      roadmapReadinessBlockingGap: (gap) => `Open gap must stay explicit: ${gap}`,
+      roadmapReadinessBlockingScore: (score) => `Readiness score ${score || 0} is below the writing threshold`,
+      roadmapReadinessAction: (level, cluster, issue, query) => `${level}: verify ${cluster}; ${issue}; next search/check: ${query || "candidate query pending"}.`,
+      finalReportCalibrationMatrix: "Final Report Calibration Matrix",
+      finalReportCalibrationThresholdColumn: "Writing Threshold",
+      finalReportCalibrationPlacementColumn: "Report Placement",
+      finalReportCalibrationCitationColumn: "Citation Strategy",
+      finalReportCalibrationActionColumn: "Final Report Action",
+      finalReportCalibrationThreshold: (readiness, support, papers) => `readiness ${readiness || 0}/100; support ${support || 0}/100; papers ${papers || 0}`,
+      finalReportCalibrationPlacementReady: "Move into formal report section",
+      finalReportCalibrationPlacementEvidence: "Hold as evidence-building task",
+      finalReportCalibrationPlacementValidation: "Draft with validation caveat",
+      finalReportCalibrationPlacementDeferred: "Defer from final prose",
+      finalReportCalibrationCitationMulti: (count) => `multi-paper citation block (${count || 0} papers)`,
+      finalReportCalibrationCitationSingle: "single-paper citation only; keep tentative",
+      finalReportCalibrationCitationThin: "citation evidence missing",
+      finalReportCalibrationAction: (placement, cluster, blocker, query) => `${placement}: calibrate ${cluster}; ${blocker}; candidate search/check: ${query || "pending"}.`,
+      finalReportActionPlan: "Final Report Action Plan",
+      finalReportEvidenceGapColumn: "Evidence Gap",
+      finalReportRequiredMaterialColumn: "Required Material",
+      finalReportActionPlanMaterial: (placement, cluster, gap, validation, query) => `${placement}: gather material for ${cluster}; keep gap "${gap}" visible; validation/evidence need: ${validation}; search cue: ${query || "pending"}.`,
       crossCollectionSynthesis: "Cross-Collection Synthesis Map",
       crossCollectionSynthesisNote: "Aggregates the latest collection workspaces into one review-planning surface. Use it to compare themes across collections before writing a broader review.",
       crossCollectionInventory: "Collection Inventory",
       crossCollectionThemeMap: "Cross-Collection Theme Map",
+      crossCollectionClusterMap: "Cross-Collection Cluster Map",
+      crossCollectionSynthesisLayoutBoard: "Cross-Collection Synthesis Layout Board",
+      crossCollectionClusterCalibrationBoard: "Cluster Threshold Calibration Board",
+      crossCollectionClusterEvidenceCards: "Cluster Evidence Cards",
       crossCollectionThemeMergeBoard: "Theme Merge Review Board",
       crossCollectionBridgeBoard: "Cross-Collection Bridge Board",
       crossCollectionGapBoard: "Cross-Collection Gap Board",
       crossCollectionPriorityBoard: "Cross-Collection Priority Board",
+      crossCollectionChartReviewTriage: "Cross-Collection Chart Review Triage",
       crossCollectionReviewPack: "Cross-Collection Review Pack",
+      crossCollectionClusterScopeColumn: "Cluster Scope",
+      crossCollectionClusterScoreColumn: "Cluster Score",
+      crossCollectionEvidenceRankColumn: "Evidence Card Rank",
+      crossCollectionEvidenceRankSignalsColumn: "Rank Signals",
+      crossCollectionGapPriorityColumn: "Gap Priority Score",
+      crossCollectionGapPrioritySignalsColumn: "Gap Priority Signals",
+      crossCollectionGapPriorityPending: "gap priority pending",
+      crossCollectionClusterThresholdColumn: "Threshold Evidence",
+      crossCollectionClusterRecommendationColumn: "Calibration Recommendation",
+      crossCollectionClusterLinkColumn: "Link Evidence",
+      crossCollectionClusterRiskColumn: "Review Risk",
+      crossCollectionSupportColumn: "Cross-Collection Support",
+      crossCollectionLayoutLaneColumn: "Layout Lane",
+      crossCollectionLayoutOrderColumn: "Lane Order",
+      crossCollectionLayoutWeightColumn: "Layout Weight",
+      crossCollectionLayoutLaneCore: "Core shared section",
+      crossCollectionLayoutLaneBoundary: "Boundary review before writing",
+      crossCollectionLayoutLaneGap: "Evidence gap follow-up",
+      crossCollectionLayoutLaneSupport: "Supporting context",
       crossCollectionPriorityColumn: "Priority",
       crossCollectionReasonColumn: "Reason",
       crossCollectionScopeColumn: "Review Scope",
@@ -3733,10 +5497,76 @@ function collectionTemplateLabels(outputLanguage) {
         : `Scope check: ${gap}`,
       crossCollectionPriorityMergeThemes: (themes) => `Review possible theme merge: ${themes}`,
       crossCollectionPriorityMergeReason: "Different theme labels share evidence signals",
+      crossCollectionPriorityCluster: (cluster, count) => `Write cross-collection section: ${cluster}`,
+      crossCollectionPriorityClusterReason: (count, score) => `Cluster spans ${count} collections; score ${score || 0}`,
       crossCollectionPriorityWeakTheme: (theme, count) => count >= 2
         ? `Review theme gaps: ${theme}`
         : `Add support for theme: ${theme}`,
       crossCollectionPriorityWeakThemeAction: (theme) => `Open the collection report, verify ${theme}, and run candidate search if evidence is thin.`,
+      crossCollectionClusterTitle: (themes) => (themes || []).slice(0, 3).join(" / ") || "Unlabeled cross-collection cluster",
+      crossCollectionClusterSupport: (count, papers) => count >= 2
+        ? `${count} collections, ${papers} papers`
+        : `single collection, ${papers} papers`,
+      crossCollectionEvidenceRankCoverage: (count, papers) => `coverage: ${count || 0} collections, ${papers || 0} papers`,
+      crossCollectionEvidenceRankLinks: (links) => `link signals: ${links || 0}`,
+      crossCollectionEvidenceRankCalibration: (recommendation) => `calibration: ${recommendation || "pending"}`,
+      crossCollectionEvidenceRankRisk: (risk) => `risk: ${risk || "pending"}`,
+      crossCollectionGapPriorityCoverage: (count) => `coverage: ${count || 0} collections`,
+      crossCollectionGapPriorityThemes: (count) => `themes: ${count || 0}`,
+      crossCollectionGapPriorityQueries: (count) => `candidate queries: ${count || 0}`,
+      crossCollectionGapPriorityRecurring: (count) => `recurring gap across ${count || 0} collections`,
+      crossCollectionGapPrioritySingle: "single-collection gap",
+      crossCollectionLayoutAction: (lane, cluster) => `${lane}: verify source reports for ${cluster}, then draft or defer the review section according to the lane.`,
+      crossCollectionClusterPrompt: (cluster, count) => `Turn ${cluster} into a review section plan across ${count || "the relevant"} collections; separate shared claims, scope-specific claims, and missing evidence.`,
+      crossCollectionClusterReviewAction: (cluster) => `Verify the source collection reports for ${cluster}; keep only evidence-backed shared claims.`,
+      crossCollectionClusterNoEvidence: "No cluster evidence cards are available yet.",
+      crossCollectionClusterLinkPending: "link evidence pending",
+      crossCollectionClusterRiskPending: "review risk pending",
+      crossCollectionClusterRisk: (count, themes, links) => count >= 2 && links >= 2
+        ? "medium: verify shared evidence before merging review sections"
+        : themes > 2
+          ? "high: broad theme mix; split if evidence is not comparable"
+          : "low: narrow scope, still verify source summaries",
+      crossCollectionClusterThresholdPending: "threshold evidence pending",
+      crossCollectionClusterThresholdBand: (score, count, links) => `score ${score || 0}; ${count || 0} collections; ${links || 0} link signals`,
+      crossCollectionClusterCalibrationRecommendation: (key) => ({
+        merge: "Promote to shared review section",
+        review: "Boundary review before merging",
+        split: "Keep as neighboring or split scope",
+        gather: "Gather more evidence before cross-collection claim"
+      }[key] || "Boundary review before merging"),
+      crossCollectionClusterCalibrationReview: "Boundary review before merging",
+      crossCollectionClusterCalibrationAction: (cluster, recommendation) => `Apply threshold check for ${cluster}: ${recommendation || "review boundary, evidence comparability, and source reports"}.`,
+      crossCollectionClusterLinkSameTheme: (theme) => `same normalized theme: ${theme}`,
+      crossCollectionClusterLinkSharedTokens: (count) => `${count} shared evidence tokens`,
+      crossCollectionClusterLinkStrongTokens: (tokens) => `strong shared tokens: ${tokens}`,
+      crossCollectionClusterLinkMethodOverlap: "method-signal overlap",
+      crossCollectionClusterLinkGapOverlap: "gap-signal overlap",
+      crossCollectionClusterLinkQueryOverlap: "candidate-query overlap",
+      crossCollectionChartReviewStateColumn: "Review State",
+      crossCollectionChartReviewActionCountColumn: "Actions",
+      crossCollectionChartReviewCollectionCountColumn: "Collections",
+      crossCollectionChartReviewPaperCountColumn: "Papers",
+      crossCollectionChartReviewCollectionsColumn: "Collections",
+      crossCollectionChartReviewBlockingColumn: "Blocking Issue",
+      crossCollectionChartReviewBatchActionColumn: "Batch Action",
+      crossCollectionChartReviewDoneColumn: "Done Criteria",
+      crossCollectionChartReviewIndexColumn: "Chart Review Index",
+      crossCollectionChartReviewNoIssue: "No blocking issue recorded",
+      crossCollectionChartReviewActionPending: "Batch action pending",
+      crossCollectionChartReviewDonePending: "Done criteria pending",
+      crossCollectionChartReviewIndexPending: "chart review index pending",
+      crossCollectionChartReviewEmpty: "No collection-level chart review tasks are available yet.",
+      crossCollectionChartReviewDrilldown: "Chart Review Drilldown",
+      crossCollectionChartReviewWritebackTargets: "Batch Status Writeback Targets",
+      crossCollectionChartReviewCurrentStateColumn: "Current State",
+      crossCollectionChartReviewTargetStateColumn: "Suggested State",
+      crossCollectionChartReviewStatusPatchColumn: "Status Patch",
+      crossCollectionChartReviewMatchColumn: "Match Filter",
+      crossCollectionChartReviewDrilldownSummary: (index, entry) => `${index}. ${entry.priority || "medium"} / ${entry.reviewState || "todo"} - ${entry.count || 0} action(s) across ${entry.collectionCount || 0} collection(s)`,
+      crossCollectionChartReviewChecklistOpenIndexes: "Open each linked chart review index and inspect the source visual reports.",
+      crossCollectionChartReviewChecklistVerifyPapers: "Verify the listed papers before reusing extracted chart values.",
+      crossCollectionChartReviewChecklistUpdateState: "Update reviewer, due date, notes, and review state in the source workbench/export.",
       collectionColumn: "Collection",
       reportColumn: "Report",
       crossCollectionStatsLine: (stats) => `Collections ${stats.collections}, papers ${stats.totalPapers}, available summaries ${stats.availableSummaries}, skipped without PDF ${stats.skippedNoPdf}, failed ${stats.failed}.`,
@@ -3776,6 +5606,9 @@ function collectionTemplateLabels(outputLanguage) {
       yearColumn: "Year",
       clusterColumn: "Cluster",
       claimColumn: "Draft Claim",
+      claimSupportScoreColumn: "Claim Support Score",
+      claimRiskColumn: "Claim Risk",
+      evidenceTraceColumn: "Evidence Trace",
       supportingPapersColumn: "Supporting Papers",
       evidenceColumn: "Evidence Sources",
       evidenceAnchorColumn: "Evidence Anchors",
@@ -3793,6 +5626,11 @@ function collectionTemplateLabels(outputLanguage) {
       validationColumn: "Validation Need",
       summaryColumn: "Summary",
       synthesisClaimText: (cluster, methods, gap) => `${cluster}: current summaries suggest ${methods}; the main unresolved gap is ${gap}.`,
+      claimRiskLow: "low: multi-paper support with traceable evidence",
+      claimRiskMedium: "medium: traceable evidence but unresolved gaps remain",
+      claimRiskHigh: "high: single-paper or thin evidence",
+      claimEvidenceTrace: (papers, evidence, validations) => `${papers || 0} paper(s), ${evidence || 0} evidence source(s), ${validations || 0} validation cue(s)`,
+      claimAuditAction: (risk, score) => `Audit claim (${score || 0}/100): ${risk || "risk pending"}; verify trace before final writing.`,
       claimRiskChecklist: "Claim Risk Checklist",
       claimRiskChecklistItems: [
         "- [ ] Verify that every draft claim has at least two supporting papers or mark it as single-paper evidence.",
@@ -3876,9 +5714,69 @@ function collectionTemplateLabels(outputLanguage) {
       reportDataAndEvidence: "Data, Scenario, and Metric Evidence",
       reportTopicSynthesis: "Topic-level Synthesis",
       reportSynthesisClaims: "Evidence-backed Synthesis Claims",
+      reportClaimEvidenceAudit: "Claim Evidence Audit",
       reportSynthesisConflicts: "Synthesis Conflicts and Evidence Gaps",
       reportResearchGaps: "Research Gaps and Validation Needs",
       reportDraftOutline: "Review Draft Outline",
+      reportWritingReadinessGate: "Writing Readiness Gate",
+      reportWritingReadinessScore: "Formal report readiness score",
+      reportWritingReadinessLevel: "Readiness level",
+      reportWritingReadinessBlockers: "Blocking items",
+      reportWritingReadinessNoBlockers: "No blocking item from current summaries",
+      reportWritingReadinessCheckColumn: "Gate Check",
+      reportWritingReadinessStatusColumn: "Status",
+      reportReadinessReady: "Ready for prose draft",
+      reportReadinessRevise: "Revise before prose draft",
+      reportReadinessBlocked: "Blocked until evidence is added",
+      reportReadinessPass: "pass",
+      reportReadinessReview: "review",
+      reportReadinessFail: "fail",
+      reportReadinessHighRiskBlocker: (count) => `${count || 0} high-risk claim(s) need evidence audit`,
+      reportReadinessEvidenceBlocker: (count) => `${count || 0} roadmap topic(s) still need evidence`,
+      reportReadinessValidationBlocker: (count) => `${count || 0} roadmap topic(s) still need validation design`,
+      reportReadinessCoverageBlocker: (skipped, failed) => `Coverage issue: skipped without PDF ${skipped || 0}, failed ${failed || 0}`,
+      reportReadinessGapBlocker: "No explicit gap trace is available; keep claims provisional",
+      reportReadinessEvidenceBase: "Evidence base coverage",
+      reportReadinessClaimRisk: "Claim risk calibration",
+      reportReadinessRoadmap: "Roadmap readiness",
+      reportReadinessGapTrace: "Gap traceability",
+      reportReadinessEvidenceBaseEvidence: (available, skipped, failed) => `${available || 0} available summary(s), ${skipped || 0} skipped without PDF, ${failed || 0} failed`,
+      reportReadinessClaimRiskEvidence: (high, medium, average) => `${high || 0} high-risk claim(s), ${medium || 0} medium-risk claim(s), average support ${average || 0}`,
+      reportReadinessRoadmapEvidence: (ready, evidence, validation) => `${ready || 0} ready route(s), ${evidence || 0} evidence-thin route(s), ${validation || 0} validation-needed route(s)`,
+      reportReadinessGapTraceEvidence: (count) => `${count || 0} explicit gap or validation signal(s)`,
+      reportReadinessCoverageAction: "Recover missing PDFs or mark exclusions before treating coverage as complete.",
+      reportReadinessClaimRiskAction: "Resolve high-risk claims in the claim evidence audit before writing final prose.",
+      reportReadinessRoadmapAction: "Use the roadmap board to promote ready topics and defer evidence-thin topics.",
+      reportReadinessGapTraceAction: "Keep each unresolved gap visible in the relevant subsection.",
+      reportReadinessProceedAction: "Can move into the writing pack after source summaries are checked.",
+      reportReadinessDefaultAction: (level) => `${level}: verify source summaries, claim risk, and roadmap blockers before prose writing.`,
+      reportSectionReadinessMatrix: "Section Readiness Matrix",
+      reportSectionColumn: "Report Section",
+      reportSectionReadinessScoreColumn: "Section Readiness Score",
+      reportSectionReadinessLevelColumn: "Section Readiness Level",
+      reportSectionEvidenceColumn: "Current Evidence",
+      reportSectionBlockerColumn: "Section Blocker",
+      reportSectionActionColumn: "Next Section Action",
+      reportSectionReady: "ready",
+      reportSectionNeedsRevision: "needs revision",
+      reportSectionBlocked: "blocked",
+      reportSectionNoBlocker: "No section blocker from current summaries",
+      reportSectionMissingMethodSignals: "No method signal is available for this section yet",
+      reportSectionMissingDataSignals: "No data, scenario, or metric signal is available yet",
+      reportSectionMissingClusters: "No topic cluster is available yet",
+      reportSectionMissingClaims: "No synthesis claim is available yet",
+      reportSectionMissingGaps: "No explicit gap signal is available yet",
+      reportSectionNoReadyRoadmap: "No roadmap topic is ready for prose drafting yet",
+      reportSectionSignalEvidence: (count, available) => `${count || 0} extracted signal(s) from ${available || 0} available summary(s)`,
+      reportSectionClusterEvidence: (count, available) => `${count || 0} topic cluster(s) from ${available || 0} available summary(s)`,
+      reportSectionActionMethod: "Fill or verify the method matrix before writing taxonomy prose.",
+      reportSectionActionData: "Add dataset, scenario, metric, and evaluation details to the evidence map.",
+      reportSectionActionTopic: "Review cluster boundaries and split incomparable topics before writing.",
+      reportSectionActionClaim: "Move only audited, traceable claims into prose.",
+      reportSectionActionGap: "Keep unresolved gaps beside the relevant claims and sections.",
+      reportSectionActionRoadmap: "Promote ready roadmap topics and defer evidence-thin sections.",
+      reportSectionActionPlan: "Section Action Plan",
+      reportSectionActionPlanMaterial: (section, level, evidence, blocker) => `${section} (${level}): add or verify source material from ${evidence}; blocker: ${blocker || "none from current summaries"}.`,
       reportSynthesisWritingPack: "Synthesis Writing Pack",
       reportRiskChecklist: "Risk Checklist",
       reportRiskChecklistItems: [
@@ -3918,15 +5816,72 @@ function collectionTemplateLabels(outputLanguage) {
       roadmapCandidateQueryColumn: "候補検索クエリ",
       roadmapSectionPlan: "節構成プラン",
       roadmapEvidenceIndex: "エビデンス索引",
+      roadmapReadinessBoard: "ロードマップ準備度ボード",
+      roadmapReadinessScoreColumn: "準備度スコア",
+      roadmapReadinessLevelColumn: "準備度レベル",
+      roadmapBlockingIssueColumn: "阻害要因",
+      roadmapNextActionColumn: "次アクション",
+      roadmapReadinessReady: "草稿化可能",
+      roadmapReadinessNeedsEvidence: "証拠追加が必要",
+      roadmapReadinessNeedsValidation: "検証が必要",
+      roadmapReadinessDefer: "保留",
+      roadmapReadinessNoBlocking: "直近の阻害要因なし",
+      roadmapReadinessBlockingEvidence: (count, risk) => `証拠が薄い: 支持論文 ${count || 0} 件。${risk || "リスク未確認"}`,
+      roadmapReadinessBlockingValidation: "検証計画が未設定",
+      roadmapReadinessBlockingGap: (gap) => `未解決ギャップを明示する: ${gap}`,
+      roadmapReadinessBlockingScore: (score) => `準備度スコア ${score || 0} が執筆しきい値未満`,
+      roadmapReadinessAction: (level, cluster, issue, query) => `${level}: ${cluster} を確認する。${issue}。次の検索・確認: ${query || "候補クエリ未設定"}。`,
+      finalReportCalibrationMatrix: "最終報告校正マトリクス",
+      finalReportCalibrationThresholdColumn: "執筆しきい値",
+      finalReportCalibrationPlacementColumn: "報告書内の配置",
+      finalReportCalibrationCitationColumn: "引用戦略",
+      finalReportCalibrationActionColumn: "最終報告アクション",
+      finalReportCalibrationThreshold: (readiness, support, papers) => `準備度 ${readiness || 0}/100、支持 ${support || 0}/100、論文 ${papers || 0} 件`,
+      finalReportCalibrationPlacementReady: "正式報告書の節へ移す",
+      finalReportCalibrationPlacementEvidence: "証拠補強タスクとして保持",
+      finalReportCalibrationPlacementValidation: "検証注記付きで草稿化",
+      finalReportCalibrationPlacementDeferred: "最終本文から保留",
+      finalReportCalibrationCitationMulti: (count) => `複数論文の引用ブロック (${count || 0} 件)`,
+      finalReportCalibrationCitationSingle: "単一論文引用のみ。暫定扱い",
+      finalReportCalibrationCitationThin: "引用証拠が不足",
+      finalReportCalibrationAction: (placement, cluster, blocker, query) => `${placement}: ${cluster} を校正する。${blocker}。候補検索・確認: ${query || "未設定"}。`,
+      finalReportActionPlan: "最終報告アクション計画",
+      finalReportEvidenceGapColumn: "証拠ギャップ",
+      finalReportRequiredMaterialColumn: "必要資料",
+      finalReportActionPlanMaterial: (placement, cluster, gap, validation, query) => `${placement}: ${cluster} の資料を追加する。ギャップ「${gap}」を明示し、検証・証拠ニーズ「${validation}」を確認する。検索手がかり: ${query || "未設定"}。`,
       crossCollectionSynthesis: "Collection 横断統合マップ",
       crossCollectionSynthesisNote: "最新の collection workspace を横断的なレビュー計画面に集約します。より広いレビューを書く前に、collection 間のテーマを比較するために使います。",
       crossCollectionInventory: "Collection 一覧",
       crossCollectionThemeMap: "Collection 横断テーママップ",
+      crossCollectionClusterMap: "Collection 横断クラスタマップ",
+      crossCollectionSynthesisLayoutBoard: "Collection 横断統合レイアウトボード",
+      crossCollectionClusterCalibrationBoard: "クラスタしきい値確認ボード",
+      crossCollectionClusterEvidenceCards: "クラスタ証拠カード",
       crossCollectionThemeMergeBoard: "テーマ統合確認ボード",
       crossCollectionBridgeBoard: "Collection 横断ブリッジボード",
       crossCollectionGapBoard: "Collection 横断ギャップボード",
       crossCollectionPriorityBoard: "Collection 横断優先度ボード",
+      crossCollectionChartReviewTriage: "Collection 横断図表レビュートリアージ",
       crossCollectionReviewPack: "Collection 横断レビュー執筆パック",
+      crossCollectionClusterScopeColumn: "クラスタ範囲",
+      crossCollectionClusterScoreColumn: "クラスタスコア",
+      crossCollectionEvidenceRankColumn: "証拠カード順位",
+      crossCollectionEvidenceRankSignalsColumn: "順位シグナル",
+      crossCollectionGapPriorityColumn: "ギャップ優先度スコア",
+      crossCollectionGapPrioritySignalsColumn: "ギャップ優先度シグナル",
+      crossCollectionGapPriorityPending: "ギャップ優先度未確認",
+      crossCollectionClusterThresholdColumn: "しきい値根拠",
+      crossCollectionClusterRecommendationColumn: "校正提案",
+      crossCollectionClusterLinkColumn: "接続根拠",
+      crossCollectionClusterRiskColumn: "確認リスク",
+      crossCollectionSupportColumn: "横断支持",
+      crossCollectionLayoutLaneColumn: "レイアウトレーン",
+      crossCollectionLayoutOrderColumn: "レーン順",
+      crossCollectionLayoutWeightColumn: "レイアウト重み",
+      crossCollectionLayoutLaneCore: "中核共有節",
+      crossCollectionLayoutLaneBoundary: "執筆前の境界確認",
+      crossCollectionLayoutLaneGap: "不足証拠フォローアップ",
+      crossCollectionLayoutLaneSupport: "補助的背景",
       crossCollectionPriorityColumn: "優先項目",
       crossCollectionReasonColumn: "理由",
       crossCollectionScopeColumn: "レビュー範囲",
@@ -3948,10 +5903,76 @@ function collectionTemplateLabels(outputLanguage) {
         : `範囲確認: ${gap}`,
       crossCollectionPriorityMergeThemes: (themes) => `テーマ統合候補を確認: ${themes}`,
       crossCollectionPriorityMergeReason: "異なるテーマ名が証拠シグナルを共有している",
+      crossCollectionPriorityCluster: (cluster, count) => `横断レビュー節を書く: ${cluster}`,
+      crossCollectionPriorityClusterReason: (count, score) => `${count} 件の collection にまたがるクラスタ。スコア ${score || 0}`,
       crossCollectionPriorityWeakTheme: (theme, count) => count >= 2
         ? `テーマギャップを確認: ${theme}`
         : `テーマの支持を追加: ${theme}`,
       crossCollectionPriorityWeakThemeAction: (theme) => `Collection 報告書を開き、${theme} を確認し、証拠が薄い場合は候補論文検索を実行する。`,
+      crossCollectionClusterTitle: (themes) => (themes || []).slice(0, 3).join(" / ") || "ラベル未設定の横断クラスタ",
+      crossCollectionClusterSupport: (count, papers) => count >= 2
+        ? `${count} 件の collection、${papers} 本の論文`
+        : `単一 collection、${papers} 本の論文`,
+      crossCollectionEvidenceRankCoverage: (count, papers) => `カバレッジ: collection ${count || 0} 件、論文 ${papers || 0} 本`,
+      crossCollectionEvidenceRankLinks: (links) => `接続根拠: ${links || 0} 件`,
+      crossCollectionEvidenceRankCalibration: (recommendation) => `校正提案: ${recommendation || "未確認"}`,
+      crossCollectionEvidenceRankRisk: (risk) => `リスク: ${risk || "未確認"}`,
+      crossCollectionGapPriorityCoverage: (count) => `カバレッジ: collection ${count || 0} 件`,
+      crossCollectionGapPriorityThemes: (count) => `テーマ: ${count || 0} 件`,
+      crossCollectionGapPriorityQueries: (count) => `候補検索クエリ: ${count || 0} 件`,
+      crossCollectionGapPriorityRecurring: (count) => `${count || 0} 件の collection に反復`,
+      crossCollectionGapPrioritySingle: "単一 collection ギャップ",
+      crossCollectionLayoutAction: (lane, cluster) => `${lane}: ${cluster} の元レポートを確認し、このレーンに従ってレビュー節を書くか保留する。`,
+      crossCollectionClusterPrompt: (cluster, count) => `${cluster} を ${count || "関連する"} 件の collection にまたがるレビュー節計画に変換し、共通主張、範囲固有の主張、不足証拠を分ける。`,
+      crossCollectionClusterReviewAction: (cluster) => `${cluster} の元 collection 報告書を確認し、証拠で支えられる共通主張だけを残す。`,
+      crossCollectionClusterNoEvidence: "利用できるクラスタ証拠カードはまだありません。",
+      crossCollectionClusterLinkPending: "接続根拠未確認",
+      crossCollectionClusterRiskPending: "確認リスク未設定",
+      crossCollectionClusterRisk: (count, themes, links) => count >= 2 && links >= 2
+        ? "中: レビュー節を統合する前に共有根拠を確認する"
+        : themes > 2
+          ? "高: テーマが広い。根拠が比較不能なら分割する"
+          : "低: 範囲は狭いが元要約確認は必要",
+      crossCollectionClusterThresholdPending: "しきい値根拠未確認",
+      crossCollectionClusterThresholdBand: (score, count, links) => `スコア ${score || 0}; collection ${count || 0} 件; 接続根拠 ${links || 0} 件`,
+      crossCollectionClusterCalibrationRecommendation: (key) => ({
+        merge: "共有レビュー節へ昇格",
+        review: "統合前に範囲を確認",
+        split: "隣接節として保持または分割",
+        gather: "横断主張の前に証拠を追加"
+      }[key] || "統合前に範囲を確認"),
+      crossCollectionClusterCalibrationReview: "統合前に範囲を確認",
+      crossCollectionClusterCalibrationAction: (cluster, recommendation) => `${cluster} のしきい値確認を実施: ${recommendation || "範囲、証拠比較可能性、元レポートを確認"}。`,
+      crossCollectionClusterLinkSameTheme: (theme) => `同じ正規化テーマ: ${theme}`,
+      crossCollectionClusterLinkSharedTokens: (count) => `共有根拠語 ${count} 件`,
+      crossCollectionClusterLinkStrongTokens: (tokens) => `強い共有語: ${tokens}`,
+      crossCollectionClusterLinkMethodOverlap: "手法シグナルの重なり",
+      crossCollectionClusterLinkGapOverlap: "ギャップシグナルの重なり",
+      crossCollectionClusterLinkQueryOverlap: "候補検索クエリの重なり",
+      crossCollectionChartReviewStateColumn: "レビュー状態",
+      crossCollectionChartReviewActionCountColumn: "タスク数",
+      crossCollectionChartReviewCollectionCountColumn: "Collection 数",
+      crossCollectionChartReviewPaperCountColumn: "論文数",
+      crossCollectionChartReviewCollectionsColumn: "Collections",
+      crossCollectionChartReviewBlockingColumn: "阻害要因",
+      crossCollectionChartReviewBatchActionColumn: "一括処理",
+      crossCollectionChartReviewDoneColumn: "完了条件",
+      crossCollectionChartReviewIndexColumn: "図表レビュー索引",
+      crossCollectionChartReviewNoIssue: "阻害要因の記録なし",
+      crossCollectionChartReviewActionPending: "一括処理未設定",
+      crossCollectionChartReviewDonePending: "完了条件未設定",
+      crossCollectionChartReviewIndexPending: "図表レビュー索引待ち",
+      crossCollectionChartReviewEmpty: "Collection レベルの図表レビュータスクはまだありません。",
+      crossCollectionChartReviewDrilldown: "図表レビュードリルダウン",
+      crossCollectionChartReviewWritebackTargets: "一括ステータス書き戻し対象",
+      crossCollectionChartReviewCurrentStateColumn: "現在の状態",
+      crossCollectionChartReviewTargetStateColumn: "推奨状態",
+      crossCollectionChartReviewStatusPatchColumn: "ステータスパッチ",
+      crossCollectionChartReviewMatchColumn: "照合条件",
+      crossCollectionChartReviewDrilldownSummary: (index, entry) => `${index}. ${entry.priority || "medium"} / ${entry.reviewState || "todo"} - ${entry.collectionCount || 0} 件の collection に ${entry.count || 0} タスク`,
+      crossCollectionChartReviewChecklistOpenIndexes: "リンクされた図表レビュー索引を開き、元の visual report を確認する。",
+      crossCollectionChartReviewChecklistVerifyPapers: "抽出値を再利用する前に対象論文を確認する。",
+      crossCollectionChartReviewChecklistUpdateState: "元の workbench/export で担当者、期限、メモ、レビュー状態を更新する。",
       collectionColumn: "Collection",
       reportColumn: "報告書",
       crossCollectionStatsLine: (stats) => `Collection ${stats.collections} 件、論文 ${stats.totalPapers} 件、利用可能な要約 ${stats.availableSummaries} 件、PDF なしスキップ ${stats.skippedNoPdf} 件、失敗 ${stats.failed} 件。`,
@@ -3991,6 +6012,9 @@ function collectionTemplateLabels(outputLanguage) {
       yearColumn: "年",
       clusterColumn: "クラスタ",
       claimColumn: "主張草案",
+      claimSupportScoreColumn: "主張支持スコア",
+      claimRiskColumn: "主張リスク",
+      evidenceTraceColumn: "証拠トレース",
       supportingPapersColumn: "支持する論文",
       evidenceColumn: "証拠ソース",
       evidenceAnchorColumn: "証拠アンカー",
@@ -4008,6 +6032,11 @@ function collectionTemplateLabels(outputLanguage) {
       validationColumn: "検証ニーズ",
       summaryColumn: "要約",
       synthesisClaimText: (cluster, methods, gap) => `${cluster}: 現在の要約は ${methods} を示すが、主な未解決ギャップは ${gap} である。`,
+      claimRiskLow: "低: 複数論文に支えられ証拠を追跡可能",
+      claimRiskMedium: "中: 証拠は追跡可能だが未解決ギャップが残る",
+      claimRiskHigh: "高: 単一論文または薄い証拠",
+      claimEvidenceTrace: (papers, evidence, validations) => `論文 ${papers || 0} 件、証拠源 ${evidence || 0} 件、検証手がかり ${validations || 0} 件`,
+      claimAuditAction: (risk, score) => `主張を監査 (${score || 0}/100): ${risk || "リスク未確認"}。最終執筆前に証拠トレースを確認する。`,
       claimRiskChecklist: "主張リスクチェックリスト",
       claimRiskChecklistItems: [
         "- [ ] 各主張草案が少なくとも 2 本の支持論文を持つか、単一論文の証拠として明示する。",
@@ -4091,9 +6120,69 @@ function collectionTemplateLabels(outputLanguage) {
       reportDataAndEvidence: "データ・シナリオ・指標の証拠",
       reportTopicSynthesis: "トピック別統合",
       reportSynthesisClaims: "証拠に基づく統合主張",
+      reportClaimEvidenceAudit: "主張証拠監査",
       reportSynthesisConflicts: "統合コンフリクトと証拠ギャップ",
       reportResearchGaps: "研究ギャップと検証ニーズ",
       reportDraftOutline: "レビュー草稿アウトライン",
+      reportWritingReadinessGate: "執筆準備度ゲート",
+      reportWritingReadinessScore: "正式報告書準備度スコア",
+      reportWritingReadinessLevel: "準備度レベル",
+      reportWritingReadinessBlockers: "阻害項目",
+      reportWritingReadinessNoBlockers: "現在の要約からは阻害項目なし",
+      reportWritingReadinessCheckColumn: "ゲート確認",
+      reportWritingReadinessStatusColumn: "状態",
+      reportReadinessReady: "本文草稿化可能",
+      reportReadinessRevise: "本文化前に修正",
+      reportReadinessBlocked: "証拠追加まで保留",
+      reportReadinessPass: "合格",
+      reportReadinessReview: "要確認",
+      reportReadinessFail: "不合格",
+      reportReadinessHighRiskBlocker: (count) => `${count || 0} 件の高リスク主張に証拠監査が必要`,
+      reportReadinessEvidenceBlocker: (count) => `${count || 0} 件のロードマップ項目で証拠追加が必要`,
+      reportReadinessValidationBlocker: (count) => `${count || 0} 件のロードマップ項目で検証設計が必要`,
+      reportReadinessCoverageBlocker: (skipped, failed) => `カバレッジ問題: PDF なしでスキップ ${skipped || 0}、失敗 ${failed || 0}`,
+      reportReadinessGapBlocker: "明示的なギャップ追跡がないため、主張は暫定扱いにする",
+      reportReadinessEvidenceBase: "証拠ベースのカバレッジ",
+      reportReadinessClaimRisk: "主張リスク校正",
+      reportReadinessRoadmap: "ロードマップ準備度",
+      reportReadinessGapTrace: "ギャップ追跡性",
+      reportReadinessEvidenceBaseEvidence: (available, skipped, failed) => `利用可能な要約 ${available || 0} 件、PDF なしスキップ ${skipped || 0} 件、失敗 ${failed || 0} 件`,
+      reportReadinessClaimRiskEvidence: (high, medium, average) => `高リスク主張 ${high || 0} 件、中リスク主張 ${medium || 0} 件、平均支持 ${average || 0}`,
+      reportReadinessRoadmapEvidence: (ready, evidence, validation) => `草稿化可能 ${ready || 0} 件、証拠不足 ${evidence || 0} 件、検証必要 ${validation || 0} 件`,
+      reportReadinessGapTraceEvidence: (count) => `明示的なギャップまたは検証シグナル ${count || 0} 件`,
+      reportReadinessCoverageAction: "不足 PDF を回収するか、範囲外として明記してからカバレッジ完了とする。",
+      reportReadinessClaimRiskAction: "最終本文を書く前に、主張証拠監査で高リスク主張を処理する。",
+      reportReadinessRoadmapAction: "ロードマップボードで準備済み項目を昇格し、証拠不足項目は保留する。",
+      reportReadinessGapTraceAction: "各未解決ギャップを該当小節で明示する。",
+      reportReadinessProceedAction: "元要約を確認した後、執筆パックへ移行可能。",
+      reportReadinessDefaultAction: (level) => `${level}: 本文化前に元要約、主張リスク、ロードマップ阻害要因を確認する。`,
+      reportSectionReadinessMatrix: "章別準備度マトリクス",
+      reportSectionColumn: "報告書セクション",
+      reportSectionReadinessScoreColumn: "章別準備度スコア",
+      reportSectionReadinessLevelColumn: "章別準備度レベル",
+      reportSectionEvidenceColumn: "現在の証拠",
+      reportSectionBlockerColumn: "章別阻害要因",
+      reportSectionActionColumn: "次の章別アクション",
+      reportSectionReady: "準備済み",
+      reportSectionNeedsRevision: "修正が必要",
+      reportSectionBlocked: "保留",
+      reportSectionNoBlocker: "現在の要約からは章別阻害要因なし",
+      reportSectionMissingMethodSignals: "この章に使える手法シグナルがまだありません",
+      reportSectionMissingDataSignals: "データ、シナリオ、指標のシグナルがまだありません",
+      reportSectionMissingClusters: "トピッククラスタがまだありません",
+      reportSectionMissingClaims: "統合主張がまだありません",
+      reportSectionMissingGaps: "明示的なギャップシグナルがまだありません",
+      reportSectionNoReadyRoadmap: "本文草稿化できるロードマップ項目がまだありません",
+      reportSectionSignalEvidence: (count, available) => `${available || 0} 件の利用可能な要約から ${count || 0} 件のシグナルを抽出`,
+      reportSectionClusterEvidence: (count, available) => `${available || 0} 件の利用可能な要約から ${count || 0} 件のトピッククラスタ`,
+      reportSectionActionMethod: "手法分類の本文を書く前に、手法マトリクスを補完または確認する。",
+      reportSectionActionData: "証拠マップにデータセット、シナリオ、指標、評価詳細を追加する。",
+      reportSectionActionTopic: "本文化前にクラスタ境界を確認し、比較不能なトピックを分ける。",
+      reportSectionActionClaim: "監査済みで追跡可能な主張だけを本文へ移す。",
+      reportSectionActionGap: "未解決ギャップを関連する主張と小節の横に残す。",
+      reportSectionActionRoadmap: "準備済みロードマップ項目を昇格し、証拠が薄い小節は保留する。",
+      reportSectionActionPlan: "章別アクション計画",
+      reportSectionActionPlanMaterial: (section, level, evidence, blocker) => `${section} (${level}): ${evidence} から元資料を追加または確認する。阻害要因: ${blocker || "現在の要約からはなし"}。`,
       reportSynthesisWritingPack: "統合執筆パック",
       reportRiskChecklist: "リスク確認リスト",
       reportRiskChecklistItems: [
@@ -4132,15 +6221,72 @@ function collectionTemplateLabels(outputLanguage) {
     roadmapCandidateQueryColumn: "候选检索词",
     roadmapSectionPlan: "小节计划",
     roadmapEvidenceIndex: "证据索引",
+    roadmapReadinessBoard: "路线图就绪度看板",
+    roadmapReadinessScoreColumn: "就绪分",
+    roadmapReadinessLevelColumn: "就绪状态",
+    roadmapBlockingIssueColumn: "阻塞问题",
+    roadmapNextActionColumn: "下一步动作",
+    roadmapReadinessReady: "可进入草稿",
+    roadmapReadinessNeedsEvidence: "需补证据",
+    roadmapReadinessNeedsValidation: "需验证",
+    roadmapReadinessDefer: "暂缓",
+    roadmapReadinessNoBlocking: "暂无直接阻塞",
+    roadmapReadinessBlockingEvidence: (count, risk) => `证据偏薄：${count || 0} 篇支持论文；${risk || "风险待判断"}`,
+    roadmapReadinessBlockingValidation: "验证计划仍待补齐",
+    roadmapReadinessBlockingGap: (gap) => `进入正文前需保留未解决缺口：${gap}`,
+    roadmapReadinessBlockingScore: (score) => `就绪分 ${score || 0} 低于写作阈值`,
+    roadmapReadinessAction: (level, cluster, issue, query) => `${level}：核对“${cluster}”；${issue}；下一步检索或检查：${query || "待补充候选检索词"}。`,
+    finalReportCalibrationMatrix: "最终报告校准矩阵",
+    finalReportCalibrationThresholdColumn: "写作阈值",
+    finalReportCalibrationPlacementColumn: "正文放置",
+    finalReportCalibrationCitationColumn: "引用策略",
+    finalReportCalibrationActionColumn: "最终报告动作",
+    finalReportCalibrationThreshold: (readiness, support, papers) => `就绪 ${readiness || 0}/100；支持 ${support || 0}/100；论文 ${papers || 0} 篇`,
+    finalReportCalibrationPlacementReady: "作为候选小节写入正式报告",
+    finalReportCalibrationPlacementEvidence: "暂缓为证据补强任务",
+    finalReportCalibrationPlacementValidation: "带验证限制写入草稿",
+    finalReportCalibrationPlacementDeferred: "暂不进入最终正文",
+    finalReportCalibrationCitationMulti: (count) => `多篇论文组合引用（${count || 0} 篇）`,
+    finalReportCalibrationCitationSingle: "仅可作为单篇证据引用，主张保持暂定",
+    finalReportCalibrationCitationThin: "引用证据不足",
+    finalReportCalibrationAction: (placement, cluster, blocker, query) => `${placement}：校准“${cluster}”；${blocker}；候选检索或检查：${query || "待补充"}。`,
+    finalReportActionPlan: "最终报告行动计划",
+    finalReportEvidenceGapColumn: "证据缺口",
+    finalReportRequiredMaterialColumn: "所需材料",
+    finalReportActionPlanMaterial: (placement, cluster, gap, validation, query) => `${placement}：补齐“${cluster}”的写作材料；保留缺口“${gap}”；验证/证据需求：${validation}；检索线索：${query || "待补充"}。`,
     crossCollectionSynthesis: "跨集合综合地图",
     crossCollectionSynthesisNote: "把最近生成的 collection workspace 汇总为一个跨集合综述规划入口，用于在更大范围综述写作前比较不同集合之间的主题、证据和缺口。",
     crossCollectionInventory: "集合清单",
     crossCollectionThemeMap: "跨集合主题地图",
+    crossCollectionClusterMap: "跨集合聚类图谱",
+    crossCollectionSynthesisLayoutBoard: "跨集合综合布局板",
+    crossCollectionClusterCalibrationBoard: "聚类阈值校准板",
+    crossCollectionClusterEvidenceCards: "聚类证据卡",
     crossCollectionThemeMergeBoard: "主题归并复核板",
     crossCollectionBridgeBoard: "跨集合主题桥接板",
     crossCollectionGapBoard: "跨集合缺口看板",
     crossCollectionPriorityBoard: "跨集合优先级看板",
+    crossCollectionChartReviewTriage: "跨集合图表复核分诊",
     crossCollectionReviewPack: "跨集合综述写作包",
+    crossCollectionClusterScopeColumn: "聚类范围",
+    crossCollectionClusterScoreColumn: "聚类评分",
+    crossCollectionEvidenceRankColumn: "证据卡排序分",
+    crossCollectionEvidenceRankSignalsColumn: "排序线索",
+    crossCollectionGapPriorityColumn: "缺口优先级分",
+    crossCollectionGapPrioritySignalsColumn: "缺口排序线索",
+    crossCollectionGapPriorityPending: "待补充缺口优先级",
+    crossCollectionClusterThresholdColumn: "阈值证据",
+    crossCollectionClusterRecommendationColumn: "校准建议",
+    crossCollectionClusterLinkColumn: "连接证据",
+    crossCollectionClusterRiskColumn: "复核风险",
+    crossCollectionSupportColumn: "跨集合支持",
+    crossCollectionLayoutLaneColumn: "布局分区",
+    crossCollectionLayoutOrderColumn: "分区顺序",
+    crossCollectionLayoutWeightColumn: "布局权重",
+    crossCollectionLayoutLaneCore: "核心共享小节",
+    crossCollectionLayoutLaneBoundary: "写作前边界复核",
+    crossCollectionLayoutLaneGap: "证据缺口跟进",
+    crossCollectionLayoutLaneSupport: "支撑背景",
     crossCollectionPriorityColumn: "优先项",
     crossCollectionReasonColumn: "原因",
     crossCollectionScopeColumn: "综述范围",
@@ -4162,10 +6308,76 @@ function collectionTemplateLabels(outputLanguage) {
       : `范围核对：${gap}`,
     crossCollectionPriorityMergeThemes: (themes) => `复核主题归并候选：${themes}`,
     crossCollectionPriorityMergeReason: "不同主题名称共享证据线索",
+    crossCollectionPriorityCluster: (cluster, count) => `撰写跨集合小节：${cluster}`,
+    crossCollectionPriorityClusterReason: (count, score) => `该聚类横跨 ${count} 个集合；评分 ${score || 0}`,
     crossCollectionPriorityWeakTheme: (theme, count) => count >= 2
       ? `核对主题缺口：${theme}`
       : `补充主题支持：${theme}`,
     crossCollectionPriorityWeakThemeAction: (theme) => `打开集合报告核对“${theme}”，证据薄弱时继续运行候选论文检索。`,
+    crossCollectionClusterTitle: (themes) => (themes || []).slice(0, 3).join(" / ") || "未命名跨集合聚类",
+    crossCollectionClusterSupport: (count, papers) => count >= 2
+      ? `${count} 个集合，${papers} 篇论文`
+      : `单集合，${papers} 篇论文`,
+    crossCollectionEvidenceRankCoverage: (count, papers) => `覆盖：${count || 0} 个集合，${papers || 0} 篇论文`,
+    crossCollectionEvidenceRankLinks: (links) => `连接证据：${links || 0} 条`,
+    crossCollectionEvidenceRankCalibration: (recommendation) => `校准建议：${recommendation || "待复核"}`,
+    crossCollectionEvidenceRankRisk: (risk) => `风险：${risk || "待复核"}`,
+    crossCollectionGapPriorityCoverage: (count) => `覆盖：${count || 0} 个集合`,
+    crossCollectionGapPriorityThemes: (count) => `主题：${count || 0} 个`,
+    crossCollectionGapPriorityQueries: (count) => `候选检索词：${count || 0} 条`,
+    crossCollectionGapPriorityRecurring: (count) => `在 ${count || 0} 个集合中重复出现`,
+    crossCollectionGapPrioritySingle: "单集合缺口",
+    crossCollectionLayoutAction: (lane, cluster) => `${lane}：核对“${cluster}”的来源报告，再按该分区决定撰写、拆分或暂缓综述小节。`,
+    crossCollectionClusterPrompt: (cluster, count) => `把“${cluster}”整理成横跨 ${count || "相关"} 个集合的综述小节计划，区分共同主张、范围特有主张和缺失证据。`,
+    crossCollectionClusterReviewAction: (cluster) => `核对“${cluster}”对应的集合报告，只保留有证据支撑的共同主张。`,
+    crossCollectionClusterNoEvidence: "暂时没有可用的聚类证据卡。",
+    crossCollectionClusterLinkPending: "待补充连接证据",
+    crossCollectionClusterRiskPending: "待补充复核风险",
+    crossCollectionClusterRisk: (count, themes, links) => count >= 2 && links >= 2
+      ? "中：合并为综述小节前需核对共享证据"
+      : themes > 2
+        ? "高：主题范围较宽，如证据不可比需拆分"
+        : "低：范围较窄，但仍需核对来源总结",
+    crossCollectionClusterThresholdPending: "待补充阈值证据",
+    crossCollectionClusterThresholdBand: (score, count, links) => `评分 ${score || 0}；${count || 0} 个集合；${links || 0} 条连接证据`,
+    crossCollectionClusterCalibrationRecommendation: (key) => ({
+      merge: "提升为共享综述小节",
+      review: "归并前先做边界复核",
+      split: "保留为相邻小节或拆分范围",
+      gather: "先补证据再形成跨集合主张"
+    }[key] || "归并前先做边界复核"),
+    crossCollectionClusterCalibrationReview: "归并前先做边界复核",
+    crossCollectionClusterCalibrationAction: (cluster, recommendation) => `对“${cluster}”执行阈值复核：${recommendation || "核对边界、证据可比性和来源报告"}。`,
+    crossCollectionClusterLinkSameTheme: (theme) => `同一规范化主题：${theme}`,
+    crossCollectionClusterLinkSharedTokens: (count) => `${count} 个共享证据词`,
+    crossCollectionClusterLinkStrongTokens: (tokens) => `强共享词：${tokens}`,
+    crossCollectionClusterLinkMethodOverlap: "方法线索重叠",
+    crossCollectionClusterLinkGapOverlap: "缺口线索重叠",
+    crossCollectionClusterLinkQueryOverlap: "候选检索词重叠",
+    crossCollectionChartReviewStateColumn: "复核状态",
+    crossCollectionChartReviewActionCountColumn: "任务数",
+    crossCollectionChartReviewCollectionCountColumn: "集合数",
+    crossCollectionChartReviewPaperCountColumn: "论文数",
+    crossCollectionChartReviewCollectionsColumn: "集合",
+    crossCollectionChartReviewBlockingColumn: "阻塞问题",
+    crossCollectionChartReviewBatchActionColumn: "批量处理动作",
+    crossCollectionChartReviewDoneColumn: "完成条件",
+    crossCollectionChartReviewIndexColumn: "图表复核索引",
+    crossCollectionChartReviewNoIssue: "未记录阻塞问题",
+    crossCollectionChartReviewActionPending: "待补充批量处理动作",
+    crossCollectionChartReviewDonePending: "待补充完成条件",
+    crossCollectionChartReviewIndexPending: "待生成图表复核索引",
+    crossCollectionChartReviewEmpty: "暂无 collection 级图表复核任务。",
+    crossCollectionChartReviewDrilldown: "图表复核下钻",
+    crossCollectionChartReviewWritebackTargets: "批量状态回写目标",
+    crossCollectionChartReviewCurrentStateColumn: "当前状态",
+    crossCollectionChartReviewTargetStateColumn: "建议状态",
+    crossCollectionChartReviewStatusPatchColumn: "状态补丁",
+    crossCollectionChartReviewMatchColumn: "匹配条件",
+    crossCollectionChartReviewDrilldownSummary: (index, entry) => `${index}. ${entry.priority || "medium"} / ${entry.reviewState || "todo"} - ${entry.collectionCount || 0} 个集合中的 ${entry.count || 0} 个任务`,
+    crossCollectionChartReviewChecklistOpenIndexes: "打开每个已链接的图表复核索引，核对来源 visual report。",
+    crossCollectionChartReviewChecklistVerifyPapers: "复用抽取图表数值前，先核对明细中的论文。",
+    crossCollectionChartReviewChecklistUpdateState: "在来源工作台或重新导出时更新复核人、期限、备注和复核状态。",
     collectionColumn: "集合",
     reportColumn: "报告",
     crossCollectionStatsLine: (stats) => `集合 ${stats.collections} 个，论文 ${stats.totalPapers} 篇，可用总结 ${stats.availableSummaries} 篇，无 PDF 跳过 ${stats.skippedNoPdf} 篇，失败 ${stats.failed} 篇。`,
@@ -4205,6 +6417,9 @@ function collectionTemplateLabels(outputLanguage) {
     yearColumn: "年份",
     clusterColumn: "主题",
     claimColumn: "主张草稿",
+    claimSupportScoreColumn: "主张支持分",
+    claimRiskColumn: "主张风险",
+    evidenceTraceColumn: "证据轨迹",
     supportingPapersColumn: "支持论文",
     evidenceColumn: "证据来源",
     evidenceAnchorColumn: "证据锚点",
@@ -4222,6 +6437,11 @@ function collectionTemplateLabels(outputLanguage) {
     validationColumn: "验证需求",
     summaryColumn: "总结",
     synthesisClaimText: (cluster, methods, gap) => `围绕“${cluster}”，当前总结显示 ${methods}；主要未解决缺口是 ${gap}。`,
+    claimRiskLow: "低：多篇论文支持且证据可追溯",
+    claimRiskMedium: "中：证据可追溯但仍有未解决缺口",
+    claimRiskHigh: "高：单篇论文或证据偏薄",
+    claimEvidenceTrace: (papers, evidence, validations) => `${papers || 0} 篇论文，${evidence || 0} 条证据来源，${validations || 0} 条验证线索`,
+    claimAuditAction: (risk, score) => `审计主张（${score || 0}/100）：${risk || "待判断风险"}；进入最终写作前核对证据轨迹。`,
     claimRiskChecklist: "主张风险检查清单",
     claimRiskChecklistItems: [
       "- [ ] 检查每条主张草稿是否至少有两篇支持论文；否则标记为单篇证据。",
@@ -4305,9 +6525,69 @@ function collectionTemplateLabels(outputLanguage) {
     reportDataAndEvidence: "数据、场景与指标证据",
     reportTopicSynthesis: "主题级综合",
     reportSynthesisClaims: "有证据支持的综合主张",
+    reportClaimEvidenceAudit: "主张证据审计",
     reportSynthesisConflicts: "综合冲突与证据缺口",
     reportResearchGaps: "研究空白与验证需求",
     reportDraftOutline: "综述正文大纲",
+    reportWritingReadinessGate: "写作就绪门禁",
+    reportWritingReadinessScore: "正式报告就绪分",
+    reportWritingReadinessLevel: "就绪状态",
+    reportWritingReadinessBlockers: "阻塞项",
+    reportWritingReadinessNoBlockers: "当前总结未发现阻塞项",
+    reportWritingReadinessCheckColumn: "门禁检查",
+    reportWritingReadinessStatusColumn: "状态",
+    reportReadinessReady: "可进入正文草稿",
+    reportReadinessRevise: "进入正文前需修订",
+    reportReadinessBlocked: "补齐证据前暂缓",
+    reportReadinessPass: "通过",
+    reportReadinessReview: "需复核",
+    reportReadinessFail: "未通过",
+    reportReadinessHighRiskBlocker: (count) => `${count || 0} 条高风险主张需要证据审计`,
+    reportReadinessEvidenceBlocker: (count) => `${count || 0} 个路线图主题仍需补证据`,
+    reportReadinessValidationBlocker: (count) => `${count || 0} 个路线图主题仍需验证设计`,
+    reportReadinessCoverageBlocker: (skipped, failed) => `覆盖问题：无 PDF 跳过 ${skipped || 0} 篇，失败 ${failed || 0} 篇`,
+    reportReadinessGapBlocker: "没有明确缺口轨迹，主张需保持暂定",
+    reportReadinessEvidenceBase: "证据基础覆盖",
+    reportReadinessClaimRisk: "主张风险校准",
+    reportReadinessRoadmap: "路线图就绪度",
+    reportReadinessGapTrace: "缺口可追溯性",
+    reportReadinessEvidenceBaseEvidence: (available, skipped, failed) => `${available || 0} 篇可用总结，${skipped || 0} 篇无 PDF 跳过，${failed || 0} 篇失败`,
+    reportReadinessClaimRiskEvidence: (high, medium, average) => `${high || 0} 条高风险主张，${medium || 0} 条中风险主张，平均支持分 ${average || 0}`,
+    reportReadinessRoadmapEvidence: (ready, evidence, validation) => `${ready || 0} 条可进入草稿，${evidence || 0} 条证据薄弱，${validation || 0} 条需验证`,
+    reportReadinessGapTraceEvidence: (count) => `${count || 0} 条明确缺口或验证线索`,
+    reportReadinessCoverageAction: "补齐缺失 PDF 或明确排除后，再把覆盖面视为完整。",
+    reportReadinessClaimRiskAction: "进入最终正文前，先在主张证据审计中处理高风险主张。",
+    reportReadinessRoadmapAction: "使用路线图看板提升可写主题，暂缓证据薄弱主题。",
+    reportReadinessGapTraceAction: "把每个未解决缺口保留在对应小节中。",
+    reportReadinessProceedAction: "核对来源总结后可进入写作包。",
+    reportReadinessDefaultAction: (level) => `${level}：进入正文前核对来源总结、主张风险和路线图阻塞项。`,
+    reportSectionReadinessMatrix: "章节就绪矩阵",
+    reportSectionColumn: "报告章节",
+    reportSectionReadinessScoreColumn: "章节就绪分",
+    reportSectionReadinessLevelColumn: "章节就绪状态",
+    reportSectionEvidenceColumn: "当前证据",
+    reportSectionBlockerColumn: "章节阻塞项",
+    reportSectionActionColumn: "下一步章节动作",
+    reportSectionReady: "可写",
+    reportSectionNeedsRevision: "需修订",
+    reportSectionBlocked: "暂缓",
+    reportSectionNoBlocker: "当前总结未发现章节阻塞项",
+    reportSectionMissingMethodSignals: "该章节暂无可用方法线索",
+    reportSectionMissingDataSignals: "暂无数据、场景或指标线索",
+    reportSectionMissingClusters: "暂无主题聚类",
+    reportSectionMissingClaims: "暂无综合主张",
+    reportSectionMissingGaps: "暂无明确缺口线索",
+    reportSectionNoReadyRoadmap: "暂无可进入正文的路线图主题",
+    reportSectionSignalEvidence: (count, available) => `从 ${available || 0} 篇可用总结抽取 ${count || 0} 条线索`,
+    reportSectionClusterEvidence: (count, available) => `从 ${available || 0} 篇可用总结形成 ${count || 0} 个主题聚类`,
+    reportSectionActionMethod: "写方法分类正文前，先补齐或核对方法矩阵。",
+    reportSectionActionData: "把数据集、场景、指标和评估细节补到证据地图中。",
+    reportSectionActionTopic: "进入正文前复核聚类边界，拆开不可比较主题。",
+    reportSectionActionClaim: "只把已审计且可追溯的主张迁移到正文。",
+    reportSectionActionGap: "把未解决缺口保留在相关主张和小节旁边。",
+    reportSectionActionRoadmap: "提升已就绪路线图主题，暂缓证据薄弱小节。",
+    reportSectionActionPlan: "章节行动计划",
+    reportSectionActionPlanMaterial: (section, level, evidence, blocker) => `${section}（${level}）：从 ${evidence} 补充或核对来源材料；阻塞项：${blocker || "当前总结未发现"}。`,
     reportSynthesisWritingPack: "综合写作包",
     reportRiskChecklist: "风险核查清单",
     reportRiskChecklistItems: [
@@ -4332,6 +6612,13 @@ function collectionTemplateLabels(outputLanguage) {
 
 function escapeMarkdownTable(value) {
   return String(value || "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
+}
+
+function escapeHtmlText(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 async function writeBatchRunReport(settings, collectionContext, results, options = {}) {

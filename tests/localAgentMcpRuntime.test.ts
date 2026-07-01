@@ -79,9 +79,26 @@ describe("local agent stdio MCP runtime", () => {
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrFallback).toMatchObject({
         type: "boolean"
       });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrFallback.description).toContain("per-page OCR confidence signals");
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.fullDocumentOcr).toMatchObject({
+        type: "boolean"
+      });
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.maxOcrPages).toMatchObject({
         type: "number"
       });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPageStrategy).toMatchObject({
+        type: "string"
+      });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrAutoRepair).toMatchObject({
+        type: "boolean"
+      });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrAutoRepair.description).toContain("higher-DPI render");
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrRepairPsms.description).toContain("page segmentation modes");
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPreprocessRepair).toMatchObject({
+        type: "boolean"
+      });
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPreprocessModes.description).toContain("grayscale,monochrome,adaptive-threshold");
+      expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.ocrPages.description).toContain("1,3-5");
       expect(tools.find((tool: any) => tool.name === "extract_pdf_pages").inputSchema.properties.minTextChars).toMatchObject({
         type: "number"
       });
@@ -238,20 +255,780 @@ describe("local agent stdio MCP runtime", () => {
             pagesWithText: 2,
             emptyPageCount: 0,
             ocrFallbackUsed: true,
+            ocrReadablePageCount: 2,
+            ocrLowConfidencePageCount: 0,
+            ocrErrorPageCount: 0,
             warnings: ["ocr_fallback_used"]
           },
           pages: [
             {
               page: 1,
               pageLabel: "1",
-              text: "OCR method text from scanned page."
+              text: "OCR method text from scanned page.",
+              ocr: {
+                page: 1,
+                status: "ok",
+                textChars: 34,
+                ocrConfidence: "medium",
+                warnings: []
+              }
             },
             {
               page: 2,
               pageLabel: "2",
-              text: "OCR method text from scanned page."
+              text: "OCR method text from scanned page.",
+              ocr: {
+                page: 2,
+                status: "ok",
+                textChars: 34,
+                ocrConfidence: "medium",
+                warnings: []
+              }
             }
           ]
+        });
+        expect(parsed.quality.ocrPageSignals).toHaveLength(2);
+        expect(parsed.quality.ocrPageSignals[0]).toMatchObject({
+          page: 1,
+          engine: "tesseract",
+          language: "eng",
+          status: "ok",
+          textChars: 34,
+          ocrConfidence: "medium"
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports per-page OCR fallback confidence for empty and failed scanned PDF pages", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", "");
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 3);
+      const tesseractBin = fakeTesseractByPageBin(dir, "tesseract", {
+        1: "dense enough OCR text for a readable scanned page",
+        2: "",
+        3: { error: "unreadable bitmap", code: 2 }
+      });
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 11,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF scanned partial").toString("base64"),
+              name: "partial-scan.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              maxOcrPages: 3,
+              ocrAutoRepair: false,
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "partial-scan.pdf",
+          pageCount: 1,
+          ocrFallbackUsed: true,
+          ocrRenderedPageCount: 3,
+          ocrEmptyPageCount: 2,
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 1,
+            emptyPageCount: 2,
+            ocrReadablePageCount: 1,
+            ocrLowConfidencePageCount: 0,
+            ocrErrorPageCount: 1
+          }
+        });
+        expect(parsed.quality.warnings).toEqual([
+          "ocr_fallback_used",
+          "empty_or_unread_pages",
+          "ocr_page_errors"
+        ]);
+        expect(parsed.quality.ocrPageSignals).toEqual([
+          expect.objectContaining({ page: 1, status: "ok", ocrConfidence: "medium", textChars: 49, warnings: [] }),
+          expect.objectContaining({ page: 2, status: "empty", ocrConfidence: "none", textChars: 0, warnings: ["ocr_page_empty"] }),
+          expect.objectContaining({ page: 3, status: "error", ocrConfidence: "error", textChars: 0, warnings: ["ocr_page_error"] })
+        ]);
+        expect(parsed.quality.ocrPageSignals[2].error).toContain("unreadable bitmap");
+        expect(parsed.pages).toHaveLength(1);
+        expect(parsed.pages[0]).toMatchObject({
+          page: 1,
+          text: "dense enough OCR text for a readable scanned page",
+          ocr: { status: "ok", ocrConfidence: "medium" }
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs empty OCR pages with a higher-DPI retry when enabled", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", "");
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 2);
+      const tesseractBin = fakeRepairingTesseractByPageBin(
+        dir,
+        "tesseract",
+        {
+          1: "first page OCR text is already readable",
+          2: ""
+        },
+        {
+          2: "second page OCR recovered after high DPI rendering"
+        }
+      );
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 111,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF scanned repair").toString("base64"),
+              name: "repair-scan.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              maxOcrPages: 2,
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "repair-scan.pdf",
+          pageCount: 2,
+          ocrFallbackUsed: true,
+          ocrRenderedPageCount: 2,
+          ocrEmptyPageCount: 0,
+          ocrRepairAttemptedPageCount: 1,
+          ocrRepairRecoveredPageCount: 1,
+          ocrRepairFailedPageCount: 0,
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 2,
+            emptyPageCount: 0,
+            ocrFallbackUsed: true,
+            ocrReadablePageCount: 2,
+            ocrRepairAttemptedPageCount: 1,
+            ocrRepairRecoveredPageCount: 1,
+            ocrRepairFailedPageCount: 0,
+            warnings: ["ocr_fallback_used", "ocr_auto_repair_used"]
+          }
+        });
+        expect(parsed.pages.map((page: any) => page.page)).toEqual([1, 2]);
+        expect(parsed.pages[1]).toMatchObject({
+          page: 2,
+          text: "second page OCR recovered after high DPI rendering",
+          ocr: {
+            status: "ok",
+            repairAttempted: true,
+            repairDpi: 300,
+            repairStatus: "recovered",
+            previousStatus: "empty",
+            warnings: ["ocr_page_repaired"]
+          }
+        });
+        expect(parsed.quality.ocrPageSignals[1]).toMatchObject({
+          page: 2,
+          status: "ok",
+          repairAttempted: true,
+          repairStatus: "recovered",
+          previousStatus: "empty",
+          warnings: ["ocr_page_repaired"]
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs stubborn OCR pages with bounded Tesseract PSM retries", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", "");
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 1);
+      const tesseractBin = fakeRepairingTesseractByPageBin(
+        dir,
+        "tesseract",
+        {
+          1: ""
+        },
+        {
+          1: ""
+        },
+        {
+          "1:6": "page recovered only after psm six layout retry"
+        }
+      );
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 112,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF scanned psm repair").toString("base64"),
+              name: "psm-repair-scan.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              maxOcrPages: 1,
+              ocrRepairPsms: "6,11",
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "psm-repair-scan.pdf",
+          pageCount: 1,
+          ocrFallbackUsed: true,
+          ocrRenderedPageCount: 1,
+          ocrRepairAttemptedPageCount: 1,
+          ocrRepairRecoveredPageCount: 1,
+          ocrRepairFailedPageCount: 0,
+          ocrRepairPsmAttemptedPageCount: 1,
+          ocrRepairPsmRecoveredPageCount: 1,
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 1,
+            ocrFallbackUsed: true,
+            ocrRepairAttemptedPageCount: 1,
+            ocrRepairRecoveredPageCount: 1,
+            ocrRepairFailedPageCount: 0,
+            ocrRepairPsmAttemptedPageCount: 1,
+            ocrRepairPsmRecoveredPageCount: 1,
+            warnings: ["ocr_fallback_used", "ocr_auto_repair_used", "ocr_psm_repair_used"]
+          }
+        });
+        expect(parsed.pages[0]).toMatchObject({
+          page: 1,
+          text: "page recovered only after psm six layout retry",
+          ocr: {
+            status: "ok",
+            repairAttempted: true,
+            repairStrategy: "high_dpi_psm",
+            repairStatus: "recovered",
+            repairPsm: 6,
+            previousStatus: "empty",
+            warnings: ["ocr_page_repaired", "ocr_page_repaired_psm"]
+          }
+        });
+        expect(parsed.quality.ocrPageSignals[0]).toMatchObject({
+          page: 1,
+          status: "ok",
+          repairStrategy: "high_dpi_psm",
+          repairPsm: 6
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs stubborn OCR pages with grayscale preprocessing after PSM retries fail", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", "");
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 1);
+      const tesseractBin = fakeRepairingTesseractByPageBin(
+        dir,
+        "tesseract",
+        {
+          1: ""
+        },
+        {
+          1: ""
+        },
+        {},
+        {
+          1: "page recovered after grayscale preprocessing"
+        }
+      );
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 113,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF scanned grayscale repair").toString("base64"),
+              name: "gray-repair-scan.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              maxOcrPages: 1,
+              ocrRepairPsms: "6,11",
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "gray-repair-scan.pdf",
+          pageCount: 1,
+          ocrFallbackUsed: true,
+          ocrRepairAttemptedPageCount: 1,
+          ocrRepairRecoveredPageCount: 1,
+          ocrRepairFailedPageCount: 0,
+          ocrRepairPsmAttemptedPageCount: 1,
+          ocrRepairPsmRecoveredPageCount: 0,
+          ocrPreprocessAttemptedPageCount: 1,
+          ocrPreprocessRecoveredPageCount: 1,
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 1,
+            ocrFallbackUsed: true,
+            ocrRepairAttemptedPageCount: 1,
+            ocrRepairRecoveredPageCount: 1,
+            ocrRepairFailedPageCount: 0,
+            ocrRepairPsmAttemptedPageCount: 1,
+            ocrRepairPsmRecoveredPageCount: 0,
+            ocrPreprocessAttemptedPageCount: 1,
+            ocrPreprocessRecoveredPageCount: 1,
+            warnings: ["ocr_fallback_used", "ocr_auto_repair_used", "ocr_psm_repair_used", "ocr_preprocess_repair_used"]
+          }
+        });
+        expect(parsed.pages[0]).toMatchObject({
+          page: 1,
+          text: "page recovered after grayscale preprocessing",
+          ocr: {
+            status: "ok",
+            repairAttempted: true,
+            repairStrategy: "grayscale",
+            repairStatus: "recovered",
+            repairPreprocess: "grayscale",
+            repairPsmAttempted: [6, 11],
+            previousStatus: "empty",
+            warnings: ["ocr_page_repaired", "ocr_page_repaired_preprocessed"]
+          }
+        });
+        expect(parsed.quality.ocrPageSignals[0]).toMatchObject({
+          page: 1,
+          status: "ok",
+          repairStrategy: "grayscale",
+          repairPreprocess: "grayscale"
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs stubborn OCR pages with monochrome threshold preprocessing after grayscale fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", "");
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 1);
+      const tesseractBin = fakeRepairingTesseractByPageBin(
+        dir,
+        "tesseract",
+        {
+          1: ""
+        },
+        {
+          1: ""
+        },
+        {},
+        {
+          "monochrome:1": "page recovered after monochrome threshold preprocessing"
+        }
+      );
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 114,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF scanned mono repair").toString("base64"),
+              name: "mono-repair-scan.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              maxOcrPages: 1,
+              ocrRepairPsms: "6,11",
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "mono-repair-scan.pdf",
+          pageCount: 1,
+          ocrFallbackUsed: true,
+          ocrRepairAttemptedPageCount: 1,
+          ocrRepairRecoveredPageCount: 1,
+          ocrRepairFailedPageCount: 0,
+          ocrRepairPsmAttemptedPageCount: 1,
+          ocrRepairPsmRecoveredPageCount: 0,
+          ocrPreprocessAttemptedPageCount: 1,
+          ocrPreprocessRecoveredPageCount: 1,
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 1,
+            ocrFallbackUsed: true,
+            ocrRepairAttemptedPageCount: 1,
+            ocrRepairRecoveredPageCount: 1,
+            ocrRepairFailedPageCount: 0,
+            ocrRepairPsmAttemptedPageCount: 1,
+            ocrRepairPsmRecoveredPageCount: 0,
+            ocrPreprocessAttemptedPageCount: 1,
+            ocrPreprocessRecoveredPageCount: 1,
+            warnings: ["ocr_fallback_used", "ocr_auto_repair_used", "ocr_psm_repair_used", "ocr_preprocess_repair_used"]
+          }
+        });
+        expect(parsed.pages[0]).toMatchObject({
+          page: 1,
+          text: "page recovered after monochrome threshold preprocessing",
+          ocr: {
+            status: "ok",
+            repairAttempted: true,
+            repairStrategy: "monochrome",
+            repairStatus: "recovered",
+            repairPreprocess: "monochrome",
+            repairPsmAttempted: [6, 11],
+            previousStatus: "empty",
+            warnings: ["ocr_page_repaired", "ocr_page_repaired_preprocessed"]
+          }
+        });
+        expect(parsed.quality.ocrPageSignals[0]).toMatchObject({
+          page: 1,
+          status: "ok",
+          repairStrategy: "monochrome",
+          repairPreprocess: "monochrome"
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs stubborn OCR pages with adaptive threshold preprocessing after grayscale and monochrome fail", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", "");
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 1);
+      const tesseractBin = fakeRepairingTesseractByPageBin(
+        dir,
+        "tesseract",
+        {
+          1: ""
+        },
+        {
+          1: ""
+        },
+        {},
+        {
+          "adaptive-threshold:1": "page recovered after adaptive threshold preprocessing"
+        }
+      );
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 115,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF scanned adaptive repair").toString("base64"),
+              name: "adaptive-repair-scan.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              maxOcrPages: 1,
+              ocrRepairPsms: "6,11",
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "adaptive-repair-scan.pdf",
+          pageCount: 1,
+          ocrFallbackUsed: true,
+          ocrRepairAttemptedPageCount: 1,
+          ocrRepairRecoveredPageCount: 1,
+          ocrRepairFailedPageCount: 0,
+          ocrPreprocessAttemptedPageCount: 1,
+          ocrPreprocessRecoveredPageCount: 1,
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 1,
+            ocrFallbackUsed: true,
+            ocrRepairAttemptedPageCount: 1,
+            ocrRepairRecoveredPageCount: 1,
+            ocrPreprocessAttemptedPageCount: 1,
+            ocrPreprocessRecoveredPageCount: 1,
+            warnings: ["ocr_fallback_used", "ocr_auto_repair_used", "ocr_psm_repair_used", "ocr_preprocess_repair_used"]
+          }
+        });
+        expect(parsed.pages[0]).toMatchObject({
+          page: 1,
+          text: "page recovered after adaptive threshold preprocessing",
+          ocr: {
+            status: "ok",
+            repairAttempted: true,
+            repairStrategy: "adaptive-threshold",
+            repairStatus: "recovered",
+            repairPreprocess: "adaptive-threshold",
+            repairPsmAttempted: [6, 11],
+            previousStatus: "empty",
+            warnings: ["ocr_page_repaired", "ocr_page_repaired_preprocessed"]
+          }
+        });
+        expect(parsed.quality.ocrPageSignals[0]).toMatchObject({
+          page: 1,
+          status: "ok",
+          repairStrategy: "adaptive-threshold",
+          repairPreprocess: "adaptive-threshold"
+        });
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("OCRs sparse middle PDF pages and merges them with pdftotext pages", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(
+        dir,
+        "pdftotext",
+        [
+          "The proposed method uses graph attention on page one.",
+          "Experiments evaluate delay metrics on page two.",
+          "",
+          "Limitations include missing weather robustness checks on page four."
+        ].join("\f")
+      );
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 4);
+      const tesseractBin = fakeTesseractByPageBin(dir, "tesseract", {
+        3: "OCR recovered scanned middle page with contribution details."
+      });
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage();
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 12,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF sparse middle page").toString("base64"),
+              name: "sparse-middle.pdf",
+              timeoutSeconds: 12,
+              ocrFallback: true,
+              ocrPageStrategy: "sparse",
+              maxOcrPages: 2,
+              minTextChars: 40,
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "pdftotext+tesseract",
+          name: "sparse-middle.pdf",
+          pageCount: 4,
+          ocrFallbackUsed: true,
+          textPageCount: 3,
+          textSlotCount: 4,
+          ocrRenderedPageCount: 1,
+          ocrEmptyPageCount: 0,
+          quality: {
+            status: "warning",
+            engine: "pdftotext+tesseract",
+            pagesWithText: 4,
+            expectedPageCount: 4,
+            emptyPageCount: 0,
+            ocrFallbackUsed: true,
+            warnings: ["ocr_fallback_used"]
+          }
+        });
+        expect(parsed.pages.map((page: any) => page.page)).toEqual([1, 2, 3, 4]);
+        expect(parsed.pages[2]).toMatchObject({
+          page: 3,
+          pageLabel: "3",
+          text: "OCR recovered scanned middle page with contribution details.",
+          ocr: {
+            page: 3,
+            status: "ok",
+            ocrConfidence: "medium"
+          }
+        });
+        expect(parsed.quality.ocrPageSignals).toEqual([
+          expect.objectContaining({ page: 3, status: "ok", textChars: 60 })
+        ]);
+      } finally {
+        runtime.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows explicit full-document OCR beyond the default page cap", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zms-local-agent-"));
+    try {
+      const pdftotextBin = fakeBin(dir, "pdftotext", Array(15).fill("").join("\f"));
+      const pdftoppmBin = fakePdfToPpmBin(dir, "pdftoppm", 15);
+      const ocrOutputs: Record<number, string> = {};
+      for (let page = 1; page <= 15; page += 1) {
+        ocrOutputs[page] = `Full document OCR recovered page ${page} with method evidence and experiment details.`;
+      }
+      const tesseractBin = fakeTesseractByPageBin(dir, "tesseract", ocrOutputs);
+      const runtime = startRuntime({
+        LOCAL_AGENT_PDFTOTEXT_BIN: pdftotextBin,
+        LOCAL_AGENT_PDFTOPPM_BIN: pdftoppmBin,
+        LOCAL_AGENT_TESSERACT_BIN: tesseractBin
+      });
+      try {
+        const responsePromise = runtime.nextMessage(10000);
+        runtime.writeFramed({
+          jsonrpc: "2.0",
+          id: 13,
+          method: "tools/call",
+          params: {
+            name: "extract_pdf_pages",
+            arguments: {
+              pdfBase64: Buffer.from("%PDF full scanned document").toString("base64"),
+              name: "full-scan.pdf",
+              timeoutSeconds: 30,
+              ocrFallback: true,
+              ocrPageStrategy: "all",
+              fullDocumentOcr: true,
+              maxOcrPages: 15,
+              minTextChars: 40,
+              ocrLanguage: "eng"
+            }
+          }
+        });
+        const response = await responsePromise;
+        const parsed = JSON.parse(response.result.content[0].text);
+
+        expect(parsed).toMatchObject({
+          engine: "tesseract",
+          name: "full-scan.pdf",
+          pageCount: 15,
+          ocrFallbackUsed: true,
+          ocrRenderedPageCount: 15,
+          ocrEmptyPageCount: 0,
+          ocrMaxPages: 15,
+          ocrPageStrategy: "all",
+          ocrRequestedPageCount: 15,
+          ocrTruncatedPageCount: 0,
+          ocrFullDocumentUsed: true,
+          quality: {
+            status: "warning",
+            engine: "tesseract",
+            pagesWithText: 15,
+            expectedPageCount: 15,
+            emptyPageCount: 0,
+            ocrFallbackUsed: true,
+            ocrFullDocumentUsed: true,
+            ocrPageStrategy: "all",
+            ocrMaxPages: 15,
+            ocrRequestedPageCount: 15,
+            ocrTruncatedPageCount: 0,
+            warnings: ["ocr_fallback_used", "ocr_full_document_used"]
+          }
+        });
+        expect(parsed.pages.map((page: any) => page.page)).toEqual(Array.from({ length: 15 }, (_value, index) => index + 1));
+        expect(parsed.quality.ocrPageSignals).toHaveLength(15);
+        expect(parsed.quality.ocrPageSignals[14]).toMatchObject({
+          page: 15,
+          status: "ok",
+          ocrConfidence: "medium"
         });
       } finally {
         runtime.stop();
@@ -629,9 +1406,81 @@ function fakePdfToPpmBin(dir: string, name: string, pageCount: number) {
     "const args = process.argv.slice(2);",
     "const prefix = args[args.length - 1];",
     `const pageCount = ${pageCount};`,
-    "for (let page = 1; page <= pageCount; page += 1) {",
-    "  fs.writeFileSync(`${prefix}-${page}.png`, `fake page ${page}`);",
+    "const flagValue = (flag, fallback) => {",
+    "  const index = args.indexOf(flag);",
+    "  return index >= 0 ? Number(args[index + 1]) : fallback;",
+    "};",
+    "const firstPage = Math.max(1, flagValue('-f', 1));",
+    "const lastPage = Math.min(pageCount, Math.max(firstPage, flagValue('-l', pageCount)));",
+    "const extension = args.includes('-mono') ? 'pbm' : args.includes('-gray') ? 'pgm' : 'png';",
+    "for (let page = firstPage; page <= lastPage; page += 1) {",
+    "  const out = `${prefix}-${page}.${extension}`;",
+    "  if (extension === 'pgm') fs.writeFileSync(out, 'P2\\n4 3\\n255\\n0 40 210 255\\n20 80 190 240\\n0 60 180 255\\n');",
+    "  else if (extension === 'pbm') fs.writeFileSync(out, 'P1\\n4 3\\n1 1 0 0\\n1 1 0 0\\n1 1 0 0\\n');",
+    "  else fs.writeFileSync(out, `fake page ${page}`);",
     "}",
+    ""
+  ].join("\n"));
+  chmodSync(path, 0o755);
+  return path;
+}
+
+function fakeTesseractByPageBin(dir: string, name: string, outputs: Record<number, string | { error: string; code?: number }>) {
+  const path = join(dir, name);
+  writeFileSync(path, [
+    "#!/usr/bin/env node",
+    "const imagePath = process.argv[2] || '';",
+    "const match = /-(\\d+)\\.[^.]+$/.exec(imagePath);",
+    "const page = match ? Number(match[1]) : 0;",
+    `const outputs = ${JSON.stringify(outputs)};`,
+    "const output = outputs[page] ?? '';",
+    "if (output && typeof output === 'object') {",
+    "  process.stderr.write(output.error || 'ocr failed');",
+    "  process.exit(output.code || 1);",
+    "}",
+    "process.stdout.write(String(output || ''));",
+    ""
+  ].join("\n"));
+  chmodSync(path, 0o755);
+  return path;
+}
+
+function fakeRepairingTesseractByPageBin(
+  dir: string,
+  name: string,
+  outputs: Record<number, string | { error: string; code?: number }>,
+  repairOutputs: Record<number, string | { error: string; code?: number }>,
+  psmRepairOutputs: Record<string, string | { error: string; code?: number }> = {},
+  preprocessOutputs: Record<string, string | { error: string; code?: number }> = {},
+  preprocessPsmOutputs: Record<string, string | { error: string; code?: number }> = {}
+) {
+  const path = join(dir, name);
+  writeFileSync(path, [
+    "#!/usr/bin/env node",
+    "const args = process.argv.slice(2);",
+    "const imagePath = process.argv[2] || '';",
+    "const match = /-(\\d+)\\.[^.]+$/.exec(imagePath);",
+    "const page = match ? Number(match[1]) : 0;",
+    "const psmIndex = args.indexOf('--psm');",
+    "const psm = psmIndex >= 0 ? Number(args[psmIndex + 1]) : 0;",
+    `const outputs = ${JSON.stringify(outputs)};`,
+    `const repairOutputs = ${JSON.stringify(repairOutputs)};`,
+    `const psmRepairOutputs = ${JSON.stringify(psmRepairOutputs)};`,
+    `const preprocessOutputs = ${JSON.stringify(preprocessOutputs)};`,
+    `const preprocessPsmOutputs = ${JSON.stringify(preprocessPsmOutputs)};`,
+    "const preprocessMode = imagePath.includes('/repair-adaptive-threshold-page-') ? 'adaptive-threshold' : imagePath.includes('/repair-monochrome-page-') ? 'monochrome' : imagePath.includes('/repair-grayscale-page-') || imagePath.includes('/repair-gray-page-') ? 'grayscale' : '';",
+    "const isPreprocessed = Boolean(preprocessMode);",
+    "const isRepair = imagePath.includes('/repair-page-') || isPreprocessed;",
+    "const source = isPreprocessed ? preprocessOutputs : isRepair ? repairOutputs : outputs;",
+    "const psmSource = isPreprocessed ? preprocessPsmOutputs : psmRepairOutputs;",
+    "const output = psm && isRepair",
+    "  ? (psmSource[`${preprocessMode}:${page}:${psm}`] ?? psmSource[`${page}:${psm}`] ?? source[`${preprocessMode}:${page}`] ?? source[page] ?? '')",
+    "  : (source[`${preprocessMode}:${page}`] ?? source[page] ?? '');",
+    "if (output && typeof output === 'object') {",
+    "  process.stderr.write(output.error || 'ocr failed');",
+    "  process.exit(output.code || 1);",
+    "}",
+    "process.stdout.write(String(output || ''));",
     ""
   ].join("\n"));
   chmodSync(path, 0o755);

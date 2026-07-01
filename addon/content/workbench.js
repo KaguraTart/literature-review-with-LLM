@@ -151,6 +151,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     promptPackId: "general",
     inputMode: "text",
     stream: true,
+    autoUpdateEnabled: true,
     localOcrEnabled: false,
     localOcrEndpoint: "http://127.0.0.1:3333/mcp",
     localOcrTool: "ocr_image",
@@ -180,6 +181,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     this.loadSettings();
     this.applyLanguage();
     this.renderOutputDirSettings();
+    this.renderAutoUpdateSettings();
     this.setStatus(this.t("loading"));
     try {
       this.state.launchPayload = launchPayload();
@@ -308,6 +310,11 @@ var ZoteroMarkdownSummaryWorkbench = {
     if (localOcrInput && localOcrInput.dataset?.zmsLocalOcrBound !== "1") {
       localOcrInput.addEventListener("change", () => this.syncLocalOcrPreference());
       if (localOcrInput.dataset) localOcrInput.dataset.zmsLocalOcrBound = "1";
+    }
+    const autoUpdateInput = document.getElementById("zms-workbench-auto-update-input");
+    if (autoUpdateInput && autoUpdateInput.dataset?.zmsAutoUpdateBound !== "1") {
+      autoUpdateInput.addEventListener("change", () => this.saveAutoUpdatePreference());
+      if (autoUpdateInput.dataset) autoUpdateInput.dataset.zmsAutoUpdateBound = "1";
     }
     const input = document.getElementById("zms-input");
     if (input && input.dataset?.zmsShortcutBound !== "1") {
@@ -512,6 +519,7 @@ var ZoteroMarkdownSummaryWorkbench = {
     this.state.promptPackId = normalizePromptPackId(pref("promptPackId"));
     this.state.inputMode = normalizeInputMode(pref("inputMode"));
     this.state.stream = normalizeBoolean(pref("stream"), true);
+    this.state.autoUpdateEnabled = normalizeBoolean(pref("autoUpdateEnabled"), true);
     this.state.localOcrEnabled = normalizeBoolean(pref("localOcrEnabled"), false);
     this.state.localOcrEndpoint = String(pref("localOcrEndpoint") || "http://127.0.0.1:3333/mcp");
     this.state.localOcrTool = String(pref("localOcrTool") || "ocr_image");
@@ -530,6 +538,29 @@ var ZoteroMarkdownSummaryWorkbench = {
 
   renderOutputDirSettings() {
     setInputValue("zms-workbench-output-dir", this.state.outputDir || resolvedOutputDir(pref("outputDir")));
+  },
+
+  renderAutoUpdateSettings() {
+    const input = document.getElementById("zms-workbench-auto-update-input");
+    if (input) input.checked = this.state.autoUpdateEnabled !== false;
+  },
+
+  async saveAutoUpdatePreference() {
+    const input = document.getElementById("zms-workbench-auto-update-input");
+    const enabled = input ? !!input.checked : this.state.autoUpdateEnabled !== false;
+    this.state.autoUpdateEnabled = enabled;
+    setPref("autoUpdateEnabled", enabled);
+    if (typeof zmsApplyAddonAutoUpdatePreference !== "function") {
+      this.setStatus(`${this.t("autoUpdateSavedButNotApplied")}: ${this.t("autoUpdateUnavailable")}`);
+      return false;
+    }
+    const result = await zmsApplyAddonAutoUpdatePreference(enabled);
+    if (result?.ok) {
+      this.setStatus(this.t(enabled ? "autoUpdateOn" : "autoUpdateOff"));
+      return true;
+    }
+    this.setStatus(`${this.t("autoUpdateSavedButNotApplied")}: ${result?.reason || this.t("autoUpdateUnavailable")}`);
+    return false;
   },
 
   async saveOutputDir(options = {}) {
@@ -590,6 +621,10 @@ var ZoteroMarkdownSummaryWorkbench = {
     setText("zms-workbench-output-dir-label", this.t("outputDir"));
     setButtonLabel("zms-workbench-choose-output-dir", this.t("chooseOutputDir"), this.t("chooseOutputDirTitle"));
     setButtonLabel("zms-workbench-save-output-dir", this.t("saveOutputDir"), this.t("saveOutputDir"));
+    setText("zms-workbench-auto-update-text", this.t("autoUpdateEnabled"));
+    setText("zms-workbench-auto-update-help", this.t("autoUpdateHelp"));
+    const autoUpdateInput = document.getElementById("zms-workbench-auto-update-input");
+    if (autoUpdateInput) autoUpdateInput.setAttribute("title", this.t("autoUpdateTitle"));
     setText("zms-save-profile-settings", this.t("save"));
     setText("zms-test-profile-settings", this.t("saveAndTest"));
     setText("zms-workbench-provider-env-heading", this.t("providerEnv"));
@@ -7418,10 +7453,15 @@ function renderProposalNoteMarkdown(context, options = {}) {
   const collectionKey = workbenchCollectionKey(options.item);
   const promptPackId = normalizePromptPackId(options.promptPackId || "general");
   const domainChecklist = proposalDomainChecklist(promptPackId, labels);
+  const domainStructure = proposalDomainWritingStructure(promptPackId, labels);
+  const disciplineExamples = proposalDisciplineWritingExamples(promptPackId, labels);
+  const disciplineStyleTemplates = proposalDisciplineWritingStyleTemplates(promptPackId, labels);
+  const reviewerChecklist = proposalDisciplineReviewerChecklist(promptPackId, labels);
+  const paragraphExamples = proposalParagraphLevelExamples(promptPackId, labels);
   const sections = proposalNoteSections(labels);
   const lines = [
     "---",
-    "templateVersion: proposal-note-v1",
+    "templateVersion: proposal-note-v3",
     `generatedAt: ${generatedAt}`,
     `collectionKey: ${yamlScalar(collectionKey)}`,
     `itemKey: ${yamlScalar(itemKey)}`,
@@ -7458,6 +7498,19 @@ function renderProposalNoteMarkdown(context, options = {}) {
     `## ${labels.domainWritingFormat}`,
     "",
     `- ${labels.promptPack}: ${mdText(domainChecklist.title)}`,
+    "",
+    ...domainWritingStructureLines(domainStructure, labels),
+    "",
+    ...disciplineWritingExampleLines(disciplineExamples, labels),
+    "",
+    ...disciplineWritingStyleTemplateLines(disciplineStyleTemplates, labels),
+    "",
+    ...disciplineReviewerChecklistLines(reviewerChecklist, labels),
+    "",
+    ...paragraphLevelExampleLines(paragraphExamples, labels),
+    "",
+    `### ${labels.writingChecklist}`,
+    "",
     ...domainChecklist.items.map((item) => `- [ ] ${item}`),
     "",
     `## ${labels.sections}`,
@@ -7519,6 +7572,721 @@ function proposalOverviewDimension(labels) {
     label: labels.evidenceIndex,
     query: "summary abstract contribution method experiment limitation future 摘要 贡献 方法 实验 局限 未来"
   };
+}
+
+function domainWritingStructureLines(rows, labels) {
+  return [
+    `### ${labels.writingStructure}`,
+    "",
+    `| ${labels.structureSection} | ${labels.writingGoal} | ${labels.evidenceRequirement} |`,
+    "| --- | --- | --- |",
+    ...rows.map((row) => [
+      row.section,
+      row.goal,
+      row.evidence
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
+function venueWritingStructureLines(rows, labels) {
+  return [
+    `### ${labels.venueWritingExamples}`,
+    "",
+    `| ${labels.venueType} | ${labels.writingPattern} | ${labels.evidenceRequirement} | ${labels.fitCheck} |`,
+    "| --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.venueType,
+      row.pattern,
+      row.evidence,
+      row.fit
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
+function venueReviewerCriteriaLines(rows, labels) {
+  return [
+    `### ${labels.venueReviewerCriteria}`,
+    "",
+    `| ${labels.venueType} | ${labels.reviewerExpectation} | ${labels.evidenceToShow} | ${labels.rejectionRisk} | ${labels.revisionAction} |`,
+    "| --- | --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.venueType,
+      row.expectation,
+      row.evidence,
+      row.risk,
+      row.action
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
+function venueAcceptanceExampleLines(rows, labels) {
+  return [
+    `### ${labels.venueAcceptanceExamples}`,
+    "",
+    `| ${labels.venueType} | ${labels.acceptanceSignal} | ${labels.manuscriptEvidence} | ${labels.acceptanceRevision} |`,
+    "| --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.venueType,
+      row.signal,
+      row.evidence,
+      row.revision
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
+function disciplineWritingExampleLines(rows, labels) {
+  return [
+    `### ${labels.disciplineWritingExamples}`,
+    "",
+    `| ${labels.exampleScenario} | ${labels.examplePattern} | ${labels.exampleEvidenceAnchor} | ${labels.exampleRevisionCheck} |`,
+    "| --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.scenario,
+      row.pattern,
+      row.evidence,
+      row.check
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
+function disciplineWritingStyleTemplateLines(rows, labels) {
+  return [
+    `### ${labels.disciplineWritingStyleTemplates}`,
+    "",
+    `| ${labels.styleMove} | ${labels.styleFocus} | ${labels.weakWording} | ${labels.strongerWording} | ${labels.styleEvidenceCheck} |`,
+    "| --- | --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.move,
+      row.focus,
+      row.weak,
+      row.strong,
+      row.check
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
+function disciplineReviewerChecklistLines(items, labels) {
+  return [
+    `### ${labels.disciplineReviewerChecklist}`,
+    "",
+    ...items.map((item) => `- [ ] ${item}`)
+  ];
+}
+
+function paragraphLevelExampleLines(rows, labels) {
+  return [
+    `### ${labels.paragraphLevelExamples}`,
+    "",
+    `| ${labels.paragraphUse} | ${labels.paragraphWeak} | ${labels.paragraphStronger} | ${labels.paragraphEvidence} |`,
+    "| --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.use,
+      row.weak,
+      row.strong,
+      row.evidence
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
+function longManuscriptParagraphExampleLines(rows, labels) {
+  return [
+    `### ${labels.longManuscriptParagraphExamples}`,
+    "",
+    `| ${labels.manuscriptSection} | ${labels.longParagraphDraft} | ${labels.evidencePackage} | ${labels.revisionCue} |`,
+    "| --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.section,
+      row.paragraph,
+      row.evidence,
+      row.revision
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
+function fullSectionDraftExampleLines(rows, labels) {
+  return [
+    `### ${labels.fullSectionDraftExamples}`,
+    "",
+    `| ${labels.manuscriptSection} | ${labels.sectionDraft} | ${labels.evidencePackage} | ${labels.revisionCue} |`,
+    "| --- | --- | --- | --- |",
+    ...rows.map((row) => [
+      row.section,
+      row.draft,
+      row.evidence,
+      row.revision
+    ].map(markdownTableCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ];
+}
+
+function proposalDomainWritingStructure(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["任务定义与问题边界", "把输入、输出、约束、应用场景和研究假设写成可检验问题。", "任务定义、数据来源、baseline 缺口、失败案例或安全风险证据。"],
+      ["模型与技术路线", "说明模型结构、训练目标、关键模块和相对已有方法的差异。", "架构描述、目标函数、消融线索、复杂度或复现成本。"],
+      ["实验与复现计划", "把数据集、指标、对照、消融和鲁棒性测试转成开题可执行任务。", "数据规模、指标定义、主结果趋势、算力预算和开源/复现条件。"],
+      ["可行性与边界", "提前写清泛化边界、偏置、安全和工程落地风险。", "失败模式、域外测试、人工评估、隐私或部署约束。"]
+    ],
+    transportation: [
+      ["场景边界与需求流", "界定道路、空域、交通网络、OD/需求流和运行管理对象。", "场景假设、流量数据、空域/道路规则、冲突或拥堵证据。"],
+      ["安全效率目标", "把安全、效率、鲁棒性和可扩展性目标拆成可评价指标。", "冲突率、延误、吞吐、风险阈值、仿真或实测数据来源。"],
+      ["规划控制机制", "说明路径规划、控制、调度或强化学习机制如何服务场景目标。", "状态变量、动作空间、约束、baseline 和工程实现条件。"],
+      ["验证与管理启示", "把仿真、消融、压力测试和运行管理建议写进研究计划。", "场景集、极端工况、敏感性分析、政策或运维边界。"]
+    ],
+    biomedicine: [
+      ["研究设计与对象", "明确疾病/机制问题、样本或队列、干预/暴露和比较对象。", "纳排标准、样本来源、队列描述、实验设计或临床背景证据。"],
+      ["终点与统计计划", "把主要终点、次要终点、统计方法和偏倚控制写清楚。", "endpoint 定义、效应量、置信区间、混杂因素和缺失数据处理。"],
+      ["机制与转化路径", "区分机制解释、临床相关性和可转化应用边界。", "机制实验、外部验证、临床意义、伦理和数据合规证据。"],
+      ["不可外推部分", "明确不能直接泛化的人群、场景、剂量或实验条件。", "样本偏倚、平台差异、阴性结果和安全性限制。"]
+    ],
+    "social-science": [
+      ["理论框架与假设", "把理论概念、变量关系和可证伪假设写成研究框架。", "经典理论、概念定义、替代解释和假设来源。"],
+      ["数据与测量", "说明样本、变量构造、测量有效性和代表性边界。", "数据来源、问卷/指标定义、样本覆盖、缺失和测量误差。"],
+      ["识别与稳健性", "把因果识别、混杂控制、稳健性和反事实检验写进设计。", "识别假设、控制变量、工具变量/准实验、敏感性检验。"],
+      ["政策或社会含义", "明确适用边界、外部有效性和可操作建议。", "制度背景、异质性结果、政策边界和伦理影响。"]
+    ],
+    "review-writing": [
+      ["综述范围与分类法", "定义纳入范围、排除标准和能承载多方向论文的大框架。", "检索式、代表论文、分类维度、时间线和边界说明。"],
+      ["证据地图", "把单篇证据、跨论文共识和冲突证据分层记录。", "方法/数据/指标对照、证据强度、反例和缺口标签。"],
+      ["研究脉络", "梳理问题演化、方法谱系、场景迁移和评价范式变化。", "关键节点论文、路线分叉、指标变化和场景扩展证据。"],
+      ["可写段落计划", "形成可直接进入正文的综述段落、图表和未来问题。", "段落主张、引用组合、图表计划和后续检索清单。"]
+    ],
+    general: [
+      ["问题与范围", "明确研究问题、对象、场景和不纳入范围。", "摘要、引言、关键词、代表性证据和边界条件。"],
+      ["方法与数据", "说明方法路线、数据来源、指标和验证方式。", "方法段、数据集、实验结果、注释或笔记证据。"],
+      ["贡献与创新", "把可写贡献、可复用设计和区别于已有工作的地方分开。", "贡献句、对比证据、局限说明和待补文献。"],
+      ["风险与计划", "列出可行性、进度、资源和写作风险。", "缺失数据、工具依赖、低置信证据和后续动作。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Task definition and boundary", "Turn inputs, outputs, constraints, scenario, and assumptions into a testable question.", "Task statement, data source, baseline gap, failure-case, or safety-risk evidence."],
+      ["Model and technical route", "Explain architecture, objective, key modules, and difference from prior methods.", "Architecture notes, objective function, ablation leads, complexity, or reproducibility cost."],
+      ["Experiment and reproduction plan", "Translate datasets, metrics, controls, ablations, and robustness checks into executable milestones.", "Data scale, metric definitions, main-result trend, compute budget, and reproduction conditions."],
+      ["Feasibility and boundary", "State generalization limits, bias, safety, and engineering deployment risks early.", "Failure modes, out-of-domain checks, human evaluation, privacy, or deployment constraints."]
+    ],
+    transportation: [
+      ["Scenario boundary and demand flow", "Define road, airspace, network, OD/demand flow, and operational object.", "Scenario assumptions, flow data, airspace/road rules, conflict, or congestion evidence."],
+      ["Safety and efficiency objective", "Break safety, efficiency, robustness, and scalability into reviewable metrics.", "Conflict rate, delay, throughput, risk threshold, simulation, or field-data source."],
+      ["Planning and control mechanism", "Explain how routing, control, scheduling, or RL mechanisms serve the scenario objective.", "State variables, action space, constraints, baseline, and engineering conditions."],
+      ["Validation and management implication", "Plan simulation, ablation, stress tests, and operational recommendations.", "Scenario suite, extreme conditions, sensitivity analysis, policy, or maintenance boundary."]
+    ],
+    biomedicine: [
+      ["Study design and object", "Define disease/mechanism question, sample or cohort, intervention or exposure, and comparator.", "Eligibility criteria, sample source, cohort description, experimental design, or clinical context."],
+      ["Endpoints and statistics", "Specify primary/secondary endpoints, statistical method, and bias control.", "Endpoint definition, effect size, confidence interval, confounders, and missing-data handling."],
+      ["Mechanism and translation path", "Separate mechanism, clinical relevance, and translation boundary.", "Mechanism experiments, external validation, clinical meaning, ethics, and compliance evidence."],
+      ["Non-generalizable claims", "State populations, scenarios, doses, or experimental conditions that should not be generalized.", "Sample bias, platform difference, negative results, and safety limitations."]
+    ],
+    "social-science": [
+      ["Theory and hypothesis", "Turn constructs, variable relations, and falsifiable hypotheses into a research frame.", "Theory source, construct definition, alternative explanation, and hypothesis evidence."],
+      ["Data and measurement", "Explain sample, variable construction, measurement validity, and representativeness boundary.", "Data source, survey/index definition, sample coverage, missingness, and measurement error."],
+      ["Identification and robustness", "Write causal identification, confounder control, robustness, and counterfactual checks into design.", "Identification assumption, controls, instrument/quasi-experiment, and sensitivity test."],
+      ["Policy or social implication", "Clarify applicability boundary, external validity, and actionable recommendation.", "Institutional context, heterogeneity, policy boundary, and ethics implication."]
+    ],
+    "review-writing": [
+      ["Review scope and taxonomy", "Define inclusion scope, exclusion criteria, and a framework broad enough for multiple sub-directions.", "Search query, representative papers, taxonomy dimensions, timeline, and boundary notes."],
+      ["Evidence map", "Separate single-paper evidence, cross-paper consensus, and conflicting evidence.", "Method/data/metric comparison, evidence strength, counterexamples, and gap labels."],
+      ["Research lineage", "Trace problem evolution, method lineage, scenario transfer, and evaluation changes.", "Milestone papers, route split, metric shift, and scenario-expansion evidence."],
+      ["Draft paragraph plan", "Create review paragraphs, figures/tables, and future questions ready for writing.", "Paragraph claim, citation group, figure/table plan, and follow-up search list."]
+    ],
+    general: [
+      ["Problem and scope", "Define research question, object, scenario, and exclusions.", "Abstract, introduction, keywords, representative evidence, and boundary conditions."],
+      ["Method and data", "Explain method route, data source, metrics, and validation.", "Method section, datasets, results, annotations, or note evidence."],
+      ["Contribution and novelty", "Separate draftable contribution, reusable design, and difference from prior work.", "Contribution sentence, comparison evidence, limitation note, and missing literature."],
+      ["Risk and plan", "List feasibility, schedule, resource, and writing risks.", "Missing data, tool dependency, low-confidence evidence, and next actions."]
+    ]
+  };
+  const rows = packs[id] || packs.general;
+  return rows.map(([section, goal, evidence]) => ({ section, goal, evidence }));
+}
+
+function proposalDisciplineWritingExamples(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["任务定义段", "本课题面向{任务/场景}，在{数据/约束}条件下研究{输入到输出}的可验证问题。", "任务定义、数据来源、评价指标和 baseline 缺口。", "是否写清输入、输出、约束、评价指标和不讨论的边界。"],
+      ["方法创新段", "拟从{模块/目标函数/训练策略}入手，解决已有方法在{失败模式/成本/泛化}上的不足。", "已有方法短板、消融线索、复杂度或失败案例。", "是否避免只写模型名称，是否说明相对已有工作的差异。"],
+      ["实验计划段", "验证将按主结果、消融、鲁棒性、失败案例和复现成本逐层展开。", "数据集、指标、对照方法、算力预算和复现条件。", "是否把实验做成可执行清单，而不是泛泛写提高性能。"]
+    ],
+    transportation: [
+      ["场景边界段", "本课题聚焦{道路/空域/网络}中的{冲突/拥堵/调度}问题，研究对象限定为{车辆/无人机/路段/航路}。", "场景假设、OD/需求流、规则约束、冲突或拥堵证据。", "是否说明空间范围、参与者、运行规则和不纳入场景。"],
+      ["安全效率段", "研究目标不是单一最短路径，而是在{安全阈值}约束下兼顾{延误/吞吐/鲁棒性}。", "冲突率、延误、吞吐、风险阈值、仿真或实测数据。", "是否把安全、效率和鲁棒性拆成可评价指标。"],
+      ["验证落地段", "实验将覆盖常规需求、极端工况和敏感性分析，并给出运行管理边界。", "场景集、压力测试、baseline、政策或运维约束。", "是否区分仿真有效、工程可行和管理建议三类结论。"]
+    ],
+    biomedicine: [
+      ["研究对象段", "本研究围绕{疾病/机制/生物过程}，在{样本/队列/实验体系}中检验{暴露/干预/指标}关系。", "纳排标准、样本来源、队列描述或实验设计。", "是否清楚区分研究对象、比较对象和终点指标。"],
+      ["统计计划段", "主要终点为{endpoint}，统计分析将同时报告效应量、不确定性和偏倚控制。", "endpoint 定义、效应量、置信区间、混杂因素和缺失数据处理。", "是否避免只给显著性，是否说明偏倚和缺失处理。"],
+      ["转化边界段", "结论将区分机制解释、临床相关性和暂不能外推的人群或条件。", "外部验证、伦理合规、阴性结果和安全性限制。", "是否说明哪些结论不能直接转化为临床或干预建议。"]
+    ],
+    "social-science": [
+      ["理论假设段", "基于{理论/制度背景}，本研究提出{变量A}通过{机制}影响{变量B}的可证伪假设。", "理论来源、概念定义、替代解释和假设来源。", "是否把概念、变量和机制分开，是否能被数据证伪。"],
+      ["识别策略段", "经验部分将利用{数据/事件/制度差异}识别该关系，并通过{稳健性/反事实}排除替代解释。", "数据来源、识别假设、控制变量、工具变量或准实验。", "是否说明识别假设，是否避免把相关性直接写成因果。"],
+      ["政策含义段", "政策建议仅适用于{制度/群体/时期}条件下，并需考虑{外部有效性/伦理风险}。", "异质性结果、政策边界、制度背景和伦理影响。", "是否把结论适用范围和不可推广部分写清。"]
+    ],
+    "review-writing": [
+      ["分类框架段", "本综述按{问题对象/方法路线/数据场景/评价指标}组织文献，而不是逐篇罗列。", "检索式、代表论文、分类维度、时间线和边界说明。", "分类维度是否能容纳相近小方向，也能隔离完全不同方向。"],
+      ["共识分歧段", "现有研究在{共识点}上趋于一致，但在{数据/假设/指标/场景}上形成分歧。", "方法矩阵、指标对照、反例、低置信证据和证据强度标签。", "是否把共识、分歧和证据强弱分开写。"],
+      ["研究空白段", "下一步研究空白主要来自{数据缺口/方法瓶颈/场景迁移/评价缺失}。", "缺口台账、路线图、候选文献和后续检索计划。", "是否给出可执行问题，而不是只写需要进一步研究。"]
+    ],
+    general: [
+      ["问题提出段", "本文献提示的研究问题可以表述为：在{场景}中，如何用{方法/数据}解决{核心矛盾}。", "摘要、引言、关键词和代表性证据。", "是否写清对象、场景、方法和核心矛盾。"],
+      ["贡献拆分段", "可写贡献包括{理论/方法/数据/应用}四类，其中低证据部分需单独标注。", "贡献句、对比证据、局限说明和待补文献。", "是否区分已由证据支撑的贡献和待验证设想。"],
+      ["风险控制段", "当前最大风险是{数据/方法/验证/范围}不足，后续需要补充{证据或实验}。", "缺失数据、工具依赖、低置信证据和下一步动作。", "是否把风险转成具体补证任务。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Task-definition paragraph", "This project studies a testable input-to-output problem for {task/scenario} under {data/constraint} conditions.", "Task definition, data source, metrics, and baseline gap.", "Check that inputs, outputs, constraints, metrics, and exclusions are explicit."],
+      ["Method-contribution paragraph", "The route starts from {module/objective/training strategy} to address prior limits in {failure mode/cost/generalization}.", "Prior-method weakness, ablation lead, complexity, or failure case.", "Check that the claim explains a difference from prior work, not only a model name."],
+      ["Experiment-plan paragraph", "Validation will move from main results to ablations, robustness, failure cases, and reproduction cost.", "Dataset, metrics, baselines, compute budget, and reproduction conditions.", "Check that the experiment plan is executable rather than a generic performance promise."]
+    ],
+    transportation: [
+      ["Scenario-boundary paragraph", "This project focuses on {conflict/congestion/dispatch} in {road/airspace/network} and limits the object to {vehicle/UAV/segment/route}.", "Scenario assumptions, OD or demand flow, rules, conflict, or congestion evidence.", "Check spatial scope, actors, operating rules, and excluded scenarios."],
+      ["Safety-efficiency paragraph", "The objective is not only shortest routing, but {delay/throughput/robustness} under a {safety threshold} constraint.", "Conflict rate, delay, throughput, risk threshold, simulation, or field data.", "Check that safety, efficiency, and robustness become measurable criteria."],
+      ["Validation-to-deployment paragraph", "Experiments will cover routine demand, stress cases, sensitivity analysis, and operational boundaries.", "Scenario suite, stress test, baseline, policy, or maintenance constraint.", "Check that simulation validity, engineering feasibility, and management implication stay separate."]
+    ],
+    biomedicine: [
+      ["Study-object paragraph", "This study examines {exposure/intervention/indicator} relations around {disease/mechanism/process} in {sample/cohort/system}.", "Eligibility criteria, sample source, cohort description, or experimental design.", "Check that object, comparator, and endpoints are separate."],
+      ["Statistics paragraph", "The primary endpoint is {endpoint}; analysis will report effect size, uncertainty, and bias control.", "Endpoint definition, effect size, confidence interval, confounders, and missing-data handling.", "Check that the plan goes beyond significance and covers bias and missing data."],
+      ["Translation-boundary paragraph", "The conclusions will separate mechanism, clinical relevance, and populations or conditions that cannot be generalized.", "External validation, ethics/compliance, negative results, and safety limits.", "Check which claims cannot become direct clinical or intervention advice."]
+    ],
+    "social-science": [
+      ["Theory-hypothesis paragraph", "Based on {theory/institutional context}, the study tests whether {variable A} affects {variable B} through {mechanism}.", "Theory source, construct definition, alternative explanation, and hypothesis evidence.", "Check that constructs, variables, and mechanisms are separable and falsifiable."],
+      ["Identification paragraph", "The empirical strategy uses {data/event/institutional variation} and {robustness/counterfactual} checks to rule out alternatives.", "Data source, identification assumption, controls, instrument, or quasi-experiment.", "Check that causal assumptions are explicit and correlation is not overstated."],
+      ["Policy-boundary paragraph", "Recommendations apply only under {institution/group/period} conditions and must account for {external validity/ethical risk}.", "Heterogeneity, policy boundary, institutional context, and ethical implication.", "Check that scope and non-generalizable parts are explicit."]
+    ],
+    "review-writing": [
+      ["Taxonomy paragraph", "This review is organized by {problem/method/data/scenario/metric}, not by a paper-by-paper list.", "Search query, representative papers, taxonomy dimensions, timeline, and boundary notes.", "Check that the taxonomy groups related sub-directions and separates unrelated ones."],
+      ["Consensus-and-disagreement paragraph", "The literature agrees on {consensus point}, but diverges on {data/assumption/metric/scenario}.", "Method matrix, metric comparison, counterexample, low-confidence evidence, and evidence-strength labels.", "Check that consensus, disagreement, and evidence strength are separate."],
+      ["Research-gap paragraph", "The next research gap comes from {data gap/method bottleneck/scenario transfer/evaluation absence}.", "Gap ledger, roadmap, candidate papers, and follow-up search plan.", "Check that the gap becomes an actionable question, not only a future-work sentence."]
+    ],
+    general: [
+      ["Problem paragraph", "The research question can be stated as: in {scenario}, how can {method/data} address {core tension}.", "Abstract, introduction, keywords, and representative evidence.", "Check that object, scenario, method, and core tension are explicit."],
+      ["Contribution paragraph", "Draftable contributions include {theory/method/data/application}; low-evidence parts should be marked separately.", "Contribution sentence, comparison evidence, limitation note, and missing literature.", "Check evidence-backed contributions separately from unverified ideas."],
+      ["Risk-control paragraph", "The main risk is insufficient {data/method/validation/scope}; the next step is to add {evidence or experiment}.", "Missing data, tool dependency, low-confidence evidence, and next actions.", "Check that risks are converted into concrete evidence tasks."]
+    ]
+  };
+  const rows = packs[id] || packs.general;
+  return rows.map(([scenario, pattern, evidence, check]) => ({ scenario, pattern, evidence, check }));
+}
+
+function proposalDisciplineWritingStyleTemplates(promptPackId, labels) {
+  return disciplineWritingStyleTemplates(promptPackId, labels, "proposal");
+}
+
+function journalDisciplineWritingStyleTemplates(promptPackId, labels) {
+  return disciplineWritingStyleTemplates(promptPackId, labels, "journal");
+}
+
+function proposalDisciplineReviewerChecklist(promptPackId, labels) {
+  return disciplineReviewerChecklist(promptPackId, labels, "proposal");
+}
+
+function journalDisciplineReviewerChecklist(promptPackId, labels) {
+  return disciplineReviewerChecklist(promptPackId, labels, "journal");
+}
+
+function proposalParagraphLevelExamples(promptPackId, labels) {
+  return paragraphLevelExamples(promptPackId, labels, "proposal");
+}
+
+function journalParagraphLevelExamples(promptPackId, labels) {
+  return paragraphLevelExamples(promptPackId, labels, "journal");
+}
+
+function disciplineWritingStyleTemplates(promptPackId, labels, mode) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const proposalZh = {
+    "ai-ml": [
+      ["界定任务", "输入、输出、约束和评价协议", "提升模型效果。", "在{数据/约束}下，将{输入}映射为{输出}，以{指标}检验{问题}。", "任务、数据、指标和 baseline 必须齐全。"],
+      ["声明方法差异", "模块、目标函数或训练策略", "提出一种新模型。", "通过{模块/目标函数/训练策略}处理{失败模式/成本/泛化}问题。", "差异必须能被消融或复杂度分析验证。"],
+      ["转化实验计划", "主结果、消融、鲁棒性和复现", "实验验证有效性。", "按主结果、消融、鲁棒性、失败案例和复现成本逐项验证。", "每项实验都需要数据、指标、对照和预期判断。"]
+    ],
+    transportation: [
+      ["界定场景边界", "空间范围、参与者和运行规则", "提升交通效率。", "在{道路/空域/网络}约束下，面向{车辆/无人机/路段}处理{冲突/拥堵/调度}。", "检查 OD/需求流、规则约束和安全阈值。"],
+      ["平衡安全效率", "安全阈值、延误、吞吐和鲁棒性", "路线更优。", "在{安全阈值}约束下，同时评价{延误/吞吐/鲁棒性}的变化。", "安全、效率和鲁棒性都要有可计算指标。"],
+      ["限定落地边界", "仿真、工程条件和管理建议", "可以用于实际系统。", "结论仅适用于{场景集/仿真条件/管理规则}，部署仍需补充{实测/运维/法规}证据。", "区分仿真有效、工程可行和管理启示。"]
+    ],
+    biomedicine: [
+      ["界定研究对象", "疾病、机制、样本和比较对象", "研究某疾病机制。", "在{样本/队列/实验体系}中检验{暴露/干预/指标}与{疾病/机制}的关系。", "纳排标准、比较对象和 endpoint 必须明确。"],
+      ["呈现统计计划", "效应量、不确定性和偏倚控制", "结果显著。", "主要终点为{endpoint}，同时报告效应量、不确定性、混杂控制和缺失处理。", "不能只写显著性，需要说明偏倚来源。"],
+      ["收束转化边界", "机制解释、临床意义和不可外推条件", "具有临床应用价值。", "结果支持{机制/相关性}解释，但不能直接外推到{人群/剂量/场景}。", "外推范围要有外部验证或低置信标注。"]
+    ],
+    "social-science": [
+      ["界定理论命题", "概念、变量和机制", "研究因素影响。", "基于{理论/制度背景}，检验{变量A}经由{机制}影响{变量B}的假设。", "概念、变量和机制不能混写。"],
+      ["说明识别条件", "数据、事件、制度差异和稳健性", "发现显著相关。", "利用{数据/事件/制度差异}识别关系，并通过{稳健性/反事实}排除替代解释。", "因果表述必须对应识别假设。"],
+      ["约束政策建议", "制度背景、群体和外部有效性", "建议推广应用。", "建议仅适用于{制度/群体/时期}条件，并需考虑{外部有效性/伦理风险}。", "政策建议要与证据范围一致。"]
+    ],
+    "review-writing": [
+      ["搭建分类框架", "问题、方法、数据、场景或指标", "总结已有研究。", "按{问题对象/方法路线/数据场景/评价指标}组织文献，而不是逐篇罗列。", "框架要能合并相近小方向并隔离无关方向。"],
+      ["表达共识分歧", "共识、争议、证据强弱和反例", "研究结论不一致。", "现有研究在{共识点}上趋于一致，但在{数据/假设/指标/场景}上形成分歧。", "共识、分歧和证据强度要分层写。"],
+      ["转化研究空白", "数据缺口、方法瓶颈和评价缺失", "仍需进一步研究。", "下一步问题来自{数据缺口/方法瓶颈/场景迁移/评价缺失}，需要补充{证据或实验}。", "空白必须变成可执行问题。"]
+    ],
+    general: [
+      ["提出问题", "对象、场景、方法和核心矛盾", "本文研究一个重要问题。", "在{场景}中，如何用{方法/数据}解决{核心矛盾}。", "对象、场景、方法和矛盾都要可追踪。"],
+      ["拆分贡献", "理论、方法、数据和应用", "具有创新性。", "可写贡献包括{理论/方法/数据/应用}，其中低证据部分单独标注。", "贡献必须区分已有证据和待验证设想。"],
+      ["转换风险", "数据、方法、验证和范围", "存在一些不足。", "当前风险是{数据/方法/验证/范围}不足，下一步补充{证据或实验}。", "风险要转成具体补证任务。"]
+    ]
+  };
+  const proposalEn = {
+    "ai-ml": [
+      ["Define the task", "Inputs, outputs, constraints, and evaluation protocol", "Improve model performance.", "Under {data/constraint}, map {input} to {output} and evaluate {question} with {metric}.", "Task, data, metric, and baseline must all be present."],
+      ["State method difference", "Module, objective, or training strategy", "Propose a new model.", "Use {module/objective/training strategy} to address {failure mode/cost/generalization}.", "The difference must be testable through ablation or complexity analysis."],
+      ["Convert experiment plan", "Main results, ablations, robustness, and reproduction", "Experiments verify effectiveness.", "Validate main results, ablations, robustness, failure cases, and reproduction cost separately.", "Each experiment needs data, metric, control, and expected interpretation."]
+    ],
+    transportation: [
+      ["Define scenario boundary", "Spatial scope, actors, and operating rules", "Improve traffic efficiency.", "Under {road/airspace/network} constraints, handle {conflict/congestion/dispatch} for {vehicle/UAV/segment/route}.", "Check OD/demand flow, rule constraints, and safety threshold."],
+      ["Balance safety and efficiency", "Safety threshold, delay, throughput, and robustness", "The route is better.", "Under a {safety threshold}, evaluate changes in {delay/throughput/robustness}.", "Safety, efficiency, and robustness need measurable criteria."],
+      ["Bound deployment claims", "Simulation, engineering conditions, and management implication", "It can be used in real systems.", "The conclusion applies to {scenario suite/simulation condition/management rule}; deployment still needs {field/operation/regulatory} evidence.", "Keep simulation validity, engineering feasibility, and management implication separate."]
+    ],
+    biomedicine: [
+      ["Define study object", "Disease, mechanism, sample, and comparator", "Study a disease mechanism.", "Test the relation between {exposure/intervention/indicator} and {disease/mechanism} in {sample/cohort/system}.", "Eligibility criteria, comparator, and endpoint must be explicit."],
+      ["Present statistics plan", "Effect size, uncertainty, and bias control", "The result is significant.", "The primary endpoint is {endpoint}; report effect size, uncertainty, confounding control, and missing-data handling.", "Do not report significance without bias sources."],
+      ["Limit translation boundary", "Mechanism, clinical meaning, and non-generalizable condition", "It has clinical value.", "The results support {mechanism/association}, but cannot be generalized directly to {population/dose/scenario}.", "Generalization needs external validation or a low-confidence mark."]
+    ],
+    "social-science": [
+      ["Define theory claim", "Constructs, variables, and mechanism", "Study factor effects.", "Based on {theory/institutional context}, test whether {variable A} affects {variable B} through {mechanism}.", "Do not merge construct, variable, and mechanism."],
+      ["State identification conditions", "Data, event, institutional variation, and robustness", "Find a significant correlation.", "Use {data/event/institutional variation} and {robustness/counterfactual} checks to rule out alternatives.", "Causal language must match the identification assumption."],
+      ["Constrain policy advice", "Institutional context, group, and external validity", "Recommend broad adoption.", "Recommendations apply only under {institution/group/period} conditions and must consider {external validity/ethical risk}.", "Policy advice must match the evidence scope."]
+    ],
+    "review-writing": [
+      ["Build taxonomy", "Problem, method, data, scenario, or metric", "Summarize existing work.", "Organize literature by {problem/method/data/scenario/metric}, not by paper-by-paper listing.", "The frame should merge related sub-directions and separate unrelated ones."],
+      ["Write consensus and disagreement", "Consensus, controversy, evidence strength, and counterexample", "Findings are inconsistent.", "The literature agrees on {consensus point}, but diverges on {data/assumption/metric/scenario}.", "Consensus, disagreement, and evidence strength need separate layers."],
+      ["Turn gaps into questions", "Data gap, method bottleneck, and evaluation absence", "More research is needed.", "The next gap comes from {data gap/method bottleneck/scenario transfer/evaluation absence} and needs {evidence or experiment}.", "A gap must become an actionable question."]
+    ],
+    general: [
+      ["Raise the problem", "Object, scenario, method, and core tension", "This is an important problem.", "In {scenario}, how can {method/data} address {core tension}.", "Object, scenario, method, and tension must be traceable."],
+      ["Separate contributions", "Theory, method, data, and application", "It is innovative.", "Draftable contributions include {theory/method/data/application}; low-evidence parts are marked separately.", "Separate evidence-backed contributions from unverified ideas."],
+      ["Convert risks", "Data, method, validation, and scope", "There are limitations.", "The current risk is insufficient {data/method/validation/scope}; next add {evidence or experiment}.", "Risks should become concrete evidence tasks."]
+    ]
+  };
+  const journalZh = {
+    "ai-ml": [
+      ["定位贡献层级", "任务、协议、方法差异和结果链", "效果更好。", "在{评价协议}下，本文相对{baseline}改进{指标}，差异来自{模块/机制}。", "主结果、消融和协议必须能相互印证。"],
+      ["压缩方法段", "结构、目标函数、推理流程和复杂度", "方法包括几个模块。", "方法由{模块A/B}和{训练/推理策略}组成，复杂度为{成本/参数/时间}。", "每个模块都要对应公式、伪代码或消融。"],
+      ["解释失败边界", "鲁棒性、域外测试和成本", "仍有局限。", "失败主要出现在{场景/数据/约束}，说明该方法受{泛化/成本/安全}边界影响。", "局限要对应失败案例或域外结果。"]
+    ],
+    transportation: [
+      ["压缩运行问题", "需求、网络约束和安全压力", "交通系统很复杂。", "{交通/空域}系统的关键张力来自{需求增长/安全约束/资源有限}与{运行效率}。", "场景图、需求流和冲突证据要支撑问题压力。"],
+      ["模型化工程约束", "状态变量、约束和策略", "使用算法进行优化。", "模型以{状态变量}表征运行，用{约束}保持安全边界，并通过{策略}优化{指标}。", "工程约束要进入变量或约束表。"],
+      ["区分结果含义", "算法有效、部署条件和管理建议", "方法适合推广。", "结果表明{指标}改善，但部署需要满足{数据/规则/运维}条件。", "不要把仿真结果直接写成政策结论。"]
+    ],
+    biomedicine: [
+      ["限定临床问题", "人群、暴露、终点和设计", "发现重要机制。", "在{人群/样本}中，{暴露/干预}与{endpoint}的关系由{设计/统计}检验。", "样本来源和 endpoint 要支撑临床问题。"],
+      ["报告不确定性", "效应量、置信区间和偏倚", "差异显著。", "{endpoint} 的效应量为{方向/大小}，不确定性和偏倚由{方法}处理。", "结果段不能只依赖 p 值。"],
+      ["划清外推范围", "机制、相关性和临床转化", "可用于治疗。", "结果提示{机制/相关性}，但在{人群/剂量/场景}外仍缺少外部验证。", "临床建议必须有转化证据。"]
+    ],
+    "social-science": [
+      ["连接理论与识别", "理论概念、变量关系和数据策略", "本文研究影响因素。", "本文将{理论概念}转化为{变量关系}，并用{识别策略}检验。", "理论段和方法段的变量要一致。"],
+      ["约束因果语气", "识别假设、稳健性和替代解释", "A 导致 B。", "在{识别假设}成立时，结果支持{变量A}与{变量B}之间的因果解释。", "因果语言必须绑定识别条件。"],
+      ["写清政策边界", "适用制度、群体和时期", "应全面推广。", "政策含义限于{制度/群体/时期}，外部有效性需由{异质性/补充数据}检验。", "政策建议要有适用边界。"]
+    ],
+    "review-writing": [
+      ["提出综合主张", "分类框架、代表论文和证据强度", "本文综述相关研究。", "本文按{分类维度}整合{方向A/方向B}，核心综合主张是{主张}。", "主张要能回到代表论文和证据标签。"],
+      ["比较研究路线", "方法谱系、场景迁移和评价变化", "这些论文方法不同。", "{路线A}强调{方法/场景}，{路线B}强调{数据/评价}，二者在{证据维度}上可比较。", "比较维度必须一致。"],
+      ["收束研究议程", "共识、缺口和下一步问题", "未来还要研究。", "共识集中在{共识}，缺口来自{数据/方法/评价}，下一步应检验{问题}。", "结论要给出可执行研究议程。"]
+    ],
+    general: [
+      ["压缩核心主张", "问题压力、缺口和本文位置", "本文很有意义。", "本文解决{问题压力}下的{缺口}，核心主张是{主张}。", "摘要、引言和结论的主张要一致。"],
+      ["对齐证据链", "章节、图表和证据标签", "结果证明观点。", "第{章节/图表}提供{证据}，用于支撑{主张或边界}。", "正文判断要能追溯到证据标签。"],
+      ["写明边界", "适用范围、失败条件和后续工作", "存在一定不足。", "结论适用于{范围}，但受{数据/方法/场景}限制，后续需要{补证动作}。", "边界、局限和后续动作要分开。"]
+    ]
+  };
+  const journalEn = {
+    "ai-ml": [
+      ["Position contribution level", "Task, protocol, method delta, and result chain", "The method performs better.", "Under {protocol}, the method improves {metric} over {baseline}; the difference comes from {module/mechanism}.", "Main result, ablation, and protocol must cross-check each other."],
+      ["Compress methods prose", "Structure, objective, inference flow, and complexity", "The method has several modules.", "The method consists of {modules} and {train/inference strategy}, with {cost/parameter/time} complexity.", "Each module should map to a formula, pseudocode, or ablation."],
+      ["Explain failure boundary", "Robustness, out-of-domain checks, and cost", "There are limitations.", "Failures concentrate in {scenario/data/constraint}, showing a {generalization/cost/safety} boundary.", "Limitations need failure cases or out-of-domain results."]
+    ],
+    transportation: [
+      ["Compress operations problem", "Demand, network constraints, and safety pressure", "Traffic systems are complex.", "The key tension in {traffic/airspace} systems comes from {demand growth/safety constraint/resource scarcity} and {operational efficiency}.", "Scenario figure, demand flow, and conflict evidence should support problem pressure."],
+      ["Model engineering constraints", "State variables, constraints, and policy", "An algorithm is used for optimization.", "The model represents operations with {state variables}, keeps safety through {constraints}, and optimizes {metric} via {policy}.", "Engineering constraints should enter variables or constraint tables."],
+      ["Separate result implications", "Algorithm validity, deployment condition, and management advice", "The method is ready to promote.", "Results improve {metric}, but deployment requires {data/rule/operation} conditions.", "Do not turn simulation results directly into policy conclusions."]
+    ],
+    biomedicine: [
+      ["Bound clinical question", "Population, exposure, endpoint, and design", "An important mechanism is found.", "In {population/sample}, the relation between {exposure/intervention} and {endpoint} is tested by {design/statistics}.", "Sample source and endpoint must support the clinical question."],
+      ["Report uncertainty", "Effect size, confidence interval, and bias", "The difference is significant.", "The effect on {endpoint} is {direction/size}; uncertainty and bias are handled by {method}.", "Results should not rely only on p-values."],
+      ["Limit generalization", "Mechanism, association, and clinical translation", "It can be used for treatment.", "The result suggests {mechanism/association}, but external validation is still missing beyond {population/dose/scenario}.", "Clinical advice requires translational evidence."]
+    ],
+    "social-science": [
+      ["Connect theory and identification", "Constructs, variable relation, and data strategy", "The paper studies influencing factors.", "The paper translates {theoretical construct} into {variable relation} and tests it with {identification strategy}.", "Variables in theory and methods must align."],
+      ["Constrain causal language", "Identification assumption, robustness, and alternatives", "A causes B.", "Under {identification assumption}, the result supports a causal interpretation between {variable A} and {variable B}.", "Causal language must be tied to identification conditions."],
+      ["State policy boundary", "Institution, group, and time period", "It should be adopted broadly.", "Policy implications are limited to {institution/group/period}; external validity needs {heterogeneity/additional data}.", "Policy advice needs scope conditions."]
+    ],
+    "review-writing": [
+      ["State synthesis claim", "Taxonomy, representative papers, and evidence strength", "This review summarizes related studies.", "This review integrates {direction A/direction B} through {taxonomy dimension}; the central synthesis claim is {claim}.", "The claim must trace back to representative papers and evidence labels."],
+      ["Compare research routes", "Method lineage, scenario transfer, and evaluation shift", "These papers use different methods.", "{Route A} emphasizes {method/scenario}; {route B} emphasizes {data/evaluation}; they are comparable on {evidence dimension}.", "The comparison dimension must be consistent."],
+      ["Close with research agenda", "Consensus, gap, and next question", "Future work is needed.", "Consensus centers on {consensus}; the gap comes from {data/method/evaluation}; next work should test {question}.", "The conclusion should give an actionable research agenda."]
+    ],
+    general: [
+      ["Compress central claim", "Problem pressure, gap, and paper position", "This paper is meaningful.", "The paper addresses {gap} under {problem pressure}; the central claim is {claim}.", "Abstract, introduction, and conclusion claims should align."],
+      ["Align evidence chain", "Section, figure/table, and evidence label", "The results prove the point.", "{Section/figure/table} provides {evidence} to support {claim or boundary}.", "Every judgment should trace to an evidence label."],
+      ["State boundary", "Scope, failure condition, and next work", "There are some limitations.", "The conclusion applies to {scope}, but is limited by {data/method/scenario}; next add {evidence task}.", "Boundary, limitation, and next action should be separate."]
+    ]
+  };
+  const table = zh
+    ? (mode === "journal" ? journalZh : proposalZh)
+    : (mode === "journal" ? journalEn : proposalEn);
+  const rows = table[id] || table.general;
+  return rows.map(([move, focus, weak, strong, check]) => ({ move, focus, weak, strong, check }));
+}
+
+function disciplineReviewerChecklist(promptPackId, labels, mode) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      "是否明确 task、data、metric、baseline 四件套。",
+      "是否用消融、复杂度或失败案例支撑方法差异。",
+      "是否记录域外测试、复现成本和安全/偏置边界。"
+    ],
+    transportation: [
+      "是否明确道路/空域/网络约束、需求流和安全阈值。",
+      "是否把安全、效率、鲁棒性和可扩展性拆成可计算指标。",
+      "是否区分仿真有效、工程部署条件和运行管理建议。"
+    ],
+    biomedicine: [
+      "是否明确纳排标准、比较对象、endpoint 和样本来源。",
+      "是否报告效应量、不确定性、偏倚控制和缺失处理。",
+      "是否区分机制解释、临床相关性和不可外推条件。"
+    ],
+    "social-science": [
+      "是否把理论概念、变量关系和机制假设分开。",
+      "是否说明识别假设、替代解释和稳健性测试。",
+      "政策建议是否绑定制度背景、样本范围和外部有效性。"
+    ],
+    "review-writing": [
+      "分类框架是否能合并相近方向并分开无关方向。",
+      "每个综合主张是否追溯到代表论文、证据强度和反例。",
+      "研究空白是否被转化为可执行的后续问题。"
+    ],
+    general: [
+      "问题、对象、范围和证据边界是否清楚。",
+      "贡献、风险和待补证据是否分开。",
+      "每个判断是否有证据标签或低置信度说明。"
+    ]
+  } : {
+    "ai-ml": [
+      "Are task, data, metric, and baseline all explicit?",
+      "Is the method difference supported by ablation, complexity, or failure cases?",
+      "Are out-of-domain tests, reproduction cost, and safety/bias boundaries recorded?"
+    ],
+    transportation: [
+      "Are road, airspace, or network constraints, demand flow, and safety thresholds explicit?",
+      "Are safety, efficiency, robustness, and scalability converted into measurable criteria?",
+      "Are simulation validity, deployment conditions, and operations implications separate?"
+    ],
+    biomedicine: [
+      "Are eligibility criteria, comparator, endpoint, and sample source explicit?",
+      "Are effect size, uncertainty, bias control, and missing-data handling reported?",
+      "Are mechanism, clinical relevance, and non-generalizable conditions separated?"
+    ],
+    "social-science": [
+      "Are theoretical constructs, variable relations, and mechanism hypotheses separate?",
+      "Are identification assumptions, alternatives, and robustness checks explicit?",
+      "Does policy advice include institution, sample scope, and external-validity boundaries?"
+    ],
+    "review-writing": [
+      "Can the taxonomy merge related directions and separate unrelated ones?",
+      "Does each synthesis claim trace to representative papers, evidence strength, and counter-evidence?",
+      "Is each research gap converted into an actionable follow-up question?"
+    ],
+    general: [
+      "Are the question, object, scope, and evidence boundary clear?",
+      "Are contribution, risk, and missing evidence separated?",
+      "Does every judgment have an evidence label or a low-confidence note?"
+    ]
+  };
+  const modeItem = zh
+    ? (mode === "journal"
+      ? "摘要、引言、方法、结果和讨论是否围绕同一个核心主张闭合。"
+      : "开题/申报文本是否能落到研究问题、技术路线、实验计划和风险控制。")
+    : (mode === "journal"
+      ? "Do abstract, introduction, methods, results, and discussion close around one central claim?"
+      : "Can the proposal text become a research question, technical route, validation plan, and risk control?");
+  return [...(packs[id] || packs.general), modeItem];
+}
+
+function paragraphLevelExamples(promptPackId, labels, mode) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["结果段", "模型效果很好。", "在{数据集}和{评价协议}下，{指标}相对{baseline}提升{数值}，消融显示{模块}贡献最大。", "主结果表、baseline、消融和协议说明。"],
+      ["局限段", "模型仍有一些不足。", "失败主要集中在{域外/长尾/噪声}样本，说明方法受{泛化/成本/安全}边界影响。", "失败案例、域外测试、错误分析和算力成本。"]
+    ],
+    transportation: [
+      ["问题段", "需要提升交通效率。", "不是只提升效率，而是在{安全阈值}下缓解{冲突/拥堵/调度}并评价{延误/吞吐/鲁棒性}。", "需求流、规则约束、冲突率、延误和吞吐指标。"],
+      ["结论段", "方法可以用于实际交通系统。", "结果仅表明在{仿真场景/需求条件}下有效，真实部署还需补充{实测/法规/运维}证据。", "仿真场景、压力测试、实测可得性和运行规则。"]
+    ],
+    biomedicine: [
+      ["研究对象段", "本文研究疾病机制。", "在{样本/队列/实验体系}中，检验{暴露/干预}与{endpoint}之间的关系。", "纳排标准、样本来源、比较对象和 endpoint 定义。"],
+      ["讨论段", "结果有临床价值。", "结果支持{机制/相关性}解释，但在{人群/剂量/场景}外仍缺少外部验证。", "外部验证、阴性结果、安全性和伦理合规证据。"]
+    ],
+    "social-science": [
+      ["理论段", "本文研究因素影响。", "基于{理论/制度背景}，本文检验{变量A}经由{机制}影响{变量B}的假设。", "理论来源、变量定义、替代解释和假设证据。"],
+      ["政策段", "建议推广该政策。", "政策含义仅适用于{制度/群体/时期}条件，外部有效性需由{异质性/补充数据}继续检验。", "异质性结果、制度背景、样本范围和伦理影响。"]
+    ],
+    "review-writing": [
+      ["分类段", "本文总结相关研究。", "本文按{问题/方法/数据/场景}划分文献，使{方向A}和{方向B}可在同一框架下比较。", "分类表、代表论文、检索边界和时间线。"],
+      ["综合段", "未来还需要更多研究。", "当前空白来自{数据缺口/方法瓶颈/评价缺失}，下一步可检验{可执行问题}。", "缺口台账、反例、低置信来源和后续检索计划。"]
+    ],
+    general: [
+      ["问题段", "这个问题很重要。", "在{场景}中，{对象}面临{核心矛盾}，现有证据显示{缺口}。", "摘要、引言、代表论文和边界证据。"],
+      ["贡献段", "本文有创新。", "可写贡献包括{理论/方法/数据/应用}，其中{低证据贡献}需要后续补证。", "贡献句、对比证据、局限和待补文献。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Results paragraph", "The model works well.", "Under {dataset} and {protocol}, {metric} improves over {baseline} by {value}; ablation shows {module} explains most of the gain.", "Main result table, baseline, ablation, and protocol notes."],
+      ["Limitation paragraph", "The model has some limitations.", "Failures concentrate in {out-of-domain/long-tail/noisy} samples, showing a {generalization/cost/safety} boundary.", "Failure cases, out-of-domain tests, error analysis, and compute cost."]
+    ],
+    transportation: [
+      ["Problem paragraph", "Traffic efficiency needs improvement.", "The goal is not only efficiency: under {safety threshold}, reduce {conflict/congestion/dispatch} and evaluate {delay/throughput/robustness}.", "Demand flow, rule constraints, conflict rate, delay, and throughput metrics."],
+      ["Conclusion paragraph", "The method can be used in real traffic systems.", "The result only supports effectiveness under {simulation scenario/demand condition}; deployment still needs {field/regulatory/operations} evidence.", "Simulation scenarios, stress tests, field-data access, and operating rules."]
+    ],
+    biomedicine: [
+      ["Study scope paragraph", "This paper studies a disease mechanism.", "In {sample/cohort/system}, the study tests the relation between {exposure/intervention} and {endpoint}.", "Eligibility criteria, sample source, comparator, and endpoint definition."],
+      ["Discussion paragraph", "The result has clinical value.", "The result supports {mechanism/association}, but external validation is still missing beyond {population/dose/scenario}.", "External validation, negative results, safety, and ethics/compliance evidence."]
+    ],
+    "social-science": [
+      ["Theory paragraph", "The paper studies factor effects.", "Based on {theory/institutional context}, the paper tests whether {variable A} affects {variable B} through {mechanism}.", "Theory source, variable definition, alternatives, and hypothesis evidence."],
+      ["Policy paragraph", "The policy should be adopted broadly.", "The policy implication applies only under {institution/group/period}; external validity needs {heterogeneity/additional data}.", "Heterogeneity, institutional background, sample scope, and ethical impact."]
+    ],
+    "review-writing": [
+      ["Taxonomy paragraph", "This review summarizes related work.", "The review organizes papers by {problem/method/data/scenario}, making {direction A} and {direction B} comparable within one frame.", "Taxonomy table, representative papers, search boundary, and timeline."],
+      ["Synthesis paragraph", "More research is needed.", "The remaining gap comes from {data gap/method bottleneck/evaluation absence}; the next actionable question is {question}.", "Gap ledger, counter-evidence, low-confidence sources, and follow-up search plan."]
+    ],
+    general: [
+      ["Problem paragraph", "This is an important problem.", "In {scenario}, {object} faces {core tension}; current evidence shows {gap}.", "Abstract, introduction, representative papers, and boundary evidence."],
+      ["Contribution paragraph", "The paper is innovative.", "Draftable contributions include {theory/method/data/application}; {low-evidence contribution} needs follow-up evidence.", "Contribution sentence, comparison evidence, limitations, and missing literature."]
+    ]
+  };
+  const modeRow = zh
+    ? (mode === "journal"
+      ? ["投稿定位段", "适合投稿。", "本文适合{期刊/会议/报告类型}，因为{主张}由{方法/结果/证据链}支撑。", "目标读者、文章类型、核心主张和必需证据。"]
+      : ["开题定位段", "这个方向可以做。", "本课题可行性来自{数据/平台/方法基础}，风险集中在{证据缺口/验证成本/范围边界}。", "数据可得性、平台条件、技术路线和风险清单。"])
+    : (mode === "journal"
+      ? ["Venue-positioning paragraph", "It is suitable for submission.", "The work fits {journal/conference/report type} because {claim} is supported by {method/result/evidence chain}.", "Target readers, article type, central claim, and required evidence."]
+      : ["Proposal-positioning paragraph", "This direction is feasible.", "Feasibility comes from {data/platform/method basis}; risks concentrate in {evidence gap/validation cost/scope boundary}.", "Data access, platform conditions, technical route, and risk checklist."]);
+  const rows = [...(packs[id] || packs.general), modeRow];
+  return rows.map(([use, weak, strong, evidence]) => ({ use, weak, strong, evidence }));
+}
+
+function journalLongManuscriptParagraphExamples(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["引言末段", "因此，本文将问题限定为{任务}在{数据/场景}下的{核心瓶颈}，并围绕{评价协议}给出可复核贡献。与已有{baseline/方法族}相比，本文不是只报告总体指标提升，而是进一步检验{关键模块}在{消融/鲁棒性/失败案例}中的作用，从而说明改进来自可解释机制而不是偶然调参。", "任务定义、数据集、评价协议、强 baseline、主结果和消融。", "把贡献句拆成任务边界、方法差异、证据链三句。"],
+      ["实验讨论段", "主结果显示{指标}在{数据集/场景}中相对{baseline}提升{幅度}，但这一结论需要与消融和失败案例一起理解。消融结果表明{模块}对{指标}贡献最大，而在{域外/噪声/长尾}条件下性能下降，提示该方法的适用边界主要来自{数据分布/计算成本/安全约束}。", "主结果、消融、错误分析、域外测试和 compute cost。", "避免把所有结果写成单向性能提升，补上边界解释。"]
+    ],
+    transportation: [
+      ["引言场景段", "{交通/空域}场景中的核心矛盾并非单纯效率不足，而是{需求增长/资源受限}与{安全阈值/运行规则}之间的耦合。本文将研究对象限定为{车辆/无人机/路段/航路}，用{需求流/状态变量}描述运行压力，并以{冲突率/延误/吞吐/鲁棒性}作为综合评价指标。", "场景图、需求流、规则约束、安全阈值和评价指标。", "先写场景边界，再写指标，避免直接进入算法。"],
+      ["讨论落地段", "实验结果表明，在{仿真场景/高压需求}下，所提方法能降低{冲突/延误}并改善{吞吐/鲁棒性}；但这一结论不能直接等同于实际部署效果。真实运行还受{传感器误差/通信延迟/法规边界/运维成本}影响，因此后续需要用{实测数据/硬件在环/管理规则}补足工程验证。", "仿真结果、压力测试、敏感性分析、实测或法规证据。", "把算法有效性、部署条件和管理建议分成三层。"]
+    ],
+    biomedicine: [
+      ["引言问题段", "{疾病/机制}研究的关键不确定性在于{人群/暴露/终点}之间的关系是否稳定。本文基于{队列/样本/实验体系}，将主要终点定义为{endpoint}，并通过{统计模型/实验设计}控制{混杂/偏倚/缺失}，以避免把相关性直接解释为机制或临床效果。", "样本来源、纳排标准、endpoint、统计方法和偏倚控制。", "明确研究对象和统计边界，避免过早写转化价值。"],
+      ["讨论边界段", "结果支持{机制/相关性}解释，但其临床含义仍需谨慎限定。由于{样本来源/剂量/实验平台/随访时间}存在边界，当前证据尚不足以外推到{人群/场景}；后续应通过{外部验证/前瞻队列/机制实验}检验稳定性和安全性。", "外部验证、阴性结果、安全性、伦理和合规证据。", "将临床意义、不可外推范围和下一步验证写在同一段。"]
+    ],
+    "social-science": [
+      ["理论引言段", "围绕{制度/社会问题}，本文将{理论概念}操作化为{变量A}与{变量B}之间的关系，并提出{机制}假设。该设定的关键不在于证明二者存在相关，而在于说明在{制度背景/事件冲击/样本结构}下，哪些替代解释能够被识别策略排除。", "理论来源、变量定义、制度背景、替代解释和识别假设。", "理论段要自然引出识别策略。"],
+      ["政策讨论段", "结果对{政策/管理实践}的启示必须放在{制度/群体/时期}范围内理解。若脱离{样本覆盖/制度约束/执行成本}，本文估计的效应可能不具备外部有效性；因此建议部分应优先说明适用条件、风险和需要进一步验证的群体差异。", "异质性、机制检验、外部有效性、政策边界和伦理影响。", "政策建议前先写适用范围和风险。"]
+    ],
+    "review-writing": [
+      ["综述引言段", "本综述不按单篇论文顺序罗列，而是以{分类维度}组织{方向A/方向B/方向C}。这种框架可以同时处理相近小方向之间的技术联系，以及完全不同方向之间的证据不可比问题，从而把文献整理为{共识/分歧/空白}三类可写综合判断。", "检索边界、代表论文、分类表、方法矩阵和证据强度标签。", "先交代分类原则，再交代综述贡献。"],
+      ["综合评价段", "跨论文证据显示，{共识}已经得到较多支持，但{争议}仍受{数据/评价指标/场景迁移}影响。尤其是{代表论文A}与{代表论文B}在{证据维度}上结论不同，提示下一步研究应优先补齐{数据缺口/方法瓶颈/外部有效性}。", "综合主张、反证、低置信来源、缺口台账和后续检索计划。", "每个综合判断都要连接代表论文和缺口。"]
+    ],
+    general: [
+      ["引言定位段", "本文关注的不是一个孤立现象，而是{场景}中{对象}面临的{核心矛盾}。现有研究已经说明{已有共识}，但在{方法/数据/场景/评价}上仍留下{缺口}，因此本文将主张限定为{可由当前证据支撑的一句话结论}。", "摘要、引言、代表论文、方法和边界证据。", "把问题压力、研究空白和主张收束到同一段。"],
+      ["讨论边界段", "上述结果支持{核心主张}，但其适用范围受到{数据/方法/场景}限制。为了避免过度外推，本文将{可靠结论}与{待验证设想}分开，并把后续工作聚焦在{补证动作/实验/检索}上。", "局限证据、反例、补充实验和后续检索。", "明确区分已证实结论和待验证判断。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Closing introduction paragraph", "This paper therefore bounds the problem as {task} under {data/scenario}, with {core bottleneck} as the main obstacle and {evaluation protocol} as the reviewable test. Compared with {baseline/method family}, the contribution is not only an aggregate metric gain; it also tests whether {key module} explains the improvement through {ablation/robustness/failure case} evidence.", "Task definition, dataset, evaluation protocol, strong baseline, main result, and ablation.", "Split the contribution into task boundary, method difference, and evidence chain."],
+      ["Experiment discussion paragraph", "The main result improves {metric} over {baseline} by {value} on {dataset/scenario}, but this result should be read together with ablations and failure cases. Ablations indicate that {module} explains most of the gain, while performance drops under {out-of-domain/noisy/long-tail} conditions, suggesting that the method is bounded by {data distribution/compute cost/safety constraint}.", "Main result, ablation, error analysis, out-of-domain test, and compute cost.", "Avoid writing all results as one-direction performance gains; add boundary interpretation."]
+    ],
+    transportation: [
+      ["Scenario introduction paragraph", "The central tension in {traffic/airspace} is not efficiency alone, but the coupling between {demand growth/resource scarcity} and {safety threshold/operating rule}. This paper limits the object to {vehicle/UAV/segment/route}, represents pressure with {demand flow/state variables}, and evaluates the method through {conflict rate/delay/throughput/robustness}.", "Scenario figure, demand flow, rule constraints, safety threshold, and metrics.", "Write scenario boundary before algorithm details."],
+      ["Deployment discussion paragraph", "Results show that under {simulation scenario/high demand}, the method reduces {conflict/delay} and improves {throughput/robustness}; however, this should not be equated with deployment readiness. Real operations still depend on {sensor error/communication delay/regulation/maintenance cost}, so future validation should add {field data/hardware-in-the-loop/management rules}.", "Simulation results, stress tests, sensitivity analysis, field or regulatory evidence.", "Separate algorithm validity, deployment conditions, and management implications."]
+    ],
+    biomedicine: [
+      ["Problem introduction paragraph", "The key uncertainty in {disease/mechanism} is whether the relation among {population/exposure/endpoint} is stable. Using {cohort/sample/system}, this paper defines the primary endpoint as {endpoint} and controls {confounding/bias/missingness} through {statistical model/design}, avoiding a direct jump from association to mechanism or clinical effect.", "Sample source, eligibility criteria, endpoint, statistical method, and bias control.", "State object and statistical boundary before translation claims."],
+      ["Discussion boundary paragraph", "The results support a {mechanism/association} interpretation, but clinical meaning remains bounded. Because {sample source/dose/platform/follow-up} is limited, the current evidence should not be generalized to {population/scenario}; future work should test stability and safety through {external validation/prospective cohort/mechanism experiment}.", "External validation, negative results, safety, ethics, and compliance evidence.", "Put clinical meaning, non-generalizable scope, and next validation in one paragraph."]
+    ],
+    "social-science": [
+      ["Theory introduction paragraph", "Around {institution/social issue}, this paper operationalizes {theoretical construct} as the relation between {variable A} and {variable B} and proposes {mechanism}. The point is not simply to show correlation, but to explain which alternatives can be ruled out by the identification strategy under {institutional context/event shock/sample structure}.", "Theory source, variable definition, institutional context, alternatives, and identification assumption.", "Let the theory paragraph lead naturally into identification."],
+      ["Policy discussion paragraph", "Implications for {policy/management practice} should be read within {institution/group/period}. Outside {sample coverage/institutional constraint/implementation cost}, the estimated effect may not generalize; the recommendation should therefore foreground scope conditions, risks, and group differences that still require validation.", "Heterogeneity, mechanism test, external validity, policy boundary, and ethics impact.", "State scope and risk before policy advice."]
+    ],
+    "review-writing": [
+      ["Review introduction paragraph", "This review does not list papers one by one; it organizes {direction A/direction B/direction C} through {taxonomy dimension}. The framework captures technical links among related sub-directions while marking where unrelated directions are not directly comparable, turning the literature into three writable synthesis layers: {consensus/disagreement/gap}.", "Search boundary, representative papers, taxonomy table, method matrix, and evidence-strength labels.", "Explain taxonomy principle before review contribution."],
+      ["Synthesis evaluation paragraph", "Cross-paper evidence suggests that {consensus} is relatively well supported, but {controversy} remains shaped by {data/evaluation metric/scenario transfer}. In particular, {representative paper A} and {representative paper B} diverge on {evidence dimension}, indicating that future work should prioritize {data gap/method bottleneck/external validity}.", "Synthesis claim, counter-evidence, low-confidence sources, gap ledger, and follow-up search plan.", "Connect every synthesis judgment to representative papers and gaps."]
+    ],
+    general: [
+      ["Introduction positioning paragraph", "The paper does not address an isolated phenomenon; it focuses on {core tension} faced by {object} in {scenario}. Prior work has established {consensus}, but {gap} remains in {method/data/scenario/evaluation}, so the paper bounds its central claim as {one evidence-supported claim}.", "Abstract, introduction, representative papers, methods, and boundary evidence.", "Close problem pressure, gap, and claim in the same paragraph."],
+      ["Discussion boundary paragraph", "The results support {central claim}, but the scope is limited by {data/method/scenario}. To avoid overgeneralization, the paper separates {reliable conclusion} from {unverified idea} and focuses follow-up work on {evidence task/experiment/search}.", "Limitation evidence, counterexample, supplementary experiment, and follow-up search.", "Separate proven conclusions from claims still needing evidence."]
+    ]
+  };
+  const rows = packs[id] || packs.general;
+  return rows.map(([section, paragraph, evidence, revision]) => ({ section, paragraph, evidence, revision }));
+}
+
+function journalFullSectionDraftExamples(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["引言章节草稿", "本章节先用{任务场景}说明现有方法在{数据/部署/评价}中的核心瓶颈，再把问题收束为{可检验任务}。随后用两段综述{baseline/方法族}的共同假设和失败模式，指出本文的差异不在于简单替换模型，而在于用{关键模块/训练目标/推理约束}处理{失败模式}。章节末段明确三项贡献：{方法贡献}、{实验贡献}和{可复现/应用贡献}，并说明每项贡献对应的评价协议和图表位置。", "摘要主张、任务定义、代表 baseline、失败案例、贡献列表和评价协议。", "把背景压缩为问题压力和方法缺口，不要扩写无关发展史。"],
+      ["实验与讨论章节草稿", "本章节按主结果、消融、鲁棒性、失败案例和成本五组证据展开。主结果段只回答{核心指标}是否改善；消融段解释{模块}为什么有效；鲁棒性段说明{域外/噪声/长尾}条件下是否稳定；失败案例段界定不可用边界；成本段报告训练、推理和部署开销。章节结尾把改进幅度、边界和复现条件合并为一个审稿人可核查的结论。", "主结果表、消融表、鲁棒性曲线、失败案例、成本表和复现配置。", "每个小节只承担一个判断，避免把所有结果写成性能提升。"]
+    ],
+    transportation: [
+      ["引言章节草稿", "本章节从{交通/空域}运行压力切入，先描述{需求增长/资源受限/安全阈值}如何形成调度或冲突问题，再用已有研究说明{规划/控制/强化学习/管理规则}的适用边界。随后将本文对象限定为{车辆/无人机/路网/航路}，定义运行状态、约束和评价指标，并说明本文要证明的是安全、效率和鲁棒性的平衡，而不是单一指标优化。", "场景图、需求流、规则约束、冲突或延误证据、代表方法和评价指标。", "先写场景边界和安全阈值，再引入算法。"],
+      ["结果与部署讨论章节草稿", "本章节先汇总常规场景下的{延误/吞吐/冲突率}变化，再加入高压需求、通信延迟、传感误差或规则变化下的压力测试。部署讨论不直接声称可落地，而是按数据可得性、运维成本、监管边界和人工接管条件列出必要前提。最后把结果转化为工程建议和管理建议，并标注哪些仍需实测或硬件在环验证。", "仿真结果、压力测试、敏感性分析、运维约束、法规边界和实测计划。", "区分算法有效、工程可行和管理可采纳三类结论。"]
+    ],
+    biomedicine: [
+      ["引言章节草稿", "本章节先界定{疾病/机制/暴露}的临床或生物学重要性，再说明现有研究在{人群/样本/终点/机制验证}上的不确定性。随后明确本文研究对象、纳排边界、主要 endpoint 和待检验假设，避免把相关性提前写成机制或疗效。章节末尾将贡献限定为{证据类型}支持的结论，并交代需要外部验证的部分。", "临床背景、机制证据、样本来源、纳排标准、endpoint 和既有研究缺口。", "不要过早写转化价值，先把研究对象和统计边界写清。"],
+      ["结果与讨论章节草稿", "本章节按主要 endpoint、亚组、敏感性分析、阴性结果和安全性/伦理边界组织。结果段报告效应量、不确定性和偏倚控制；讨论段解释哪些结果支持{机制/相关性}，哪些只能作为探索性发现。章节结尾必须分开写临床意义、不可外推范围和下一步验证，以避免过度解释。", "效应量、置信区间、亚组结果、敏感性分析、阴性结果、安全性和伦理证据。", "每个临床判断都要带上适用人群和外推限制。"]
+    ],
+    "social-science": [
+      ["理论与识别章节草稿", "本章节先把{理论概念}转化为可观察变量，再说明{制度背景/事件冲击/样本结构}为什么能检验{机制}。文献综述只保留与理论路径、替代解释和识别条件相关的研究。章节后半部分写明数据来源、变量构造、识别假设和稳健性计划，使理论命题自然过渡到方法设计。", "理论来源、制度背景、变量定义、替代解释、数据来源和识别假设。", "不要只堆文献，必须让理论段导向识别策略。"],
+      ["结果与政策讨论章节草稿", "本章节先报告主效应，再依次检验机制、异质性和替代解释。政策讨论应限定在{制度/群体/时期}范围内，先说明估计结果能支持什么，再说明不能支持什么。章节末尾把建议分成可立即执行、需要补证和不宜外推三类，避免把统计关系直接写成全面推广。", "主回归、机制检验、异质性、稳健性、政策边界和伦理影响。", "政策建议必须与识别条件和样本范围一致。"]
+    ],
+    "review-writing": [
+      ["综述主体章节草稿", "本章节不按单篇论文排列，而是先声明{分类维度}，再把{方向A/方向B/方向C}放入同一框架。每个小节先写该方向解决的问题，再写代表论文的共同假设、证据强度和可比指标，最后写该方向与其他方向的联系或不可比原因。章节结尾用一段综合判断说明当前共识、主要分歧和低置信证据。", "检索边界、分类矩阵、代表论文、证据强度标签、方法对比和反例。", "每个综合判断都要回到代表论文和证据标签。"],
+      ["综述结论章节草稿", "本章节先压缩全篇的共识和分歧，再把研究空白拆成数据缺口、方法瓶颈、评价缺失和外部有效性四类。随后给出未来研究议程：哪些问题可由现有数据继续验证，哪些需要新数据或新场景，哪些方向目前证据不足不宜合并。结尾保留一段对读者的使用建议，说明该综述适合支撑哪些研究设计。", "共识分歧表、缺口台账、低置信来源、后续检索计划和研究问题卡。", "把未来工作写成可执行问题，不要只写泛泛展望。"]
+    ],
+    general: [
+      ["引言章节草稿", "本章节先说明{场景}中的{对象}为什么面临{核心矛盾}，再用代表论文说明已有共识和仍未解决的缺口。随后把本文主张限定为当前证据可以支撑的一句话，并提前交代方法、数据或案例的边界。章节末尾列出贡献和证据入口，使读者知道正文各部分如何支撑同一主张。", "摘要、引言证据、代表论文、方法边界、贡献列表和证据标签。", "把问题压力、研究空白和核心主张收束在同一逻辑链中。"],
+      ["讨论章节草稿", "本章节先回到核心主张，说明哪些证据已经支持结论，哪些只能作为可能解释。随后分开写适用范围、失败条件、替代解释和后续补证动作。章节结尾把可靠结论、待验证设想和不应外推的判断分成三类，便于读者复核。", "局限证据、反例、补充实验、后续检索和人工复核清单。", "明确区分已证实结论、待验证判断和不可外推部分。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Introduction section draft", "This section starts with {task scenario} to show the core bottleneck in {data/deployment/evaluation}, then narrows the problem to {testable task}. It reviews the shared assumptions and failure modes of {baseline/method family}, making clear that the contribution is not a model replacement alone but a way to handle {failure mode} through {key module/training objective/inference constraint}. The closing paragraph states three contributions: {method contribution}, {experiment contribution}, and {reproducibility/application contribution}, each tied to an evaluation protocol and figure/table location.", "Abstract claim, task definition, representative baselines, failure cases, contribution list, and evaluation protocol.", "Compress background into problem pressure and method gap; avoid unrelated history."],
+      ["Experiments and discussion section draft", "This section is organized by main result, ablation, robustness, failure cases, and cost. The main-result subsection answers whether {core metric} improves; the ablation subsection explains why {module} matters; the robustness subsection tests stability under {out-of-domain/noise/long-tail}; the failure-case subsection defines where the method should not be used; and the cost subsection reports training, inference, and deployment overhead. The section closes with a reviewer-checkable conclusion that combines gain, boundary, and reproduction conditions.", "Main result table, ablation table, robustness curve, failure cases, cost table, and reproduction settings.", "Each subsection should support one judgment instead of describing every result as a gain."]
+    ],
+    transportation: [
+      ["Introduction section draft", "This section begins from operating pressure in {traffic/airspace}, showing how {demand growth/resource scarcity/safety threshold} creates dispatch or conflict problems. It then reviews the boundaries of {planning/control/reinforcement learning/management rules}, limits the study object to {vehicle/UAV/network/route}, defines state, constraints, and metrics, and states that the claim is a balance among safety, efficiency, and robustness rather than a single-metric optimization.", "Scenario figure, demand flow, rule constraints, conflict or delay evidence, representative methods, and metrics.", "Write scenario boundary and safety threshold before algorithm details."],
+      ["Results and deployment discussion section draft", "This section first reports {delay/throughput/conflict rate} under standard scenarios, then adds stress tests under high demand, communication delay, sensor error, or rule changes. Deployment discussion should not claim readiness directly; it lists prerequisites for data access, operations cost, regulatory scope, and human override. The closing paragraphs translate results into engineering and management recommendations while marking which claims still need field or hardware-in-the-loop validation.", "Simulation results, stress tests, sensitivity analysis, operations constraints, regulatory boundary, and field-validation plan.", "Separate algorithm validity, engineering feasibility, and management adoption."]
+    ],
+    biomedicine: [
+      ["Introduction section draft", "This section defines the clinical or biological importance of {disease/mechanism/exposure}, then states uncertainty in {population/sample/endpoint/mechanism validation}. It specifies the study object, eligibility boundary, primary endpoint, and hypothesis without turning association into mechanism or efficacy too early. The closing paragraph bounds the contribution to what {evidence type} can support and names what still needs external validation.", "Clinical context, mechanism evidence, sample source, eligibility criteria, endpoint, and prior-study gap.", "State object and statistical boundary before translation value."],
+      ["Results and discussion section draft", "This section is organized by primary endpoint, subgroup, sensitivity analysis, negative results, and safety/ethics boundary. Results report effect size, uncertainty, and bias control; discussion explains which findings support {mechanism/association} and which remain exploratory. The section must close by separating clinical meaning, non-generalizable scope, and next validation.", "Effect size, confidence interval, subgroup result, sensitivity analysis, negative result, safety, and ethics evidence.", "Attach population scope and generalization limits to every clinical interpretation."]
+    ],
+    "social-science": [
+      ["Theory and identification section draft", "This section turns {theoretical construct} into observable variables and explains why {institutional context/event shock/sample structure} can test {mechanism}. The literature review keeps only studies that clarify theory path, alternatives, or identification conditions. The second half states data source, variable construction, identification assumptions, and robustness plan so that theory leads directly into method design.", "Theory source, institutional context, variable definition, alternatives, data source, and identification assumptions.", "Do not stack citations; make theory lead to identification."],
+      ["Results and policy discussion section draft", "This section reports the main effect first, then mechanism, heterogeneity, and alternative explanations. Policy discussion remains within {institution/group/period}; it states what the estimate supports and what it cannot support. The final paragraphs classify recommendations into immediately actionable, needing more evidence, and not generalizable.", "Main regression, mechanism test, heterogeneity, robustness, policy boundary, and ethics impact.", "Policy advice must match identification conditions and sample scope."]
+    ],
+    "review-writing": [
+      ["Review body section draft", "This section starts by declaring {taxonomy dimension}, then places {direction A/direction B/direction C} inside one framework instead of listing papers. Each subsection states the problem addressed by that direction, the shared assumptions of representative papers, evidence strength, and comparable metrics, then explains links or non-comparability with other directions. The section closes with a synthesis judgment on current consensus, main disagreements, and low-confidence evidence.", "Search boundary, taxonomy matrix, representative papers, evidence-strength labels, method comparison, and counterexamples.", "Every synthesis judgment should trace to representative papers and evidence labels."],
+      ["Review conclusion section draft", "This section compresses consensus and disagreement, then divides gaps into data gaps, method bottlenecks, evaluation absence, and external validity. It proposes a research agenda: which questions can be tested with existing data, which require new data or scenarios, and which directions should not yet be merged because evidence is too weak. The closing paragraph tells readers which research designs the review can safely support.", "Consensus/disagreement table, gap ledger, low-confidence sources, follow-up search plan, and research-question cards.", "Turn future work into executable questions instead of broad outlook text."]
+    ],
+    general: [
+      ["Introduction section draft", "This section first explains why {object} in {scenario} faces {core tension}, then uses representative papers to establish consensus and remaining gaps. It bounds the central claim as one sentence supported by current evidence and names method, data, or case boundaries early. The closing paragraph lists contributions and evidence entry points so readers can see how the body supports one claim.", "Abstract, introduction evidence, representative papers, method boundary, contribution list, and evidence labels.", "Close problem pressure, research gap, and central claim into one logic chain."],
+      ["Discussion section draft", "This section returns to the central claim and separates evidence-supported conclusions from possible explanations. It then states scope, failure conditions, alternatives, and follow-up evidence tasks separately. The final paragraph classifies reliable conclusions, unverified ideas, and claims that should not be generalized.", "Limitation evidence, counterexamples, supplementary experiments, follow-up search, and manual review checklist.", "Separate proven conclusions, unverified judgments, and non-generalizable claims."]
+    ]
+  };
+  const rows = packs[id] || packs.general;
+  return rows.map(([section, draft, evidence, revision]) => ({ section, draft, evidence, revision }));
 }
 
 function proposalDomainChecklist(promptPackId, labels) {
@@ -7629,6 +8397,28 @@ function proposalNoteLabels(outputLanguage) {
       proposalFrame: "选题框架",
       domainWritingFormat: "领域化写作格式",
       promptPack: "提示模板包",
+      writingStructure: "写作结构",
+      disciplineWritingExamples: "学科写作示例",
+      exampleScenario: "写作场景",
+      examplePattern: "可套用表达",
+      exampleEvidenceAnchor: "证据锚点",
+      exampleRevisionCheck: "修订检查",
+      disciplineWritingStyleTemplates: "写作风格模板",
+      styleMove: "写作动作",
+      styleFocus: "表达重点",
+      weakWording: "不建议写法",
+      strongerWording: "更稳妥写法",
+      styleEvidenceCheck: "证据核查",
+      disciplineReviewerChecklist: "分领域审稿核查清单",
+      paragraphLevelExamples: "段落级改写示例",
+      paragraphUse: "段落用途",
+      paragraphWeak: "容易被质疑的写法",
+      paragraphStronger: "建议改写",
+      paragraphEvidence: "需要补齐的证据",
+      writingChecklist: "写作清单",
+      structureSection: "结构单元",
+      writingGoal: "写作目标",
+      evidenceRequirement: "证据要求",
       topic: "拟定题目/方向",
       coreQuestion: "核心科学问题或工程问题",
       researchObject: "研究对象与场景",
@@ -7676,6 +8466,28 @@ function proposalNoteLabels(outputLanguage) {
     proposalFrame: "Proposal Frame",
     domainWritingFormat: "Domain Writing Format",
     promptPack: "Prompt pack",
+    writingStructure: "Writing Structure",
+    disciplineWritingExamples: "Discipline-Style Writing Examples",
+    exampleScenario: "Writing scenario",
+    examplePattern: "Reusable expression",
+    exampleEvidenceAnchor: "Evidence anchor",
+    exampleRevisionCheck: "Revision check",
+    disciplineWritingStyleTemplates: "Writing Style Templates",
+    styleMove: "Writing move",
+    styleFocus: "Focus",
+    weakWording: "Weak wording",
+    strongerWording: "Stronger wording",
+    styleEvidenceCheck: "Evidence check",
+    disciplineReviewerChecklist: "Field-Specific Reviewer Checklist",
+    paragraphLevelExamples: "Paragraph-Level Revision Examples",
+    paragraphUse: "Paragraph use",
+    paragraphWeak: "Questionable wording",
+    paragraphStronger: "Suggested revision",
+    paragraphEvidence: "Evidence to add",
+    writingChecklist: "Writing Checklist",
+    structureSection: "Structure unit",
+    writingGoal: "Writing goal",
+    evidenceRequirement: "Evidence requirement",
     topic: "Working title / direction",
     coreQuestion: "Core scientific or engineering question",
     researchObject: "Research object and scenario",
@@ -7730,10 +8542,20 @@ function renderJournalOutlineMarkdown(context, options = {}) {
   const collectionKey = workbenchCollectionKey(options.item);
   const promptPackId = normalizePromptPackId(options.promptPackId || "general");
   const domainChecklist = journalDomainChecklist(promptPackId, labels);
+  const domainStructure = journalDomainWritingStructure(promptPackId, labels);
+  const venueStructures = journalVenueWritingStructures(labels);
+  const venueCriteria = journalVenueReviewerCriteria(labels);
+  const venueAcceptanceExamples = journalVenueAcceptanceExamples(labels);
+  const disciplineExamples = journalDisciplineWritingExamples(promptPackId, labels);
+  const disciplineStyleTemplates = journalDisciplineWritingStyleTemplates(promptPackId, labels);
+  const reviewerChecklist = journalDisciplineReviewerChecklist(promptPackId, labels);
+  const paragraphExamples = journalParagraphLevelExamples(promptPackId, labels);
+  const manuscriptParagraphExamples = journalLongManuscriptParagraphExamples(promptPackId, labels);
+  const fullSectionDraftExamples = journalFullSectionDraftExamples(promptPackId, labels);
   const sections = journalOutlineSections(labels);
   const lines = [
     "---",
-    "templateVersion: journal-outline-v1",
+    "templateVersion: journal-outline-v5",
     `generatedAt: ${generatedAt}`,
     `collectionKey: ${yamlScalar(collectionKey)}`,
     `focalItemKey: ${yamlScalar(focal.itemKey)}`,
@@ -7761,6 +8583,29 @@ function renderJournalOutlineMarkdown(context, options = {}) {
     `## ${labels.domainWritingFormat}`,
     "",
     `- ${labels.promptPack}: ${mdText(domainChecklist.title)}`,
+    "",
+    ...domainWritingStructureLines(domainStructure, labels),
+    "",
+    ...venueWritingStructureLines(venueStructures, labels),
+    "",
+    ...venueReviewerCriteriaLines(venueCriteria, labels),
+    "",
+    ...venueAcceptanceExampleLines(venueAcceptanceExamples, labels),
+    "",
+    ...disciplineWritingExampleLines(disciplineExamples, labels),
+    "",
+    ...disciplineWritingStyleTemplateLines(disciplineStyleTemplates, labels),
+    "",
+    ...disciplineReviewerChecklistLines(reviewerChecklist, labels),
+    "",
+    ...paragraphLevelExampleLines(paragraphExamples, labels),
+    "",
+    ...longManuscriptParagraphExampleLines(manuscriptParagraphExamples, labels),
+    "",
+    ...fullSectionDraftExampleLines(fullSectionDraftExamples, labels),
+    "",
+    `### ${labels.writingChecklist}`,
+    "",
     ...domainChecklist.items.map((item) => `- [ ] ${item}`),
     "",
     `## ${labels.paperInventory}`,
@@ -7826,6 +8671,88 @@ function journalOverviewDimension(labels) {
     label: labels.evidenceIndex,
     query: "summary abstract method experiment result limitation contribution discussion 摘要 方法 实验 结果 局限 贡献 讨论"
   };
+}
+
+function journalDomainWritingStructure(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["引言：任务与评价协议", "用任务定义、数据设置和评价协议界定本文贡献。", "任务描述、数据集、指标、baseline 和已有方法短板。"],
+      ["方法：架构差异与复杂度", "突出目标函数、模块设计、训练/推理流程和复杂度。", "公式、伪代码、模块消融、参数量、算力和复现设置。"],
+      ["实验：主结果到消融链条", "先给主结果，再给消融、鲁棒性、失败案例和成本。", "主表、消融表、误差分析、域外测试和 compute cost。"],
+      ["讨论：边界与可复现性", "说明泛化边界、安全风险、数据偏差和复现实用性。", "局限、开源条件、伦理/安全说明和后续实验。"]
+    ],
+    transportation: [
+      ["引言：场景与运行问题", "把交通/空域场景、需求流、网络约束和安全压力写清楚。", "场景图、OD/流量、冲突/拥堵证据、法规或运行约束。"],
+      ["方法：状态、约束与策略", "说明状态变量、约束、控制/规划/调度策略和可扩展性。", "数学模型、约束表、策略流程、baseline 和复杂度。"],
+      ["实验：仿真到工程验证", "组织仿真设置、极端工况、指标、消融和运行管理启示。", "仿真平台、场景集、安全/效率指标、压力测试和敏感性分析。"],
+      ["讨论：部署边界", "说明与真实运行、管理规则和政策场景的距离。", "实测可得性、鲁棒性、法规边界和运维建议。"]
+    ],
+    biomedicine: [
+      ["引言：临床/机制问题", "明确疾病、机制、样本来源和研究设计边界。", "临床背景、机制证据、队列来源和 prior studies。"],
+      ["方法：队列与统计", "清楚呈现纳排标准、终点、统计方法和偏倚控制。", "流程图、endpoint、效应量、置信区间、混杂和缺失处理。"],
+      ["结果：效应与不确定性", "把主要结果、亚组、敏感性和阴性结果串起来。", "主结果表、亚组分析、稳健性、负结果和安全性。"],
+      ["讨论：机制与转化边界", "区分相关性、因果性、机制解释和临床外推边界。", "外部验证、伦理合规、临床意义和不可外推条件。"]
+    ],
+    "social-science": [
+      ["引言：理论与问题", "建立理论框架、社会/政策背景和可证伪问题。", "理论来源、制度背景、研究缺口和替代解释。"],
+      ["方法：测量与识别", "说明变量测量、样本、识别策略和稳健性计划。", "数据来源、变量构造、识别假设、控制变量和稳健性检验。"],
+      ["结果：机制与异质性", "组织主效应、机制检验、异质性和替代解释排除。", "主回归、机制证据、分组结果和敏感性分析。"],
+      ["讨论：外部有效性", "说明政策含义、适用边界和伦理/社会影响。", "制度限制、外部有效性、政策边界和后续研究。"]
+    ],
+    "review-writing": [
+      ["引言：综述问题与范围", "明确综述对象、检索边界和本文综合主张。", "检索式、纳入标准、代表论文和研究问题。"],
+      ["主体：分类框架", "按问题、方法、数据、场景或证据强度组织，而不是逐篇罗列。", "分类表、方法矩阵、指标对照和路线图。"],
+      ["综合：共识与分歧", "把跨论文共识、冲突、缺口和证据强弱写成可引用段落。", "综合主张、反证、低置信来源和证据强度标注。"],
+      ["结论：研究议程", "输出未来问题、方法路线、数据需求和可执行建议。", "缺口台账、优先级、外部候选文献和后续检索计划。"]
+    ],
+    general: [
+      ["引言：问题与主张", "压缩问题压力、研究空白和本文一句话主张。", "摘要、引言证据、代表论文和差异化贡献。"],
+      ["方法/主体：证据链", "把方法、材料、案例或论证步骤和证据标签对齐。", "方法段、案例、数据、图表和证据摘录。"],
+      ["结果/分析：主张验证", "用表格、图示或段落证明核心主张。", "主结果、对照、反例、限制条件和图表计划。"],
+      ["讨论：边界和后续", "明确适用范围、局限、风险和下一步研究。", "局限证据、未解问题、补充实验和后续检索。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Introduction: task and protocol", "Use task definition, data setting, and evaluation protocol to frame the contribution.", "Task statement, dataset, metrics, baselines, and prior-method gap."],
+      ["Methods: architecture and complexity", "Highlight objective, module design, train/inference flow, and complexity.", "Formula, pseudocode, module ablation, parameter count, compute, and reproduction settings."],
+      ["Experiments: result-to-ablation chain", "Move from main results to ablation, robustness, failure cases, and cost.", "Main table, ablation table, error analysis, out-of-domain test, and compute cost."],
+      ["Discussion: boundary and reproducibility", "Explain generalization, safety risk, data bias, and reproducibility value.", "Limitations, open artifacts, ethics/safety notes, and follow-up experiments."]
+    ],
+    transportation: [
+      ["Introduction: scenario and operations problem", "Frame traffic/airspace scenario, demand flow, network constraints, and safety pressure.", "Scenario figure, OD/flow, conflict/congestion evidence, regulations, or operational constraints."],
+      ["Methods: states, constraints, and policy", "Explain state variables, constraints, control/planning/scheduling policy, and scalability.", "Mathematical model, constraint table, policy flow, baseline, and complexity."],
+      ["Experiments: simulation to engineering validation", "Organize simulation, extreme scenarios, metrics, ablations, and operational implications.", "Simulator, scenario suite, safety/efficiency metrics, stress tests, and sensitivity analysis."],
+      ["Discussion: deployment boundary", "State the distance from real operations, management rules, and policy scenarios.", "Field-data availability, robustness, regulatory boundary, and maintenance recommendation."]
+    ],
+    biomedicine: [
+      ["Introduction: clinical or mechanism question", "Define disease, mechanism, sample source, and study-design boundary.", "Clinical context, mechanism evidence, cohort source, and prior studies."],
+      ["Methods: cohort and statistics", "Present eligibility, endpoints, statistical method, and bias control clearly.", "Flow diagram, endpoint, effect size, confidence interval, confounding, and missing-data handling."],
+      ["Results: effect and uncertainty", "Connect primary results, subgroups, sensitivity, and negative findings.", "Main results, subgroup analysis, robustness, negative results, and safety."],
+      ["Discussion: mechanism and translation boundary", "Separate association, causality, mechanism, and clinical generalization.", "External validation, ethics/compliance, clinical meaning, and non-generalizable conditions."]
+    ],
+    "social-science": [
+      ["Introduction: theory and question", "Build theory frame, social/policy context, and falsifiable question.", "Theory source, institutional background, research gap, and alternative explanation."],
+      ["Methods: measurement and identification", "Explain measurement, sample, identification strategy, and robustness plan.", "Data source, variable construction, identification assumption, controls, and robustness checks."],
+      ["Results: mechanism and heterogeneity", "Organize main effect, mechanism test, heterogeneity, and exclusion of alternatives.", "Main regression, mechanism evidence, subgroup results, and sensitivity analysis."],
+      ["Discussion: external validity", "State policy implication, applicability boundary, and ethical/social impact.", "Institutional limits, external validity, policy boundary, and future research."]
+    ],
+    "review-writing": [
+      ["Introduction: review question and scope", "Define review object, search boundary, and synthesis claim.", "Search query, inclusion criteria, representative papers, and research questions."],
+      ["Body: taxonomy frame", "Organize by problem, method, data, scenario, or evidence strength instead of paper-by-paper notes.", "Taxonomy table, method matrix, metric comparison, and roadmap."],
+      ["Synthesis: consensus and disagreement", "Turn cross-paper consensus, conflict, gaps, and evidence strength into citable paragraphs.", "Synthesis claim, counter-evidence, low-confidence source, and evidence-strength label."],
+      ["Conclusion: research agenda", "Output future questions, method routes, data needs, and actionable recommendations.", "Gap ledger, priorities, external candidates, and follow-up search plan."]
+    ],
+    general: [
+      ["Introduction: problem and claim", "Compress problem pressure, research gap, and one-sentence claim.", "Abstract, introduction evidence, representative papers, and differentiated contribution."],
+      ["Methods/body: evidence chain", "Align methods, materials, cases, or argument steps with evidence labels.", "Method paragraph, case, data, figure/table, and evidence excerpt."],
+      ["Results/analysis: claim validation", "Use table, figure, or paragraph clusters to prove the core claim.", "Main result, comparison, counterexample, boundary condition, and figure/table plan."],
+      ["Discussion: boundary and next work", "Clarify scope, limitations, risk, and next research step.", "Limitation evidence, open question, supplementary experiment, and follow-up search."]
+    ]
+  };
+  const rows = packs[id] || packs.general;
+  return rows.map(([section, goal, evidence]) => ({ section, goal, evidence }));
 }
 
 function journalDomainChecklist(promptPackId, labels) {
@@ -7898,6 +8825,141 @@ function journalDomainChecklist(promptPackId, labels) {
   return { title, items: packs[id] || packs.general };
 }
 
+function journalVenueWritingStructures(labels) {
+  const zh = labels.language === "zh-CN";
+  const rows = zh ? [
+    ["期刊研究论文", "按引言问题压力、方法细节、主结果、稳健性和局限组织，强调可审稿的证据闭环。", "摘要/引言中的主张、方法细节、主结果表、消融或稳健性、局限证据。", "核心主张能否被图表和实验链条直接支撑。"],
+    ["会议论文", "突出问题新颖性、方法差异、紧凑实验和可复现要点，减少过长背景。", "贡献列表、算法或系统流程、关键对照、消融、开源或复现条件。", "读者是否能在短篇幅内看清差异化贡献。"],
+    ["综述论文", "以分类框架、证据强弱、共识/分歧和研究议程组织，不逐篇罗列。", "检索边界、纳入标准、方法矩阵、综合主张、反证和缺口台账。", "每个综合判断是否能回到代表论文和证据标签。"],
+    ["技术报告", "先写适用场景、系统/方法设计、工程约束和复现实操，再写边界。", "部署场景、接口或流程、数据来源、失败案例、成本和运维约束。", "读者是否能按报告复现或评估落地风险。"],
+    ["政策/管理简报", "用问题、影响、证据、选项、风险和建议组织，避免方法细节压过决策信息。", "政策背景、量化影响、案例证据、利益相关方、风险和可执行建议。", "结论是否能支持明确的行动或决策。"]
+  ] : [
+    ["Journal research article", "Organize problem pressure, method detail, main results, robustness, and limitations into a reviewable evidence chain.", "Abstract/introduction claim, method detail, main-result table, ablation or robustness evidence, and limitation evidence.", "Whether the central claim is directly supported by figures, tables, and experiment flow."],
+    ["Conference paper", "Emphasize novelty, method difference, compact experiments, and reproducibility cues while keeping background short.", "Contribution list, algorithm or system flow, key baselines, ablation, and open or reproduction conditions.", "Whether readers can see the differentiated contribution within a short format."],
+    ["Review article", "Organize by taxonomy, evidence strength, consensus/disagreement, and research agenda instead of paper-by-paper notes.", "Search boundary, inclusion criteria, method matrix, synthesis claims, counter-evidence, and gap ledger.", "Whether each synthesis judgment traces back to representative papers and evidence labels."],
+    ["Technical report", "Start from use case, system/method design, engineering constraints, and reproduction procedure, then state boundaries.", "Deployment scenario, interface or workflow, data source, failure case, cost, and operations constraint.", "Whether readers can reproduce the workflow or assess deployment risk from the report."],
+    ["Policy or management brief", "Use problem, impact, evidence, options, risk, and recommendation; keep methods subordinate to decision needs.", "Policy context, quantified impact, case evidence, stakeholders, risk, and actionable recommendation.", "Whether the conclusion supports a concrete action or decision."]
+  ];
+  return rows.map(([venueType, pattern, evidence, fit]) => ({ venueType, pattern, evidence, fit }));
+}
+
+function journalVenueReviewerCriteria(labels) {
+  const zh = labels.language === "zh-CN";
+  const rows = zh ? [
+    ["期刊研究论文", "审稿人会追问核心主张是否由方法、实验和局限形成闭环。", "主结果表、方法细节、消融或稳健性、局限证据和图表指向同一主张。", "只有主结果，没有稳健性、失败案例或边界讨论。", "补齐主张证据链，并把局限改写成可解释边界。"],
+    ["会议论文", "审稿人会优先判断新颖性、相对 baseline 的差异和短篇幅可复现性。", "贡献列表、关键算法/系统流程、主对照、消融、开源或复现线索。", "问题不够新，方法差异不清，实验只比少量弱 baseline。", "把差异化贡献前置，并用最强 baseline 和消融支撑。"],
+    ["综述论文", "审稿人会判断分类框架是否产生新的综合，而不是文献清单。", "检索边界、纳入排除标准、方法矩阵、综合主张、反证和研究议程。", "逐篇罗列、分类维度松散、缺少反例和证据强度说明。", "重写为分类框架、共识分歧和研究空白三层结构。"],
+    ["技术报告", "读者会检查流程能否复现、成本是否透明、风险是否可执行。", "系统流程、接口/数据来源、失败案例、成本、运维约束和复现实操。", "只有方案描述，没有环境、输入输出、失败条件和成本。", "补充部署清单、复现步骤、失败诊断和维护边界。"],
+    ["政策/管理简报", "读者会判断证据能否支持明确行动，而不是方法展示。", "问题规模、量化影响、利益相关方、方案选项、风险和行动建议。", "方法细节过多，建议与证据范围不匹配。", "按问题、证据、选项、风险、建议重排正文。"]
+  ] : [
+    ["Journal research article", "Reviewers will ask whether methods, results, and limitations close around one central claim.", "Main result table, method detail, ablation or robustness evidence, limitation evidence, and figures all point to the same claim.", "Main results appear without robustness, failure cases, or boundary discussion.", "Complete the claim evidence chain and rewrite limitations as explainable boundaries."],
+    ["Conference paper", "Reviewers will prioritize novelty, difference from baselines, and compact reproducibility.", "Contribution list, key algorithm or system flow, strong baselines, ablation, and open/reproduction cues.", "The problem is not clearly new, method difference is vague, or experiments compare only weak baselines.", "Move the differentiated contribution forward and support it with strong baselines and ablations."],
+    ["Review article", "Reviewers will judge whether the taxonomy creates synthesis instead of a reading list.", "Search boundary, inclusion/exclusion criteria, method matrix, synthesis claims, counter-evidence, and research agenda.", "Paper-by-paper listing, loose taxonomy dimensions, missing counterexamples, or missing evidence-strength labels.", "Rewrite into taxonomy, consensus/disagreement, and research-gap layers."],
+    ["Technical report", "Readers will check whether the workflow is reproducible, costs are transparent, and risks are actionable.", "System flow, interface/data source, failure case, cost, operations constraints, and reproduction steps.", "Only the solution is described; environment, inputs/outputs, failure conditions, and cost are missing.", "Add deployment checklist, reproduction steps, failure diagnostics, and maintenance boundaries."],
+    ["Policy or management brief", "Readers will judge whether evidence supports a concrete action rather than a method demonstration.", "Problem scale, quantified impact, stakeholders, options, risks, and recommendation.", "Method detail dominates, or recommendation does not match evidence scope.", "Reorder as problem, evidence, options, risks, and recommendation."]
+  ];
+  return rows.map(([venueType, expectation, evidence, risk, action]) => ({
+    venueType,
+    expectation,
+    evidence,
+    risk,
+    action
+  }));
+}
+
+function journalVenueAcceptanceExamples(labels) {
+  const zh = labels.language === "zh-CN";
+  const rows = zh ? [
+    ["期刊研究论文", "问题、方法、结果和局限形成单一主张闭环，审稿人能从摘要直接追踪到图表。", "摘要一句话主张、引言缺口、方法细节、主结果、稳健性、失败案例和局限互相指向。", "补齐最强 baseline、关键消融和局限段，把过宽结论改成证据可支撑范围。"],
+    ["会议论文", "短篇幅内能迅速看出新颖点、相对强 baseline 的增量和复现实验入口。", "贡献列表、算法框图、核心实验表、消融、开源说明或复现脚本计划。", "把问题新意和方法差异前置，删除弱背景，保留最能证明差异的实验。"],
+    ["综述论文", "分类框架产生新的综合判断，而不是把论文按年份或作者顺序排列。", "检索流程、纳入排除标准、分类矩阵、共识分歧表、反例和研究议程。", "增加检索流程图和证据强度标签，把逐篇摘要改成综合主张段。"],
+    ["技术报告", "读者能复现流程、估算成本并识别失败条件。", "输入输出、系统流程、环境参数、错误案例、成本表和运维边界。", "补部署清单、故障诊断表和成本假设，避免只写方案优点。"],
+    ["政策/管理简报", "建议直接对应证据范围、影响规模、风险和执行条件。", "问题规模、量化影响、方案对比、利益相关方、风险矩阵和执行步骤。", "把方法细节压缩为附录式证据，把正文重排为问题、证据、选项、风险、建议。"]
+  ] : [
+    ["Journal research article", "Problem, method, results, and limitations close around one claim, and reviewers can trace the abstract claim to figures and tables.", "One-sentence abstract claim, introduction gap, method detail, main results, robustness, failure cases, and limitations all point to the same scope.", "Add the strongest baseline, key ablations, and a limitation paragraph; narrow overbroad claims to the evidence-supported scope."],
+    ["Conference paper", "The short format makes novelty, gain over strong baselines, and reproduction entry points immediately visible.", "Contribution list, algorithm diagram, core result table, ablation, open artifacts, or reproduction plan.", "Move novelty and method difference forward, remove weak background, and keep the experiments that prove the difference."],
+    ["Review article", "A review article becomes acceptable when the taxonomy creates new synthesis rather than ordering papers by year or author.", "Search flow, inclusion/exclusion criteria, taxonomy matrix, consensus/disagreement table, counterexamples, and research agenda.", "Add a search-flow diagram and evidence-strength labels; rewrite paper summaries as synthesis-claim paragraphs."],
+    ["Technical report", "Readers can reproduce the workflow, estimate cost, and identify failure conditions.", "Inputs/outputs, system flow, environment parameters, error cases, cost table, and operations boundaries.", "Add deployment checklist, failure-diagnosis table, and cost assumptions instead of listing only benefits."],
+    ["Policy or management brief", "The recommendation maps directly to evidence scope, impact size, risk, and implementation conditions.", "Problem scale, quantified impact, option comparison, stakeholders, risk matrix, and implementation steps.", "Compress method detail into evidence notes and reorder the body as problem, evidence, options, risks, and recommendation."]
+  ];
+  return rows.map(([venueType, signal, evidence, revision]) => ({
+    venueType,
+    signal,
+    evidence,
+    revision
+  }));
+}
+
+function journalDisciplineWritingExamples(promptPackId, labels) {
+  const id = normalizePromptPackId(promptPackId);
+  const zh = labels.language === "zh-CN";
+  const packs = zh ? {
+    "ai-ml": [
+      ["引言任务段", "已有方法通常在{任务/数据/约束}下评价，但{真实场景/失败模式}仍缺少系统验证。", "任务定义、数据设置、baseline、失败案例和评价协议。", "是否把问题压力、评价协议和本文贡献写在同一逻辑链里。"],
+      ["方法段", "本文方法由{模块A}、{模块B}和{训练/推理策略}组成，关键差异在于{可检验机制}。", "架构图、公式、伪代码、复杂度和复现设置。", "是否能用消融或复杂度分析验证每个模块的必要性。"],
+      ["实验讨论段", "主结果说明{指标提升/成本变化}，消融结果进一步表明{关键模块}贡献最大。", "主结果表、消融表、鲁棒性、失败案例和 compute cost。", "是否把主结果、消融、失败案例和成本放进同一解释框架。"]
+    ],
+    transportation: [
+      ["场景引言段", "{交通/空域}系统的核心矛盾是{需求增长/安全约束/资源有限}与{运行效率}之间的张力。", "OD/流量、冲突或拥堵证据、规则约束和场景图。", "是否明确运营对象、约束来源和安全效率目标。"],
+      ["模型方法段", "模型以{状态变量}描述系统运行，以{约束}保证安全边界，并通过{策略/规划}优化{指标}。", "状态表、约束表、控制/调度流程、baseline 和复杂度。", "是否把工程约束写成模型变量，而不是只写算法流程。"],
+      ["验证启示段", "在{常规/高压/极端}场景下，结果表明该方法对{安全/效率/鲁棒性}的影响存在边界。", "仿真场景、压力测试、敏感性分析、运维或政策边界。", "是否区分算法有效性、部署条件和管理建议。"]
+    ],
+    biomedicine: [
+      ["临床问题段", "{疾病/机制}研究的关键不确定性在于{人群/暴露/终点}关系是否稳定。", "临床背景、队列来源、机制证据和 prior studies。", "是否说明样本来源和研究设计如何支撑问题。"],
+      ["方法统计段", "研究采用{设计/模型/统计方法}估计{endpoint}，并通过{偏倚控制/敏感性分析}评估稳健性。", "流程图、纳排标准、endpoint、效应量和混杂控制。", "是否报告不确定性、缺失处理和偏倚来源。"],
+      ["讨论边界段", "结果支持{机制/相关性}解释，但尚不能外推到{人群/剂量/场景}。", "外部验证、阴性结果、安全性、伦理和合规证据。", "是否明确临床意义和不可外推部分。"]
+    ],
+    "social-science": [
+      ["理论引言段", "围绕{制度/社会问题}，本文把{理论概念}转化为{变量关系}并提出可检验假设。", "理论来源、制度背景、变量定义和替代解释。", "是否从理论问题自然过渡到经验识别。"],
+      ["识别方法段", "识别策略依赖{事件/制度差异/数据结构}，核心假设是{识别假设}。", "数据来源、样本、控制变量、工具变量或准实验设计。", "是否把因果识别条件和稳健性测试写清。"],
+      ["政策讨论段", "结果对{政策/管理实践}的启示受限于{制度背景/样本范围/外部有效性}。", "异质性、机制检验、政策边界和伦理影响。", "是否把政策建议与证据范围对齐。"]
+    ],
+    "review-writing": [
+      ["综述引言段", "本综述围绕{核心问题}，用{分类维度}整合分散在{方向A/方向B}中的研究。", "检索边界、纳入标准、代表论文和研究问题。", "是否用一个大框架容纳相近小方向，并标出完全不同方向。"],
+      ["分类主体段", "第一类研究强调{方法/场景}，第二类研究强调{数据/评价}，二者在{证据维度}上可比较。", "分类表、方法矩阵、指标对照和路线图。", "是否按问题关系组织，而不是按单篇论文顺序堆叠。"],
+      ["综合评价段", "跨论文证据显示{共识}较强，但{争议/缺口}仍由{数据/指标/外部有效性}造成。", "综合主张、反证、低置信来源和证据强度标注。", "是否每个综合判断都能回到代表论文和证据标签。"]
+    ],
+    general: [
+      ["引言主张段", "本文要解决的核心问题是{问题压力}，现有研究的不足集中在{缺口}。", "摘要、引言证据、代表论文和差异化贡献。", "是否一句话说清问题、缺口和本文主张。"],
+      ["主体证据段", "为验证该主张，正文需要把{方法/材料/案例/数据}与{证据标签}逐一对应。", "方法段、案例、数据、图表和证据摘录。", "是否每段都有可追溯证据，而不是只写判断。"],
+      ["讨论边界段", "该结论适用于{范围}，但受到{数据/方法/场景}限制，后续需要{补充工作}。", "局限证据、未解问题、补充实验和后续检索。", "是否把边界、局限和后续工作分开写。"]
+    ]
+  } : {
+    "ai-ml": [
+      ["Introduction task paragraph", "Prior methods are usually evaluated under {task/data/constraint}, but {real scenario/failure mode} remains under-tested.", "Task definition, data setting, baseline, failure case, and evaluation protocol.", "Check that problem pressure, protocol, and contribution form one logic chain."],
+      ["Method paragraph", "The method combines {module A}, {module B}, and {training/inference strategy}; the testable mechanism is {mechanism}.", "Architecture figure, formula, pseudocode, complexity, and reproduction settings.", "Check that each module can be justified by ablation or complexity analysis."],
+      ["Experiment discussion paragraph", "Main results show {metric/cost change}; ablations indicate that {key module} explains most of the effect.", "Main table, ablation table, robustness, failure case, and compute cost.", "Check that main results, ablation, failure cases, and cost share one explanation frame."]
+    ],
+    transportation: [
+      ["Scenario introduction paragraph", "The core tension in {traffic/airspace} systems is between {demand growth/safety constraint/resource scarcity} and {operational efficiency}.", "OD/flow, conflict or congestion evidence, rules, and scenario figure.", "Check that operation object, constraint source, and safety-efficiency target are explicit."],
+      ["Model methods paragraph", "The model represents operations with {state variables}, protects safety through {constraints}, and optimizes {metric} via {policy/planning}.", "State table, constraint table, control or dispatch flow, baseline, and complexity.", "Check that engineering constraints become model variables rather than prose around an algorithm."],
+      ["Validation implication paragraph", "Under {routine/stress/extreme} scenarios, the results show bounded effects on {safety/efficiency/robustness}.", "Simulation suite, stress test, sensitivity analysis, operations or policy boundary.", "Check that algorithm validity, deployment conditions, and management implications stay separate."]
+    ],
+    biomedicine: [
+      ["Clinical question paragraph", "The key uncertainty in {disease/mechanism} is whether the {population/exposure/endpoint} relation is stable.", "Clinical context, cohort source, mechanism evidence, and prior studies.", "Check that sample source and design support the question."],
+      ["Methods statistics paragraph", "The study uses {design/model/statistical method} to estimate {endpoint} and tests robustness through {bias control/sensitivity analysis}.", "Flow diagram, eligibility criteria, endpoint, effect size, and confounding control.", "Check that uncertainty, missing data, and bias sources are reported."],
+      ["Discussion boundary paragraph", "The results support a {mechanism/association} interpretation, but should not be generalized to {population/dose/scenario}.", "External validation, negative result, safety, ethics, and compliance evidence.", "Check that clinical meaning and non-generalizable parts are explicit."]
+    ],
+    "social-science": [
+      ["Theory introduction paragraph", "Around {institution/social issue}, the paper turns {theoretical construct} into {variable relation} and a testable hypothesis.", "Theory source, institutional background, variable definition, and alternative explanation.", "Check that the argument moves naturally from theory to empirical identification."],
+      ["Identification methods paragraph", "Identification relies on {event/institutional variation/data structure}; the core assumption is {identification assumption}.", "Data source, sample, controls, instrument, or quasi-experimental design.", "Check that causal identification conditions and robustness tests are explicit."],
+      ["Policy discussion paragraph", "Implications for {policy/management practice} are bounded by {institutional context/sample scope/external validity}.", "Heterogeneity, mechanism test, policy boundary, and ethics implication.", "Check that recommendations match the evidence scope."]
+    ],
+    "review-writing": [
+      ["Review introduction paragraph", "This review centers on {core question} and uses {taxonomy dimension} to connect studies across {direction A/direction B}.", "Search boundary, inclusion criteria, representative papers, and research questions.", "Check that one framework groups related sub-directions and marks unrelated ones."],
+      ["Taxonomy body paragraph", "One stream emphasizes {method/scenario}; another emphasizes {data/evaluation}; they can be compared on {evidence dimension}.", "Taxonomy table, method matrix, metric comparison, and roadmap.", "Check that organization follows problem relations rather than paper order."],
+      ["Synthesis evaluation paragraph", "Cross-paper evidence supports {consensus}, while {controversy/gap} remains driven by {data/metric/external validity}.", "Synthesis claim, counter-evidence, low-confidence source, and evidence-strength label.", "Check that every synthesis judgment traces to representative papers and evidence labels."]
+    ],
+    general: [
+      ["Introduction claim paragraph", "The core problem is {problem pressure}; prior work leaves a gap around {gap}.", "Abstract, introduction evidence, representative papers, and differentiated contribution.", "Check that problem, gap, and claim fit into one sentence."],
+      ["Body evidence paragraph", "To validate the claim, the body should align {method/material/case/data} with {evidence label}.", "Method paragraph, case, data, figure/table, and evidence excerpt.", "Check that each paragraph has traceable evidence rather than only judgment."],
+      ["Discussion boundary paragraph", "The conclusion applies to {scope}, but is limited by {data/method/scenario}; follow-up should add {next work}.", "Limitation evidence, open question, supplementary experiment, and follow-up search.", "Check that boundary, limitation, and future work are separate."]
+    ]
+  };
+  const rows = packs[id] || packs.general;
+  return rows.map(([scenario, pattern, evidence, check]) => ({ scenario, pattern, evidence, check }));
+}
+
 function journalOutlineLabels(outputLanguage) {
   const zh = /^zh/i.test(String(outputLanguage || ""));
   if (zh) {
@@ -7918,6 +8980,48 @@ function journalOutlineLabels(outputLanguage) {
       requiredEvidence: "必须补齐的证据",
       domainWritingFormat: "领域化写作格式",
       promptPack: "提示模板包",
+      writingStructure: "写作结构",
+      venueWritingExamples: "投稿类型写作结构",
+      venueType: "投稿类型",
+      writingPattern: "写法重点",
+      fitCheck: "适配核查",
+      venueReviewerCriteria: "投稿类型审稿标准",
+      reviewerExpectation: "审稿关注",
+      evidenceToShow: "应展示证据",
+      rejectionRisk: "常见退稿风险",
+      revisionAction: "修订动作",
+      venueAcceptanceExamples: "投稿录用信号示例",
+      acceptanceSignal: "录用信号",
+      manuscriptEvidence: "稿件证据",
+      acceptanceRevision: "投稿前补强",
+      disciplineWritingExamples: "学科写作示例",
+      exampleScenario: "写作场景",
+      examplePattern: "可套用表达",
+      exampleEvidenceAnchor: "证据锚点",
+      exampleRevisionCheck: "修订检查",
+      disciplineWritingStyleTemplates: "写作风格模板",
+      styleMove: "写作动作",
+      styleFocus: "表达重点",
+      weakWording: "不建议写法",
+      strongerWording: "更稳妥写法",
+      styleEvidenceCheck: "证据核查",
+      disciplineReviewerChecklist: "分领域审稿核查清单",
+      paragraphLevelExamples: "段落级改写示例",
+      paragraphUse: "段落用途",
+      paragraphWeak: "容易被质疑的写法",
+      paragraphStronger: "建议改写",
+      paragraphEvidence: "需要补齐的证据",
+      longManuscriptParagraphExamples: "长篇正文段落示例",
+      manuscriptSection: "正文位置",
+      longParagraphDraft: "示例段落",
+      evidencePackage: "证据包",
+      revisionCue: "修订提示",
+      fullSectionDraftExamples: "完整章节级正文草稿",
+      sectionDraft: "章节草稿",
+      writingChecklist: "写作清单",
+      structureSection: "结构单元",
+      writingGoal: "写作目标",
+      evidenceRequirement: "证据要求",
       paperInventory: "论文清单",
       role: "角色",
       evidence: "证据标签",
@@ -7977,6 +9081,48 @@ function journalOutlineLabels(outputLanguage) {
     requiredEvidence: "Evidence still required",
     domainWritingFormat: "Domain Writing Format",
     promptPack: "Prompt pack",
+    writingStructure: "Writing Structure",
+    venueWritingExamples: "Venue-Specific Writing Patterns",
+    venueType: "Venue type",
+    writingPattern: "Writing pattern",
+    fitCheck: "Fit check",
+    venueReviewerCriteria: "Venue-Specific Reviewer Criteria",
+    reviewerExpectation: "Reviewer expectation",
+    evidenceToShow: "Evidence to show",
+    rejectionRisk: "Common rejection risk",
+    revisionAction: "Revision action",
+    venueAcceptanceExamples: "Venue-Specific Acceptance Examples",
+    acceptanceSignal: "Acceptance signal",
+    manuscriptEvidence: "Manuscript evidence",
+    acceptanceRevision: "Pre-submission revision",
+    disciplineWritingExamples: "Discipline-Style Writing Examples",
+    exampleScenario: "Writing scenario",
+    examplePattern: "Reusable expression",
+    exampleEvidenceAnchor: "Evidence anchor",
+    exampleRevisionCheck: "Revision check",
+    disciplineWritingStyleTemplates: "Writing Style Templates",
+    styleMove: "Writing move",
+    styleFocus: "Focus",
+    weakWording: "Weak wording",
+    strongerWording: "Stronger wording",
+    styleEvidenceCheck: "Evidence check",
+    disciplineReviewerChecklist: "Field-Specific Reviewer Checklist",
+    paragraphLevelExamples: "Paragraph-Level Revision Examples",
+    paragraphUse: "Paragraph use",
+    paragraphWeak: "Questionable wording",
+    paragraphStronger: "Suggested revision",
+    paragraphEvidence: "Evidence to add",
+    longManuscriptParagraphExamples: "Longer Manuscript Paragraph Examples",
+    manuscriptSection: "Manuscript section",
+    longParagraphDraft: "Draft paragraph",
+    evidencePackage: "Evidence package",
+    revisionCue: "Revision cue",
+    fullSectionDraftExamples: "Full-Section Manuscript Drafts",
+    sectionDraft: "Section draft",
+    writingChecklist: "Writing Checklist",
+    structureSection: "Structure unit",
+    writingGoal: "Writing goal",
+    evidenceRequirement: "Evidence requirement",
     paperInventory: "Paper Inventory",
     role: "Role",
     evidence: "Evidence label",
@@ -8044,15 +9190,18 @@ function visualExtractionReportData(payload, options = {}) {
   const rawPixelDataDrafts = visualExtractionPixelDataDrafts(answer, tables, images);
   const calibrationAnchors = visualExtractionCalibrationAnchors(answer, tables, rawPixelDataDrafts, images);
   const pixelDataDrafts = visualExtractionApplyAxisCalibration(rawPixelDataDrafts, calibrationAnchors);
+  const chartLayoutDiagnostics = visualExtractionChartLayoutDiagnostics(answer, tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors, images);
   const chartQualityReview = visualExtractionChartQualityReview(chartDataDrafts, pixelDataDrafts, {
     evidenceLabels,
     images,
-    calibrationAnchors
+    calibrationAnchors,
+    chartLayoutDiagnostics
   });
   const chartReviewActions = visualExtractionMergeChartReviewActionState(
     visualExtractionChartReviewActions(chartQualityReview, labels),
     options.previousChartReviewActions || payload?.previousChartReviewActions
   );
+  const chartBatchReviewBoard = visualExtractionChartBatchReviewBoardRows(chartReviewActions, labels);
   return {
     templateVersion: "visual-extraction-report-v2",
     generatedAt,
@@ -8073,6 +9222,8 @@ function visualExtractionReportData(payload, options = {}) {
       name: mdText(image.name || "image"),
       mimeType: mdText(image.mimeType || ""),
       size: Number(image.size) || 0,
+      width: visualExtractionImageDimension(image, "width"),
+      height: visualExtractionImageDimension(image, "height"),
       localOcr: visualExtractionLocalOcrMetadata(image.localOcr)
     })),
     sections,
@@ -8080,8 +9231,10 @@ function visualExtractionReportData(payload, options = {}) {
     chartDataDrafts,
     pixelDataDrafts,
     calibrationAnchors,
+    chartLayoutDiagnostics,
     chartQualityReview,
     chartReviewActions,
+    chartBatchReviewBoard,
     evidenceLabels,
     originalAnswer: answer || "",
     labels
@@ -8096,15 +9249,20 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
   const chartDataDrafts = Array.isArray(data?.chartDataDrafts) ? data.chartDataDrafts : [];
   const pixelDataDrafts = Array.isArray(data?.pixelDataDrafts) ? data.pixelDataDrafts : [];
   const calibrationAnchors = Array.isArray(data?.calibrationAnchors) ? data.calibrationAnchors : [];
+  const chartLayoutDiagnostics = data?.chartLayoutDiagnostics || visualExtractionChartLayoutDiagnostics(data?.originalAnswer || "", tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors, images);
   const chartQualityReview = data?.chartQualityReview || visualExtractionChartQualityReview(chartDataDrafts, pixelDataDrafts, {
     evidenceLabels: data?.evidenceLabels || [],
     images,
-    calibrationAnchors
+    calibrationAnchors,
+    chartLayoutDiagnostics
   });
   const chartReviewActions = Array.isArray(data?.chartReviewActions)
     ? data.chartReviewActions
     : visualExtractionChartReviewActions(chartQualityReview, labels);
-  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors, chartReviewActions);
+  const chartBatchReviewBoard = Array.isArray(data?.chartBatchReviewBoard)
+    ? data.chartBatchReviewBoard
+    : visualExtractionChartBatchReviewBoardRows(chartReviewActions, labels);
+  const reconstructedRows = visualExtractionStructuredRows(tables, chartDataDrafts, pixelDataDrafts, calibrationAnchors, chartReviewActions, chartBatchReviewBoard, chartLayoutDiagnostics);
   const imageInventory = images.length
     ? [
       `| ${labels.imageName} | ${labels.imageType} | ${labels.imageSize} | ${labels.localOcr} |`,
@@ -8129,11 +9287,20 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `chartDataDraftCount: ${chartDataDrafts.length}`,
     `densePointDraftCount: ${visualExtractionDensePointDraftCount(chartDataDrafts)}`,
     `densePointCount: ${visualExtractionDensePointCount(chartDataDrafts)}`,
+    `chartLayoutStatus: ${yamlScalar(chartLayoutDiagnostics.status || "")}`,
+    `chartPanelCount: ${Number(chartLayoutDiagnostics.panelCount) || 0}`,
+    `chartAxisSegmentCount: ${Number(chartLayoutDiagnostics.axisSegmentCount) || 0}`,
+    `chartAxisSegmentCalibrationMapCount: ${Number(chartLayoutDiagnostics.axisSegmentCalibrationMapCount) || 0}`,
+    `chartAxisBreakCueCount: ${Number(chartLayoutDiagnostics.axisBreakCueCount) || 0}`,
+    `chartPanelSplitCandidateCount: ${Number(chartLayoutDiagnostics.panelSplitCandidateCount) || 0}`,
+    `chartPanelSplitValidationStatus: ${yamlScalar(chartLayoutDiagnostics.panelSplitValidationStatus || "")}`,
+    `chartPanelSplitValidationScore: ${Number(chartLayoutDiagnostics.panelSplitValidationScore) || 0}`,
     `pixelDataDraftCount: ${pixelDataDrafts.length}`,
     `calibrationAnchorCount: ${calibrationAnchors.length}`,
     `chartQualityStatus: ${yamlScalar(chartQualityReview.status || "")}`,
     `chartQualityIssueCount: ${Number(chartQualityReview.issueCount) || 0}`,
     `chartReviewActionCount: ${chartReviewActions.length}`,
+    `chartReviewBatchCount: ${chartBatchReviewBoard.length}`,
     `reconstructedDataRowCount: ${reconstructedRows.length}`,
     "---",
     "",
@@ -8175,6 +9342,14 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     "",
     visualExtractionChartQualityReviewMarkdown(chartQualityReview, labels),
     "",
+    `## ${labels.chartLayoutDiagnostics}`,
+    "",
+    visualExtractionChartLayoutDiagnosticsMarkdown(chartLayoutDiagnostics, labels),
+    "",
+    `## ${labels.chartBatchReviewBoard}`,
+    "",
+    chartBatchReviewBoard.length ? visualExtractionChartBatchReviewBoardMarkdown(chartBatchReviewBoard, labels) : `- ${labels.noChartBatchReviewRows}`,
+    "",
     `## ${labels.chartReviewActions}`,
     "",
     chartReviewActions.length ? visualExtractionChartReviewActionsMarkdown(chartReviewActions, labels) : `- ${labels.noChartReviewActions}`,
@@ -8195,6 +9370,7 @@ function renderVisualExtractionReportMarkdownFromData(data, options = {}) {
     `- [ ] ${labels.checkTableNumbers}`,
     `- [ ] ${labels.checkChartDataDrafts}`,
     `- [ ] ${labels.checkPixelDataDrafts}`,
+    `- [ ] ${labels.checkChartLayoutDiagnostics}`,
     `- [ ] ${labels.checkImageEvidence}`,
     `- [ ] ${labels.checkPdfLocation}`,
     `- [ ] ${labels.checkReuse}`,
@@ -8218,7 +9394,9 @@ function renderVisualExtractionReportCsv(data) {
     data?.chartDataDrafts || [],
     data?.pixelDataDrafts || [],
     data?.calibrationAnchors || [],
-    data?.chartReviewActions || []
+    data?.chartReviewActions || [],
+    data?.chartBatchReviewBoard || visualExtractionChartBatchReviewBoardRows(data?.chartReviewActions || [], data?.labels || visualExtractionReportLabels()),
+    data?.chartLayoutDiagnostics || {}
   );
   const header = ["tableIndex", "rowIndex", "column", "value", "evidenceLabels", "sourceAssistantMessageId", "imageNames"];
   const imageNames = (data?.images || []).map((image) => image.name).filter(Boolean).join("; ");
@@ -8327,6 +9505,17 @@ function visualExtractionLocalOcrSummary(localOcr, labels) {
   return localOcr.status;
 }
 
+function visualExtractionImageDimension(image, axis) {
+  const keys = axis === "width"
+    ? ["width", "imageWidth", "naturalWidth", "displayWidth"]
+    : ["height", "imageHeight", "naturalHeight", "displayHeight"];
+  for (const key of keys) {
+    const value = Number(image?.[key]);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return 0;
+}
+
 function visualExtractionTables(answer) {
   return visualExtractionTableBlocks(answer).map((block) => block.markdown);
 }
@@ -8422,7 +9611,7 @@ function visualExtractionDataRow(columns, cells) {
   return row;
 }
 
-function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataDrafts = [], calibrationAnchors = [], chartReviewActions = []) {
+function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataDrafts = [], calibrationAnchors = [], chartReviewActions = [], chartBatchReviewBoard = [], chartLayoutDiagnostics = {}) {
   const rows = [];
   for (const table of tables || []) {
     for (const [rowIndex, row] of (table.rows || []).entries()) {
@@ -8456,6 +9645,7 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       };
       for (const [column, value] of [
         ["source", chart.source || ""],
+        ["panel", point.panel || ""],
         ["series", point.series || ""],
         ["x", point.x || ""],
         ["y", point.y || ""],
@@ -8479,6 +9669,7 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       };
       for (const [column, value] of [
         ["source", draft.source || ""],
+        ["panel", point.panel || ""],
         ["series", point.series || ""],
         ["point", point.point || ""],
         ["pixelX", point.pixelX === null || point.pixelX === undefined ? "" : point.pixelX],
@@ -8505,15 +9696,120 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
     };
     for (const [column, value] of [
       ["source", anchor.source || ""],
+      ["panel", anchor.panel || ""],
       ["axis", anchor.axis || ""],
       ["pixel", anchor.pixel === null || anchor.pixel === undefined ? "" : anchor.pixel],
       ["value", anchor.value || ""],
       ["unit", anchor.unit || ""],
+      ["scale", anchor.scale || ""],
+      ["segment", anchor.segment || ""],
+      ["rangeEndpoint", anchor.rangeEndpoint || ""],
       ["confidence", anchor.confidence || ""],
       ["basis", anchor.basis || ""]
     ]) {
       if (value === "") continue;
       rows.push({ ...base, column, value: mdText(value) });
+    }
+  }
+  for (const [panelIndex, panel] of (chartLayoutDiagnostics?.panels || []).entries()) {
+    const base = {
+      tableIndex: `layout-panel:${panel.label || panelIndex + 1}`,
+      rowIndex: panelIndex + 1,
+      evidenceLabels: panel.evidenceLabels || []
+    };
+    for (const [column, value] of [
+      ["status", panel.status || ""],
+      ["chartPointCount", panel.chartPointCount === null || panel.chartPointCount === undefined ? "" : panel.chartPointCount],
+      ["pixelPointCount", panel.pixelPointCount === null || panel.pixelPointCount === undefined ? "" : panel.pixelPointCount],
+      ["calibrationAnchorCount", panel.calibrationAnchorCount === null || panel.calibrationAnchorCount === undefined ? "" : panel.calibrationAnchorCount],
+      ["sourceTables", (panel.sourceTables || []).join("; ")]
+    ]) {
+      if (value === "") continue;
+      rows.push({ ...base, column, value: mdText(value) });
+    }
+  }
+  for (const [segmentIndex, segment] of (chartLayoutDiagnostics?.axisSegments || []).entries()) {
+    const base = {
+      tableIndex: `layout-segment:${segment.axis || ""}:${segment.segment || segmentIndex + 1}`,
+      rowIndex: segmentIndex + 1,
+      evidenceLabels: segment.evidenceLabels || []
+    };
+    for (const [column, value] of [
+      ["axis", segment.axis || ""],
+      ["segment", segment.segment || ""],
+      ["status", segment.status || ""],
+      ["anchorCount", segment.anchorCount === null || segment.anchorCount === undefined ? "" : segment.anchorCount],
+      ["pixelSpan", segment.pixelSpan === null || segment.pixelSpan === undefined ? "" : segment.pixelSpan],
+      ["pixelStart", segment.pixelStart === null || segment.pixelStart === undefined ? "" : segment.pixelStart],
+      ["pixelEnd", segment.pixelEnd === null || segment.pixelEnd === undefined ? "" : segment.pixelEnd],
+      ["valueStart", segment.valueStart === null || segment.valueStart === undefined ? "" : segment.valueStart],
+      ["valueEnd", segment.valueEnd === null || segment.valueEnd === undefined ? "" : segment.valueEnd],
+      ["valueSpan", segment.valueSpan === null || segment.valueSpan === undefined ? "" : segment.valueSpan],
+      ["unit", segment.unit || ""],
+      ["scale", segment.scale || ""],
+      ["direction", segment.direction || ""],
+      ["calibrationConfidence", segment.calibrationConfidence || ""],
+      ["calibrationRisk", segment.calibrationRisk || ""],
+      ["pixelGapToNextSegment", segment.pixelGapToNextSegment === null || segment.pixelGapToNextSegment === undefined ? "" : segment.pixelGapToNextSegment],
+      ["valueGapToNextSegment", segment.valueGapToNextSegment === null || segment.valueGapToNextSegment === undefined ? "" : segment.valueGapToNextSegment],
+      ["gapStatusToNextSegment", segment.gapStatusToNextSegment || ""],
+      ["gapRiskToNextSegment", segment.gapRiskToNextSegment || ""],
+      ["detail", segment.detail || ""]
+    ]) {
+      if (value === "") continue;
+      rows.push({ ...base, column, value: mdText(value) });
+    }
+  }
+  for (const [cueIndex, cue] of (chartLayoutDiagnostics?.axisBreakCues || []).entries()) {
+    const base = {
+      tableIndex: `layout-axis-break:${cueIndex + 1}`,
+      rowIndex: cueIndex + 1,
+      evidenceLabels: cue.evidenceLabels || []
+    };
+    for (const [column, value] of [
+      ["source", cue.source || ""],
+      ["axis", cue.axis || ""],
+      ["cue", cue.cue || ""],
+      ["status", cue.status || ""],
+      ["confidence", cue.confidence || ""],
+      ["detail", cue.detail || ""]
+    ]) {
+      if (value === "") continue;
+      rows.push({ ...base, column, value: mdText(value) });
+    }
+  }
+  for (const [candidateIndex, candidate] of (chartLayoutDiagnostics?.panelSplitCandidates || []).entries()) {
+    for (const [boxIndex, box] of (candidate.boxes || []).entries()) {
+      const base = {
+        tableIndex: `layout-split:${candidate.imageName || candidateIndex + 1}:${box.panel || boxIndex + 1}`,
+        rowIndex: boxIndex + 1,
+        evidenceLabels: candidate.evidenceLabels || []
+      };
+      for (const [column, value] of [
+        ["imageName", candidate.imageName || ""],
+        ["layout", candidate.layout || ""],
+        ["panel", box.panel || ""],
+        ["x", box.x === null || box.x === undefined ? "" : box.x],
+        ["y", box.y === null || box.y === undefined ? "" : box.y],
+        ["width", box.width === null || box.width === undefined ? "" : box.width],
+        ["height", box.height === null || box.height === undefined ? "" : box.height],
+        ["unit", box.unit || ""],
+        ["confidence", box.confidence || ""],
+        ["validationStatus", candidate.validationStatus || ""],
+        ["validationScore", candidate.validationScore === null || candidate.validationScore === undefined ? "" : candidate.validationScore],
+        ["validationDetail", candidate.validationDetail || ""],
+        ["geometryStatus", candidate.geometryStatus || ""],
+        ["geometryScore", candidate.geometryScore === null || candidate.geometryScore === undefined ? "" : candidate.geometryScore],
+        ["geometryDetail", candidate.geometryDetail || ""],
+        ["columnGutter", candidate.columnGutter === null || candidate.columnGutter === undefined ? "" : candidate.columnGutter],
+        ["rowGutter", candidate.rowGutter === null || candidate.rowGutter === undefined ? "" : candidate.rowGutter],
+        ["missingPanelLabels", (candidate.missingPanelLabels || []).join("; ")],
+        ["evidenceMissingPanelLabels", (candidate.evidenceMissingPanelLabels || []).join("; ")],
+        ["basis", candidate.basis || ""]
+      ]) {
+        if (value === "") continue;
+        rows.push({ ...base, column, value: mdText(value) });
+      }
     }
   }
   for (const [actionIndex, action] of (chartReviewActions || []).entries()) {
@@ -8536,6 +9832,24 @@ function visualExtractionStructuredRows(tables, chartDataDrafts = [], pixelDataD
       ["due", action.due || ""],
       ["notes", action.notes || ""],
       ["detail", action.detail || ""]
+    ]) {
+      if (value === "") continue;
+      rows.push({ ...base, column, value: mdText(value) });
+    }
+  }
+  for (const [batchIndex, batch] of (chartBatchReviewBoard || []).entries()) {
+    const base = {
+      tableIndex: `review-batch:${batchIndex + 1}`,
+      rowIndex: batchIndex + 1,
+      evidenceLabels: []
+    };
+    for (const [column, value] of [
+      ["priority", batch.priority || ""],
+      ["reviewState", batch.reviewState || ""],
+      ["count", batch.count === null || batch.count === undefined ? "" : batch.count],
+      ["blockingIssue", batch.blockingIssue || ""],
+      ["batchAction", batch.batchAction || ""],
+      ["doneCriteria", batch.doneCriteria || ""]
     ]) {
       if (value === "") continue;
       rows.push({ ...base, column, value: mdText(value) });
@@ -8565,6 +9879,13 @@ function visualExtractionChartDraftFromTable(table) {
   const rows = Array.isArray(table?.rows) ? table.rows : [];
   if (!rows.length) return null;
   const columns = Array.isArray(table?.columns) ? table.columns : [];
+  const pixelXColumn = visualExtractionFindColumn(columns, [
+    /^(pixel\s*x|x\s*pixel|px\s*x|image\s*x|screen\s*x|像素\s*x|x\s*像素)$/i
+  ]);
+  const pixelYColumn = visualExtractionFindColumn(columns, [
+    /^(pixel\s*y|y\s*pixel|px\s*y|image\s*y|screen\s*y|像素\s*y|y\s*像素)$/i
+  ]);
+  if (pixelXColumn && pixelYColumn) return null;
   const xColumn = visualExtractionFindColumn(columns, [
     /^(x|x[-_\s]?axis|axis\s*x)$/i,
     /^(item|name|category|condition|dataset|metric|method|model|scenario)$/i,
@@ -8577,6 +9898,8 @@ function visualExtractionChartDraftFromTable(table) {
   ]);
   if (!xColumn || !yColumn) return null;
   const unitColumn = visualExtractionFindColumn(columns, [/^(unit|单位)$/i]);
+  const panelColumn = visualExtractionPanelColumn(columns);
+  const headingPanel = visualExtractionPanelLabelFromText(table.heading || "");
   const seriesColumn = visualExtractionFindColumn(columns, [
     /^(series|legend|group|baseline)$/i,
     /^(图例|系列|分组|基线)$/i
@@ -8589,6 +9912,7 @@ function visualExtractionChartDraftFromTable(table) {
     const x = mdText(row[xColumn] || "");
     const basis = mdText([row[sourceColumn], row[notesColumn]].filter(Boolean).join(" · "));
     return {
+      panel: visualExtractionPanelLabel(row[panelColumn] || headingPanel),
       series: mdText(row[seriesColumn] || ""),
       x,
       y,
@@ -8606,6 +9930,7 @@ function visualExtractionChartDraftFromTable(table) {
     tableIndex: table.tableIndex,
     heading: table.heading || "",
     densePointTable,
+    panelLabels: Array.from(new Set(points.map((point) => point.panel).filter(Boolean))),
     xAxis: xColumn,
     yAxis: yColumn,
     seriesColumn: seriesColumn || "",
@@ -8712,6 +10037,8 @@ function visualExtractionPixelDraftFromTable(table, images = []) {
   const pointColumn = visualExtractionFindColumn(columns, [
     /^(point|point\s*label|label|item|category|点|点位|标签|项目)$/i
   ]);
+  const panelColumn = visualExtractionPanelColumn(columns);
+  const headingPanel = visualExtractionPanelLabelFromText(table.heading || "");
   const seriesColumn = visualExtractionFindColumn(columns, [
     /^(series|legend|group|baseline|line|bar|系列|图例|分组|基线|线|柱)$/i
   ]);
@@ -8721,6 +10048,7 @@ function visualExtractionPixelDraftFromTable(table, images = []) {
   const points = rows.map((row) => {
     const basis = mdText([row[sourceColumn], row[notesColumn]].filter(Boolean).join(" · "));
     return {
+      panel: visualExtractionPanelLabel(row[panelColumn] || headingPanel),
       series: mdText(row[seriesColumn] || ""),
       point: mdText(row[pointColumn] || ""),
       pixelX: visualExtractionNumber(row[pixelXColumn] || ""),
@@ -8737,6 +10065,7 @@ function visualExtractionPixelDraftFromTable(table, images = []) {
     source: "pixel-coordinate-table",
     tableIndex: table.tableIndex,
     imageName: visualExtractionPixelDraftImageName(images),
+    panelLabels: Array.from(new Set(points.map((point) => point.panel).filter(Boolean))),
     reviewStatus: "needs-review",
     evidenceLabels: table.evidenceLabels || [],
     points: points.slice(0, 200)
@@ -8751,6 +10080,7 @@ function visualExtractionPixelDraftFromText(answer, images = []) {
         || line.match(/x\s*[:=]?\s*(-?\d+(?:\.\d+)?)[^\d-]+y\s*[:=]?\s*(-?\d+(?:\.\d+)?)[^\n]*(?:pixel|px|像素)/i);
       if (!match) return null;
       return {
+        panel: visualExtractionPanelLabelFromText(line),
         series: "",
         point: truncateText(line.replace(/\[(?:image|metadata|abstract|chunk:[^\]\s]+|paper\d+:[^\]\s]+)[^\]]*\]/g, "").trim(), 80),
         pixelX: Number(match[1]),
@@ -8801,11 +10131,49 @@ function visualExtractionCalibrationAnchorsFromTable(table, images = []) {
   const valueColumn = visualExtractionFindColumn(columns, [
     /^(value|axis\s*value|tick|tick\s*value|data\s*value|anchor\s*value|值|轴值|軸値|刻度|刻度值|锚点值|錨點值)$/i
   ]);
-  if (!axisColumn || !pixelColumn || !valueColumn) return [];
   const unitColumn = visualExtractionFindColumn(columns, [/^(unit|units|单位|單位)$/i]);
+  const scaleColumn = visualExtractionFindColumn(columns, [/^(scale|axis\s*scale|mapping|transform|尺度|坐标尺度|座標尺度|刻度类型|刻度類型)$/i]);
+  const segmentColumn = visualExtractionFindColumn(columns, [/^(segment|segment\s*id|axis\s*segment|piece|piecewise|区段|區段|分段|段)$/i]);
   const confidenceColumn = visualExtractionFindColumn(columns, [/^(confidence|置信度|certainty|可靠性)$/i]);
   const sourceColumn = visualExtractionFindColumn(columns, [/^(source|来源|來源|evidence|证据|證據|basis|依据|依據)$/i]);
   const notesColumn = visualExtractionFindColumn(columns, [/^(note|notes|备注|備註|说明|說明)$/i]);
+  const pixelStartColumn = visualExtractionFindColumn(columns, [
+    /^(pixel\s*start|start\s*pixel|pixel\s*a|pixel\s*from|pixel\s*min|start\s*px|px\s*start|像素起点|起始像素|像素开始|像素起始)$/i
+  ]);
+  const pixelEndColumn = visualExtractionFindColumn(columns, [
+    /^(pixel\s*end|end\s*pixel|pixel\s*b|pixel\s*to|pixel\s*max|end\s*px|px\s*end|像素终点|结束像素|像素结束|像素终止)$/i
+  ]);
+  const valueStartColumn = visualExtractionFindColumn(columns, [
+    /^(value\s*start|start\s*value|axis\s*value\s*start|tick\s*start|value\s*a|from\s*value|起始值|开始值|轴值起点|刻度起点)$/i
+  ]);
+  const valueEndColumn = visualExtractionFindColumn(columns, [
+    /^(value\s*end|end\s*value|axis\s*value\s*end|tick\s*end|value\s*b|to\s*value|结束值|终点值|轴值终点|刻度终点)$/i
+  ]);
+  const panelColumn = visualExtractionPanelColumn(columns);
+  const headingPanel = visualExtractionPanelLabelFromText(table.heading || "");
+  if (axisColumn && pixelStartColumn && pixelEndColumn && valueStartColumn && valueEndColumn) {
+    return rows.flatMap((row, rowIndex) => visualExtractionCalibrationRangeAnchorsFromRow({
+      row,
+      rowIndex,
+      rowCount: rows.length,
+      table,
+      images,
+      axisColumn,
+      pixelStartColumn,
+      pixelEndColumn,
+      valueStartColumn,
+      valueEndColumn,
+      unitColumn,
+      scaleColumn,
+      segmentColumn,
+      panelColumn,
+      headingPanel,
+      confidenceColumn,
+      sourceColumn,
+      notesColumn
+    }));
+  }
+  if (!axisColumn || !pixelColumn || !valueColumn) return [];
   return rows.map((row) => {
     const axis = visualExtractionAxisName(row[axisColumn]);
     const pixel = visualExtractionNumber(row[pixelColumn] || "");
@@ -8815,15 +10183,65 @@ function visualExtractionCalibrationAnchorsFromTable(table, images = []) {
       source: "axis-calibration-table",
       tableIndex: table.tableIndex,
       imageName: visualExtractionPixelDraftImageName(images),
+      panel: visualExtractionPanelLabel(row[panelColumn] || headingPanel),
       axis,
       pixel,
       value,
       unit: mdText(row[unitColumn] || ""),
+      scale: visualExtractionAxisScaleName(row[scaleColumn] || ""),
+      segment: mdText(row[segmentColumn] || ""),
       confidence: visualExtractionConfidence(row[confidenceColumn] || row[sourceColumn] || ""),
       basis,
       evidenceLabels: visualExtractionEvidenceLabels(Object.values(row).join(" "))
     };
   }).filter((anchor) => anchor.axis && anchor.pixel !== null && anchor.value);
+}
+
+function visualExtractionCalibrationRangeAnchorsFromRow(options = {}) {
+  const {
+    row = {},
+    rowIndex = 0,
+    rowCount = 1,
+    table = {},
+    images = [],
+    axisColumn = "",
+    pixelStartColumn = "",
+    pixelEndColumn = "",
+    valueStartColumn = "",
+    valueEndColumn = "",
+    unitColumn = "",
+    scaleColumn = "",
+    segmentColumn = "",
+    panelColumn = "",
+    headingPanel = "",
+    confidenceColumn = "",
+    sourceColumn = "",
+    notesColumn = ""
+  } = options;
+  const axis = visualExtractionAxisName(row[axisColumn]);
+  const pixelStart = visualExtractionNumber(row[pixelStartColumn] || "");
+  const pixelEnd = visualExtractionNumber(row[pixelEndColumn] || "");
+  const valueStart = mdText(row[valueStartColumn] || "");
+  const valueEnd = mdText(row[valueEndColumn] || "");
+  if (!axis || pixelStart === null || pixelEnd === null || !valueStart || !valueEnd) return [];
+  const segment = mdText(row[segmentColumn] || (rowCount > 1 ? `range-${rowIndex + 1}` : ""));
+  const common = {
+    source: "axis-calibration-range-table",
+    tableIndex: table.tableIndex,
+    imageName: visualExtractionPixelDraftImageName(images),
+    panel: visualExtractionPanelLabel(row[panelColumn] || headingPanel),
+    axis,
+    unit: mdText(row[unitColumn] || ""),
+    scale: visualExtractionAxisScaleName(row[scaleColumn] || ""),
+    segment,
+    confidence: visualExtractionConfidence(row[confidenceColumn] || row[sourceColumn] || ""),
+    basis: mdText([row[sourceColumn], row[notesColumn]].filter(Boolean).join(" · ")),
+    evidenceLabels: visualExtractionEvidenceLabels(Object.values(row).join(" "))
+  };
+  return [
+    { ...common, pixel: pixelStart, value: valueStart, rangeEndpoint: "start" },
+    { ...common, pixel: pixelEnd, value: valueEnd, rangeEndpoint: "end" }
+  ];
 }
 
 function visualExtractionApplyAxisCalibration(pixelDataDrafts = [], calibrationAnchors = []) {
@@ -8872,7 +10290,9 @@ function visualExtractionAxisCalibrationScale(calibrationAnchors = [], axisName)
     ...anchor,
     axis: visualExtractionAxisName(anchor?.axis),
     pixel: Number(anchor?.pixel),
-    numericValue: visualExtractionNumber(anchor?.value)
+    numericValue: visualExtractionNumber(anchor?.value),
+    scale: visualExtractionAxisScaleName(anchor?.scale),
+    segment: mdText(anchor?.segment || "")
   })).filter((anchor) =>
     anchor.axis === axis
     && Number.isFinite(anchor.pixel)
@@ -8880,9 +10300,64 @@ function visualExtractionAxisCalibrationScale(calibrationAnchors = [], axisName)
     && Number.isFinite(anchor.numericValue)
   );
   if (anchors.length < 2) return null;
+  const segmented = visualExtractionSegmentedAxisCalibrationScale(axis, anchors);
+  if (segmented) return segmented;
+  const scaleType = visualExtractionPreferredAxisScale(anchors);
+  const selected = visualExtractionAxisCalibrationPair(anchors, scaleType);
+  if (!selected) return null;
+  const unit = mdText(selected.left.unit || selected.right.unit || "");
+  return {
+    type: scaleType,
+    axis,
+    pixelA: selected.left.pixel,
+    valueA: selected.left.numericValue,
+    pixelB: selected.right.pixel,
+    valueB: selected.right.numericValue,
+    unit,
+    evidenceLabels: Array.from(new Set([...(selected.left.evidenceLabels || []), ...(selected.right.evidenceLabels || [])]))
+  };
+}
+
+function visualExtractionSegmentedAxisCalibrationScale(axis, anchors = []) {
+  const segmentedAnchors = (anchors || []).filter((anchor) => anchor.segment);
+  if (!segmentedAnchors.length) return null;
+  const bySegment = new Map();
+  for (const anchor of segmentedAnchors) {
+    const segment = mdText(anchor.segment);
+    if (!bySegment.has(segment)) bySegment.set(segment, []);
+    bySegment.get(segment).push(anchor);
+  }
+  const segments = [];
+  for (const [segment, segmentAnchors] of bySegment.entries()) {
+    const scaleType = visualExtractionPreferredAxisScale(segmentAnchors);
+    const selected = visualExtractionAxisCalibrationPair(segmentAnchors, scaleType);
+    if (!selected) continue;
+    segments.push({
+      type: scaleType,
+      segment,
+      pixelA: selected.left.pixel,
+      valueA: selected.left.numericValue,
+      pixelB: selected.right.pixel,
+      valueB: selected.right.numericValue,
+      unit: mdText(selected.left.unit || selected.right.unit || ""),
+      evidenceLabels: Array.from(new Set([...(selected.left.evidenceLabels || []), ...(selected.right.evidenceLabels || [])]))
+    });
+  }
+  if (!segments.length) return null;
+  return {
+    type: "segmented",
+    axis,
+    unit: segments.find((segment) => segment.unit)?.unit || "",
+    segments: segments.sort((left, right) => Math.min(left.pixelA, left.pixelB) - Math.min(right.pixelA, right.pixelB)),
+    evidenceLabels: Array.from(new Set(segments.flatMap((segment) => segment.evidenceLabels || [])))
+  };
+}
+
+function visualExtractionAxisCalibrationPair(anchors = [], scaleType = "linear") {
   let selected = null;
   for (let left = 0; left < anchors.length; left += 1) {
     for (let right = left + 1; right < anchors.length; right += 1) {
+      if (scaleType === "log" && (anchors[left].numericValue <= 0 || anchors[right].numericValue <= 0)) continue;
       const pixelSpan = Math.abs(anchors[right].pixel - anchors[left].pixel);
       const valueSpan = Math.abs(anchors[right].numericValue - anchors[left].numericValue);
       if (!pixelSpan || !valueSpan) continue;
@@ -8895,27 +10370,41 @@ function visualExtractionAxisCalibrationScale(calibrationAnchors = [], axisName)
       }
     }
   }
-  if (!selected) return null;
-  const unit = mdText(selected.left.unit || selected.right.unit || "");
-  return {
-    axis,
-    pixelA: selected.left.pixel,
-    valueA: selected.left.numericValue,
-    pixelB: selected.right.pixel,
-    valueB: selected.right.numericValue,
-    unit,
-    evidenceLabels: Array.from(new Set([...(selected.left.evidenceLabels || []), ...(selected.right.evidenceLabels || [])]))
-  };
+  return selected;
+}
+
+function visualExtractionPreferredAxisScale(anchors = []) {
+  return (anchors || []).some((anchor) => visualExtractionAxisScaleName(anchor?.scale) === "log") ? "log" : "linear";
 }
 
 function visualExtractionAxisValueFromPixel(scale, pixel) {
   const numericPixel = Number(pixel);
+  if (scale?.type === "segmented") {
+    const segment = visualExtractionSegmentForPixel(scale.segments || [], numericPixel);
+    return segment ? visualExtractionAxisValueFromPixel(segment, numericPixel) : null;
+  }
   const pixelSpan = Number(scale?.pixelB) - Number(scale?.pixelA);
   const valueSpan = Number(scale?.valueB) - Number(scale?.valueA);
   if (!Number.isFinite(numericPixel) || !Number.isFinite(pixelSpan) || !Number.isFinite(valueSpan) || pixelSpan === 0) {
     return null;
   }
+  if (scale?.type === "log") {
+    if (Number(scale.valueA) <= 0 || Number(scale.valueB) <= 0) return null;
+    const logA = Math.log(Number(scale.valueA));
+    const logB = Math.log(Number(scale.valueB));
+    return Math.exp(logA + ((numericPixel - Number(scale.pixelA)) * (logB - logA) / pixelSpan));
+  }
   return Number(scale.valueA) + ((numericPixel - Number(scale.pixelA)) * valueSpan / pixelSpan);
+}
+
+function visualExtractionSegmentForPixel(segments = [], pixel) {
+  if (!Number.isFinite(Number(pixel))) return null;
+  for (const segment of segments || []) {
+    const minPixel = Math.min(Number(segment.pixelA), Number(segment.pixelB));
+    const maxPixel = Math.max(Number(segment.pixelA), Number(segment.pixelB));
+    if (Number(pixel) >= minPixel && Number(pixel) <= maxPixel) return segment;
+  }
+  return null;
 }
 
 function visualExtractionFormatCalibratedAxisValue(value, unit = "") {
@@ -8930,9 +10419,19 @@ function visualExtractionFormatCalibratedAxisValue(value, unit = "") {
 
 function visualExtractionCalibrationBasis(scale) {
   if (!scale) return "";
+  if (scale.type === "segmented") {
+    const parts = (scale.segments || []).map((segment) => {
+      const left = visualExtractionFormatCalibratedAxisValue(segment.valueA, segment.unit || scale.unit);
+      const right = visualExtractionFormatCalibratedAxisValue(segment.valueB, segment.unit || scale.unit);
+      const label = segment.segment ? `${segment.segment} ` : "";
+      return `${label}${segment.pixelA}px=${left}, ${segment.pixelB}px=${right}`;
+    }).filter(Boolean);
+    return parts.length ? `segmented ${scale.axis} calibration: ${parts.join("; ")}` : "";
+  }
   const left = visualExtractionFormatCalibratedAxisValue(scale.valueA, scale.unit);
   const right = visualExtractionFormatCalibratedAxisValue(scale.valueB, scale.unit);
-  return `linear ${scale.axis} calibration: ${scale.pixelA}px=${left}, ${scale.pixelB}px=${right}`;
+  const type = scale.type === "log" ? "log" : "linear";
+  return `${type} ${scale.axis} calibration: ${scale.pixelA}px=${left}, ${scale.pixelB}px=${right}`;
 }
 
 function visualExtractionMergeBasis(existing, addition) {
@@ -8947,6 +10446,13 @@ function visualExtractionAxisName(value) {
   return text;
 }
 
+function visualExtractionAxisScaleName(value) {
+  const text = mdText(value).toLowerCase();
+  if (!text) return "";
+  if (/log|log10|logarithmic|对数|對數|ログ/.test(text)) return "log";
+  return "linear";
+}
+
 function visualExtractionNumericTextPoints(text) {
   return String(text || "").split(/\r?\n/)
     .map((line) => mdText(line.replace(/^[-*]\s*/, "")))
@@ -8957,6 +10463,7 @@ function visualExtractionNumericTextPoints(text) {
       const unitMatch = line.match(/[-+]?\d+(?:\.\d+)?\s*([%a-zA-Z\u4e00-\u9fff/]+)?/);
       const label = line.replace(/[-+]?\d+(?:\.\d+)?\s*[%a-zA-Z\u4e00-\u9fff/]*.*/, "").replace(/[:：,，\-–—]+$/, "").trim() || line.slice(0, 80);
       return {
+        panel: visualExtractionPanelLabelFromText(line),
         series: "",
         x: label,
         y: unitMatch ? unitMatch[0].trim() : line,
@@ -8986,6 +10493,51 @@ function visualExtractionLooksLikeDataLine(line) {
   if (/(毫秒|秒|分钟|小时|像素|公里|米|厘米|毫米|样本|轮次|步|次|帧|点)/.test(token)) return true;
   if (/[:：]/.test(text)) return true;
   return visualExtractionEvidenceLabels(text).length > 0;
+}
+
+function visualExtractionPanelColumn(columns = []) {
+  return visualExtractionFindColumn(columns, [
+    /^(panel|subplot|subplot\s*id|subfigure|subfigure\s*id|figure\s*panel|part|分面|面板|子图|子圖|图板|圖板)$/i
+  ]);
+}
+
+function visualExtractionPanelLabel(value) {
+  const text = mdText(value || "");
+  if (!text) return "";
+  const match = text.match(/(?:\bpanel\b|\bsubplot\b|\bsubfigure\b|\bpart\b|子图|子圖|面板|分面)\s*[\(:：-]?\s*([A-Za-z0-9]+)\)?/i)
+    || text.match(/(?:fig(?:ure)?\.?|图|圖)\s*[\(:：-]\s*([A-Za-z0-9]+)\)?/i)
+    || text.match(/^\(?([A-Za-z])\)?$/)
+    || text.match(/^([A-Za-z0-9]+)$/);
+  const token = match ? String(match[1] || "") : "";
+  if (visualExtractionPanelLabelStopword(token)) return "";
+  return match ? `Panel ${token.toUpperCase()}` : truncateText(text, 40);
+}
+
+function visualExtractionPanelLabelStopword(value) {
+  return /^(fig|figure|chart|plot|table|image|photo|with|and|or|the|this|that|multi|panel|subplot|subfigure|part|图|圖|表|图片|圖片|图像|圖像)$/i.test(String(value || "").trim());
+}
+
+function visualExtractionPanelLabelFromText(value) {
+  return visualExtractionPanelLabelsFromText(value)[0] || "";
+}
+
+function visualExtractionPanelLabelsFromText(value) {
+  const text = String(value || "");
+  const labels = [];
+  const patterns = [
+    /(?:\bpanel\b|\bsubplot\b|\bsubfigure\b|\bpart\b)\s*[\(:：-]?\s*([A-Za-z0-9]+)\)?/gi,
+    /fig(?:ure)?\.?\s*[\(:：-]\s*([A-Za-z0-9]+)\)?/gi,
+    /(?:子图|子圖|面板|分面)\s*[\(:：-]?\s*([A-Za-z0-9]+)\)?/g,
+    /(?:图|圖)\s*[\(:：-]\s*([A-Za-z0-9]+)\)?/g
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text))) {
+      const label = visualExtractionPanelLabel(match[1]);
+      if (label && !labels.includes(label)) labels.push(label);
+    }
+  }
+  return labels.slice(0, 24);
 }
 
 function visualExtractionFindColumn(columns, patterns) {
@@ -9083,8 +10635,8 @@ function visualExtractionPixelDataDraftsMarkdown(drafts, labels) {
 
 function visualExtractionCalibrationAnchorsMarkdown(anchors, labels) {
   const lines = [
-    `| ${labels.anchor} | ${labels.source} | ${labels.axis} | ${labels.pixelPosition} | ${labels.axisValue} | ${labels.unit} | ${labels.confidence} | ${labels.evidenceLabels} |`,
-    "| --- | --- | --- | ---: | --- | --- | --- | --- |"
+    `| ${labels.anchor} | ${labels.source} | ${labels.axis} | ${labels.pixelPosition} | ${labels.axisValue} | ${labels.unit} | ${labels.confidence} | ${labels.evidenceLabels} | ${labels.scale} | ${labels.segment} |`,
+    "| --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |"
   ];
   for (const anchor of anchors || []) {
     lines.push([
@@ -9095,7 +10647,809 @@ function visualExtractionCalibrationAnchorsMarkdown(anchors, labels) {
       markdownTableCell(anchor.value || ""),
       markdownTableCell(anchor.unit || ""),
       markdownTableCell(anchor.confidence || ""),
-      markdownTableCell((anchor.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+      markdownTableCell((anchor.evidenceLabels || []).join(", ") || labels.noEvidenceLabels),
+      markdownTableCell(anchor.scale || ""),
+      markdownTableCell(anchor.segment || "")
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+  }
+  return lines.join("\n");
+}
+
+function visualExtractionChartLayoutDiagnostics(answer, tables = [], chartDataDrafts = [], pixelDataDrafts = [], calibrationAnchors = [], images = []) {
+  const panelMap = new Map();
+  const ensurePanel = (label) => {
+    const normalized = visualExtractionPanelLabel(label);
+    if (!normalized) return null;
+    if (!panelMap.has(normalized)) {
+      panelMap.set(normalized, {
+        label: normalized,
+        chartPointCount: 0,
+        pixelPointCount: 0,
+        calibrationAnchorCount: 0,
+        sourceTables: [],
+        evidenceLabels: []
+      });
+    }
+    return panelMap.get(normalized);
+  };
+  for (const label of visualExtractionPanelLabelsFromText(answer)) ensurePanel(label);
+  for (const table of tables || []) {
+    const tableLabels = visualExtractionPanelLabelsFromText(table?.heading || "");
+    const panelColumn = visualExtractionPanelColumn(table?.columns || []);
+    if (panelColumn) {
+      for (const row of table?.rows || []) {
+        const panel = ensurePanel(row[panelColumn]);
+        if (panel) {
+          if (!panel.sourceTables.includes(table.tableIndex)) panel.sourceTables.push(table.tableIndex);
+          panel.evidenceLabels.push(...(table.evidenceLabels || []));
+        }
+      }
+    }
+    for (const label of tableLabels) {
+      const panel = ensurePanel(label);
+      if (panel && !panel.sourceTables.includes(table.tableIndex)) panel.sourceTables.push(table.tableIndex);
+    }
+  }
+  for (const draft of chartDataDrafts || []) {
+    for (const label of draft.panelLabels || []) ensurePanel(label);
+    for (const point of draft.points || []) {
+      const panel = ensurePanel(point.panel);
+      if (!panel) continue;
+      panel.chartPointCount += 1;
+      panel.evidenceLabels.push(...(draft.evidenceLabels || []), ...(point.evidenceLabels || []));
+      if (draft.tableIndex && !panel.sourceTables.includes(draft.tableIndex)) panel.sourceTables.push(draft.tableIndex);
+    }
+  }
+  for (const draft of pixelDataDrafts || []) {
+    for (const label of draft.panelLabels || []) ensurePanel(label);
+    for (const point of draft.points || []) {
+      const panel = ensurePanel(point.panel);
+      if (!panel) continue;
+      panel.pixelPointCount += 1;
+      panel.evidenceLabels.push(...(draft.evidenceLabels || []), ...(point.evidenceLabels || []));
+      if (draft.tableIndex && !panel.sourceTables.includes(draft.tableIndex)) panel.sourceTables.push(draft.tableIndex);
+    }
+  }
+  for (const anchor of calibrationAnchors || []) {
+    const panel = ensurePanel(anchor.panel);
+    if (!panel) continue;
+    panel.calibrationAnchorCount += 1;
+    panel.evidenceLabels.push(...(anchor.evidenceLabels || []));
+    if (anchor.tableIndex && !panel.sourceTables.includes(anchor.tableIndex)) panel.sourceTables.push(anchor.tableIndex);
+  }
+  const panels = Array.from(panelMap.values()).map((panel) => {
+    const hasData = panel.chartPointCount > 0 || panel.pixelPointCount > 0 || panel.calibrationAnchorCount > 0;
+    return {
+      ...panel,
+      sourceTables: panel.sourceTables.sort((left, right) => Number(left) - Number(right)),
+      evidenceLabels: Array.from(new Set(panel.evidenceLabels.filter(Boolean))),
+      status: hasData ? "covered" : "needs-review"
+    };
+  }).sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }));
+  const text = String(answer || "");
+  const multiPanelMentioned = panels.length > 1 || (images || []).length > 1 || /multi[-\s]?panel|subplot|subfigure|分面|面板|子图|子圖|多图|多圖/i.test(text);
+  const axisSegments = visualExtractionAxisSegmentDiagnostics(calibrationAnchors);
+  const axisBreakCues = visualExtractionAxisBreakCues(text, tables, axisSegments);
+  const discontinuousAxisDetected = axisSegments.length > 0 || axisBreakCues.length > 0;
+  const panelSplitCandidates = visualExtractionPanelSplitCandidates(images, panels, text, multiPanelMentioned);
+  const panelSplitValidation = visualExtractionPanelSplitValidation(panelSplitCandidates, panels, multiPanelMentioned);
+  const panelNeedsReview = multiPanelMentioned && (!panels.length || panels.some((panel) => panel.status !== "covered"));
+  const segmentNeedsReview = discontinuousAxisDetected && (!axisSegments.length || axisSegments.some((segment) => segment.status !== "covered"));
+  const status = panelNeedsReview
+    ? "needs-panel-review"
+    : segmentNeedsReview
+      ? "needs-segment-review"
+      : multiPanelMentioned || discontinuousAxisDetected
+        ? "layout-reviewable"
+        : "layout-clear";
+  return {
+    status,
+    panelCount: panels.length,
+    axisSegmentCount: axisSegments.length,
+    axisSegmentCalibrationMapCount: axisSegments.filter((segment) => segment.status === "covered").length,
+    axisBreakCueCount: axisBreakCues.length,
+    panelSplitCandidateCount: panelSplitCandidates.reduce((sum, candidate) => sum + (candidate.boxes || []).length, 0),
+    panelSplitValidationStatus: panelSplitValidation.status,
+    panelSplitValidationScore: panelSplitValidation.score,
+    panelSplitValidationDetail: panelSplitValidation.detail,
+    multiPanelDetected: !!multiPanelMentioned,
+    discontinuousAxisDetected: !!discontinuousAxisDetected,
+    panels,
+    axisSegments,
+    axisBreakCues,
+    panelSplitCandidates
+  };
+}
+
+function visualExtractionAxisBreakCues(answerText = "", tables = [], axisSegments = []) {
+  const cues = [];
+  const seen = new Set();
+  const pushCue = (cue) => {
+    const normalized = `${cue.source || ""}::${cue.axis || ""}::${cue.cue || ""}::${cue.detail || ""}`.toLowerCase();
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    cues.push({
+      source: cue.source || "textual-cue",
+      axis: cue.axis || "",
+      cue: cue.cue || "axis break",
+      status: cue.status || "needs-review",
+      confidence: cue.confidence || "medium",
+      detail: mdText(cue.detail || ""),
+      evidenceLabels: cue.evidenceLabels || []
+    });
+  };
+  const sources = [
+    { source: "answer-text", text: answerText, evidenceLabels: visualExtractionEvidenceLabels(answerText) },
+    ...(tables || []).map((table) => ({
+      source: table?.heading ? `table:${table.tableIndex}:${table.heading}` : `table:${table?.tableIndex || ""}`,
+      text: [table?.heading || "", table?.markdown || ""].join("\n"),
+      evidenceLabels: table?.evidenceLabels || []
+    }))
+  ];
+  for (const source of sources) {
+    for (const match of visualExtractionAxisBreakCueMatches(source.text)) {
+      pushCue({
+        source: source.source,
+        axis: match.axis,
+        cue: match.cue,
+        status: "needs-review",
+        confidence: match.confidence,
+        detail: match.detail,
+        evidenceLabels: source.evidenceLabels
+      });
+    }
+  }
+  for (const segment of axisSegments || []) {
+    if (!segment?.axis || !segment?.segment) continue;
+    pushCue({
+      source: "segmented-calibration",
+      axis: segment.axis,
+      cue: "segmented axis calibration",
+      status: segment.status || "needs-review",
+      confidence: segment.status === "covered" ? "high" : "medium",
+      detail: `${segment.axis} ${segment.segment}: ${segment.detail || ""}`.trim(),
+      evidenceLabels: segment.evidenceLabels || []
+    });
+  }
+  return cues.slice(0, 16);
+}
+
+function visualExtractionAxisBreakCueMatches(text = "") {
+  const source = String(text || "");
+  if (!source.trim()) return [];
+  const cuePatterns = [
+    { cue: "broken axis", pattern: /broken[-\s]?axis|axis\s*break|break\s*mark|axis\s*discontinu(?:ity|ities)|discontinuous\s*axis|segmented\s*axis|piecewise\s*axis/i, confidence: "medium" },
+    { cue: "zigzag break mark", pattern: /zig[-\s]?zag|jagged|sawtooth|saw[-\s]?tooth|wavy\s*(?:line|mark)|\/\/|double\s*slash/i, confidence: "medium" },
+    { cue: "visible axis gap", pattern: /visible\s+axis\s+gap|axis\s+gap|gap\s+between\s+(?:axis\s+)?segments?|gap\s+between\s+(?:visible\s+)?(?:ranges?|ticks?|values?)|gap\s+on\s+(?:the\s+)?axis|omitted\s+range|non[-\s]?contiguous\s+(?:axis|range)/i, confidence: "medium" },
+    { cue: "断轴视觉线索", pattern: /断轴|斷軸|断裂轴|斷裂軸|坐标轴断裂|坐標軸斷裂|不连续轴|不連續軸|分段轴|分段坐标轴|省略区间|省略區間|轴间隙|軸間隙|双斜线|雙斜線|波浪线|波浪線|锯齿|鋸齒/i, confidence: "medium" },
+    { cue: "軸ブレーク", pattern: /軸ブレーク|軸切断|不連続軸|区切り軸|波線|二重スラッシュ|省略区間/i, confidence: "medium" }
+  ];
+  const matches = [];
+  for (const item of cuePatterns) {
+    const match = source.match(item.pattern);
+    if (!match) continue;
+    matches.push({
+      cue: item.cue,
+      axis: visualExtractionAxisFromCueContext(source, match.index || 0),
+      confidence: item.confidence,
+      detail: visualExtractionCueSnippet(source, match.index || 0)
+    });
+  }
+  return matches;
+}
+
+function visualExtractionAxisFromCueContext(text = "", index = 0) {
+  const start = Math.max(0, Number(index) - 80);
+  const end = Math.min(String(text || "").length, Number(index) + 120);
+  const context = String(text || "").slice(start, end);
+  if (/(?:^|[^A-Za-z])Y(?:[^A-Za-z]|$)|y[-\s]?axis|vertical\s+axis|纵轴|縱軸|纵坐标|縱座標|Y轴|Y 軸|Y軸/i.test(context)) return "Y";
+  if (/(?:^|[^A-Za-z])X(?:[^A-Za-z]|$)|x[-\s]?axis|horizontal\s+axis|横轴|橫軸|横坐标|橫座標|X轴|X 軸|X軸/i.test(context)) return "X";
+  return "";
+}
+
+function visualExtractionCueSnippet(text = "", index = 0) {
+  const source = String(text || "").replace(/\s+/g, " ").trim();
+  const position = Math.max(0, Number(index) || 0);
+  const start = Math.max(0, position - 80);
+  const end = Math.min(source.length, position + 140);
+  return source.slice(start, end);
+}
+
+function visualExtractionPanelSplitCandidates(images = [], panels = [], answerText = "", multiPanelMentioned = false) {
+  const imageList = Array.isArray(images) ? images : [];
+  if (!imageList.length) return [];
+  const panelLabels = visualExtractionPanelSplitLabels(panels, answerText);
+  const hintedCount = panelLabels.length || visualExtractionPanelCountHint(answerText);
+  const panelCount = hintedCount > 1 ? Math.min(hintedCount, 12) : (multiPanelMentioned && imageList.length === 1 ? 2 : 0);
+  if (panelCount <= 1) return [];
+  const labels = panelLabels.length >= panelCount ? panelLabels.slice(0, panelCount) : visualExtractionDefaultPanelLabels(panelCount, panelLabels);
+  return imageList.slice(0, 6).map((image) => {
+    const width = Number(image?.width) || 0;
+    const height = Number(image?.height) || 0;
+    const layout = visualExtractionPanelSplitLayout(panelCount, width, height);
+    const unit = width > 0 && height > 0 ? "px" : "%";
+    const geometryHints = visualExtractionPanelSplitGeometryHints(answerText, width, height, unit);
+    const boxes = visualExtractionPanelSplitBoxes(labels, layout, width, height, unit, geometryHints);
+    const geometry = visualExtractionPanelSplitGeometryQuality(boxes, layout, width, height, unit, geometryHints);
+    const baseBasis = width > 0 && height > 0
+      ? `even ${layout.rows}x${layout.columns} split from parsed panel labels; verify against figure gutters`
+      : `normalized even ${layout.rows}x${layout.columns} split from parsed panel labels; add image dimensions or crop panels for precise boxes`;
+    const candidate = {
+      imageName: mdText(image?.name || "image"),
+      width,
+      height,
+      panelCount,
+      layout: layout.label,
+      source: "heuristic-panel-split",
+      status: "needs-review",
+      basis: geometry.hasExplicitGutter ? `${baseBasis}; ${geometry.detail}` : baseBasis,
+      columnGutter: geometry.columnGutter,
+      rowGutter: geometry.rowGutter,
+      geometryStatus: geometry.status,
+      geometryScore: geometry.score,
+      geometryDetail: geometry.detail,
+      evidenceLabels: visualExtractionEvidenceLabels(answerText),
+      boxes
+    };
+    return {
+      ...candidate,
+      ...visualExtractionPanelSplitCandidateValidation(candidate, panels)
+    };
+  });
+}
+
+function visualExtractionPanelSplitValidation(candidates = [], panels = [], multiPanelMentioned = false) {
+  const candidateList = Array.isArray(candidates) ? candidates : [];
+  if (!multiPanelMentioned) {
+    return { status: "not-needed", score: 100, detail: "single-panel layout or no multi-panel cue" };
+  }
+  if (!candidateList.length) {
+    return { status: "missing", score: 0, detail: "multi-panel layout mentioned but no split candidate was generated" };
+  }
+  const best = candidateList.reduce((selected, candidate) =>
+    Number(candidate?.validationScore || 0) > Number(selected?.validationScore || 0) ? candidate : selected,
+  candidateList[0] || {});
+  return {
+    status: best.validationStatus || "needs-review",
+    score: Number(best.validationScore) || 0,
+    detail: best.validationDetail || "panel split candidate needs manual review"
+  };
+}
+
+function visualExtractionPanelSplitCandidateValidation(candidate = {}, panels = []) {
+  const panelList = Array.isArray(panels) ? panels : [];
+  const boxes = Array.isArray(candidate?.boxes) ? candidate.boxes : [];
+  const boxLabels = Array.from(new Set(boxes.map((box) => visualExtractionPanelLabel(box?.panel || "")).filter(Boolean)));
+  const expectedLabels = panelList.length
+    ? Array.from(new Set(panelList.map((panel) => visualExtractionPanelLabel(panel?.label || "")).filter(Boolean)))
+    : boxLabels;
+  const expectedCount = Math.max(expectedLabels.length, boxLabels.length, 1);
+  const matchedLabels = expectedLabels.filter((label) => boxLabels.includes(label));
+  const missingLabels = expectedLabels.filter((label) => !boxLabels.includes(label));
+  const coveredPanelLabels = panelList
+    .filter((panel) => panel?.status === "covered")
+    .map((panel) => visualExtractionPanelLabel(panel?.label || ""))
+    .filter(Boolean);
+  const coveredMatched = coveredPanelLabels.filter((label) => boxLabels.includes(label));
+  const evidenceMissingLabels = panelList
+    .filter((panel) => panel?.status !== "covered")
+    .map((panel) => visualExtractionPanelLabel(panel?.label || ""))
+    .filter((label) => label && boxLabels.includes(label));
+  const hasPixelDimensions = Number(candidate?.width) > 0 && Number(candidate?.height) > 0 && boxes.some((box) => box.unit === "px");
+  const labelScore = (matchedLabels.length / expectedCount) * 45;
+  const evidenceScore = panelList.length ? (coveredMatched.length / expectedCount) * 35 : 0;
+  const dimensionScore = hasPixelDimensions ? 20 : 8;
+  const validationScore = Math.max(0, Math.min(100, Math.round(labelScore + evidenceScore + dimensionScore)));
+  let validationStatus = "needs-review";
+  let validationDetail = "panel split candidate needs manual review";
+  if (missingLabels.length) {
+    validationStatus = "needs-panel-labels";
+    validationDetail = `missing panel boxes: ${missingLabels.join(", ")}`;
+  } else if (evidenceMissingLabels.length) {
+    validationStatus = "needs-panel-evidence";
+    validationDetail = `needs evidence for ${evidenceMissingLabels.join(", ")}`;
+  } else if (!hasPixelDimensions) {
+    validationStatus = "needs-dimensions";
+    validationDetail = "labels matched; add image dimensions for pixel-precise boxes";
+  } else if (matchedLabels.length && (!panelList.length || coveredMatched.length === expectedLabels.length)) {
+    validationStatus = "validated";
+    validationDetail = "all candidate panel boxes have parsed evidence and pixel dimensions";
+  }
+  return {
+    validationStatus,
+    validationScore,
+    validationDetail,
+    matchedPanelLabels: matchedLabels,
+    missingPanelLabels: missingLabels,
+    evidenceMissingPanelLabels: evidenceMissingLabels
+  };
+}
+
+function visualExtractionPanelSplitLabels(panels = [], answerText = "") {
+  const labels = [
+    ...(panels || []).map((panel) => panel?.label).filter(Boolean),
+    ...visualExtractionPanelLabelsFromText(answerText)
+  ];
+  return Array.from(new Set(labels.map(visualExtractionPanelLabel).filter(Boolean)));
+}
+
+function visualExtractionPanelCountHint(text = "") {
+  const source = String(text || "");
+  const digitMatch = source.match(/(?:^|\b)(\d{1,2})\s*(?:panels?|subplots?|subfigures?|parts?|面板|分面|子图|子圖)(?:\b|$)/i);
+  if (digitMatch) return Number(digitMatch[1]) || 0;
+  const englishNumbers = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12 };
+  const wordMatch = source.toLowerCase().match(/\b(two|three|four|five|six|seven|eight|nine|ten|twelve)\s+(?:panels?|subplots?|subfigures?|parts?)\b/);
+  if (wordMatch) return englishNumbers[wordMatch[1]] || 0;
+  if (/两个(?:面板|分面|子图)|兩個(?:面板|分面|子圖)/.test(source)) return 2;
+  if (/三个(?:面板|分面|子图)|三個(?:面板|分面|子圖)/.test(source)) return 3;
+  if (/四个(?:面板|分面|子图)|四個(?:面板|分面|子圖)/.test(source)) return 4;
+  return 0;
+}
+
+function visualExtractionDefaultPanelLabels(count, existing = []) {
+  const labels = [...existing];
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  for (let index = 0; labels.length < count; index += 1) {
+    const token = index < letters.length ? letters[index] : String(index + 1);
+    const label = `Panel ${token}`;
+    if (!labels.includes(label)) labels.push(label);
+  }
+  return labels.slice(0, count);
+}
+
+function visualExtractionPanelSplitLayout(count, width = 0, height = 0) {
+  const numericCount = Math.max(1, Number(count) || 1);
+  const aspect = width > 0 && height > 0 ? width / height : 1;
+  let columns = Math.ceil(Math.sqrt(numericCount * Math.max(aspect, 0.5)));
+  columns = Math.max(1, Math.min(numericCount, columns));
+  let rows = Math.ceil(numericCount / columns);
+  if (numericCount === 2) {
+    columns = aspect >= 1 ? 2 : 1;
+    rows = aspect >= 1 ? 1 : 2;
+  } else if (numericCount === 3) {
+    columns = aspect >= 1.2 ? 3 : 2;
+    rows = Math.ceil(numericCount / columns);
+  } else if (numericCount === 4 && aspect > 0.65 && aspect < 1.8) {
+    columns = 2;
+    rows = 2;
+  }
+  return { rows, columns, label: `${rows}x${columns}` };
+}
+
+function visualExtractionPanelSplitBoxes(labels = [], layout = { rows: 1, columns: 1 }, width = 0, height = 0, unit = "%", geometryHints = {}) {
+  const numericWidth = Number(width) > 0 ? Number(width) : 100;
+  const numericHeight = Number(height) > 0 ? Number(height) : 100;
+  const columns = Math.max(1, Number(layout.columns) || 1);
+  const rows = Math.max(1, Number(layout.rows) || 1);
+  const columnGutter = visualExtractionBoundedGutter(geometryHints.columnGutter, numericWidth, columns);
+  const rowGutter = visualExtractionBoundedGutter(geometryHints.rowGutter, numericHeight, rows);
+  const cellWidth = Math.max(1, (numericWidth - columnGutter * Math.max(0, columns - 1)) / columns);
+  const cellHeight = Math.max(1, (numericHeight - rowGutter * Math.max(0, rows - 1)) / rows);
+  return (labels || []).map((label, index) => {
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    const x = visualExtractionRoundedCoordinate(column * (cellWidth + columnGutter));
+    const y = visualExtractionRoundedCoordinate(row * (cellHeight + rowGutter));
+    const boxWidth = visualExtractionRoundedCoordinate(column === columns - 1 ? numericWidth - column * (cellWidth + columnGutter) : cellWidth);
+    const boxHeight = visualExtractionRoundedCoordinate(row === rows - 1 ? numericHeight - row * (cellHeight + rowGutter) : cellHeight);
+    return {
+      panel: label,
+      x,
+      y,
+      width: boxWidth,
+      height: boxHeight,
+      unit,
+      confidence: "low",
+      status: "needs-review"
+    };
+  });
+}
+
+function visualExtractionPanelSplitGeometryHints(text = "", width = 0, height = 0, unit = "%") {
+  const source = String(text || "");
+  const generic = visualExtractionFirstGutterHint(source, /(?:gutter|gap|spacing|间距|間距|分隔|分割缝|分割縫)\D{0,24}(\d+(?:\.\d+)?)\s*(px|pixels?|%)/i);
+  const column = visualExtractionFirstGutterHint(source, /(?:column|columns|horizontal|x[-\s]?axis|列|横向|橫向|水平)\D{0,24}(?:gutter|gap|spacing|间距|間距|分隔)\D{0,24}(\d+(?:\.\d+)?)\s*(px|pixels?|%)/i)
+    || visualExtractionFirstGutterHint(source, /(?:gutter|gap|spacing|间距|間距|分隔)\D{0,24}(?:between\s+columns?|column|columns|列|横向|橫向|水平)\D{0,24}(\d+(?:\.\d+)?)\s*(px|pixels?|%)/i);
+  const row = visualExtractionFirstGutterHint(source, /(?:row|rows|vertical|y[-\s]?axis|行|纵向|縱向|垂直)\D{0,24}(?:gutter|gap|spacing|间距|間距|分隔)\D{0,24}(\d+(?:\.\d+)?)\s*(px|pixels?|%)/i)
+    || visualExtractionFirstGutterHint(source, /(?:gutter|gap|spacing|间距|間距|分隔)\D{0,24}(?:between\s+rows?|row|rows|行|纵向|縱向|垂直)\D{0,24}(\d+(?:\.\d+)?)\s*(px|pixels?|%)/i);
+  const columnGutter = visualExtractionGutterValue(column || generic, width, unit);
+  const rowGutter = visualExtractionGutterValue(row || generic, height, unit);
+  return {
+    columnGutter,
+    rowGutter,
+    hasExplicitGutter: !!(column || row || generic),
+    source: column || row || generic ? "text-gutter-hint" : ""
+  };
+}
+
+function visualExtractionFirstGutterHint(text, pattern) {
+  const match = String(text || "").match(pattern);
+  if (!match) return null;
+  return {
+    value: Number(match[1]),
+    unit: String(match[2] || "px").toLowerCase().startsWith("%") ? "%" : "px"
+  };
+}
+
+function visualExtractionGutterValue(hint, size = 0, unit = "%") {
+  if (!hint || !Number.isFinite(Number(hint.value)) || Number(hint.value) <= 0) return 0;
+  if (hint.unit === "%") return visualExtractionRoundedCoordinate((Number(size) > 0 ? Number(size) : 100) * Number(hint.value) / 100);
+  if (unit === "%" && Number(size) <= 0) return visualExtractionRoundedCoordinate(Number(hint.value));
+  return visualExtractionRoundedCoordinate(Number(hint.value));
+}
+
+function visualExtractionBoundedGutter(value, size = 0, cells = 1) {
+  const gutter = Number(value) || 0;
+  if (gutter <= 0 || Number(cells) <= 1) return 0;
+  const numericSize = Number(size) > 0 ? Number(size) : 100;
+  const maxGutter = numericSize / Math.max(2, Number(cells) * 2);
+  return visualExtractionRoundedCoordinate(Math.min(gutter, maxGutter));
+}
+
+function visualExtractionPanelSplitGeometryQuality(boxes = [], layout = {}, width = 0, height = 0, unit = "%", geometryHints = {}) {
+  const numericWidth = Number(width) > 0 ? Number(width) : 100;
+  const numericHeight = Number(height) > 0 ? Number(height) : 100;
+  const areas = (boxes || []).map((box) => Math.max(0, Number(box?.width) || 0) * Math.max(0, Number(box?.height) || 0)).filter((area) => area > 0);
+  const totalArea = areas.reduce((sum, area) => sum + area, 0);
+  const canvasArea = numericWidth * numericHeight;
+  const coverage = canvasArea > 0 ? totalArea / canvasArea : 0;
+  const balance = areas.length ? Math.min(...areas) / Math.max(...areas) : 0;
+  const hasDimensions = unit === "px" && Number(width) > 0 && Number(height) > 0;
+  const hasExplicitGutter = geometryHints?.hasExplicitGutter === true;
+  const score = Math.max(0, Math.min(100, Math.round(
+    Math.min(coverage, 1) * 35
+    + balance * 35
+    + (hasDimensions ? 20 : 8)
+    + (hasExplicitGutter ? 10 : 0)
+  )));
+  const columnGutter = Number(geometryHints?.columnGutter) || 0;
+  const rowGutter = Number(geometryHints?.rowGutter) || 0;
+  const status = hasExplicitGutter
+    ? "gutter-aware"
+    : hasDimensions
+      ? "dimension-aware"
+      : "normalized";
+  const detail = [
+    status,
+    `coverage ${visualExtractionRoundedCoordinate(coverage * 100)}%`,
+    `area balance ${visualExtractionRoundedCoordinate(balance * 100)}%`,
+    columnGutter || rowGutter ? `gutter column ${columnGutter}${unit}, row ${rowGutter}${unit}` : ""
+  ].filter(Boolean).join("; ");
+  return {
+    status,
+    score,
+    detail,
+    columnGutter,
+    rowGutter,
+    coverage: visualExtractionRoundedCoordinate(coverage),
+    balance: visualExtractionRoundedCoordinate(balance),
+    hasExplicitGutter,
+    layout: `${Number(layout?.rows) || 1}x${Number(layout?.columns) || 1}`
+  };
+}
+
+function visualExtractionRoundedCoordinate(value) {
+  return Number(Number(value).toFixed(2));
+}
+
+function visualExtractionAxisSegmentDiagnostics(calibrationAnchors = []) {
+  const grouped = new Map();
+  for (const anchor of calibrationAnchors || []) {
+    const axis = visualExtractionAxisName(anchor?.axis || "");
+    const segment = mdText(anchor?.segment || "");
+    if (!axis || !segment) continue;
+    const key = `${axis}::${segment}`;
+    if (!grouped.has(key)) grouped.set(key, { axis, segment, anchors: [] });
+    grouped.get(key).anchors.push(anchor);
+  }
+  const segments = Array.from(grouped.values()).map((group) => {
+    const numericAnchors = group.anchors
+      .map((anchor) => ({
+        ...anchor,
+        pixel: Number(anchor.pixel),
+        numericValue: visualExtractionNumber(anchor.value),
+        scale: visualExtractionAxisScaleName(anchor.scale),
+        segment: mdText(anchor.segment || "")
+      }))
+      .filter((anchor) => anchor.numericValue !== null && Number.isFinite(Number(anchor.pixel)));
+    const pixels = numericAnchors.map((anchor) => Number(anchor.pixel));
+    const pixelSpan = pixels.length >= 2 ? Math.max(...pixels) - Math.min(...pixels) : 0;
+    const covered = numericAnchors.length >= 2 && pixelSpan > 0;
+    const endpointPair = covered ? visualExtractionAxisSegmentEndpointPair(numericAnchors) : null;
+    const valueSpan = endpointPair ? Math.abs(Number(endpointPair.end.numericValue) - Number(endpointPair.start.numericValue)) : 0;
+    const unit = mdText(endpointPair?.start?.unit || endpointPair?.end?.unit || "");
+    const scale = visualExtractionAxisScaleName(endpointPair?.start?.scale || endpointPair?.end?.scale || "");
+    const direction = endpointPair ? visualExtractionAxisSegmentDirection(endpointPair.start, endpointPair.end) : "";
+    const valueRange = endpointPair
+      ? `${visualExtractionFormatCalibratedAxisValue(endpointPair.start.numericValue, unit)} -> ${visualExtractionFormatCalibratedAxisValue(endpointPair.end.numericValue, unit)}`
+      : "";
+    const calibrationConfidence = visualExtractionAxisSegmentCalibrationConfidence({
+      covered,
+      anchorCount: numericAnchors.length,
+      pixelSpan,
+      valueSpan,
+      direction
+    }, numericAnchors);
+    const calibrationRisk = visualExtractionAxisSegmentCalibrationRisk({
+      covered,
+      calibrationConfidence,
+      anchorCount: numericAnchors.length,
+      pixelSpan,
+      valueSpan,
+      direction
+    });
+    return {
+      axis: group.axis,
+      segment: group.segment,
+      anchorCount: numericAnchors.length,
+      pixelSpan,
+      pixelStart: endpointPair ? Number(endpointPair.start.pixel) : null,
+      pixelEnd: endpointPair ? Number(endpointPair.end.pixel) : null,
+      valueStart: endpointPair ? Number(endpointPair.start.numericValue) : null,
+      valueEnd: endpointPair ? Number(endpointPair.end.numericValue) : null,
+      valueSpan,
+      unit,
+      scale,
+      direction,
+      minPixel: pixels.length ? Math.min(...pixels) : null,
+      maxPixel: pixels.length ? Math.max(...pixels) : null,
+      minValue: numericAnchors.length ? Math.min(...numericAnchors.map((anchor) => Number(anchor.numericValue))) : null,
+      maxValue: numericAnchors.length ? Math.max(...numericAnchors.map((anchor) => Number(anchor.numericValue))) : null,
+      calibrationConfidence,
+      calibrationRisk,
+      pixelGapToNextSegment: null,
+      valueGapToNextSegment: null,
+      gapStatusToNextSegment: "",
+      gapRiskToNextSegment: "",
+      status: covered ? "covered" : "needs-review",
+      detail: covered
+        ? `${numericAnchors.length} numeric anchor(s), ${pixelSpan} px span, ${valueRange}`
+        : `${numericAnchors.length}/2 numeric anchors; segment needs visible start/end anchors`,
+      evidenceLabels: Array.from(new Set(group.anchors.flatMap((anchor) => anchor.evidenceLabels || [])))
+    };
+  });
+  return visualExtractionAnnotateAxisSegmentGaps(segments)
+    .sort((left, right) => `${left.axis}:${left.segment}`.localeCompare(`${right.axis}:${right.segment}`, undefined, { numeric: true }));
+}
+
+function visualExtractionAxisSegmentCalibrationConfidence(segment, numericAnchors = []) {
+  if (!segment?.covered) return "none";
+  if (Number(segment.anchorCount) < 2 || Number(segment.pixelSpan) <= 0) return "none";
+  if (Number(segment.pixelSpan) < 24 || Number(segment.valueSpan) <= 0 || String(segment.direction || "").includes("flat")) return "low";
+  const ranks = (numericAnchors || []).map((anchor) => visualExtractionConfidenceRank(anchor?.confidence));
+  const lowestRank = ranks.length ? Math.min(...ranks) : 2;
+  if (lowestRank <= 1) return "low";
+  if (Number(segment.anchorCount) >= 3 && Number(segment.pixelSpan) >= 80 && lowestRank >= 3) return "high";
+  if (Number(segment.pixelSpan) >= 50) return "medium";
+  return "low";
+}
+
+function visualExtractionAxisSegmentCalibrationRisk(segment) {
+  if (!segment?.covered || segment.calibrationConfidence === "none") return "high";
+  if (Number(segment.pixelSpan) < 24 || Number(segment.valueSpan) <= 0 || String(segment.direction || "").includes("flat")) return "high";
+  if (segment.calibrationConfidence === "low" || Number(segment.pixelSpan) < 50) return "medium";
+  return "low";
+}
+
+function visualExtractionConfidenceRank(value) {
+  const text = mdText(value || "").toLowerCase();
+  if (!text) return 2;
+  if (/\bhigh\b|\bstrong\b|\bclear\b|高置信|高可信|可靠|清晰/.test(text)) return 3;
+  if (/\blow\b|\bweak\b|\buncertain\b|\brough\b|\bneeds[-\s]?review\b|低置信|低可信|不确定|粗略/.test(text)) return 1;
+  if (/\bmedium\b|\bmoderate\b|\bestimated\b|中等|估计|可复核/.test(text)) return 2;
+  return 2;
+}
+
+function visualExtractionAxisSegmentEndpointPair(numericAnchors = []) {
+  const start = (numericAnchors || []).find((anchor) => mdText(anchor.rangeEndpoint || "").toLowerCase() === "start");
+  const end = (numericAnchors || []).find((anchor) => mdText(anchor.rangeEndpoint || "").toLowerCase() === "end");
+  if (start && end && start !== end) return { start, end };
+  const pair = visualExtractionAxisCalibrationPair(numericAnchors, visualExtractionPreferredAxisScale(numericAnchors));
+  return pair ? { start: pair.left, end: pair.right } : null;
+}
+
+function visualExtractionAxisSegmentDirection(start, end) {
+  const pixelDirection = Number(end?.pixel) > Number(start?.pixel)
+    ? "pixel-asc"
+    : Number(end?.pixel) < Number(start?.pixel)
+      ? "pixel-desc"
+      : "pixel-flat";
+  const valueDirection = Number(end?.numericValue) > Number(start?.numericValue)
+    ? "value-asc"
+    : Number(end?.numericValue) < Number(start?.numericValue)
+      ? "value-desc"
+      : "value-flat";
+  return `${pixelDirection}/${valueDirection}`;
+}
+
+function visualExtractionAnnotateAxisSegmentGaps(segments = []) {
+  const next = (segments || []).map((segment) => ({ ...segment }));
+  const byAxis = new Map();
+  for (const segment of next) {
+    if (!segment.axis) continue;
+    if (!byAxis.has(segment.axis)) byAxis.set(segment.axis, []);
+    byAxis.get(segment.axis).push(segment);
+  }
+  for (const axisSegments of byAxis.values()) {
+    const pixelOrdered = axisSegments
+      .filter((segment) => segment.status === "covered" && Number.isFinite(Number(segment.minPixel)) && Number.isFinite(Number(segment.maxPixel)))
+      .sort((left, right) => Number(left.minPixel) - Number(right.minPixel));
+    for (let index = 0; index < pixelOrdered.length - 1; index += 1) {
+      const current = pixelOrdered[index];
+      const following = pixelOrdered[index + 1];
+      current.pixelGapToNextSegment = visualExtractionRoundedCoordinate(Math.max(0, Number(following.minPixel) - Number(current.maxPixel)));
+    }
+    const valueOrdered = axisSegments
+      .filter((segment) => segment.status === "covered" && Number.isFinite(Number(segment.minValue)) && Number.isFinite(Number(segment.maxValue)))
+      .sort((left, right) => Number(left.minValue) - Number(right.minValue));
+    for (let index = 0; index < valueOrdered.length - 1; index += 1) {
+      const current = valueOrdered[index];
+      const following = valueOrdered[index + 1];
+      current.valueGapToNextSegment = visualExtractionRoundedCoordinate(Math.max(0, Number(following.minValue) - Number(current.maxValue)));
+    }
+    for (const segment of axisSegments) {
+      const gap = visualExtractionAxisSegmentGapAssessment(segment);
+      segment.gapStatusToNextSegment = gap.status;
+      segment.gapRiskToNextSegment = gap.risk;
+    }
+  }
+  return next;
+}
+
+function visualExtractionAxisSegmentGapAssessment(segment) {
+  const hasPixelGap = segment?.pixelGapToNextSegment !== null && segment?.pixelGapToNextSegment !== undefined;
+  const hasValueGap = segment?.valueGapToNextSegment !== null && segment?.valueGapToNextSegment !== undefined;
+  if (!hasPixelGap && !hasValueGap) return { status: "", risk: "" };
+  const pixelGap = hasPixelGap ? Number(segment.pixelGapToNextSegment) : 0;
+  const valueGap = hasValueGap ? Number(segment.valueGapToNextSegment) : 0;
+  const pixelPositive = hasPixelGap && pixelGap > 0;
+  const valuePositive = hasValueGap && valueGap > 0;
+  if (pixelPositive && valuePositive) return { status: "pixel-and-value-gap-to-next", risk: "high" };
+  if (pixelPositive) return { status: "pixel-gap-to-next", risk: "medium" };
+  if (valuePositive) return { status: "value-gap-to-next", risk: "medium" };
+  if (hasPixelGap && hasValueGap) return { status: "continuous-to-next", risk: "low" };
+  if (hasPixelGap) return { status: "pixel-contiguous-to-next", risk: "low" };
+  return { status: "value-contiguous-to-next", risk: "low" };
+}
+
+function visualExtractionChartLayoutDiagnosticsMarkdown(diagnostics = {}, labels) {
+  const panels = Array.isArray(diagnostics?.panels) ? diagnostics.panels : [];
+  const segments = Array.isArray(diagnostics?.axisSegments) ? diagnostics.axisSegments : [];
+  const axisBreakCues = Array.isArray(diagnostics?.axisBreakCues) ? diagnostics.axisBreakCues : [];
+  const splitCandidates = Array.isArray(diagnostics?.panelSplitCandidates) ? diagnostics.panelSplitCandidates : [];
+  return [
+    `- ${labels.layoutStatus}: ${diagnostics?.status || labels.unknown}`,
+    `- ${labels.panelCount}: ${Number(diagnostics?.panelCount) || 0}`,
+    `- ${labels.axisSegmentCount}: ${Number(diagnostics?.axisSegmentCount) || 0}`,
+    `- ${labels.axisSegmentCalibrationMapCount}: ${Number(diagnostics?.axisSegmentCalibrationMapCount) || 0}`,
+    `- ${labels.axisBreakCueCount}: ${Number(diagnostics?.axisBreakCueCount) || 0}`,
+    `- ${labels.panelSplitCandidateCount}: ${Number(diagnostics?.panelSplitCandidateCount) || 0}`,
+    "",
+    `### ${labels.panelCoverage}`,
+    "",
+    panels.length ? visualExtractionPanelCoverageMarkdown(panels, labels) : `- ${labels.noPanelDiagnostics}`,
+    "",
+    `### ${labels.panelSplitCandidates}`,
+    "",
+    splitCandidates.length ? visualExtractionPanelSplitCandidatesMarkdown(splitCandidates, labels) : `- ${labels.noPanelSplitCandidates}`,
+    "",
+    `### ${labels.axisSegmentCoverage}`,
+    "",
+    segments.length ? visualExtractionAxisSegmentCoverageMarkdown(segments, labels) : `- ${labels.noAxisSegmentDiagnostics}`,
+    "",
+    `### ${labels.axisBreakCues}`,
+    "",
+    axisBreakCues.length ? visualExtractionAxisBreakCuesMarkdown(axisBreakCues, labels) : `- ${labels.noAxisBreakCues}`,
+    "",
+    `### ${labels.brokenAxisCalibrationMap}`,
+    "",
+    segments.some((segment) => segment.status === "covered")
+      ? visualExtractionBrokenAxisCalibrationMapMarkdown(segments, labels)
+      : `- ${labels.noBrokenAxisCalibrationMap}`
+  ].join("\n");
+}
+
+function visualExtractionAxisBreakCuesMarkdown(cues = [], labels) {
+  return [
+    `| ${labels.source} | ${labels.axis} | ${labels.axisBreakCue} | ${labels.reviewStatus} | ${labels.confidence} | ${labels.detail} | ${labels.evidenceLabels} |`,
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    ...(cues || []).map((cue) => [
+      markdownTableCell(cue.source || ""),
+      markdownTableCell(cue.axis || ""),
+      markdownTableCell(cue.cue || ""),
+      markdownTableCell(cue.status || ""),
+      markdownTableCell(cue.confidence || ""),
+      markdownTableCell(cue.detail || ""),
+      markdownTableCell((cue.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
+function visualExtractionPanelCoverageMarkdown(panels = [], labels) {
+  return [
+    `| ${labels.panel} | ${labels.reviewStatus} | ${labels.chartPointCount} | ${labels.pixelPointCount} | ${labels.calibrationAnchorCount} | ${labels.sourceTables} | ${labels.evidenceLabels} |`,
+    "| --- | --- | ---: | ---: | ---: | --- | --- |",
+    ...panels.map((panel) => [
+      markdownTableCell(panel.label || ""),
+      markdownTableCell(panel.status || ""),
+      Number(panel.chartPointCount) || 0,
+      Number(panel.pixelPointCount) || 0,
+      Number(panel.calibrationAnchorCount) || 0,
+      markdownTableCell((panel.sourceTables || []).join(", ")),
+      markdownTableCell((panel.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
+function visualExtractionPanelSplitCandidatesMarkdown(candidates = [], labels) {
+  const lines = [
+    `| ${labels.imageName} | ${labels.splitLayout} | ${labels.panel} | X | Y | ${labels.width} | ${labels.height} | ${labels.unit} | ${labels.confidence} | ${labels.panelSplitValidationStatus} | ${labels.panelSplitValidationScore} | ${labels.detail} |`,
+    "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | --- |"
+  ];
+  for (const candidate of candidates || []) {
+    for (const box of candidate.boxes || []) {
+      lines.push([
+        markdownTableCell(candidate.imageName || ""),
+        markdownTableCell(candidate.layout || ""),
+        markdownTableCell(box.panel || ""),
+        box.x === null || box.x === undefined ? "" : box.x,
+        box.y === null || box.y === undefined ? "" : box.y,
+        box.width === null || box.width === undefined ? "" : box.width,
+        box.height === null || box.height === undefined ? "" : box.height,
+        markdownTableCell(box.unit || ""),
+        markdownTableCell(box.confidence || ""),
+        markdownTableCell(candidate.validationStatus || ""),
+        candidate.validationScore === null || candidate.validationScore === undefined ? "" : candidate.validationScore,
+        markdownTableCell([candidate.basis || "", candidate.validationDetail || ""].filter(Boolean).join("; "))
+      ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+    }
+  }
+  return lines.join("\n");
+}
+
+function visualExtractionAxisSegmentCoverageMarkdown(segments = [], labels) {
+  return [
+    `| ${labels.axis} | ${labels.segment} | ${labels.reviewStatus} | ${labels.anchorCount} | ${labels.pixelSpan} | ${labels.calibrationConfidence} | ${labels.calibrationRisk} | ${labels.detail} | ${labels.evidenceLabels} |`,
+    "| --- | --- | --- | ---: | ---: | --- | --- | --- | --- |",
+    ...segments.map((segment) => [
+      markdownTableCell(segment.axis || ""),
+      markdownTableCell(segment.segment || ""),
+      markdownTableCell(segment.status || ""),
+      Number(segment.anchorCount) || 0,
+      Number(segment.pixelSpan) || 0,
+      markdownTableCell(segment.calibrationConfidence || ""),
+      markdownTableCell(segment.calibrationRisk || ""),
+      markdownTableCell(segment.detail || ""),
+      markdownTableCell((segment.evidenceLabels || []).join(", ") || labels.noEvidenceLabels)
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
+function visualExtractionBrokenAxisCalibrationMapMarkdown(segments = [], labels) {
+  const lines = [
+    `| ${labels.axis} | ${labels.segment} | ${labels.pixelStart} | ${labels.pixelEnd} | ${labels.valueStart} | ${labels.valueEnd} | ${labels.unit} | ${labels.scale} | ${labels.direction} | ${labels.pixelGapToNextSegment} | ${labels.valueGapToNextSegment} | ${labels.reviewStatus} | ${labels.detail} | ${labels.calibrationConfidence} | ${labels.calibrationRisk} | ${labels.gapStatusToNextSegment} | ${labels.gapRiskToNextSegment} |`,
+    "| --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- | --- |"
+  ];
+  for (const segment of segments || []) {
+    if (segment.status !== "covered") continue;
+    lines.push([
+      markdownTableCell(segment.axis || ""),
+      markdownTableCell(segment.segment || ""),
+      segment.pixelStart === null || segment.pixelStart === undefined ? "" : segment.pixelStart,
+      segment.pixelEnd === null || segment.pixelEnd === undefined ? "" : segment.pixelEnd,
+      segment.valueStart === null || segment.valueStart === undefined ? "" : segment.valueStart,
+      segment.valueEnd === null || segment.valueEnd === undefined ? "" : segment.valueEnd,
+      markdownTableCell(segment.unit || ""),
+      markdownTableCell(segment.scale || ""),
+      markdownTableCell(segment.direction || ""),
+      segment.pixelGapToNextSegment === null || segment.pixelGapToNextSegment === undefined ? "" : segment.pixelGapToNextSegment,
+      segment.valueGapToNextSegment === null || segment.valueGapToNextSegment === undefined ? "" : segment.valueGapToNextSegment,
+      markdownTableCell(segment.status || ""),
+      markdownTableCell(segment.detail || ""),
+      markdownTableCell(segment.calibrationConfidence || ""),
+      markdownTableCell(segment.calibrationRisk || ""),
+      markdownTableCell(segment.gapStatusToNextSegment || ""),
+      markdownTableCell(segment.gapRiskToNextSegment || "")
     ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
   }
   return lines.join("\n");
@@ -9104,6 +11458,7 @@ function visualExtractionCalibrationAnchorsMarkdown(anchors, labels) {
 function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDrafts = [], options = {}) {
   const chartPoints = (chartDataDrafts || []).flatMap((draft) => draft?.points || []);
   const pixelPoints = (pixelDataDrafts || []).flatMap((draft) => draft?.points || []);
+  const axisValuedPixelPointCount = pixelPoints.filter((point) => mdText(point?.axisX || "") || mdText(point?.axisY || "")).length;
   const calibrationAnchors = Array.isArray(options.calibrationAnchors) ? options.calibrationAnchors : [];
   const evidenceLabels = Array.from(new Set([
     ...(options.evidenceLabels || []),
@@ -9116,8 +11471,12 @@ function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDraft
   const checks = [
     visualExtractionQualityCheck(
       "chart-data",
-      chartPoints.length ? "pass" : "warning",
-      chartPoints.length ? `chart points: ${chartPoints.length}` : "no chart-data points parsed"
+      chartPoints.length || axisValuedPixelPointCount ? "pass" : "warning",
+      chartPoints.length
+        ? `chart points: ${chartPoints.length}`
+        : axisValuedPixelPointCount
+          ? `axis-valued pixel points: ${axisValuedPixelPointCount}`
+          : "no chart-data points parsed"
     ),
     visualExtractionQualityCheck(
       "pixel-coordinates",
@@ -9126,6 +11485,8 @@ function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDraft
     ),
     visualExtractionAxisCalibrationCheck(pixelPoints, calibrationAnchors),
     ...(calibrationAnchors.length ? [visualExtractionCalibrationQualityCheck(calibrationAnchors)] : []),
+    ...visualExtractionLayoutQualityChecks(options.chartLayoutDiagnostics || {}),
+    ...visualExtractionOptionalQualityChecks([visualExtractionDenseConfidenceCheck(chartDataDrafts)]),
     visualExtractionConfidenceCheck([...chartPoints, ...pixelPoints]),
     visualExtractionEvidenceCheck(evidenceLabels),
     visualExtractionPointCountCheck(chartPoints.length + pixelPoints.length)
@@ -9153,6 +11514,82 @@ function visualExtractionChartQualityReview(chartDataDrafts = [], pixelDataDraft
 
 function visualExtractionQualityCheck(id, status, detail) {
   return { id, status, detail: mdText(detail || "") };
+}
+
+function visualExtractionOptionalQualityChecks(checks = []) {
+  return (checks || []).filter(Boolean);
+}
+
+function visualExtractionLayoutQualityChecks(diagnostics = {}) {
+  const checks = [];
+  const panels = Array.isArray(diagnostics?.panels) ? diagnostics.panels : [];
+  const segments = Array.isArray(diagnostics?.axisSegments) ? diagnostics.axisSegments : [];
+  const axisBreakCues = Array.isArray(diagnostics?.axisBreakCues) ? diagnostics.axisBreakCues : [];
+  const panelSplitValidation = visualExtractionPanelSplitValidationCheck(diagnostics);
+  if (diagnostics?.multiPanelDetected) {
+    const uncovered = panels.filter((panel) => panel.status !== "covered");
+    if (!panels.length) {
+      checks.push(visualExtractionQualityCheck("layout-coverage", "warning", "multi-panel layout mentioned but no panel labels or panel-specific rows were parsed"));
+    } else if (uncovered.length) {
+      checks.push(visualExtractionQualityCheck("layout-coverage", "warning", `panel coverage incomplete: ${uncovered.map((panel) => panel.label).join(", ")}`));
+    } else {
+      checks.push(visualExtractionQualityCheck("layout-coverage", "pass", `panel coverage: ${panels.length} panel(s)`));
+    }
+  }
+  if (panelSplitValidation) checks.push(panelSplitValidation);
+  if (diagnostics?.discontinuousAxisDetected) {
+    const incomplete = segments.filter((segment) => segment.status !== "covered");
+    if (!segments.length) {
+      checks.push(visualExtractionQualityCheck("layout-coverage", "warning", "broken or discontinuous axis mentioned but no axis segment anchors were parsed"));
+    } else if (incomplete.length) {
+      checks.push(visualExtractionQualityCheck("layout-coverage", "fail", `axis segment coverage incomplete: ${incomplete.map((segment) => `${segment.axis} ${segment.segment}`).join(", ")}`));
+    } else {
+      checks.push(visualExtractionQualityCheck("layout-coverage", "pass", `axis segment coverage: ${segments.length} segment(s)`));
+    }
+  }
+  if (axisBreakCues.length) {
+    const coveredSegments = segments.filter((segment) => segment.status === "covered").length;
+    const incompleteSegments = segments.filter((segment) => segment.status !== "covered").length;
+    const cueSummary = `axis break visual cue(s): ${axisBreakCues.length}; covered segment calibration: ${coveredSegments}`;
+    if (!segments.length) {
+      checks.push(visualExtractionQualityCheck("axis-break-cues", "warning", `${cueSummary}; no segment anchors parsed`));
+    } else if (incompleteSegments) {
+      checks.push(visualExtractionQualityCheck("axis-break-cues", "fail", `${cueSummary}; incomplete segment calibration: ${incompleteSegments}`));
+    } else {
+      checks.push(visualExtractionQualityCheck("axis-break-cues", "pass", cueSummary));
+    }
+  }
+  return checks;
+}
+
+function visualExtractionPanelSplitValidationCheck(diagnostics = {}) {
+  if (!diagnostics?.multiPanelDetected) return null;
+  const candidates = Array.isArray(diagnostics?.panelSplitCandidates) ? diagnostics.panelSplitCandidates : [];
+  const score = Number(diagnostics?.panelSplitValidationScore) || 0;
+  const status = mdText(diagnostics?.panelSplitValidationStatus || "");
+  const detail = mdText(diagnostics?.panelSplitValidationDetail || "");
+  if (!candidates.length) {
+    return visualExtractionQualityCheck("panel-split-validation", "warning", "multi-panel layout mentioned but no automatic split candidate was generated");
+  }
+  if (status === "validated") {
+    return visualExtractionQualityCheck("panel-split-validation", "pass", `panel split validation score ${score}/100; ${detail}`);
+  }
+  return visualExtractionQualityCheck("panel-split-validation", score >= 50 ? "warning" : "fail", `panel split validation score ${score}/100; ${detail || status || "needs manual review"}`);
+}
+
+function visualExtractionDenseConfidenceCheck(chartDataDrafts = []) {
+  const densePoints = (chartDataDrafts || [])
+    .filter((draft) => draft?.densePointTable || draft?.source === "dense-point-table")
+    .flatMap((draft) => draft?.points || []);
+  if (!densePoints.length) return null;
+  const strong = densePoints.filter((point) => ["high", "medium"].includes(String(point?.confidence || "").toLowerCase())).length;
+  const weak = densePoints.length - strong;
+  const status = densePoints.length >= 6 && strong >= Math.ceil(densePoints.length / 2) ? "pass" : "warning";
+  return visualExtractionQualityCheck(
+    "dense-confidence",
+    status,
+    `dense points: ${densePoints.length}; high/medium confidence: ${strong}; low/needs-review: ${weak}`
+  );
 }
 
 function visualExtractionAxisCalibrationCheck(pixelPoints = [], calibrationAnchors = []) {
@@ -9195,19 +11632,40 @@ function visualExtractionCalibrationQualityCheck(calibrationAnchors = []) {
   const axisGroups = visualExtractionCalibrationAxisGroups(anchors);
   const spans = [];
   const monotonicAxes = [];
+  const logAxes = [];
+  const segmentedAxes = [];
   const issues = [];
   const severeIssues = [];
   let numericCount = 0;
   for (const [axis, axisAnchors] of axisGroups.entries()) {
     const numericAnchors = axisAnchors
-      .map((anchor) => ({ ...anchor, numericValue: visualExtractionNumber(anchor.value) }))
+      .map((anchor) => ({
+        ...anchor,
+        numericValue: visualExtractionNumber(anchor.value),
+        scale: visualExtractionAxisScaleName(anchor.scale),
+        segment: mdText(anchor.segment || "")
+      }))
       .filter((anchor) => anchor.numericValue !== null);
     numericCount += numericAnchors.length;
-    const duplicatePixels = visualExtractionDuplicateValues(axisAnchors.map((anchor) => anchor.pixel));
+    if (numericAnchors.some((anchor) => anchor.scale === "log")) {
+      logAxes.push(axis);
+      const nonPositive = numericAnchors.filter((anchor) => Number(anchor.numericValue) <= 0);
+      if (nonPositive.length) severeIssues.push(`non-positive log anchors on ${axis}`);
+    }
+    const segments = Array.from(new Set(axisAnchors.map((anchor) => mdText(anchor.segment || "")).filter(Boolean)));
+    const segmentedDiagnostics = visualExtractionSegmentedCalibrationDiagnostics(axis, axisAnchors, numericAnchors);
+    if (segmentedDiagnostics) {
+      segmentedAxes.push(segmentedDiagnostics.summary);
+      spans.push(...segmentedDiagnostics.spans);
+      issues.push(...segmentedDiagnostics.issues);
+      severeIssues.push(...segmentedDiagnostics.severeIssues);
+      if (segmentedDiagnostics.monotonic) monotonicAxes.push(axis);
+    }
+    const duplicatePixels = visualExtractionDuplicateCalibrationValues(axisAnchors, (anchor) => anchor.pixel);
     if (duplicatePixels.length) {
       severeIssues.push(`duplicate pixel anchors on ${axis}: ${duplicatePixels.join(", ")}`);
     }
-    const duplicateAxisValues = visualExtractionDuplicateValues(numericAnchors.map((anchor) => anchor.numericValue));
+    const duplicateAxisValues = visualExtractionDuplicateCalibrationValues(numericAnchors, (anchor) => anchor.numericValue);
     if (duplicateAxisValues.length) {
       severeIssues.push(`duplicate axis values on ${axis}: ${duplicateAxisValues.join(", ")}`);
     }
@@ -9216,6 +11674,9 @@ function visualExtractionCalibrationQualityCheck(calibrationAnchors = []) {
       const span = Math.max(...pixels) - Math.min(...pixels);
       spans.push(`${axis} ${span} px`);
       if (span > 0 && span < 24) issues.push(`small pixel span on ${axis}: ${span} px`);
+    }
+    if (segments.length) {
+      continue;
     }
     if (numericAnchors.length >= 3) {
       if (visualExtractionMonotonicCalibration(numericAnchors)) {
@@ -9232,11 +11693,52 @@ function visualExtractionCalibrationQualityCheck(calibrationAnchors = []) {
     spans.length ? `spans: ${spans.join(", ")}` : "",
     `numeric anchors: ${numericCount}/${anchors.length}`,
     monotonicAxes.length ? `monotonic axes: ${monotonicAxes.join(", ")}` : "",
+    logAxes.length ? `log axes: ${Array.from(new Set(logAxes)).join(", ")}` : "",
+    segmentedAxes.length ? `segmented axes: ${segmentedAxes.join(", ")}` : "",
     severeIssues.length || issues.length ? `issues: ${[...severeIssues, ...issues].join("; ")}` : ""
   ].filter(Boolean);
   if (severeIssues.length) return visualExtractionQualityCheck("calibration-quality", "fail", detailParts.join("; "));
   if (issues.length) return visualExtractionQualityCheck("calibration-quality", "warning", detailParts.join("; "));
   return visualExtractionQualityCheck("calibration-quality", "pass", detailParts.join("; "));
+}
+
+function visualExtractionSegmentedCalibrationDiagnostics(axis, axisAnchors = [], numericAnchors = []) {
+  const segmentNames = Array.from(new Set((axisAnchors || []).map((anchor) => mdText(anchor?.segment || "")).filter(Boolean)));
+  if (!segmentNames.length) return null;
+  const summaryParts = [];
+  const spans = [];
+  const issues = [];
+  const severeIssues = [];
+  let completeSegments = 0;
+  for (const segment of segmentNames) {
+    const segmentAnchors = (axisAnchors || []).filter((anchor) => mdText(anchor?.segment || "") === segment);
+    const segmentNumeric = (numericAnchors || []).filter((anchor) => mdText(anchor?.segment || "") === segment);
+    summaryParts.push(`${segment} ${segmentNumeric.length}`);
+    if (segmentNumeric.length < 2) {
+      severeIssues.push(`under-calibrated segment on ${axis} ${segment}: ${segmentNumeric.length}/2 numeric anchors`);
+      continue;
+    }
+    completeSegments += 1;
+    const pixels = segmentNumeric.map((anchor) => Number(anchor.pixel)).filter(Number.isFinite);
+    if (pixels.length >= 2) {
+      const span = Math.max(...pixels) - Math.min(...pixels);
+      spans.push(`${axis} ${segment} ${span} px`);
+      if (span > 0 && span < 24) issues.push(`small segment span on ${axis} ${segment}: ${span} px`);
+    }
+    if (segmentNumeric.length >= 3 && !visualExtractionMonotonicCalibration(segmentNumeric)) {
+      severeIssues.push(`non-monotonic anchors on ${axis} ${segment}`);
+    }
+    if (segmentAnchors.length > segmentNumeric.length) {
+      issues.push(`non-numeric segment anchors on ${axis} ${segment}: ${segmentAnchors.length - segmentNumeric.length}/${segmentAnchors.length}`);
+    }
+  }
+  return {
+    summary: `${axis} ${segmentNames.length} (${summaryParts.join(", ")})`,
+    spans,
+    issues,
+    severeIssues,
+    monotonic: completeSegments === segmentNames.length && !severeIssues.some((issue) => issue.includes(`non-monotonic anchors on ${axis}`))
+  };
 }
 
 function visualExtractionCalibrationAxisGroups(anchors = []) {
@@ -9259,6 +11761,15 @@ function visualExtractionDuplicateValues(values = []) {
     if (seen.get(normalized) === 2) duplicates.push(normalized);
   }
   return duplicates;
+}
+
+function visualExtractionDuplicateCalibrationValues(anchors = [], valueForAnchor = (anchor) => anchor) {
+  const segmented = (anchors || []).some((anchor) => mdText(anchor?.segment || ""));
+  const values = (anchors || []).map((anchor) => {
+    const value = valueForAnchor(anchor);
+    return segmented ? `${mdText(anchor?.segment || "")}::${value}` : value;
+  });
+  return visualExtractionDuplicateValues(values).map((value) => segmented ? String(value).replace(/^.*?::/, "") : value);
 }
 
 function visualExtractionMonotonicCalibration(anchors = []) {
@@ -9314,6 +11825,18 @@ function visualExtractionQualityRecommendations(checks = []) {
   if (byId.get("calibration-quality") && byId.get("calibration-quality")?.status !== "pass") {
     recommendations.push({ id: "calibration-quality" });
   }
+  if (byId.get("layout-coverage") && byId.get("layout-coverage")?.status !== "pass") {
+    recommendations.push({ id: "layout-coverage" });
+  }
+  if (byId.get("panel-split-validation") && byId.get("panel-split-validation")?.status !== "pass") {
+    recommendations.push({ id: "panel-split-validation" });
+  }
+  if (byId.get("axis-break-cues") && byId.get("axis-break-cues")?.status !== "pass") {
+    recommendations.push({ id: "axis-break-cues" });
+  }
+  if (byId.get("dense-confidence") && byId.get("dense-confidence")?.status !== "pass") {
+    recommendations.push({ id: "dense-confidence" });
+  }
   if (byId.get("confidence")?.status !== "pass") {
     recommendations.push({ id: "confidence" });
   }
@@ -9350,6 +11873,10 @@ function visualExtractionQualityRecommendationText(item, labels) {
   const id = typeof item === "string" ? item : item?.id || "";
   if (id === "axis-calibration") return labels.recommendationAxisCalibration;
   if (id === "calibration-quality") return labels.recommendationCalibrationQuality;
+  if (id === "layout-coverage") return labels.recommendationLayoutCoverage;
+  if (id === "panel-split-validation") return labels.recommendationPanelSplitValidation;
+  if (id === "axis-break-cues") return labels.recommendationAxisBreakCues;
+  if (id === "dense-confidence") return labels.recommendationDenseConfidence;
   if (id === "confidence") return labels.recommendationConfidence;
   if (id === "image-evidence") return labels.recommendationImageEvidence;
   if (id === "point-count") return labels.recommendationPointCount;
@@ -9414,8 +11941,7 @@ function visualExtractionChartReviewActionStableKey(action) {
   const parts = [
     action?.actionId,
     action?.checkId,
-    action?.status,
-    action?.detail
+    action?.status
   ].map((part) => mdText(part || "").toLowerCase());
   return parts.some(Boolean) ? parts.join("::") : "";
 }
@@ -9598,6 +12124,42 @@ function visualExtractionChartReviewActionForCheck(check, labels) {
       doneCriteria: labels.reviewDoneVerifyCalibrationQuality
     };
   }
+  if (id === "layout-coverage") {
+    return {
+      ...base,
+      actionId: "verify-chart-layout-coverage",
+      priority: severe ? "high" : "medium",
+      nextStep: labels.reviewActionVerifyLayoutCoverage,
+      doneCriteria: labels.reviewDoneVerifyLayoutCoverage
+    };
+  }
+  if (id === "panel-split-validation") {
+    return {
+      ...base,
+      actionId: "validate-panel-split-candidates",
+      priority: severe ? "high" : "medium",
+      nextStep: labels.reviewActionValidatePanelSplit,
+      doneCriteria: labels.reviewDoneValidatePanelSplit
+    };
+  }
+  if (id === "axis-break-cues") {
+    return {
+      ...base,
+      actionId: "verify-axis-break-cues",
+      priority: severe ? "high" : "medium",
+      nextStep: labels.reviewActionVerifyAxisBreakCues,
+      doneCriteria: labels.reviewDoneVerifyAxisBreakCues
+    };
+  }
+  if (id === "dense-confidence") {
+    return {
+      ...base,
+      actionId: "improve-dense-point-confidence",
+      priority: "medium",
+      nextStep: labels.reviewActionImproveDenseConfidence,
+      doneCriteria: labels.reviewDoneImproveDenseConfidence
+    };
+  }
   if (id === "confidence") {
     return {
       ...base,
@@ -9648,6 +12210,74 @@ function visualExtractionChartReviewActionsMarkdown(actions, labels) {
       markdownTableCell(action.due || ""),
       markdownTableCell(action.notes || ""),
       markdownTableCell(action.detail || "")
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+  ].join("\n");
+}
+
+function visualExtractionChartBatchReviewBoardRows(actions, labels = {}) {
+  const groups = new Map();
+  for (const action of actions || []) {
+    const priority = mdText(action?.priority || "medium") || "medium";
+    const reviewState = normalizeVisualReviewState(action?.reviewState || "todo");
+    const actionId = mdText(action?.actionId || "manual-review");
+    const relatedCheck = mdText(`${action?.checkId || ""}${action?.status ? ` (${action.status})` : ""}`);
+    const batchAction = mdText(action?.nextStep || labels.reviewActionManualReview || actionId);
+    const doneCriteria = mdText(action?.doneCriteria || labels.reviewDoneManualReview || "");
+    const key = [priority, reviewState, actionId, batchAction, doneCriteria].join("::");
+    if (!groups.has(key)) {
+      groups.set(key, {
+        priority,
+        reviewState,
+        count: 0,
+        blockingIssues: [],
+        batchAction,
+        doneCriteria
+      });
+    }
+    const group = groups.get(key);
+    group.count += 1;
+    const issue = [actionId, relatedCheck, mdText(action?.detail || "")].filter(Boolean).join(" - ");
+    if (issue && !group.blockingIssues.includes(issue)) group.blockingIssues.push(issue);
+  }
+  return Array.from(groups.values())
+    .map((group) => ({
+      priority: group.priority,
+      reviewState: group.reviewState,
+      count: group.count,
+      blockingIssue: visualExtractionBatchIssueSummary(group.blockingIssues),
+      batchAction: group.batchAction,
+      doneCriteria: group.doneCriteria
+    }))
+    .sort(visualExtractionChartBatchReviewBoardSort);
+}
+
+function visualExtractionBatchIssueSummary(issues = []) {
+  const visible = (issues || []).filter(Boolean).slice(0, 3);
+  const hidden = Math.max(0, (issues || []).filter(Boolean).length - visible.length);
+  return hidden ? `${visible.join("; ")}; +${hidden} more` : visible.join("; ");
+}
+
+function visualExtractionChartBatchReviewBoardSort(left, right) {
+  const priorityRank = { high: 0, medium: 1, low: 2 };
+  const stateRank = { todo: 0, blocked: 1, "in-review": 2, done: 3, discarded: 4 };
+  const priorityDelta = (priorityRank[left?.priority] ?? 9) - (priorityRank[right?.priority] ?? 9);
+  if (priorityDelta) return priorityDelta;
+  const stateDelta = (stateRank[left?.reviewState] ?? 9) - (stateRank[right?.reviewState] ?? 9);
+  if (stateDelta) return stateDelta;
+  return String(right?.count || "").localeCompare(String(left?.count || ""), undefined, { numeric: true });
+}
+
+function visualExtractionChartBatchReviewBoardMarkdown(rows, labels) {
+  return [
+    `| ${labels.priority} | ${labels.reviewState} | ${labels.actionCount} | ${labels.blockingIssue} | ${labels.batchAction} | ${labels.doneCriteria} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    ...(rows || []).map((row) => [
+      markdownTableCell(row.priority || ""),
+      markdownTableCell(row.reviewState || ""),
+      Number(row.count) || 0,
+      markdownTableCell(row.blockingIssue || ""),
+      markdownTableCell(row.batchAction || ""),
+      markdownTableCell(row.doneCriteria || "")
     ].join(" | ").replace(/^/, "| ").replace(/$/, " |"))
   ].join("\n");
 }
@@ -9726,11 +12356,55 @@ function visualExtractionReportLabels(outputLanguage) {
       axisXValue: "X 轴值",
       axisYValue: "Y 轴值",
       unit: "单位",
+      scale: "尺度",
+      segment: "分段",
       confidence: "置信度",
       noChartDataDrafts: "未能从重建表格、可校正 OCR 或回答文本中抽取图表数据草稿；需要人工放大原图或重新提问。",
       noPixelDataDrafts: "未能从回答中抽取像素/坐标数据草稿；需要使用多模态模型重新输出 Pixel X、Pixel Y、轴值和置信度。",
-      noCalibrationAnchors: "未检测到坐标轴校准锚点表；如需后续量化复用，请让模型补充 Axis、Pixel、Value、Unit、Source 和 Confidence。",
+      noCalibrationAnchors: "未检测到坐标轴校准锚点表；如需后续量化复用，请让模型补充 Axis、Pixel、Value、Unit、Scale、Segment、Source 和 Confidence。",
       chartQualityReview: "图表数据质量审阅",
+      chartLayoutDiagnostics: "图表布局诊断",
+      layoutStatus: "布局状态",
+      panelCount: "面板数",
+      axisSegmentCount: "轴段数",
+      axisSegmentCalibrationMapCount: "断轴校准映射数",
+      axisBreakCueCount: "断轴视觉线索数",
+      panelSplitCandidateCount: "候选分割框数",
+      panelSplitValidationStatus: "分割校验状态",
+      panelSplitValidationScore: "分割校验分",
+      panelCoverage: "面板覆盖",
+      panelSplitCandidates: "自动 panel 分割候选",
+      axisSegmentCoverage: "轴段覆盖",
+      axisBreakCues: "断轴视觉线索",
+      brokenAxisCalibrationMap: "断轴校准映射",
+      panel: "面板",
+      chartPointCount: "图表点数",
+      pixelPointCount: "像素点数",
+      calibrationAnchorCount: "校准锚点数",
+      sourceTables: "来源表格",
+      anchorCount: "锚点数",
+      pixelSpan: "像素跨度",
+      pixelStart: "像素起点",
+      pixelEnd: "像素终点",
+      valueStart: "数值起点",
+      valueEnd: "数值终点",
+      direction: "方向",
+      calibrationConfidence: "校准置信度",
+      calibrationRisk: "校准风险",
+      pixelGapToNextSegment: "到下一段像素间隙",
+      valueGapToNextSegment: "到下一段数值间隙",
+      gapStatusToNextSegment: "段间状态",
+      gapRiskToNextSegment: "段间风险",
+      splitLayout: "分割布局",
+      axisBreakCue: "断轴线索",
+      width: "宽度",
+      height: "高度",
+      noPanelDiagnostics: "未检测到多面板结构；如原图包含多个 panel，请要求模型在点表和校准锚点中加入 Panel/Subplot 列。",
+      noPanelSplitCandidates: "没有生成 panel 分割候选；如原图包含多个 panel，请在回答中标注 Panel A/B/C 或提供图片宽高后重新导出。",
+      noAxisSegmentDiagnostics: "未检测到断轴或分段轴；如原图存在视觉不连续轴段，请要求模型为每个 Segment 单独列出锚点。",
+      noAxisBreakCues: "未检测到断轴视觉线索；如原图有波浪线、双斜线、锯齿或明显轴间隙，请要求模型明确描述断轴位置。",
+      noBrokenAxisCalibrationMap: "没有可复核的断轴校准映射；每个断轴区段至少需要两个清晰锚点。",
+      chartBatchReviewBoard: "图表批量复核看板",
       chartReviewActions: "图表人工复核任务",
       qualityStatus: "质量状态",
       qualityScore: "质量分",
@@ -9743,20 +12417,32 @@ function visualExtractionReportLabels(outputLanguage) {
       relatedCheck: "关联检查",
       nextStep: "下一步",
       doneCriteria: "完成条件",
+      actionCount: "任务数",
+      blockingIssue: "阻塞问题",
+      batchAction: "批量处理动作",
       reviewer: "复核人",
       due: "期限",
       notes: "备注",
+      noChartBatchReviewRows: "当前没有可批量处理的复核任务；正式使用前仍建议抽查原图。",
       noChartReviewActions: "当前质量审阅未生成强制复核任务；正式使用前仍建议回到原图抽查。",
       noQualityIssues: "未发现结构化质量风险；正式使用前仍建议回到原图核对。",
       recommendationAxisCalibration: "补充至少两个清晰坐标轴刻度/数值锚点，并对照原图核对 Pixel X/Y 到 Axis X/Y 的映射。",
-      recommendationCalibrationQuality: "重新核对校准锚点的像素跨度、单调性、重复刻度和数值单位；跨度太小或非单调时不要用于量化比较。",
+      recommendationCalibrationQuality: "重新核对校准锚点的像素跨度、单调性、重复刻度、分段覆盖和数值单位；跨度太小、断轴分段锚点不足或非单调时不要用于量化比较。",
+      recommendationLayoutCoverage: "多面板或断轴图必须逐个 panel/segment 标注点位和校准锚点；不要把不同面板或不连续轴段混成同一组数据。",
+      recommendationPanelSplitValidation: "自动 panel 分割候选必须和已解析 panel 覆盖相互校验；缺少证据的 panel 先补点位、OCR 或裁剪图，再把候选框用于定量复用。",
+      recommendationAxisBreakCues: "检测到断轴视觉线索时，必须回到原图确认波浪线、双斜线、锯齿或轴间隙，并为每个可见区段补齐独立校准锚点。",
+      recommendationDenseConfidence: "密集点位表需要足够数量的高/中置信点和可追溯视觉依据；低置信密集点只能作为复核草稿。",
       recommendationConfidence: "在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。",
       recommendationImageEvidence: "重新提问时要求模型用 [image] 标注直接视觉观察，并把文本上下文推断分开。",
       recommendationPointCount: "放大原图或要求模型输出更密集的点表后，再用于跨论文实验对比。",
       reviewActionReconstructChartData: "重新要求模型输出可复核的重建数据表，或人工从原图读取最少关键点。",
       reviewActionAddPixelCoordinates: "要求模型补充 Pixel X、Pixel Y、Axis X、Axis Y 表，并标注低置信点。",
       reviewActionAddAxisCalibration: "补充每个坐标轴至少两个清晰刻度锚点，再重新导出报告。",
-      reviewActionVerifyCalibrationQuality: "回到原图核对锚点跨度、单调性、重复值和单位，异常时不要用于量化比较。",
+      reviewActionVerifyCalibrationQuality: "回到原图核对锚点跨度、单调性、重复值、断轴分段覆盖和单位，异常时不要用于量化比较。",
+      reviewActionVerifyLayoutCoverage: "逐个 panel/segment 核对是否都有数据点、像素点和校准锚点，缺失项先补齐或标记不可读。",
+      reviewActionValidatePanelSplit: "核对自动 panel 分割候选的边界、标签和缺失证据；必要时裁剪单个 panel 后重新抽取。",
+      reviewActionVerifyAxisBreakCues: "回到原图确认断轴符号、视觉间隙和每个可见轴段的数值范围；缺锚点时先补齐区段校准表。",
+      reviewActionImproveDenseConfidence: "放大原图或裁剪单个 panel，重新生成更高置信的密集点位表，并保留不可读区域说明。",
       reviewActionConfirmConfidence: "人工确认低置信读数、单位和图例；确认前只作为草稿使用。",
       reviewActionSeparateImageEvidence: "重新提问时要求直接视觉观察都用 [image] 标注，推断内容单独列出。",
       reviewActionRequestMorePoints: "放大原图或重新提问，要求输出更密集但仍可复核的点表。",
@@ -9764,7 +12450,11 @@ function visualExtractionReportLabels(outputLanguage) {
       reviewDoneReconstructChartData: "已得到含单位、图例/系列和证据标签的可复核数据表。",
       reviewDoneAddPixelCoordinates: "已为关键点补齐 Pixel X、Pixel Y、Axis X、Axis Y 和置信度。",
       reviewDoneAddAxisCalibration: "每个坐标轴至少有两个清晰刻度锚点，并已重新导出报告。",
-      reviewDoneVerifyCalibrationQuality: "锚点跨度、单调性、重复值和单位已人工核对，可说明是否能量化使用。",
+      reviewDoneVerifyCalibrationQuality: "锚点跨度、单调性、重复值、断轴分段覆盖和单位已人工核对，可说明是否能量化使用。",
+      reviewDoneVerifyLayoutCoverage: "每个 panel/segment 的数据点、像素点和校准锚点已核对，缺失或不可读部分已有明确说明。",
+      reviewDoneValidatePanelSplit: "每个 panel 的候选框、标签、证据来源和不可读区域已人工确认或标记为不可用。",
+      reviewDoneVerifyAxisBreakCues: "断轴符号、视觉间隙、区段范围和每段校准锚点已人工确认，并记录是否可用于量化比较。",
+      reviewDoneImproveDenseConfidence: "密集点位表中高/中置信点达到可复核要求，低置信或不可读点已单独标记。",
       reviewDoneConfirmConfidence: "低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。",
       reviewDoneSeparateImageEvidence: "直接视觉观察、文本上下文推断和低置信判断已分开标注。",
       reviewDoneRequestMorePoints: "已补充更密集且仍可复核的点表，或记录无法可靠抽取的原因。",
@@ -9779,6 +12469,7 @@ function visualExtractionReportLabels(outputLanguage) {
       checkTableNumbers: "核对重建表格中的数字、单位、指标和数据集名称。",
       checkChartDataDrafts: "核对图表数据草稿的轴、系列、单位、读数、质量审阅结果和置信度，不能直接作为最终数据。",
       checkPixelDataDrafts: "核对像素/坐标草稿中的点位、像素坐标、轴值映射和置信度；必要时回到原图校准坐标轴。",
+      checkChartLayoutDiagnostics: "核对多面板、断轴和分段轴的 panel/segment 覆盖，不要混合不同面板或不连续轴段。",
       checkImageEvidence: "区分直接视觉观察、论文上下文推断和低置信判断。",
       checkPdfLocation: "回到 PDF 原图位置核对页码、图号/表号和上下文。",
       checkReuse: "标记可复用于综述、实验对比、方法复现或后续检索的条目。",
@@ -9840,11 +12531,55 @@ function visualExtractionReportLabels(outputLanguage) {
     axisXValue: "Axis X value",
     axisYValue: "Axis Y value",
     unit: "Unit",
+    scale: "Scale",
+    segment: "Segment",
     confidence: "Confidence",
     noChartDataDrafts: "No chart data draft could be extracted from reconstructed tables, editable OCR, or answer text; zoom the original image or ask again.",
     noPixelDataDrafts: "No pixel / coordinate data draft could be extracted; ask a multimodal model to return Pixel X, Pixel Y, axis values, and confidence.",
-    noCalibrationAnchors: "No axis calibration anchor table was detected. For reusable quantitative exports, ask for Axis, Pixel, Value, Unit, Source, and Confidence.",
+    noCalibrationAnchors: "No axis calibration anchor table was detected. For reusable quantitative exports, ask for Axis, Pixel, Value, Unit, Scale, Segment, Source, and Confidence.",
     chartQualityReview: "Chart Data Quality Review",
+    chartLayoutDiagnostics: "Chart Layout Diagnostics",
+    layoutStatus: "Layout status",
+    panelCount: "Panel count",
+    axisSegmentCount: "Axis segment count",
+    axisSegmentCalibrationMapCount: "Broken-axis calibration maps",
+    axisBreakCueCount: "Axis break visual cues",
+    panelSplitCandidateCount: "Panel split candidate boxes",
+    panelSplitValidationStatus: "Split validation",
+    panelSplitValidationScore: "Split validation score",
+    panelCoverage: "Panel Coverage",
+    panelSplitCandidates: "Automatic Panel Split Candidates",
+    axisSegmentCoverage: "Axis Segment Coverage",
+    axisBreakCues: "Axis Break Visual Cues",
+    brokenAxisCalibrationMap: "Broken-Axis Calibration Map",
+    panel: "Panel",
+    chartPointCount: "Chart points",
+    pixelPointCount: "Pixel points",
+    calibrationAnchorCount: "Calibration anchors",
+    sourceTables: "Source tables",
+    anchorCount: "Anchors",
+    pixelSpan: "Pixel span",
+    pixelStart: "Pixel Start",
+    pixelEnd: "Pixel End",
+    valueStart: "Value Start",
+    valueEnd: "Value End",
+    direction: "Direction",
+    calibrationConfidence: "Calibration confidence",
+    calibrationRisk: "Calibration risk",
+    pixelGapToNextSegment: "Pixel gap to next segment",
+    valueGapToNextSegment: "Value gap to next segment",
+    gapStatusToNextSegment: "Gap status",
+    gapRiskToNextSegment: "Gap risk",
+    splitLayout: "Split layout",
+    axisBreakCue: "Axis break cue",
+    width: "Width",
+    height: "Height",
+    noPanelDiagnostics: "No multi-panel structure was detected. If the original figure has multiple panels, ask for a Panel/Subplot column in point tables and calibration anchors.",
+    noPanelSplitCandidates: "No panel split candidate was generated. If the original figure has multiple panels, label Panel A/B/C in the answer or include image dimensions and export again.",
+    noAxisSegmentDiagnostics: "No broken or segmented axis was detected. If the original figure has visual discontinuities, ask for separate Segment anchors.",
+    noAxisBreakCues: "No visual axis-break cue was detected. If the source figure has a wavy line, double slash, jagged break, or visible axis gap, ask the model to describe the break location explicitly.",
+    noBrokenAxisCalibrationMap: "No reviewable broken-axis calibration map was generated. Each visible broken-axis segment needs at least two clear anchors.",
+    chartBatchReviewBoard: "Chart Batch Review Board",
     chartReviewActions: "Chart Review Action Queue",
     qualityStatus: "Quality status",
     qualityScore: "Quality score",
@@ -9857,20 +12592,32 @@ function visualExtractionReportLabels(outputLanguage) {
     relatedCheck: "Related check",
     nextStep: "Next step",
     doneCriteria: "Done criteria",
+    actionCount: "Count",
+    blockingIssue: "Blocking issue",
+    batchAction: "Batch action",
     reviewer: "Reviewer",
     due: "Due",
     notes: "Notes",
+    noChartBatchReviewRows: "No batchable review action is available; still spot-check the original figure before final use.",
     noChartReviewActions: "No required review action was generated by the quality review; still spot-check the original figure before final use.",
     noQualityIssues: "No structured quality risk was detected; still verify against the original figure before final use.",
     recommendationAxisCalibration: "Add at least two visible axis tick/value anchors and verify Pixel X/Y to Axis X/Y mapping against the original chart.",
-    recommendationCalibrationQuality: "Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, and units; do not use small-span or non-monotonic anchors for quantitative comparison.",
+    recommendationCalibrationQuality: "Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, segment coverage, and units; do not use small-span, under-calibrated broken-axis segments, or non-monotonic anchors for quantitative comparison.",
+    recommendationLayoutCoverage: "For multi-panel or discontinuous-axis figures, label every panel/segment and keep data points plus calibration anchors separate.",
+    recommendationPanelSplitValidation: "Automatic panel split candidates must be checked against parsed panel coverage; add panel-specific points, OCR, or cropped images before quantitative reuse.",
+    recommendationAxisBreakCues: "When visual axis-break cues are detected, verify the wavy line, double slash, jagged mark, or axis gap against the original chart and add separate calibration anchors for each visible segment.",
+    recommendationDenseConfidence: "Dense point tables need enough high/medium-confidence points with traceable visual evidence; low-confidence dense points are review drafts only.",
     recommendationConfidence: "Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.",
     recommendationImageEvidence: "Ask the model to mark direct visual observations with [image] and keep text-context inferences separate.",
     recommendationPointCount: "Zoom the original figure or request a denser point table before using the data for cross-paper comparison.",
     reviewActionReconstructChartData: "Ask for a reviewable reconstructed data table again, or manually read the minimum key points from the original figure.",
     reviewActionAddPixelCoordinates: "Ask for a Pixel X, Pixel Y, Axis X, Axis Y table and mark low-confidence points explicitly.",
     reviewActionAddAxisCalibration: "Add at least two visible tick anchors per axis, then export the report again.",
-    reviewActionVerifyCalibrationQuality: "Recheck anchor span, monotonicity, duplicate values, and units against the original chart before quantitative use.",
+    reviewActionVerifyCalibrationQuality: "Recheck anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units against the original chart before quantitative use.",
+    reviewActionVerifyLayoutCoverage: "Check every panel/segment for data points, pixel points, and calibration anchors; fill gaps or mark unreadable regions.",
+    reviewActionValidatePanelSplit: "Verify automatic panel split boundaries, labels, and missing evidence; crop individual panels and re-extract when needed.",
+    reviewActionVerifyAxisBreakCues: "Return to the original figure, verify the axis-break mark, visual gap, and numeric range of each visible segment; add segment calibration rows when anchors are missing.",
+    reviewActionImproveDenseConfidence: "Zoom or crop one panel at a time, regenerate a higher-confidence dense point table, and record unreadable regions.",
     reviewActionConfirmConfidence: "Manually confirm low-confidence readings, units, and legends; treat them as draft values until then.",
     reviewActionSeparateImageEvidence: "Ask again with direct visual observations marked as [image] and inferred context separated.",
     reviewActionRequestMorePoints: "Zoom the figure or ask again for a denser but still reviewable point table.",
@@ -9878,7 +12625,11 @@ function visualExtractionReportLabels(outputLanguage) {
     reviewDoneReconstructChartData: "A reviewable data table with units, legend or series labels, and evidence labels is available.",
     reviewDoneAddPixelCoordinates: "Key points include Pixel X, Pixel Y, Axis X, Axis Y, and confidence.",
     reviewDoneAddAxisCalibration: "Each axis has at least two visible tick anchors, and the report has been exported again.",
-    reviewDoneVerifyCalibrationQuality: "Anchor span, monotonicity, duplicate values, and units have been manually checked with a reuse decision.",
+    reviewDoneVerifyCalibrationQuality: "Anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units have been manually checked with a reuse decision.",
+    reviewDoneVerifyLayoutCoverage: "Each panel/segment has checked data points, pixel points, and calibration anchors, with missing or unreadable regions documented.",
+    reviewDoneValidatePanelSplit: "Each panel candidate box, label, evidence source, and unreadable region has been confirmed or marked unusable.",
+    reviewDoneVerifyAxisBreakCues: "Axis-break marks, visual gaps, segment ranges, and per-segment calibration anchors are verified, with a quantitative reuse decision recorded.",
+    reviewDoneImproveDenseConfidence: "The dense point table has reviewable high/medium-confidence points, and low-confidence or unreadable points are marked separately.",
     reviewDoneConfirmConfidence: "Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable.",
     reviewDoneSeparateImageEvidence: "Direct visual observations, text-context inference, and low-confidence judgments are separated.",
     reviewDoneRequestMorePoints: "A denser but still reviewable point table is added, or the extraction limit is recorded.",
@@ -9893,6 +12644,7 @@ function visualExtractionReportLabels(outputLanguage) {
     checkTableNumbers: "Verify reconstructed numbers, units, metrics, and dataset names.",
     checkChartDataDrafts: "Verify chart-data draft axes, series, units, readings, quality-review flags, and confidence before reuse.",
     checkPixelDataDrafts: "Verify pixel / coordinate drafts, point labels, pixel coordinates, axis-value mapping, and confidence; recalibrate against the original image when needed.",
+    checkChartLayoutDiagnostics: "Verify panel/segment coverage for multi-panel, broken-axis, and segmented-axis layouts before merging extracted values.",
     checkImageEvidence: "Separate direct visual observations, paper-context inference, and low-confidence judgments.",
     checkPdfLocation: "Return to the PDF figure/table location and verify page, label, and context.",
     checkReuse: "Mark items reusable for review writing, experiment comparison, reproduction, or follow-up search.",
@@ -10161,17 +12913,20 @@ function figureTableTemplate(common, outputLanguage) {
     "- If reconstruction is unreliable, say so explicitly instead of filling missing values.",
     "",
     "## Dense Point Data Draft",
-    "- For line, bar, or scatter charts with multiple readable points, add a denser but still reviewable Markdown table with: Series, Point, Axis X, Axis Y, Unit, Confidence, Source, Notes.",
+    "- For line, bar, or scatter charts with multiple readable points, add a denser but still reviewable Markdown table with: Panel, Series, Point, Axis X, Axis Y, Unit, Confidence, Source, Notes.",
     "- Include only points directly visible, read from the chart, or explicitly estimated from the visual. If a region cannot be read, say so instead of interpolating missing values.",
+    "- For multi-panel figures, keep each panel/subplot in separate rows using Panel labels such as Panel A or Panel B; mark unreadable panels explicitly.",
     "",
     "## Pixel / Coordinate Data Draft",
-    "- For visible line, bar, or scatter charts, add a reviewable Markdown table when possible with: Series, Point, Pixel X, Pixel Y, Axis X, Axis Y, Confidence, Source, Notes.",
+    "- For visible line, bar, or scatter charts, add a reviewable Markdown table when possible with: Panel, Series, Point, Pixel X, Pixel Y, Axis X, Axis Y, Confidence, Source, Notes.",
     "- Pixel X/Y are estimated image coordinates; Axis X/Y are values read from the chart scale. Leave fields blank or mark low-confidence when unsure.",
     "- Include only directly visible or explicitly estimated points; do not fabricate a complete series.",
     "",
     "## Axis Calibration Anchors",
-    "- For charts with X/Y axes, add a visible tick-anchor table with: Axis, Pixel, Value, Unit, Source, Confidence, Notes.",
-    "- Provide at least two clear anchors per axis when readable; if the ticks are unreadable, state that calibration is unreliable.",
+    "- For charts with X/Y axes, add a visible tick-anchor table with: Panel, Axis, Pixel, Value, Unit, Scale, Segment, Source, Confidence, Notes.",
+    "- For broken axes where a visible range is easier to read, add one row per readable segment with: Panel, Axis, Segment, Pixel Start, Pixel End, Value Start, Value End, Unit, Scale, Source, Confidence, Notes.",
+    "- Use Scale=linear by default; use Scale=log for logarithmic axes. Use Segment labels for broken axes, piecewise axes, or visibly separated axis ranges.",
+    "- Provide at least two clear anchors per axis, and at least two anchors per segment when segmented axes are readable; if the ticks are unreadable, state that calibration is unreliable.",
     "",
     "## Interpretation And Evidence Map",
     "- Explain what the visual tries to prove and how it supports or limits the paper's claims.",
@@ -14753,6 +17508,7 @@ function candidateReviewEvidenceGap(record, labels) {
   if (decision === "include" && !candidateHasFullText(record)) return labels.evidenceGapMissingFullText;
   if (stage === "full_text_needed") return labels.evidenceGapFullTextNeeded;
   if (record?.quality?.isAbstractOnly === true) return labels.evidenceGapAbstractOnly;
+  if (decision !== "exclude" && candidatePdfExtractionQualityNeedsFollowUp(candidateReviewPdfExtractionQuality(record))) return labels.evidenceGapPdfExtractionQuality;
   if (["include", "to_read"].includes(decision) && stage !== "full_text_screened") return labels.evidenceGapNeedFullTextScreening;
   if (record?.networkOrigins?.length && stage !== "full_text_screened") return labels.evidenceGapCitationContext;
   return "";
@@ -14763,6 +17519,7 @@ function candidateReviewEvidenceCheck(record, labels) {
   if (gap === labels.evidenceGapMissingExclusionReason) return labels.evidenceCheckAddExclusionReason;
   if (gap === labels.evidenceGapMissingFullText || gap === labels.evidenceGapFullTextNeeded) return labels.evidenceCheckFindPdf;
   if (gap === labels.evidenceGapAbstractOnly) return labels.evidenceCheckReadAbstract;
+  if (gap === labels.evidenceGapPdfExtractionQuality) return labels.evidenceCheckPdfExtractionQuality;
   if (gap === labels.evidenceGapCitationContext) return labels.evidenceCheckTraceCitationContext;
   if (gap === labels.evidenceGapNeedFullTextScreening) return labels.evidenceCheckScreenFullText;
   return labels.actionNoImmediate;
@@ -14805,6 +17562,7 @@ function candidateReviewSourceEvidenceRows(records, labels) {
 function candidateHasSourceEvidence(record) {
   if (record?.quality?.dedupeStatus === "duplicate" || record?.priority?.tier === "duplicate") return false;
   return !!candidateReviewFullTextEvidence(record).length
+    || !!candidateReviewPdfExtractionQuality(record)
     || !!candidateReviewAbstract(record)
     || !!record?.pdfUrl
     || record?.pdfAttachmentStatus === "attached_pdf"
@@ -14925,6 +17683,7 @@ function candidatePdfExtractionQualityLocator(record, quality) {
 
 function candidatePdfExtractionQualitySummary(quality, labels) {
   const warnings = (quality?.warnings || []).join(", ") || labels.pdfQualityNoWarnings;
+  const nextAction = candidatePdfExtractionQualityNextAction(quality, labels);
   return [
     `${labels.pdfQualityStatus}: ${quality?.status || labels.unknown || "unknown"}`,
     quality?.engine ? `${labels.pdfQualityEngine}: ${quality.engine}` : "",
@@ -14932,8 +17691,35 @@ function candidatePdfExtractionQualitySummary(quality, labels) {
     `${labels.pdfQualityEmptyPages}: ${quality?.emptyPageCount || 0}`,
     `${labels.pdfQualityTotalText}: ${quality?.totalTextChars || 0}`,
     `${labels.pdfQualityOcrFallback}: ${quality?.ocrFallbackUsed ? labels.pdfQualityYes : labels.pdfQualityNo}`,
-    `${labels.pdfQualityWarnings}: ${warnings}`
+    quality?.ocrPageStrategy ? `${labels.pdfQualityOcrStrategy}: ${quality.ocrPageStrategy}` : "",
+    quality?.ocrMaxPages ? `${labels.pdfQualityOcrPageCap}: ${quality.ocrMaxPages}${quality?.ocrRequestedPageCount ? `/${quality.ocrRequestedPageCount}` : ""}` : "",
+    `${labels.pdfQualityOcrFullDocument}: ${quality?.ocrFullDocumentUsed ? labels.pdfQualityYes : labels.pdfQualityNo}`,
+    quality?.ocrConfidenceSummary ? `${labels.pdfQualityOcrConfidence}: ${quality.ocrConfidenceSummary}` : "",
+    quality?.ocrConfidenceRisk ? `${labels.pdfQualityOcrRisk}: ${quality.ocrConfidenceRisk}` : "",
+    `${labels.pdfQualityWarnings}: ${warnings}`,
+    nextAction ? `${labels.pdfQualityNextAction}: ${nextAction}` : ""
   ].filter(Boolean).join("; ");
+}
+
+function candidatePdfExtractionQualityNeedsFollowUp(quality) {
+  if (!quality) return false;
+  const status = mdText(quality.status || "").toLowerCase();
+  if (["fail", "failed", "error", "warning"].includes(status)) return true;
+  return (quality.warnings || []).some((warning) => {
+    const value = mdText(warning).toLowerCase();
+    return value && value !== "none" && value !== "no_warnings";
+  });
+}
+
+function candidatePdfExtractionQualityNextAction(quality, labels) {
+  const warnings = new Set((quality?.warnings || []).map((warning) => mdText(warning).toLowerCase()).filter(Boolean));
+  if (warnings.has("pdf_bytes_unavailable")) return labels.pdfQualityActionAttachReadablePdf;
+  if (warnings.has("raw_pdf_byte_text_fallback")) return labels.pdfQualityActionVerifyRawBytes;
+  if (warnings.has("local_bridge_fetch_unavailable") || warnings.has("local_bridge_endpoint_missing")) return labels.pdfQualityActionStartBridge;
+  if (warnings.has("local_bridge_request_failed")) return labels.pdfQualityActionCheckBridge;
+  if (warnings.has("indexed_text_fallback_used")) return labels.pdfQualityActionVerifyIndexedText;
+  if (warnings.has("ocr_page_limit_reached")) return labels.pdfQualityActionIncreaseOcrLimit;
+  return mdText(quality?.nextAction || "");
 }
 
 function candidateReviewFullTextEvidence(record) {
@@ -15126,25 +17912,115 @@ async function candidatePdfEvidenceSource(pdf, record = {}) {
     }
   }
   const bridgePages = await candidatePdfTextPagesFromLocalBridge(pdf, record);
-  if (bridgePages?.pages?.length || bridgePages?.quality) return {
-    sourceType: "pdf-page-text",
-    pages: bridgePages.pages || [],
-    quality: bridgePages.quality || null,
-    engine: bridgePages.engine || "",
-    name: bridgePages.name || ""
+  if (bridgePages?.pages?.length) {
+    return {
+      sourceType: "pdf-page-text",
+      pages: bridgePages.pages || [],
+      quality: bridgePages.quality || null,
+      engine: bridgePages.engine || "",
+      name: bridgePages.name || ""
+    };
+  }
+  const rawBytePages = await candidatePdfTextPagesFromRawBytes(pdf, bridgePages?.quality);
+  if (rawBytePages?.pages?.length) {
+    return {
+      sourceType: "pdf-page-text",
+      pages: rawBytePages.pages || [],
+      quality: rawBytePages.quality || null,
+      engine: rawBytePages.engine || "",
+      name: rawBytePages.name || ""
+    };
+  }
+  const fallbackText = String((await pdf?.attachmentText) || "").trim();
+  if (bridgePages?.quality) {
+    return {
+      sourceType: fallbackText ? "indexed-text" : "pdf-page-text",
+      text: fallbackText,
+      pages: [],
+      quality: candidatePdfExtractionQualityWithFallback(bridgePages.quality, fallbackText),
+      engine: bridgePages.engine || "",
+      name: bridgePages.name || ""
+    };
+  }
+  return fallbackText;
+}
+
+async function candidatePdfTextPagesFromRawBytes(pdf, previousQuality = null) {
+  if (!pdf) return null;
+  const name = attachmentDisplayName(pdf) || "paper.pdf";
+  const rawText = await attachmentPdfRawByteText(pdf);
+  if (!rawText) return null;
+  const extraction = await extractPdfRawByteTextPages(rawText);
+  const pages = extraction.pages || [];
+  if (!pages.length) return null;
+  const inheritedWarnings = Array.isArray(previousQuality?.warnings) ? previousQuality.warnings : [];
+  const warnings = uniquePdfQualityWarnings([
+    ...inheritedWarnings,
+    "raw_pdf_byte_text_fallback",
+    ...(extraction.warnings || []),
+    ...(pages.length === 1 ? ["raw_pdf_page_boundary_uncertain"] : [])
+  ]);
+  const totalTextChars = pages.reduce((sum, page) => sum + mdText(page?.text || "").length, 0);
+  return {
+    pages,
+    quality: candidatePdfExtractionQualityFromResult({
+      name,
+      engine: "pdf-raw-bytes",
+      quality: {
+        status: "warning",
+        engine: "pdf-raw-bytes",
+        pageCount: pages.length,
+        expectedPageCount: pages.length,
+        pagesWithText: pages.length,
+        emptyPageCount: 0,
+        totalTextChars,
+        averageTextCharsPerPage: pages.length ? Math.round(totalTextChars / pages.length) : 0,
+        minTextChars: 40,
+        ocrFallbackUsed: false,
+        ocrPageSignals: [],
+        warnings,
+        nextAction: "Review raw-byte page text against the PDF; use the local bridge/OCR path for final page locators when possible."
+      }
+    }, pages),
+    engine: "pdf-raw-bytes",
+    name
   };
-  return String((await pdf?.attachmentText) || "").trim();
 }
 
 async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
-  if (!pdf || typeof fetch !== "function") return null;
+  if (!pdf) return null;
+  const name = attachmentDisplayName(pdf) || "paper.pdf";
+  if (typeof fetch !== "function") {
+    return {
+      pages: [],
+      quality: candidatePdfBridgeDiagnosticQuality("local_bridge_fetch_unavailable", { name, status: "warning" }),
+      engine: "local-bridge",
+      name
+    };
+  }
   const bridgeArguments = await candidatePdfBridgeArguments(pdf);
-  if (!bridgeArguments) return null;
+  if (!bridgeArguments) {
+    return {
+      pages: [],
+      quality: candidatePdfBridgeDiagnosticQuality("pdf_bytes_unavailable", { name, status: "fail" }),
+      engine: "local-bridge",
+      name
+    };
+  }
   const endpoint = candidatePdfTextBridgeEndpoint(record);
-  if (!endpoint) return null;
+  if (!endpoint) {
+    return {
+      pages: [],
+      quality: candidatePdfBridgeDiagnosticQuality("local_bridge_endpoint_missing", { name: bridgeArguments.name || name, status: "warning" }),
+      engine: "local-bridge",
+      name: bridgeArguments.name || name
+    };
+  }
   const [signal, clearPdfTextTimeout] = typeof setTimeout === "function"
     ? createAbortController(null, 50000)
     : [undefined, () => {}];
+  const fullDocumentOcr = candidatePdfFullDocumentOcrEnabled(record);
+  const maxOcrPages = candidatePdfMaxOcrPages(record, fullDocumentOcr ? 60 : 6);
   try {
     const payload = await assertLocalAgentRequestOk({
       url: endpoint,
@@ -15160,7 +18036,9 @@ async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
             ...bridgeArguments,
             timeoutSeconds: 50,
             ocrFallback: true,
-            maxOcrPages: 3,
+            ocrPageStrategy: fullDocumentOcr ? "all" : "sparse",
+            maxOcrPages,
+            ...(fullDocumentOcr ? { fullDocumentOcr: true } : {}),
             minTextChars: 40
           }
         }
@@ -15175,10 +18053,67 @@ async function candidatePdfTextPagesFromLocalBridge(pdf, record = {}) {
       name: mdText(result?.name || bridgeArguments.name || "")
     };
   } catch (_err) {
-    return null;
+    return {
+      pages: [],
+      quality: candidatePdfBridgeDiagnosticQuality("local_bridge_request_failed", {
+        name: bridgeArguments.name || name,
+        status: "warning",
+        warnings: ["pdf_page_text_unavailable"],
+        error: safeError(_err)
+      }),
+      engine: "local-bridge",
+      name: bridgeArguments.name || name
+    };
   } finally {
     clearPdfTextTimeout();
   }
+}
+
+function candidatePdfExtractionQualityWithFallback(quality, fallbackText) {
+  if (!fallbackText || !quality) return quality;
+  return candidatePdfExtractionQualityFromResult({
+    name: quality.name || "",
+    engine: quality.engine || "",
+    quality: {
+      ...quality,
+      warnings: uniquePdfQualityWarnings([...(quality.warnings || []), "indexed_text_fallback_used"])
+    }
+  }, []);
+}
+
+function candidatePdfBridgeDiagnosticQuality(reason, options = {}) {
+  const warnings = uniquePdfQualityWarnings([reason, ...(options.warnings || [])]);
+  return candidatePdfExtractionQualityFromResult({
+    name: options.name || "",
+    engine: options.engine || "local-bridge",
+    quality: {
+      status: options.status || "warning",
+      engine: options.engine || "local-bridge",
+      pageCount: 0,
+      expectedPageCount: 0,
+      pagesWithText: 0,
+      emptyPageCount: 0,
+      totalTextChars: 0,
+      averageTextCharsPerPage: 0,
+      minTextChars: 40,
+      ocrFallbackUsed: false,
+      ocrPageSignals: [],
+      warnings,
+      lastError: mdText(options.error || ""),
+      nextAction: candidatePdfBridgeDiagnosticNextAction(reason)
+    }
+  }, []);
+}
+
+function uniquePdfQualityWarnings(values) {
+  return [...new Set((values || []).map((value) => mdText(value).toLowerCase()).filter(Boolean))].slice(0, 8);
+}
+
+function candidatePdfBridgeDiagnosticNextAction(reason) {
+  if (reason === "pdf_bytes_unavailable") return "Attach a locally readable PDF file or expose PDF bytes before rerunning page extraction.";
+  if (reason === "local_bridge_fetch_unavailable" || reason === "local_bridge_endpoint_missing") return "Start the local bridge and verify the PDF extraction endpoint.";
+  if (reason === "local_bridge_request_failed") return "Check the local bridge logs, Poppler/Tesseract installation, and PDF file permissions.";
+  return "";
 }
 
 function candidatePdfExtractionQualityFromSource(source) {
@@ -15199,6 +18134,13 @@ function candidatePdfExtractionQualityFromResult(result, pages = []) {
   const warnings = Array.isArray(quality?.warnings) ? quality.warnings.map((item) => mdText(item)).filter(Boolean).slice(0, 8) : [];
   const status = mdText(quality?.status || (pagesWithText ? (warnings.length ? "warning" : "pass") : "fail"));
   if (!quality && !warnings.length && !totalTextChars && !pagesWithText) return null;
+  const ocrPageSignals = candidatePdfOcrPageSignals(quality, normalizedPages);
+  const ocrConfidenceCounts = candidatePdfOcrConfidenceCounts(ocrPageSignals);
+  const ocrConfidenceRisk = candidatePdfOcrConfidenceRisk(ocrConfidenceCounts, {
+    expectedPageCount: Number.isFinite(expectedPageCount) ? expectedPageCount : normalizedPages.length,
+    pagesWithText: Number.isFinite(pagesWithText) ? pagesWithText : 0,
+    emptyPageCount: Number.isFinite(Number(quality?.emptyPageCount)) ? Number(quality.emptyPageCount) : Math.max((Number.isFinite(expectedPageCount) ? expectedPageCount : 0) - (Number.isFinite(pagesWithText) ? pagesWithText : 0), 0)
+  });
   return {
     status,
     engine: mdText(quality?.engine || result?.engine || ""),
@@ -15211,8 +18153,100 @@ function candidatePdfExtractionQualityFromResult(result, pages = []) {
     averageTextCharsPerPage: Number.isFinite(Number(quality?.averageTextCharsPerPage)) ? Number(quality.averageTextCharsPerPage) : 0,
     minTextChars: Number.isFinite(Number(quality?.minTextChars)) ? Number(quality.minTextChars) : 0,
     ocrFallbackUsed: quality?.ocrFallbackUsed === true || quality?.ocrFallbackUsed === "true" || warnings.includes("ocr_fallback_used"),
+    ocrFullDocumentUsed: quality?.ocrFullDocumentUsed === true || quality?.ocrFullDocumentUsed === "true" || warnings.includes("ocr_full_document_used"),
+    ocrPageStrategy: mdText(quality?.ocrPageStrategy || result?.ocrPageStrategy || ""),
+    ocrMaxPages: Number.isFinite(Number(quality?.ocrMaxPages)) ? Number(quality.ocrMaxPages) : 0,
+    ocrRequestedPageCount: Number.isFinite(Number(quality?.ocrRequestedPageCount)) ? Number(quality.ocrRequestedPageCount) : 0,
+    ocrTruncatedPageCount: Number.isFinite(Number(quality?.ocrTruncatedPageCount)) ? Number(quality.ocrTruncatedPageCount) : 0,
+    ocrPageSignals,
+    ocrConfidenceCounts,
+    ocrConfidenceSummary: candidatePdfOcrConfidenceSummary(ocrConfidenceCounts),
+    ocrConfidenceRisk,
+    nextAction: mdText(quality?.nextAction || result?.nextAction || ""),
+    lastError: mdText(quality?.lastError || result?.lastError || ""),
     warnings
   };
+}
+
+function candidatePdfFullDocumentOcrEnabled(record = {}) {
+  const review = record?.review && typeof record.review === "object" && !Array.isArray(record.review) ? record.review : {};
+  return review.pdfFullDocumentOcr === true
+    || review.fullDocumentOcr === true
+    || record?.pdfFullDocumentOcr === true
+    || record?.fullDocumentOcr === true;
+}
+
+function candidatePdfMaxOcrPages(record = {}, fallback = 6) {
+  const review = record?.review && typeof record.review === "object" && !Array.isArray(record.review) ? record.review : {};
+  const value = Number(
+    review.pdfMaxOcrPages
+    ?? review.maxOcrPages
+    ?? record?.pdfMaxOcrPages
+    ?? record?.maxOcrPages
+  );
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.min(Math.max(Math.round(value), 1), 200);
+}
+
+function candidatePdfOcrPageSignals(quality, pages = []) {
+  const direct = Array.isArray(quality?.ocrPageSignals) ? quality.ocrPageSignals : [];
+  const fromPages = (pages || []).map((page) => page?.ocr ? {
+    ...page.ocr,
+    page: page.ocr.page ?? page.page,
+    textChars: page.ocr.textChars ?? mdText(page.text || "").length
+  } : null).filter(Boolean);
+  return (direct.length ? direct : fromPages)
+    .map((signal) => ({
+      page: Number.isFinite(Number(signal?.page)) ? Number(signal.page) : undefined,
+      status: mdText(signal?.status || ""),
+      textChars: Number.isFinite(Number(signal?.textChars)) ? Number(signal.textChars) : 0,
+      ocrConfidence: candidatePdfNormalizedOcrConfidence(signal?.ocrConfidence || signal?.confidence || ""),
+      warnings: Array.isArray(signal?.warnings) ? signal.warnings.map((item) => mdText(item)).filter(Boolean).slice(0, 4) : []
+    }))
+    .slice(0, 40);
+}
+
+function candidatePdfNormalizedOcrConfidence(value) {
+  const normalized = mdText(value || "").toLowerCase();
+  if (["high", "medium", "low", "none", "error"].includes(normalized)) return normalized;
+  if (["empty", "no_text", "notext"].includes(normalized)) return "none";
+  if (["failed", "failure"].includes(normalized)) return "error";
+  return "unknown";
+}
+
+function candidatePdfOcrConfidenceCounts(signals = []) {
+  const counts = { high: 0, medium: 0, low: 0, none: 0, error: 0, unknown: 0, total: 0 };
+  for (const signal of signals || []) {
+    const confidence = candidatePdfNormalizedOcrConfidence(signal?.ocrConfidence || "");
+    counts[confidence] = Number(counts[confidence] || 0) + 1;
+    counts.total += 1;
+  }
+  return counts;
+}
+
+function candidatePdfOcrConfidenceSummary(counts = {}) {
+  const total = Number(counts.total || 0);
+  if (!total) return "";
+  return [
+    `high ${Number(counts.high || 0)}`,
+    `medium ${Number(counts.medium || 0)}`,
+    `low ${Number(counts.low || 0)}`,
+    `none ${Number(counts.none || 0)}`,
+    `error ${Number(counts.error || 0)}`,
+    Number(counts.unknown || 0) ? `unknown ${Number(counts.unknown || 0)}` : ""
+  ].filter(Boolean).join(", ");
+}
+
+function candidatePdfOcrConfidenceRisk(counts = {}, quality = {}) {
+  const total = Number(counts.total || 0);
+  if (!total) return "";
+  const problematic = Number(counts.low || 0) + Number(counts.none || 0) + Number(counts.error || 0) + Number(counts.unknown || 0);
+  const expected = Number(quality.expectedPageCount || 0);
+  const empty = Number(quality.emptyPageCount || 0);
+  const readable = Number(quality.pagesWithText || 0);
+  if (Number(counts.error || 0) || problematic / total >= 0.4 || (expected >= 3 && readable > 0 && empty / expected >= 0.4)) return "high";
+  if (problematic || empty || Number(counts.medium || 0) === total) return "medium";
+  return "low";
 }
 
 async function candidatePdfBridgeArguments(pdf) {
@@ -15271,6 +18305,67 @@ async function attachmentPdfBase64(pdf) {
   return "";
 }
 
+async function attachmentPdfRawByteText(pdf) {
+  const directBase64 = normalizedPdfBase64(
+    pdf?.pdfBase64
+    || pdf?.attachmentBase64
+    || pdf?.base64
+    || pdf?.data
+    || pdf?.dataURL
+  );
+  const directText = pdfBase64ToByteString(directBase64);
+  if (directText) return directText;
+
+  const directBytes = pdfBytesToByteString(pdf?.bytes || pdf?.fileBytes || pdf?.attachmentBytes);
+  if (directBytes) return directBytes;
+
+  for (const method of ["getPdfBase64", "getBase64", "getDataURL", "getData"]) {
+    if (typeof pdf?.[method] !== "function") continue;
+    try {
+      const value = await pdf[method]();
+      const text = pdfBase64ToByteString(normalizedPdfBase64(value)) || pdfBytesToByteString(value);
+      if (text) return text;
+    } catch (_err) {
+      // Keep trying other byte accessors.
+    }
+  }
+
+  for (const method of ["getFileDataAsync", "getBytes", "getArrayBuffer"]) {
+    if (typeof pdf?.[method] !== "function") continue;
+    try {
+      const value = await pdf[method]();
+      const text = pdfBytesToByteString(value) || pdfBase64ToByteString(normalizedPdfBase64(value));
+      if (text) return text;
+    } catch (_err) {
+      // Keep trying other byte accessors.
+    }
+  }
+
+  for (const method of ["getBlob", "getFile", "getFileAsync"]) {
+    if (typeof pdf?.[method] !== "function") continue;
+    try {
+      const blob = await pdf[method]();
+      if (blob && typeof blob.arrayBuffer === "function") {
+        const text = pdfBytesToByteString(await blob.arrayBuffer());
+        if (text) return text;
+      }
+    } catch (_err) {
+      // Keep trying other byte accessors.
+    }
+  }
+
+  try {
+    const filePath = await candidatePdfFilePath(pdf);
+    if (filePath && IOUtils?.read) {
+      const text = pdfBytesToByteString(await IOUtils.read(filePath));
+      if (text) return text;
+    }
+  } catch (_err) {
+    // No local byte fallback is available.
+  }
+  return "";
+}
+
 function normalizedPdfBase64(value) {
   if (typeof value !== "string") return "";
   const text = value.replace(/^data:application\/pdf[^,]*,/i, "").trim();
@@ -15279,17 +18374,227 @@ function normalizedPdfBase64(value) {
 }
 
 function pdfBytesToBase64(value) {
-  if (!value) return "";
-  if (Array.isArray(value)) return bytesToBase64(Uint8Array.from(value));
+  const bytes = pdfBytesToUint8Array(value);
+  return bytes ? bytesToBase64(bytes) : "";
+}
+
+function pdfBytesToByteString(value) {
+  const bytes = pdfBytesToUint8Array(value);
+  if (!bytes?.length) return "";
+  const chunks = [];
+  for (let index = 0; index < bytes.length; index += 8192) {
+    chunks.push(String.fromCharCode(...bytes.slice(index, index + 8192)));
+  }
+  return chunks.join("");
+}
+
+function pdfBytesToUint8Array(value) {
+  if (!value) return null;
+  if (Array.isArray(value)) return Uint8Array.from(value);
   if (typeof ArrayBuffer !== "undefined") {
     if (typeof ArrayBuffer.isView === "function" && ArrayBuffer.isView(value)) {
-      return bytesToBase64(new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength || value.length || 0));
+      return new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength || value.length || 0);
     }
     if (value instanceof ArrayBuffer || Object.prototype.toString.call(value) === "[object ArrayBuffer]") {
-      return bytesToBase64(new Uint8Array(value));
+      return new Uint8Array(value);
     }
   }
+  return null;
+}
+
+function pdfBase64ToByteString(value) {
+  const text = normalizedPdfBase64(value);
+  if (!text) return "";
+  try {
+    if (typeof atob === "function") return atob(text);
+  } catch (_err) {}
+  try {
+    if (typeof Buffer !== "undefined") return Buffer.from(text, "base64").toString("binary");
+  } catch (_err) {}
   return "";
+}
+
+async function extractPdfRawByteTextPages(rawText) {
+  const segments = rawText.split(/\f+|%%Page:\s*[^\r\n]+/g);
+  const rawPageTexts = (segments.length > 1 ? segments : [rawText])
+    .map((segment) => extractPdfReadableText(segment))
+    .map(cleanPdfRawText)
+    .filter((text) => text.length >= 24);
+  const flateTexts = await extractPdfFlateStreamReadableTexts(rawText);
+  const pageTexts = uniquePdfRawPageTexts(flateTexts.length ? flateTexts : rawPageTexts);
+  return {
+    pages: pageTexts.slice(0, 40).map((text, index) => ({
+      page: index + 1,
+      pageLabel: String(index + 1),
+      text,
+      sourceType: "pdf-raw-bytes"
+    })),
+    warnings: flateTexts.length ? ["raw_pdf_flate_stream_fallback"] : []
+  };
+}
+
+function uniquePdfRawPageTexts(texts = []) {
+  const seen = new Set();
+  const unique = [];
+  for (const text of texts || []) {
+    const normalized = cleanPdfRawText(text);
+    if (normalized.length < 24) continue;
+    const key = normalized.toLowerCase().slice(0, 500);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(normalized);
+  }
+  return unique;
+}
+
+async function extractPdfFlateStreamReadableTexts(rawText) {
+  const entries = pdfFlateStreamEntries(rawText);
+  const texts = [];
+  for (const entry of entries.slice(0, 24)) {
+    const decompressed = await decompressPdfFlateByteString(entry.content);
+    if (!decompressed) continue;
+    const readable = cleanPdfRawText(extractPdfReadableText(decompressed));
+    if (readable.length >= 24) texts.push(readable);
+  }
+  return texts;
+}
+
+function pdfFlateStreamEntries(rawText) {
+  const text = String(rawText || "");
+  const entries = [];
+  const streamPattern = /(<<[\s\S]{0,2048}?\/Filter\s*(?:\/FlateDecode|\[[^\]]*\/FlateDecode[^\]]*\])[\s\S]{0,2048}?>>)\s*stream(?:\r?\n|\r)?/g;
+  let match;
+  while ((match = streamPattern.exec(text))) {
+    const streamStart = streamPattern.lastIndex;
+    const streamEnd = text.indexOf("endstream", streamStart);
+    if (streamEnd < 0) break;
+    const content = text.slice(streamStart, streamEnd).replace(/(?:\r?\n|\r)$/, "");
+    if (content) entries.push({ dictionary: match[1], content });
+    streamPattern.lastIndex = streamEnd + "endstream".length;
+  }
+  return entries;
+}
+
+async function decompressPdfFlateByteString(value) {
+  const bytes = byteStringToUint8Array(value);
+  if (!bytes.length) return "";
+  for (const format of ["deflate", "deflate-raw"]) {
+    const inflated = await decompressPdfBytes(bytes, format);
+    if (inflated?.length) return pdfBytesToByteString(inflated);
+  }
+  return "";
+}
+
+async function decompressPdfBytes(bytes, format) {
+  if (typeof DecompressionStream !== "function" || typeof ReadableStream !== "function") return null;
+  try {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      }
+    });
+    const reader = stream.pipeThrough(new DecompressionStream(format)).getReader();
+    const chunks = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = pdfBytesToUint8Array(value);
+      if (!chunk?.length) continue;
+      chunks.push(chunk);
+      total += chunk.length;
+      if (total > 5_000_000) break;
+    }
+    if (!total) return null;
+    const output = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      output.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return output;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function byteStringToUint8Array(value) {
+  const text = String(value || "");
+  const bytes = new Uint8Array(text.length);
+  for (let index = 0; index < text.length; index += 1) {
+    bytes[index] = text.charCodeAt(index) & 0xff;
+  }
+  return bytes;
+}
+
+function extractPdfReadableText(segment) {
+  const pieces = [];
+  const text = String(segment || "");
+  const literalPattern = /\(((?:\\.|[^\\()]){3,})\)\s*(?:Tj|'|"|TJ|\])/g;
+  let match;
+  while ((match = literalPattern.exec(text))) {
+    const decoded = decodePdfLiteralString(match[1]);
+    if (decoded) pieces.push(decoded);
+  }
+  const hexPattern = /<([0-9A-Fa-f\s]{8,})>\s*(?:Tj|'|"|TJ|\])/g;
+  while ((match = hexPattern.exec(text))) {
+    const decoded = decodePdfHexString(match[1]);
+    if (decoded) pieces.push(decoded);
+  }
+  if (pieces.length) return pieces.join(" ");
+  return printablePdfFallbackText(text);
+}
+
+function decodePdfLiteralString(value) {
+  return String(value || "")
+    .replace(/\\([nrtbf()\\])/g, (_match, code) => {
+      if (code === "n") return "\n";
+      if (code === "r") return "\r";
+      if (code === "t") return "\t";
+      if (code === "b") return "\b";
+      if (code === "f") return "\f";
+      return code;
+    })
+    .replace(/\\\r?\n/g, "")
+    .replace(/\\([0-7]{1,3})/g, (_match, octal) => String.fromCharCode(parseInt(octal, 8) || 0));
+}
+
+function decodePdfHexString(value) {
+  const hex = String(value || "").replace(/\s+/g, "");
+  if (hex.length < 8) return "";
+  const padded = hex.length % 2 ? `${hex}0` : hex;
+  const bytes = [];
+  for (let index = 0; index < padded.length; index += 2) {
+    const byte = parseInt(padded.slice(index, index + 2), 16);
+    if (Number.isFinite(byte)) bytes.push(byte);
+  }
+  if (!bytes.length) return "";
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    const chars = [];
+    for (let index = 2; index + 1 < bytes.length; index += 2) {
+      chars.push(String.fromCharCode((bytes[index] << 8) + bytes[index + 1]));
+    }
+    return chars.join("");
+  }
+  return bytes.map((byte) => String.fromCharCode(byte)).join("");
+}
+
+function printablePdfFallbackText(value) {
+  return String(value || "")
+    .replace(/[^\x09\x0a\x0d\x20-\x7e]+/g, " ")
+    .split(/\s{2,}|[<>[\]{}]/g)
+    .map((part) => part.trim())
+    .filter((part) => /[A-Za-z][A-Za-z\s,.;:()/-]{20,}/.test(part))
+    .filter((part) => !/^(obj|endobj|stream|endstream|xref|trailer|startxref|Type|Length|Filter|FlateDecode)\b/i.test(part))
+    .join(" ");
+}
+
+function cleanPdfRawText(value) {
+  return mdText(value)
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .trim();
 }
 
 function candidatePdfTextBridgeEndpoint(record = {}) {
@@ -15304,8 +18609,12 @@ function candidatePdfTextBridgeEndpoint(record = {}) {
 
 function indexedTextForEvidence(text) {
   const explicitPages = normalizePdfTextPagesForEvidence(text);
-  const normalizedPages = explicitPages.length ? explicitPages : splitIndexedTextPages(text);
-  const sourceType = explicitPages.length ? "pdf-page-text" : "indexed-text";
+  const objectSource = text && typeof text === "object" && !Array.isArray(text) ? text : null;
+  const rawText = objectSource
+    ? objectSource.text ?? objectSource.attachmentText ?? objectSource.fullText ?? objectSource.value ?? ""
+    : text;
+  const normalizedPages = explicitPages.length ? explicitPages : splitIndexedTextPages(rawText);
+  const sourceType = explicitPages.length ? "pdf-page-text" : candidateFullTextLocatorSourceType(objectSource?.sourceType || "indexed-text");
   const pages = [];
   let cursor = 0;
   normalizedPages.forEach((pageEntry, index) => {
@@ -15900,11 +19209,13 @@ function candidateReviewLabels(outputLanguage) {
       evidenceGapAbstractOnly: "仅摘要，缺少方法、实验和局限证据",
       evidenceGapNeedFullTextScreening: "尚未完成全文筛选",
       evidenceGapCitationContext: "引用网络相关性需要回到原文核对",
+      evidenceGapPdfExtractionQuality: "PDF 页文本抽取质量需要复核",
       evidenceCheckAddExclusionReason: "补充排除理由，并在备注中写明证据位置。",
       evidenceCheckFindPdf: "查找开放获取 PDF 或附加本地全文，再更新筛选阶段。",
       evidenceCheckScreenFullText: "检查方法、实验、局限和可复用指标，并标记为已筛全文。",
       evidenceCheckReadAbstract: "先核对摘要与来源页，能获取全文后再进入纳入判断。",
       evidenceCheckTraceCitationContext: "核对它与种子论文的引用/被引关系和具体段落上下文。",
+      evidenceCheckPdfExtractionQuality: "检查本地 bridge、PDF 文件权限或 indexed-text fallback，必要时重新抽取页文本。",
       evidenceSourcePdfUrl: "PDF 链接",
       evidenceSourceAttachedPdf: "已附加 PDF",
       evidenceSourceNetwork: "引用网络",
@@ -15937,7 +19248,19 @@ function candidateReviewLabels(outputLanguage) {
       pdfQualityEmptyPages: "空页",
       pdfQualityTotalText: "文本字符",
       pdfQualityOcrFallback: "OCR fallback",
+      pdfQualityOcrStrategy: "OCR 范围",
+      pdfQualityOcrPageCap: "OCR 页数上限/请求页",
+      pdfQualityOcrFullDocument: "整篇 OCR",
+      pdfQualityOcrConfidence: "OCR 置信度",
+      pdfQualityOcrRisk: "OCR 风险",
       pdfQualityWarnings: "告警",
+      pdfQualityNextAction: "下一步",
+      pdfQualityActionAttachReadablePdf: "附加本机可读取的 PDF 文件，或启用可访问的 PDF 字节后重新抽取页文本。",
+      pdfQualityActionVerifyRawBytes: "已从 PDF 原始字节生成可复核页文本；请对照原文核对页码和上下文，条件允许时再用本地 bridge/OCR 提高准确性。",
+      pdfQualityActionStartBridge: "启动本地 bridge，并确认 PDF 页文本抽取 endpoint 可访问。",
+      pdfQualityActionCheckBridge: "检查本地 bridge 日志、Poppler/Tesseract 安装和 PDF 文件权限。",
+      pdfQualityActionVerifyIndexedText: "当前已回退到 Zotero indexed text；请打开原文核对页码和上下文。",
+      pdfQualityActionIncreaseOcrLimit: "OCR 页数达到上限；如确实需要整篇扫描件，请提高 maxOcrPages 后重新抽取，并人工核对剩余页。",
       pdfQualityNoWarnings: "无",
       pdfQualityYes: "是",
       pdfQualityNo: "否",
@@ -16061,11 +19384,13 @@ function candidateReviewLabels(outputLanguage) {
     evidenceGapAbstractOnly: "Abstract-only record lacks method, experiment, and limitation evidence",
     evidenceGapNeedFullTextScreening: "Full-text screening is not complete",
     evidenceGapCitationContext: "Citation-network relevance needs source-context verification",
+    evidenceGapPdfExtractionQuality: "PDF page-text extraction quality needs review",
     evidenceCheckAddExclusionReason: "Add an exclusion reason and note the evidence location.",
     evidenceCheckFindPdf: "Find an open-access PDF or attach local full text, then update the screening stage.",
     evidenceCheckScreenFullText: "Check method, experiments, limitations, and reusable metrics, then mark full text screened.",
     evidenceCheckReadAbstract: "Check the abstract and source page first; defer inclusion until full text is available.",
     evidenceCheckTraceCitationContext: "Verify the reference/citation relation and the source paragraphs around it.",
+    evidenceCheckPdfExtractionQuality: "Check the local bridge, PDF file permissions, or indexed-text fallback, then rerun page extraction if needed.",
     evidenceSourcePdfUrl: "PDF URL",
     evidenceSourceAttachedPdf: "Attached PDF",
     evidenceSourceNetwork: "Citation network",
@@ -16098,7 +19423,19 @@ function candidateReviewLabels(outputLanguage) {
     pdfQualityEmptyPages: "empty pages",
     pdfQualityTotalText: "text chars",
     pdfQualityOcrFallback: "OCR fallback",
+    pdfQualityOcrStrategy: "OCR scope",
+    pdfQualityOcrPageCap: "OCR page cap/requested",
+    pdfQualityOcrFullDocument: "full-document OCR",
+    pdfQualityOcrConfidence: "OCR confidence",
+    pdfQualityOcrRisk: "OCR risk",
     pdfQualityWarnings: "warnings",
+    pdfQualityNextAction: "next action",
+    pdfQualityActionAttachReadablePdf: "Attach a locally readable PDF file or expose PDF bytes before rerunning page extraction.",
+    pdfQualityActionVerifyRawBytes: "Review raw-byte page text against the PDF; use the local bridge/OCR path for final page locators when possible.",
+    pdfQualityActionStartBridge: "Start the local bridge and verify the PDF page extraction endpoint.",
+    pdfQualityActionCheckBridge: "Check local bridge logs, Poppler/Tesseract installation, and PDF file permissions.",
+    pdfQualityActionVerifyIndexedText: "The report fell back to Zotero indexed text; verify page and context in the original PDF.",
+    pdfQualityActionIncreaseOcrLimit: "The OCR page cap was reached. Increase maxOcrPages only when full scanned-document extraction is needed, then verify remaining pages manually.",
     pdfQualityNoWarnings: "none",
     pdfQualityYes: "yes",
     pdfQualityNo: "no",

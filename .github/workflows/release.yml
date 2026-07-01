@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.1.146"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish XPI and update manifest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve release tag
+        id: release-tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag="${INPUT_TAG:-$REF_NAME}"
+          if [ -z "$tag" ]; then
+            echo "Release tag is required" >&2
+            exit 1
+          fi
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]'; then
+            echo "Release tag must start with v and a version number: $tag" >&2
+            exit 1
+          fi
+          package_version="$(node -p "require('./package.json').version")"
+          manifest_version="$(node -p "require('./addon/manifest.json').version")"
+          expected_tag="v$package_version"
+          if [ "$tag" != "$expected_tag" ]; then
+            echo "Release tag $tag does not match package version $package_version" >&2
+            exit 1
+          fi
+          if [ "$manifest_version" != "$package_version" ]; then
+            echo "addon/manifest.json version $manifest_version does not match package version $package_version" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Run project checks
+        run: npm run check
+
+      - name: Rebuild release update manifest for tag
+        env:
+          RELEASE_TAG: ${{ steps.release-tag.outputs.tag }}
+        run: |
+          npm run build
+          node scripts/build-update-manifest.mjs --tag "$RELEASE_TAG"
+          node scripts/build-update-manifest.mjs --check --tag "$RELEASE_TAG"
+          npm run verify:zip
+          npm run verify:package
+
+      - name: Create or update GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release-tag.outputs.tag }}
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes
+          gh release upload "$RELEASE_TAG" \
+            build/literature-review-with-llm.xpi \
+            build/update.json \
+            --clobber

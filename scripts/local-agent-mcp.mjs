@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { cwd as currentDirectory } from "node:process";
@@ -228,7 +228,11 @@ function pdfPagesSchema() {
       },
       ocrFallback: {
         type: "boolean",
-        description: "When true, render and OCR the first PDF pages if pdftotext returns little or no text."
+        description: "When true, render and OCR the first PDF pages if pdftotext returns little or no text. The result includes per-page OCR confidence signals."
+      },
+      fullDocumentOcr: {
+        type: "boolean",
+        description: "Opt in to a higher OCR page cap for scanned PDFs. Use with ocrPageStrategy=all or explicit ocrPages when a full-document pass is needed."
       },
       ocrLanguage: {
         type: "string",
@@ -236,7 +240,40 @@ function pdfPagesSchema() {
       },
       maxOcrPages: {
         type: "number",
-        description: "Maximum number of pages to OCR during fallback. Defaults to 3 and is capped at 12."
+        description: "Maximum number of pages to OCR during fallback. Defaults to 3 and is capped at 12, or at the full-document cap when fullDocumentOcr is true."
+      },
+      ocrPageStrategy: {
+        type: "string",
+        description: "OCR fallback page selection strategy: first, sparse, or all. sparse uses pdftotext page breaks to OCR empty or low-text pages across the document before falling back to the first pages."
+      },
+      ocrAutoRepair: {
+        type: "boolean",
+        description: "When true, retry empty or failed OCR pages after a higher-DPI render. Enabled by default."
+      },
+      ocrRepairPsms: {
+        anyOf: [
+          { type: "string" },
+          { type: "array", items: { type: "number" } }
+        ],
+        description: "Optional Tesseract page segmentation modes for OCR repair after high-DPI retry still returns no text. Defaults to 6,11."
+      },
+      ocrPreprocessRepair: {
+        type: "boolean",
+        description: "When true, retry stubborn OCR repair pages with preprocessed renders. Enabled by default."
+      },
+      ocrPreprocessModes: {
+        anyOf: [
+          { type: "string" },
+          { type: "array", items: { type: "string" } }
+        ],
+        description: "Optional OCR preprocessing modes for stubborn repair pages. Defaults to grayscale,monochrome,adaptive-threshold."
+      },
+      ocrPages: {
+        anyOf: [
+          { type: "string" },
+          { type: "array", items: { type: "number" } }
+        ],
+        description: "Optional explicit pages or ranges to OCR, for example 1,3-5. This is still bounded by maxOcrPages."
       },
       minTextChars: {
         type: "number",
@@ -404,30 +441,49 @@ async function extractPdfPages(args = {}) {
       await writeFile(sourcePath, Buffer.from(pdfBase64, "base64"));
     }
     let pages = [];
+    let pageSlots = [];
     try {
       const output = await runCommand(PDFTOTEXT_BIN, ["-layout", sourcePath, "-"], {
         cwd: dir || currentDirectory(),
         timeoutSeconds: pdfTextTimeoutSeconds(args.timeoutSeconds),
         requireOutput: false
       });
-      pages = pdfPageEntriesFromText(output === "(empty response)" ? "" : output);
+      const textOutput = output === "(empty response)" ? "" : output;
+      pageSlots = pdfPageEntriesFromText(textOutput, { includeEmpty: true });
+      pages = pageSlots.filter((entry) => entry.text);
     } catch (error) {
       textError = error;
       if (!pdfOcrFallbackEnabled(args)) throw error;
     }
     let ocrResult = null;
-    const shouldAttemptOcr = shouldRunPdfOcrFallback(args, pages);
+    const shouldAttemptOcr = shouldRunPdfOcrFallback(args, pages, pageSlots);
     if (shouldAttemptOcr) {
-      ocrResult = await extractPdfOcrPages(sourcePath, args);
+      ocrResult = await extractPdfOcrPages(sourcePath, { ...args, textPageSlots: pageSlots });
       if (ocrResult.pages.length) {
-        return JSON.stringify(pdfPagesResult(args, pdf, filePath, "tesseract", ocrResult.pages, {
+        const mergedPages = pages.length
+          ? pdfMergeTextAndOcrPages(pageSlots, pages, ocrResult.pages)
+          : ocrResult.pages;
+        return JSON.stringify(pdfPagesResult(args, pdf, filePath, pages.length ? "pdftotext+tesseract" : "tesseract", mergedPages, {
           ocrFallbackUsed: true,
           textPageCount: pages.length,
+          textSlotCount: pageSlots.length,
           ocrFallbackAttempted: true,
           ocrRenderedPageCount: ocrResult.renderedPageCount,
           ocrEmptyPageCount: ocrResult.emptyPageCount,
+          ocrPageSignals: ocrResult.pageSignals,
           ocrLanguage: ocrResult.language,
           ocrMaxPages: ocrResult.maxPages,
+          ocrPageStrategy: ocrResult.pageStrategy,
+          ocrRequestedPageCount: ocrResult.requestedPageCount,
+          ocrTruncatedPageCount: ocrResult.truncatedPageCount,
+          ocrFullDocumentUsed: ocrResult.fullDocumentOcr,
+          ocrRepairAttemptedPageCount: ocrResult.repairAttemptedPageCount,
+          ocrRepairRecoveredPageCount: ocrResult.repairRecoveredPageCount,
+          ocrRepairFailedPageCount: ocrResult.repairFailedPageCount,
+          ocrRepairPsmAttemptedPageCount: ocrResult.repairPsmAttemptedPageCount,
+          ocrRepairPsmRecoveredPageCount: ocrResult.repairPsmRecoveredPageCount,
+          ocrPreprocessAttemptedPageCount: ocrResult.preprocessAttemptedPageCount,
+          ocrPreprocessRecoveredPageCount: ocrResult.preprocessRecoveredPageCount,
           textError: textError ? cleanPdfPageText(textError.message || String(textError)).slice(0, 500) : ""
         }));
       }
@@ -437,10 +493,23 @@ async function extractPdfPages(args = {}) {
       ocrFallbackUsed: false,
       ocrFallbackAttempted: shouldAttemptOcr,
       textPageCount: pages.length,
+      textSlotCount: pageSlots.length,
       ocrRenderedPageCount: ocrResult?.renderedPageCount || 0,
       ocrEmptyPageCount: ocrResult?.emptyPageCount || 0,
+      ocrPageSignals: ocrResult?.pageSignals || [],
       ocrLanguage: ocrResult?.language || "",
-      ocrMaxPages: ocrResult?.maxPages || 0
+      ocrMaxPages: ocrResult?.maxPages || 0,
+      ocrPageStrategy: ocrResult?.pageStrategy || pdfOcrPageStrategy(args.ocrPageStrategy),
+      ocrRequestedPageCount: ocrResult?.requestedPageCount || 0,
+      ocrTruncatedPageCount: ocrResult?.truncatedPageCount || 0,
+      ocrFullDocumentUsed: Boolean(ocrResult?.fullDocumentOcr),
+      ocrRepairAttemptedPageCount: ocrResult?.repairAttemptedPageCount || 0,
+      ocrRepairRecoveredPageCount: ocrResult?.repairRecoveredPageCount || 0,
+      ocrRepairFailedPageCount: ocrResult?.repairFailedPageCount || 0,
+      ocrRepairPsmAttemptedPageCount: ocrResult?.repairPsmAttemptedPageCount || 0,
+      ocrRepairPsmRecoveredPageCount: ocrResult?.repairPsmRecoveredPageCount || 0,
+      ocrPreprocessAttemptedPageCount: ocrResult?.preprocessAttemptedPageCount || 0,
+      ocrPreprocessRecoveredPageCount: ocrResult?.preprocessRecoveredPageCount || 0
     }));
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true });
@@ -449,45 +518,387 @@ async function extractPdfPages(args = {}) {
 
 async function extractPdfOcrPages(sourcePath, args = {}) {
   const renderDir = await mkdtemp(join(tmpdir(), "zms-pdf-ocr-"));
-  const prefix = join(renderDir, "page");
-  const maxPages = pdfOcrMaxPages(args.maxOcrPages);
+  const pagePlan = pdfOcrPageNumberPlan(args, args.textPageSlots || []);
+  const maxPages = pagePlan.maxPages;
+  const pageNumbers = pagePlan.pages;
   const language = pdfOcrLanguage(args.ocrLanguage || args.language);
   try {
-    await runCommand(PDFTOPPM_BIN, ["-png", "-r", "200", "-f", "1", "-l", String(maxPages), sourcePath, prefix], {
-      cwd: renderDir,
-      timeoutSeconds: pdfRenderTimeoutSeconds(args.timeoutSeconds),
-      requireOutput: false
-    });
+    for (const pageNumber of pageNumbers) {
+      await renderPdfOcrPage(sourcePath, renderDir, pageNumber, `page-${pageNumber}`, 200, args);
+    }
     const rendered = await pdfRenderedImagePaths(renderDir);
     const pages = [];
+    const pageSignals = [];
+    let repairAttemptedPageCount = 0;
+    let repairRecoveredPageCount = 0;
+    let repairFailedPageCount = 0;
+    let repairPsmAttemptedPageCount = 0;
+    let repairPsmRecoveredPageCount = 0;
+    let preprocessAttemptedPageCount = 0;
+    let preprocessRecoveredPageCount = 0;
     const pageTimeout = pdfOcrPageTimeoutSeconds(args.timeoutSeconds, maxPages);
     for (const imagePath of rendered.slice(0, maxPages)) {
       const page = pdfRenderedImagePage(imagePath) || (pages.length + 1);
-      const text = await runCommand(TESSERACT_BIN, [imagePath, "stdout", "-l", language], {
-        cwd: renderDir,
-        timeoutSeconds: pageTimeout,
-        requireOutput: false
-      });
-      const cleaned = cleanPdfPageText(text === "(empty response)" ? "" : text);
-      if (cleaned) {
+      let result = await runPdfOcrOnImage(imagePath, renderDir, language, pageTimeout);
+      let signal = pdfOcrPageSignal({ page, text: result.cleaned, error: result.error, language });
+      if (pdfOcrAutoRepairEnabled(args) && signal.status !== "ok") {
+        repairAttemptedPageCount += 1;
+        const repaired = await repairPdfOcrPage(sourcePath, renderDir, page, language, pageTimeout, signal, args);
+        signal = repaired.signal;
+        result = { cleaned: repaired.cleaned, error: repaired.error };
+        if (signal.repairPsm || signal.repairPsmAttempted?.length) {
+          repairPsmAttemptedPageCount += 1;
+        }
+        if (signal.repairPreprocess) {
+          preprocessAttemptedPageCount += 1;
+        }
+        if (signal.status === "ok") {
+          repairRecoveredPageCount += 1;
+          if (signal.repairPsm) {
+            repairPsmRecoveredPageCount += 1;
+          }
+          if (signal.repairPreprocess) {
+            preprocessRecoveredPageCount += 1;
+          }
+        } else {
+          repairFailedPageCount += 1;
+        }
+      }
+      pageSignals.push(signal);
+      if (result.cleaned) {
         pages.push({
           page,
           pageLabel: String(page),
-          text: cleaned
+          text: result.cleaned,
+          ocr: signal
         });
       }
     }
     const renderedPageCount = Math.min(rendered.length, maxPages);
     return {
       pages,
+      pageSignals,
       renderedPageCount,
-      emptyPageCount: Math.max(renderedPageCount - pages.length, 0),
+      emptyPageCount: pageSignals.filter((signal) => signal.status !== "ok").length || Math.max(renderedPageCount - pages.length, 0),
       maxPages,
+      pageNumbers,
+      pageStrategy: pagePlan.strategy,
+      requestedPageCount: pagePlan.requestedPageCount,
+      truncatedPageCount: pagePlan.truncatedPageCount,
+      fullDocumentOcr: pagePlan.fullDocumentOcr,
+      repairAttemptedPageCount,
+      repairRecoveredPageCount,
+      repairFailedPageCount,
+      repairPsmAttemptedPageCount,
+      repairPsmRecoveredPageCount,
+      preprocessAttemptedPageCount,
+      preprocessRecoveredPageCount,
       language
     };
   } finally {
     await rm(renderDir, { recursive: true, force: true });
   }
+}
+
+async function renderPdfOcrPage(sourcePath, renderDir, pageNumber, prefixName, dpi, args = {}, options = {}) {
+  const prefix = join(renderDir, prefixName);
+  const colorMode = pdfOcrRenderColorMode(options.colorMode);
+  const commandArgs = colorMode === "gray" ? ["-gray"] : colorMode === "mono" ? ["-mono"] : ["-png"];
+  commandArgs.push("-r", String(dpi), "-f", String(pageNumber), "-l", String(pageNumber), sourcePath, prefix);
+  await runCommand(PDFTOPPM_BIN, commandArgs, {
+    cwd: renderDir,
+    timeoutSeconds: pdfRenderTimeoutSeconds(args.timeoutSeconds),
+    requireOutput: false
+  });
+}
+
+async function runPdfOcrOnImage(imagePath, renderDir, language, pageTimeout, options = {}) {
+  let cleaned = "";
+  let error = "";
+  try {
+    const commandArgs = [imagePath, "stdout", "-l", language];
+    const psm = pdfOcrRepairPsmValue(options.psm);
+    if (psm) commandArgs.push("--psm", String(psm));
+    const text = await runCommand(TESSERACT_BIN, commandArgs, {
+      cwd: renderDir,
+      timeoutSeconds: pageTimeout,
+      requireOutput: false
+    });
+    cleaned = cleanPdfPageText(text === "(empty response)" ? "" : text);
+  } catch (err) {
+    error = cleanPdfPageText(err?.message || String(err)).slice(0, 500);
+  }
+  return { cleaned, error };
+}
+
+async function repairPdfOcrPage(sourcePath, renderDir, page, language, pageTimeout, previousSignal, args = {}) {
+  const dpi = pdfOcrRepairDpi(args.ocrRepairDpi);
+  const previousStatus = previousSignal?.status || "unknown";
+  const previousError = previousSignal?.error || "";
+  const psmModes = pdfOcrRepairPsmModes(args.ocrRepairPsms);
+  const psmAttempted = [];
+  try {
+    await renderPdfOcrPage(sourcePath, renderDir, page, `repair-page-${page}`, dpi, args);
+    const imagePath = await pdfRenderedRepairImagePath(renderDir, page);
+    const result = await runPdfOcrOnImage(imagePath, renderDir, language, pageTimeout);
+    if (result.cleaned) {
+      return {
+        ...result,
+        signal: pdfOcrPageSignal({
+          page,
+          text: result.cleaned,
+          error: result.error,
+          language,
+          repair: {
+            attempted: true,
+            dpi,
+            strategy: "high_dpi",
+            previousStatus,
+            previousError,
+            recovered: true
+          }
+        })
+      };
+    }
+    let lastResult = result;
+    for (const psm of psmModes) {
+      psmAttempted.push(psm);
+      const psmResult = await runPdfOcrOnImage(imagePath, renderDir, language, pageTimeout, { psm });
+      lastResult = psmResult;
+      if (psmResult.cleaned) {
+        return {
+          ...psmResult,
+          signal: pdfOcrPageSignal({
+            page,
+            text: psmResult.cleaned,
+            error: psmResult.error,
+            language,
+            repair: {
+              attempted: true,
+              dpi,
+              psm,
+              psmAttempted,
+              strategy: "high_dpi_psm",
+              previousStatus,
+              previousError,
+              recovered: true
+            }
+          })
+        };
+      }
+    }
+    let lastPreprocess = "";
+    if (pdfOcrPreprocessRepairEnabled(args)) {
+      for (const preprocess of pdfOcrPreprocessRepairModes(args.ocrPreprocessModes)) {
+        lastPreprocess = preprocess;
+        const prefixName = `repair-${preprocess}-page-${page}`;
+        const preprocessedImagePath = await renderPdfOcrPreprocessPage(sourcePath, renderDir, page, prefixName, dpi, args, preprocess);
+        const preprocessedResult = await runPdfOcrOnImage(preprocessedImagePath, renderDir, language, pageTimeout);
+        lastResult = preprocessedResult;
+        if (preprocessedResult.cleaned) {
+          return {
+            ...preprocessedResult,
+            signal: pdfOcrPageSignal({
+              page,
+              text: preprocessedResult.cleaned,
+              error: preprocessedResult.error,
+              language,
+              repair: {
+                attempted: true,
+                dpi,
+                strategy: preprocess,
+                preprocess,
+                psmAttempted,
+                previousStatus,
+                previousError,
+                recovered: true
+              }
+            })
+          };
+        }
+        for (const psm of psmModes) {
+          if (!psmAttempted.includes(psm)) psmAttempted.push(psm);
+          const preprocessedPsmResult = await runPdfOcrOnImage(preprocessedImagePath, renderDir, language, pageTimeout, { psm });
+          lastResult = preprocessedPsmResult;
+          if (preprocessedPsmResult.cleaned) {
+            return {
+              ...preprocessedPsmResult,
+              signal: pdfOcrPageSignal({
+                page,
+                text: preprocessedPsmResult.cleaned,
+                error: preprocessedPsmResult.error,
+                language,
+                repair: {
+                  attempted: true,
+                  dpi,
+                  psm,
+                  psmAttempted,
+                  strategy: `${preprocess}_psm`,
+                  preprocess,
+                  previousStatus,
+                  previousError,
+                  recovered: true
+                }
+              })
+            };
+          }
+        }
+      }
+    }
+    const signal = pdfOcrPageSignal({
+      page,
+      text: "",
+      error: lastResult.error,
+      language,
+      repair: {
+        attempted: true,
+        dpi,
+        psmAttempted,
+        strategy: lastPreprocess ? `${lastPreprocess}_psm` : "high_dpi_psm",
+        ...(lastPreprocess ? { preprocess: lastPreprocess } : {}),
+        previousStatus,
+        previousError,
+        recovered: false
+      }
+    });
+    return { cleaned: "", error: lastResult.error, signal };
+  } catch (err) {
+    const error = cleanPdfPageText(err?.message || String(err)).slice(0, 500);
+    const signal = pdfOcrPageSignal({
+      page,
+      text: "",
+      error,
+      language,
+      repair: {
+        attempted: true,
+        dpi,
+        strategy: "high_dpi",
+        previousStatus,
+        previousError,
+        recovered: false
+      }
+    });
+    return { cleaned: "", error, signal };
+  }
+}
+
+async function renderPdfOcrPreprocessPage(sourcePath, renderDir, page, prefixName, dpi, args = {}, preprocess = "") {
+  if (preprocess === "adaptive-threshold") {
+    await renderPdfOcrPage(sourcePath, renderDir, page, prefixName, dpi, args, { colorMode: "gray" });
+    const grayPath = await pdfRenderedRepairImagePath(renderDir, page, prefixName);
+    const adaptivePath = join(renderDir, `${prefixName}-${page}.pbm`);
+    const converted = await writeAdaptiveThresholdPbm(grayPath, adaptivePath);
+    return converted || grayPath;
+  }
+  await renderPdfOcrPage(sourcePath, renderDir, page, prefixName, dpi, args, {
+    colorMode: pdfOcrPreprocessColorMode(preprocess)
+  });
+  return pdfRenderedRepairImagePath(renderDir, page, prefixName);
+}
+
+async function writeAdaptiveThresholdPbm(inputPath, outputPath) {
+  try {
+    const pgm = parsePgm(await readFile(inputPath));
+    if (!pgm) return "";
+    const radius = 8;
+    const bias = 12;
+    const pixels = [];
+    for (let y = 0; y < pgm.height; y += 1) {
+      for (let x = 0; x < pgm.width; x += 1) {
+        let sum = 0;
+        let count = 0;
+        const yStart = Math.max(0, y - radius);
+        const yEnd = Math.min(pgm.height - 1, y + radius);
+        const xStart = Math.max(0, x - radius);
+        const xEnd = Math.min(pgm.width - 1, x + radius);
+        for (let yy = yStart; yy <= yEnd; yy += 1) {
+          for (let xx = xStart; xx <= xEnd; xx += 1) {
+            sum += pgm.pixels[yy * pgm.width + xx];
+            count += 1;
+          }
+        }
+        const localMean = count ? sum / count : 0;
+        const value = pgm.pixels[y * pgm.width + x];
+        pixels.push(value < localMean - bias ? "1" : "0");
+      }
+    }
+    const lines = [`P1`, `${pgm.width} ${pgm.height}`];
+    for (let index = 0; index < pixels.length; index += pgm.width) {
+      lines.push(pixels.slice(index, index + pgm.width).join(" "));
+    }
+    await writeFile(outputPath, `${lines.join("\n")}\n`);
+    return outputPath;
+  } catch (_err) {
+    return "";
+  }
+}
+
+function parsePgm(buffer) {
+  const text = buffer.toString("latin1");
+  const header = [];
+  let index = 0;
+  while (header.length < 4 && index < text.length) {
+    while (/\s/.test(text[index] || "")) index += 1;
+    if (text[index] === "#") {
+      while (index < text.length && text[index] !== "\n") index += 1;
+      continue;
+    }
+    const start = index;
+    while (index < text.length && !/\s/.test(text[index] || "")) index += 1;
+    if (index > start) header.push(text.slice(start, index));
+  }
+  const [magic, widthRaw, heightRaw, maxRaw] = header;
+  const width = Number(widthRaw);
+  const height = Number(heightRaw);
+  const maxValue = Number(maxRaw);
+  if ((magic !== "P2" && magic !== "P5") || !Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 || !Number.isFinite(maxValue) || maxValue <= 0) {
+    return null;
+  }
+  while (/\s/.test(text[index] || "")) index += 1;
+  const expected = width * height;
+  let pixels = [];
+  if (magic === "P2") {
+    pixels = text.slice(index).split(/\s+/).filter(Boolean).slice(0, expected).map((value) => Number(value));
+  } else {
+    const start = Buffer.byteLength(text.slice(0, index), "latin1");
+    const bytes = buffer.subarray(start, start + expected * (maxValue > 255 ? 2 : 1));
+    if (maxValue > 255) {
+      for (let byteIndex = 0; byteIndex + 1 < bytes.length && pixels.length < expected; byteIndex += 2) {
+        pixels.push(bytes.readUInt16BE(byteIndex));
+      }
+    } else {
+      pixels = Array.from(bytes.slice(0, expected));
+    }
+  }
+  if (pixels.length < expected || pixels.some((value) => !Number.isFinite(value))) return null;
+  const scale = maxValue === 255 ? 1 : 255 / maxValue;
+  return {
+    width,
+    height,
+    pixels: pixels.map((value) => Math.max(0, Math.min(255, Math.round(value * scale))))
+  };
+}
+
+async function pdfRenderedRepairImagePath(renderDir, page, prefixName = `repair-page-${page}`) {
+  const expected = `${prefixName}-${page}.png`;
+  const repairPrefix = `${prefixName}-`;
+  const images = await pdfRenderedImagePaths(renderDir);
+  return images.find((imagePath) => basename(imagePath) === expected)
+    || images.find((imagePath) => basename(imagePath).startsWith(repairPrefix))
+    || join(renderDir, expected);
+}
+
+function pdfMergeTextAndOcrPages(pageSlots = [], textPages = [], ocrPages = []) {
+  const textByPage = new Map((textPages || []).map((page) => [Number(page.page), page]));
+  const ocrByPage = new Map((ocrPages || []).map((page) => [Number(page.page), page]));
+  const pageNumbers = Array.from(new Set([
+    ...(pageSlots || []).map((page) => Number(page.page)),
+    ...(textPages || []).map((page) => Number(page.page)),
+    ...(ocrPages || []).map((page) => Number(page.page))
+  ].filter((page) => Number.isFinite(page) && page > 0))).sort((left, right) => left - right);
+  return pageNumbers
+    .map((pageNumber) => ocrByPage.get(pageNumber) || textByPage.get(pageNumber) || (pageSlots || []).find((page) => Number(page.page) === pageNumber))
+    .filter((page) => String(page?.text || "").trim());
 }
 
 function pdfPagesResult(args, pdf, filePath, engine, pages, extra = {}) {
@@ -503,21 +914,33 @@ function pdfPagesResult(args, pdf, filePath, engine, pages, extra = {}) {
 
 function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
   const normalizedPages = Array.isArray(pages) ? pages : [];
+  const ocrPageSignals = Array.isArray(extra.ocrPageSignals) ? extra.ocrPageSignals : [];
   const totalTextChars = pdfPagesTotalTextLength(normalizedPages);
   const pagesWithText = normalizedPages.filter((page) => String(page?.text || "").trim()).length;
   const expectedPageCount = Math.max(
     Number(extra.ocrRenderedPageCount) || 0,
+    Number(extra.textSlotCount) || 0,
     normalizedPages.length
   );
   const emptyPageCount = Math.max(expectedPageCount - pagesWithText, Number(extra.ocrEmptyPageCount) || 0);
+  const ocrLowConfidencePageCount = ocrPageSignals.filter((signal) => signal.ocrConfidence === "low").length;
+  const ocrErrorPageCount = ocrPageSignals.filter((signal) => signal.status === "error").length;
   const minTextChars = pdfOcrFallbackMinChars(args.minTextChars);
   const warnings = [];
   if (extra.textError) warnings.push("text_extraction_error");
   if (extra.ocrFallbackUsed) warnings.push("ocr_fallback_used");
+  if (Number(extra.ocrRepairAttemptedPageCount) > 0) warnings.push("ocr_auto_repair_used");
+  if (Number(extra.ocrRepairPsmAttemptedPageCount) > 0) warnings.push("ocr_psm_repair_used");
+  if (Number(extra.ocrPreprocessAttemptedPageCount) > 0) warnings.push("ocr_preprocess_repair_used");
+  if (Number(extra.ocrRepairFailedPageCount) > 0) warnings.push("ocr_repair_failed_pages");
+  if (extra.ocrFullDocumentUsed) warnings.push("ocr_full_document_used");
+  if (Number(extra.ocrTruncatedPageCount) > 0) warnings.push("ocr_page_limit_reached");
   if (extra.ocrFallbackAttempted && !extra.ocrFallbackUsed) warnings.push("ocr_fallback_no_text");
   if (!pagesWithText) warnings.push("no_text_extracted");
   if (totalTextChars > 0 && totalTextChars < minTextChars) warnings.push("sparse_text");
   if (emptyPageCount > 0) warnings.push("empty_or_unread_pages");
+  if (ocrLowConfidencePageCount > 0) warnings.push("ocr_low_confidence_pages");
+  if (ocrErrorPageCount > 0) warnings.push("ocr_page_errors");
   return {
     status: pagesWithText ? (warnings.length ? "warning" : "pass") : "fail",
     engine,
@@ -529,7 +952,73 @@ function pdfPageExtractionQuality(args, engine, pages = [], extra = {}) {
     averageTextCharsPerPage: pagesWithText ? Math.round(totalTextChars / pagesWithText) : 0,
     minTextChars,
     ocrFallbackUsed: Boolean(extra.ocrFallbackUsed),
+    ocrFullDocumentUsed: Boolean(extra.ocrFullDocumentUsed),
+    ocrPageStrategy: String(extra.ocrPageStrategy || pdfOcrPageStrategy(args.ocrPageStrategy)),
+    ocrMaxPages: Number(extra.ocrMaxPages) || pdfOcrMaxPages(args.maxOcrPages, args),
+    ocrRequestedPageCount: Number(extra.ocrRequestedPageCount) || 0,
+    ocrTruncatedPageCount: Number(extra.ocrTruncatedPageCount) || 0,
+    ocrRepairAttemptedPageCount: Number(extra.ocrRepairAttemptedPageCount) || 0,
+    ocrRepairRecoveredPageCount: Number(extra.ocrRepairRecoveredPageCount) || 0,
+    ocrRepairFailedPageCount: Number(extra.ocrRepairFailedPageCount) || 0,
+    ocrRepairPsmAttemptedPageCount: Number(extra.ocrRepairPsmAttemptedPageCount) || 0,
+    ocrRepairPsmRecoveredPageCount: Number(extra.ocrRepairPsmRecoveredPageCount) || 0,
+    ocrPreprocessAttemptedPageCount: Number(extra.ocrPreprocessAttemptedPageCount) || 0,
+    ocrPreprocessRecoveredPageCount: Number(extra.ocrPreprocessRecoveredPageCount) || 0,
+    ocrPageSignals,
+    ocrReadablePageCount: ocrPageSignals.filter((signal) => signal.status === "ok").length,
+    ocrLowConfidencePageCount,
+    ocrErrorPageCount,
     warnings
+  };
+}
+
+function pdfOcrPageSignal({ page, text = "", error = "", language = "", repair = null } = {}) {
+  const textChars = String(text || "").trim().length;
+  const warnings = [];
+  const status = error ? "error" : textChars ? "ok" : "empty";
+  let ocrConfidence = "none";
+  if (status === "error") {
+    ocrConfidence = "error";
+    warnings.push("ocr_page_error");
+  } else if (textChars >= 120) {
+    ocrConfidence = "high";
+  } else if (textChars >= 24) {
+    ocrConfidence = "medium";
+  } else if (textChars > 0) {
+    ocrConfidence = "low";
+    warnings.push("ocr_page_sparse_text");
+  } else {
+    warnings.push("ocr_page_empty");
+  }
+  const repairAttempted = Boolean(repair?.attempted);
+  if (repairAttempted && status === "ok") {
+    warnings.push("ocr_page_repaired");
+    if (repair?.psm) warnings.push("ocr_page_repaired_psm");
+    if (repair?.preprocess) warnings.push("ocr_page_repaired_preprocessed");
+  } else if (repairAttempted) {
+    warnings.push("ocr_page_repair_failed");
+  }
+  return {
+    page,
+    pageLabel: String(page || ""),
+    engine: "tesseract",
+    language: language || "",
+    status,
+    textChars,
+    ocrConfidence,
+    warnings,
+    ...(repairAttempted ? {
+      repairAttempted: true,
+      repairDpi: Number(repair?.dpi) || pdfOcrRepairDpi(),
+      repairStrategy: repair?.strategy || "high_dpi",
+      repairStatus: status === "ok" ? "recovered" : "failed",
+      previousStatus: repair?.previousStatus || "",
+      ...(repair?.psm ? { repairPsm: Number(repair.psm) } : {}),
+      ...(repair?.psmAttempted?.length ? { repairPsmAttempted: repair.psmAttempted } : {}),
+      ...(repair?.preprocess ? { repairPreprocess: String(repair.preprocess) } : {}),
+      ...(repair?.previousError ? { previousError: repair.previousError } : {})
+    } : {}),
+    ...(error ? { error } : {})
   };
 }
 
@@ -568,9 +1057,85 @@ function pdfOcrFallbackEnabled(args = {}) {
   return args.ocrFallback === true || args.ocrFallback === "true" || args.ocrFallback === 1;
 }
 
-function shouldRunPdfOcrFallback(args = {}, pages = []) {
+function pdfOcrAutoRepairEnabled(args = {}) {
+  return args.ocrAutoRepair !== false && args.ocrAutoRepair !== "false" && args.ocrAutoRepair !== 0;
+}
+
+function pdfOcrRepairDpi(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 300;
+  return Math.min(Math.max(Math.round(parsed), 220), 450);
+}
+
+function pdfOcrRepairPsmModes(value) {
+  if (value === undefined || value === null) return [6, 11];
+  const rawValues = Array.isArray(value)
+    ? value
+    : String(value).trim().toLowerCase() === "none" || String(value).trim().toLowerCase() === "off"
+      ? []
+      : String(value).split(/[\s,;|]+/);
+  const modes = [];
+  for (const raw of rawValues) {
+    const psm = pdfOcrRepairPsmValue(raw);
+    if (psm && !modes.includes(psm)) modes.push(psm);
+    if (modes.length >= 4) break;
+  }
+  return modes;
+}
+
+function pdfOcrRepairPsmValue(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 13) return 0;
+  return parsed;
+}
+
+function pdfOcrPreprocessRepairEnabled(args = {}) {
+  return args.ocrPreprocessRepair !== false
+    && args.ocrPreprocessRepair !== "false"
+    && args.ocrPreprocessRepair !== 0;
+}
+
+function pdfOcrPreprocessRepairModes(value) {
+  if (value === undefined || value === null) return ["grayscale", "monochrome", "adaptive-threshold"];
+  const rawValues = Array.isArray(value)
+    ? value
+    : String(value).trim().toLowerCase() === "none" || String(value).trim().toLowerCase() === "off"
+      ? []
+      : String(value).split(/[\s,;|]+/);
+  const modes = [];
+  for (const raw of rawValues) {
+    const mode = pdfOcrPreprocessMode(raw);
+    if (mode && !modes.includes(mode)) modes.push(mode);
+    if (modes.length >= 3) break;
+  }
+  return modes;
+}
+
+function pdfOcrPreprocessMode(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[_\s-]+/g, "");
+  if (normalized === "gray" || normalized === "grey" || normalized === "grayscale" || normalized === "greyscale") return "grayscale";
+  if (normalized === "mono" || normalized === "monochrome" || normalized === "threshold" || normalized === "binarize" || normalized === "binarized") return "monochrome";
+  if (normalized === "adaptive" || normalized === "adaptivethreshold" || normalized === "localthreshold" || normalized === "localthresholding") return "adaptive-threshold";
+  return "";
+}
+
+function pdfOcrPreprocessColorMode(preprocess) {
+  return preprocess === "monochrome" ? "mono" : preprocess === "grayscale" ? "gray" : "";
+}
+
+function pdfOcrRenderColorMode(colorMode) {
+  const normalized = String(colorMode || "").trim().toLowerCase();
+  if (normalized === "mono" || normalized === "monochrome") return "mono";
+  if (normalized === "gray" || normalized === "grey" || normalized === "grayscale" || normalized === "greyscale") return "gray";
+  return "png";
+}
+
+function shouldRunPdfOcrFallback(args = {}, pages = [], pageSlots = []) {
   if (!pdfOcrFallbackEnabled(args)) return false;
-  return pdfPagesTotalTextLength(pages) < pdfOcrFallbackMinChars(args.minTextChars);
+  if (pdfPagesTotalTextLength(pages) < pdfOcrFallbackMinChars(args.minTextChars)) return true;
+  const strategy = pdfOcrPageStrategy(args.ocrPageStrategy);
+  if (strategy === "first") return false;
+  return pdfOcrPageNumbers(args, pageSlots).length > 0;
 }
 
 function pdfOcrFallbackMinChars(value) {
@@ -579,10 +1144,96 @@ function pdfOcrFallbackMinChars(value) {
   return Math.min(Math.round(parsed), 1000);
 }
 
-function pdfOcrMaxPages(value) {
+function pdfOcrMaxPages(value, args = {}) {
+  const fullDocument = pdfFullDocumentOcrEnabled(args);
+  const defaultMax = fullDocument ? pdfFullDocumentOcrDefaultMaxPages() : 3;
+  const hardCap = fullDocument ? pdfFullDocumentOcrHardCap() : 12;
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 3;
-  return Math.min(Math.max(Math.round(parsed), 1), 12);
+  if (!Number.isFinite(parsed) || parsed <= 0) return defaultMax;
+  return Math.min(Math.max(Math.round(parsed), 1), hardCap);
+}
+
+function pdfFullDocumentOcrEnabled(args = {}) {
+  return args.fullDocumentOcr === true || args.fullDocumentOcr === "true" || args.fullDocumentOcr === 1;
+}
+
+function pdfFullDocumentOcrDefaultMaxPages() {
+  const parsed = Number(process.env.LOCAL_AGENT_PDF_FULL_OCR_MAX_PAGES);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 60;
+  return Math.min(Math.max(Math.round(parsed), 1), pdfFullDocumentOcrHardCap());
+}
+
+function pdfFullDocumentOcrHardCap() {
+  const parsed = Number(process.env.LOCAL_AGENT_PDF_FULL_OCR_HARD_CAP);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 200;
+  return Math.min(Math.max(Math.round(parsed), 12), 500);
+}
+
+function pdfOcrPageStrategy(value) {
+  const normalized = String(value || "first").trim().toLowerCase().replace(/[_\s]+/g, "-");
+  if (normalized === "sparse" || normalized === "sparse-pages" || normalized === "empty-or-sparse") return "sparse";
+  if (normalized === "all" || normalized === "all-pages") return "all";
+  return "first";
+}
+
+function pdfOcrPageNumbers(args = {}, pageSlots = []) {
+  return pdfOcrPageNumberPlan(args, pageSlots).pages;
+}
+
+function pdfOcrPageNumberPlan(args = {}, pageSlots = []) {
+  const maxPages = pdfOcrMaxPages(args.maxOcrPages, args);
+  const explicit = pdfExplicitOcrPages(args.ocrPages);
+  const fullDocumentOcr = pdfFullDocumentOcrEnabled(args);
+  const slots = Array.isArray(pageSlots) ? pageSlots : [];
+  const strategy = pdfOcrPageStrategy(args.ocrPageStrategy);
+  let requestedPages = [];
+  if (explicit.length) {
+    requestedPages = explicit;
+  } else if (strategy === "all" && slots.length) {
+    requestedPages = slots
+      .map((slot) => Number(slot.page))
+      .filter((page) => Number.isFinite(page) && page > 0);
+  } else if (strategy === "sparse" && slots.length) {
+    requestedPages = pdfOcrSparsePages(args, slots);
+  } else {
+    requestedPages = Array.from({ length: maxPages }, (_value, index) => index + 1);
+  }
+  const uniquePages = Array.from(new Set(requestedPages)).sort((left, right) => left - right);
+  return {
+    pages: uniquePages.slice(0, maxPages),
+    requestedPageCount: uniquePages.length,
+    truncatedPageCount: Math.max(uniquePages.length - maxPages, 0),
+    maxPages,
+    strategy,
+    fullDocumentOcr
+  };
+}
+
+function pdfOcrSparsePages(args = {}, slots = []) {
+  const minChars = pdfOcrFallbackMinChars(args.minTextChars);
+  return slots
+    .filter((slot) => String(slot?.text || "").trim().length < minChars)
+    .map((slot) => Number(slot.page))
+    .filter((page) => Number.isFinite(page) && page > 0);
+}
+
+function pdfExplicitOcrPages(value) {
+  const raw = Array.isArray(value) ? value.join(",") : String(value || "");
+  const pages = new Set();
+  for (const token of raw.split(/[,\s]+/)) {
+    const trimmed = token.trim();
+    if (!trimmed) continue;
+    const range = trimmed.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (range) {
+      const start = Math.max(1, Number(range[1]));
+      const end = Math.max(start, Number(range[2]));
+      for (let page = start; page <= end && page <= start + 200; page += 1) pages.add(page);
+      continue;
+    }
+    const page = Number(trimmed);
+    if (Number.isFinite(page) && page > 0) pages.add(Math.round(page));
+  }
+  return Array.from(pages).sort((left, right) => left - right);
 }
 
 function pdfOcrLanguage(value) {
@@ -596,7 +1247,7 @@ function pdfPagesTotalTextLength(pages = []) {
 async function pdfRenderedImagePaths(renderDir) {
   const files = await readdir(renderDir);
   return files
-    .filter((file) => /\.(?:png|jpe?g|tiff?)$/i.test(file))
+    .filter((file) => /\.(?:png|jpe?g|tiff?|p[bgp]m)$/i.test(file))
     .map((file) => join(renderDir, file))
     .sort((left, right) => pdfRenderedImagePage(left) - pdfRenderedImagePage(right));
 }
@@ -606,15 +1257,20 @@ function pdfRenderedImagePage(path) {
   return match ? Number(match[1]) : 0;
 }
 
-function pdfPageEntriesFromText(text) {
-  return String(text || "")
-    .split(/\f+/)
+function pdfPageEntriesFromText(text, options = {}) {
+  const raw = String(text || "");
+  if (options.includeEmpty && !raw.trim() && !raw.includes("\f")) return [];
+  const parts = options.includeEmpty ? raw.split(/\f/) : raw.split(/\f+/);
+  if (options.includeEmpty && parts.length > 1 && parts[parts.length - 1] === "" && raw.endsWith("\f")) {
+    parts.pop();
+  }
+  return parts
     .map((pageText, index) => ({
       page: index + 1,
       pageLabel: String(index + 1),
       text: cleanPdfPageText(pageText)
     }))
-    .filter((entry) => entry.text);
+    .filter((entry) => options.includeEmpty || entry.text);
 }
 
 function cleanPdfPageText(pageText) {

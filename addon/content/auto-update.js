@@ -73,7 +73,7 @@ function zmsGetAddonByID(manager, addonId) {
 function zmsAddonAutoUpdateMode(enabled, manager) {
   if (enabled && manager?.AUTOUPDATE_ENABLE !== undefined) return manager.AUTOUPDATE_ENABLE;
   if (!enabled && manager?.AUTOUPDATE_DISABLE !== undefined) return manager.AUTOUPDATE_DISABLE;
-  return enabled ? 2 : 1;
+  return enabled ? 2 : 0;
 }
 
 function zmsAutoUpdateError(err) {

@@ -120,6 +120,8 @@ function loadBootstrapHelpers(files = new Map<string, string>()) {
       batchRunReportPayload: (settings: any, collectionContext: any, results: any[], options?: any) => any;
       crossCollectionIndexPath: (settings: any) => string;
       crossCollectionSynthesisPath: (settings: any, outputLanguage: string) => string;
+      renderCrossCollectionSynthesis: (indexPayload: any, outputLanguage?: string) => string;
+      applyConfiguredAddonAutoUpdatePolicy: () => Promise<any>;
       renderMarkdown: (item: any, pdf: any, settings: any, result: any) => string;
       linkOrUpdateAttachment: (item: any, outputPath: string, existing?: any) => Promise<any>;
       linkCollectionWorkspaceMarkdownArtifacts: (collectionContext: any, artifacts: any) => Promise<any[]>;
@@ -183,6 +185,30 @@ function searchResponseText(url: string): string {
 }
 
 describe("batch papers index", () => {
+  it("applies the configured automatic update policy at startup defaults and opt-out", async () => {
+    const { helpers } = loadBootstrapHelpers();
+    const prefValues = new Map<string, any>();
+    const policyCalls: Array<{ enabled: boolean; addonId: string }> = [];
+    (helpers as any).pluginID = "zotero-markdown-summary@diantao.local";
+    (helpers as any).Zotero.Prefs = {
+      get: (key: string) => prefValues.get(key),
+      set: (key: string, value: any) => prefValues.set(key, value)
+    };
+    (helpers as any).zmsApplyAddonAutoUpdatePreference = async (enabled: boolean, options: any = {}) => {
+      policyCalls.push({ enabled, addonId: options.addonId });
+      return { ok: true, enabled };
+    };
+
+    await expect(helpers.applyConfiguredAddonAutoUpdatePolicy()).resolves.toMatchObject({ ok: true, enabled: true });
+    prefValues.set("extensions.zoteroMarkdownSummary.autoUpdateEnabled", false);
+    await expect(helpers.applyConfiguredAddonAutoUpdatePolicy()).resolves.toMatchObject({ ok: true, enabled: false });
+
+    expect(policyCalls).toEqual([
+      { enabled: true, addonId: "zotero-markdown-summary@diantao.local" },
+      { enabled: false, addonId: "zotero-markdown-summary@diantao.local" }
+    ]);
+  });
+
   it("prefers explicit collection children when building a collection batch", async () => {
     const { helpers } = loadBootstrapHelpers();
     const collectionItem = { id: 1, key: "COLITEM", isRegularItem: () => true };
@@ -379,6 +405,7 @@ describe("batch papers index", () => {
       modelReviewPath: "/out/collections/COL/writing/model-literature-review.zh-CN.md",
       collectionReviewPath: "/out/collections/COL/writing/collection-literature-review.zh-CN.md",
       ideaListPath: "/out/collections/COL/writing/idea-list.zh-CN.md",
+      chartReviewBatchIndexPath: "/out/collections/COL/writing/chart-review-batch-index.zh-CN.md",
       crossCollectionIndexPath: "/out/collections/index.json",
       crossCollectionSynthesisPath: "/out/collections/cross-collection-synthesis.zh-CN.md"
     });
@@ -396,6 +423,9 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.topicClustersPath)).toContain("主题聚类");
     expect(writes.get(artifacts.topicClustersPath)).toContain("综合线索");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("综合主张矩阵");
+    expect(writes.get(artifacts.synthesisClaimsPath)).toContain("主张支持分");
+    expect(writes.get(artifacts.synthesisClaimsPath)).toContain("主张风险");
+    expect(writes.get(artifacts.synthesisClaimsPath)).toContain("证据轨迹");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("主张风险检查清单");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("综合冲突与缺口台账");
     expect(JSON.parse(writes.get(artifacts.crossCollectionIndexPath) || "{}")).toMatchObject({
@@ -406,13 +436,24 @@ describe("batch papers index", () => {
           key: "COL",
           name: "Collection",
           artifacts: expect.objectContaining({
-            reviewReportPath: "/out/collections/COL/writing/formal-review-report.zh-CN.md"
+            reviewReportPath: "/out/collections/COL/writing/formal-review-report.zh-CN.md",
+            chartReviewBatchIndexPath: "/out/collections/COL/writing/chart-review-batch-index.zh-CN.md"
           })
         })
       ]
     });
+    expect(JSON.parse(writes.get(artifacts.crossCollectionIndexPath) || "{}").collections[0].claims[0]).toMatchObject({
+      claimSupportScore: expect.any(Number),
+      claimRisk: expect.any(String),
+      evidenceTrace: expect.any(String),
+      evidence: expect.any(Array)
+    });
+    expect(writes.get(artifacts.chartReviewBatchIndexPath)).toContain("图表复核批量索引");
+    expect(writes.get(artifacts.chartReviewBatchIndexPath)).toContain("当前批量条目没有找到对应的 visual-extraction JSON 报告");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合综合地图");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("Collection");
+    expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合聚类图谱");
+    expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("聚类证据卡");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("主题归并复核板");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合缺口看板");
     expect(writes.get(artifacts.crossCollectionSynthesisPath)).toContain("跨集合综述写作包");
@@ -421,12 +462,25 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("综合路线图");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("跨主题证据地图");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("候选检索词");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("最终报告校准矩阵");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("写作阈值");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("正文放置");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("最终报告行动计划");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("所需材料");
     expect(writes.get(artifacts.researchQuestionCardsPath)).toContain("研究问题卡");
     expect(writes.get(artifacts.researchQuestionCardsPath)).toContain("最小下一步动作");
     expect(writes.get(artifacts.reviewDraftPath)).toContain("手动综述草稿");
     expect(writes.get(artifacts.reviewDraftPath)).toContain("已生成 1 篇");
     expect(writes.get(artifacts.reviewReportPath)).toContain("正式综述报告草稿");
     expect(writes.get(artifacts.reviewReportPath)).toContain("论文清单与证据地图");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("章节就绪矩阵");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("章节就绪分");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("报告章节");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("章节行动计划");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("证据缺口");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("最终报告校准矩阵");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("最终报告行动计划");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("引用策略");
     expect(writes.get(artifacts.reviewReportPath)).toContain("有证据支持的综合主张");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合冲突与证据缺口");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合写作包");
@@ -438,6 +492,80 @@ describe("batch papers index", () => {
     expect(writes.has(artifacts.modelReviewPath)).toBe(false);
     expect(writes.has(artifacts.collectionReviewPath)).toBe(false);
     expect(writes.has(artifacts.literatureSearchEvidencePath)).toBe(false);
+  });
+
+  it("aggregates chart review tasks from visual extraction reports into a collection batch index", async () => {
+    const files = new Map<string, string>([
+      ["/out/collections/COL/writing/visual-extraction-A.json", JSON.stringify({
+        templateVersion: "visual-extraction-report-v2",
+        itemKey: "A",
+        generatedAt: "2026-06-20T00:00:00.000Z",
+        reportPath: "/out/collections/COL/writing/visual-extraction-A.md",
+        metadata: { title: "A Chart Paper" },
+        chartQualityReview: { status: "needs-review" },
+        chartReviewActions: [{ queueId: "review-1" }, { queueId: "review-2" }],
+        chartBatchReviewBoard: [{
+          priority: "high",
+          reviewState: "todo",
+          count: 2,
+          blockingIssue: "missing anchors",
+          batchAction: "Add axis anchors",
+          doneCriteria: "Anchors verified"
+        }]
+      })],
+      ["/out/collections/COL/writing/visual-extraction-B.json", JSON.stringify({
+        templateVersion: "visual-extraction-report-v2",
+        itemKey: "B",
+        generatedAt: "2026-06-21T00:00:00.000Z",
+        reportPath: "/out/collections/COL/writing/visual-extraction-B.md",
+        metadata: { title: "B Chart Paper" },
+        chartQualityReview: { status: "needs-review" },
+        chartReviewActions: [{ queueId: "review-1" }, { queueId: "review-2" }],
+        chartBatchReviewBoard: [
+          {
+            priority: "high",
+            reviewState: "todo",
+            count: 1,
+            blockingIssue: "lower segment",
+            batchAction: "Add axis anchors",
+            doneCriteria: "Anchors verified"
+          },
+          {
+            priority: "medium",
+            reviewState: "blocked",
+            count: 1,
+            blockingIssue: "image too blurry",
+            batchAction: "Regenerate crop",
+            doneCriteria: "Readable figure crop exists"
+          }
+        ]
+      })]
+    ]);
+    const { helpers, writes } = loadBootstrapHelpers(files);
+    const results = [
+      { status: "generated", itemKey: "A", title: "A Chart Paper", year: "2026", summaryPath: "/out/a.md" },
+      { status: "generated", itemKey: "B", title: "B Chart Paper", year: "2026", summaryPath: "/out/b.md" }
+    ];
+
+    const artifacts = await helpers.writeCollectionWorkspace(
+      { outputLanguage: "zh-CN", summaryVersion: "1", outputDir: "/out" },
+      { key: "COL", name: "Collection", type: "collection", parentLibraryID: 1, outputDir: "/out/collections/COL" },
+      results
+    );
+
+    const chartIndex = writes.get(artifacts.chartReviewBatchIndexPath) || "";
+    expect(chartIndex).toContain("templateVersion: \"collection-chart-review-batch-index-v1\"");
+    expect(chartIndex).toContain("visualReportCount: 2");
+    expect(chartIndex).toContain("chartReviewActionCount: 4");
+    expect(chartIndex).toContain("openChartReviewActionCount: 4");
+    expect(chartIndex).toContain("## 跨报告批量复核看板");
+    expect(chartIndex).toContain("| high | todo | 3 | A Chart Paper; B Chart Paper | missing anchors; lower segment | Add axis anchors | Anchors verified | /out/collections/COL/writing/visual-extraction-A.md; /out/collections/COL/writing/visual-extraction-B.md |");
+    expect(chartIndex).toContain("| medium | blocked | 1 | B Chart Paper | image too blurry | Regenerate crop | Readable figure crop exists | /out/collections/COL/writing/visual-extraction-B.md |");
+    expect(chartIndex).toContain("## 来源图表报告");
+    expect(chartIndex).toContain("| A Chart Paper | needs-review | 1 | 2 | /out/collections/COL/writing/visual-extraction-A.md | /out/collections/COL/writing/visual-extraction-A.json |");
+    expect(chartIndex).toContain("先处理高优先级和阻塞状态的行");
+    expect(JSON.parse(writes.get(artifacts.crossCollectionIndexPath) || "{}").collections[0].artifacts)
+      .toMatchObject({ chartReviewBatchIndexPath: artifacts.chartReviewBatchIndexPath });
   });
 
   it("writes an optional model-generated collection literature review from paper summaries", async () => {
@@ -658,16 +786,41 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("PPO-based CTDE scheduler");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("Only tested in grid simulation");
     expect(writes.get(artifacts.synthesisClaimsPath)).toContain("Stress-test under mixed priority flights");
+    expect(writes.get(artifacts.synthesisClaimsPath)).toContain("主张支持分");
+    expect(writes.get(artifacts.synthesisClaimsPath)).toContain("主张风险");
+    expect(writes.get(artifacts.synthesisClaimsPath)).toContain("证据轨迹");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("单篇证据支持");
+    expect(writes.get(artifacts.synthesisConflictsPath)).toContain("主张支持分");
+    expect(writes.get(artifacts.synthesisConflictsPath)).toContain("主张风险");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("Only tested in grid simulation");
     expect(writes.get(artifacts.synthesisConflictsPath)).toContain("Stress-test under mixed priority flights");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("PPO-based CTDE scheduler");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("主张支持分");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("主张风险");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("路线图就绪度看板");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("就绪分");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("阻塞问题");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("最终报告校准矩阵");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("暂缓为证据补强任务");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("需补证据");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("No field data or ablation");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("Stress-test under mixed priority flights");
     expect(writes.get(artifacts.reviewReportPath)).toContain("PPO-based CTDE scheduler");
     expect(writes.get(artifacts.reviewReportPath)).toContain("Conflict rate and delay minutes");
     expect(writes.get(artifacts.reviewReportPath)).toContain("No field data or ablation");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合冲突与证据缺口");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("主张证据审计");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("审计主张");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("写作就绪门禁");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("正式报告就绪分");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("高风险主张需要证据审计");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("证据基础覆盖");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("主张风险校准");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("路线图就绪度");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("缺口可追溯性");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("路线图就绪度看板");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("最终报告动作");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("下一步动作");
     expect(writes.get(artifacts.reviewReportPath)).toContain("Stress-test under mixed priority flights");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合写作包");
     expect(writes.get(artifacts.reviewReportPath)).toContain("基于已引用的总结深化");
@@ -737,7 +890,10 @@ describe("batch papers index", () => {
           type: "collection",
           outputLanguage: "en-US",
           stats: { total: 2, generated: 2, skippedExisting: 0, skippedNoPdf: 0, failed: 0 },
-          artifacts: { reviewReportPath: "/out/collections/OLD/writing/formal-review-report.en-US.md" },
+          artifacts: {
+            reviewReportPath: "/out/collections/OLD/writing/formal-review-report.en-US.md",
+            chartReviewBatchIndexPath: "/out/collections/OLD/writing/chart-review-batch-index.en-US.md"
+          },
           clusters: [
             {
               label: "Safety / Risk",
@@ -753,12 +909,53 @@ describe("batch papers index", () => {
             }
           ],
           openGaps: ["No deployment evidence"],
-          candidateQueries: ["Safety / Risk Bayesian risk model No deployment evidence"]
+          candidateQueries: ["Safety / Risk Bayesian risk model No deployment evidence"],
+          chartReview: {
+            path: "/out/collections/OLD/writing/chart-review-batch-index.en-US.md",
+            stats: {
+              visualReports: 1,
+              batchRows: 1,
+              chartReviewActions: 2,
+              openChartReviewActions: 2,
+              highPriorityActions: 2,
+              blockedActions: 0
+            },
+            rows: [
+              {
+                priority: "high",
+                reviewState: "todo",
+                count: 2,
+                paperCount: 1,
+                papers: ["Old Chart Paper"],
+                blockingIssue: "old anchors",
+                batchAction: "Add axis anchors",
+                doneCriteria: "Anchors verified",
+                sourceReports: ["/out/collections/OLD/writing/visual-extraction-O.md"]
+              }
+            ]
+          }
         }
       ]
     };
     const files = new Map<string, string>([
       ["/out/collections/index.json", JSON.stringify(existingIndex, null, 2)],
+      ["/out/collections/NEW/writing/visual-extraction-N.json", JSON.stringify({
+        templateVersion: "visual-extraction-report-v2",
+        itemKey: "N",
+        generatedAt: "2026-06-20T00:00:00.000Z",
+        reportPath: "/out/collections/NEW/writing/visual-extraction-N.md",
+        metadata: { title: "New Chart Paper" },
+        chartQualityReview: { status: "needs-review" },
+        chartReviewActions: [{ queueId: "review-1" }],
+        chartBatchReviewBoard: [{
+          priority: "high",
+          reviewState: "todo",
+          count: 1,
+          blockingIssue: "new anchors",
+          batchAction: "Add axis anchors",
+          doneCriteria: "Anchors verified"
+        }]
+      })],
       ["/out/new.md", [
         "# Urban airspace conflict resolution",
         "",
@@ -785,11 +982,81 @@ describe("batch papers index", () => {
     expect(payload.collections.find((collection: any) => collection.key === "OLD").clusters[0].label).toBe("Safety / Risk");
     expect(payload.collections.find((collection: any) => collection.key === "NEW").artifacts.reviewReportPath)
       .toBe("/out/collections/NEW/writing/formal-review-report.en-US.md");
+    expect(payload.collections.find((collection: any) => collection.key === "NEW").chartReview.stats.chartReviewActions)
+      .toBe(1);
+    expect(payload.chartReviewTriage).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        priority: "high",
+        reviewState: "todo",
+        count: 3,
+        collectionCount: 2,
+        paperCount: 2,
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        blockingIssue: expect.stringContaining("old anchors"),
+        batchAction: "Add axis anchors",
+        doneCriteria: "Anchors verified",
+        sourceIndexes: expect.arrayContaining([
+          "/out/collections/OLD/writing/chart-review-batch-index.en-US.md",
+          "/out/collections/NEW/writing/chart-review-batch-index.en-US.md"
+        ])
+      })
+    ]));
+    expect(payload.chartReviewTriage[0].blockingIssue).toContain("new anchors");
+    expect(payload.chartReviewTriage[0].details).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        collectionName: "New Collection",
+        priority: "high",
+        reviewState: "todo",
+        count: 1,
+        paperCount: 1,
+        papers: ["New Chart Paper"],
+        blockingIssue: "new anchors",
+        sourceReports: ["/out/collections/NEW/writing/visual-extraction-N.md"],
+        sourceIndex: "/out/collections/NEW/writing/chart-review-batch-index.en-US.md"
+      }),
+      expect.objectContaining({
+        collectionName: "Old Collection",
+        priority: "high",
+        reviewState: "todo",
+        count: 2,
+        paperCount: 1,
+        papers: ["Old Chart Paper"],
+        blockingIssue: "old anchors",
+        sourceReports: ["/out/collections/OLD/writing/visual-extraction-O.md"],
+        sourceIndex: "/out/collections/OLD/writing/chart-review-batch-index.en-US.md"
+      })
+    ]));
+    expect(payload.chartReviewTriage[0].writebackTargets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        collectionName: "New Collection",
+        currentState: "todo",
+        targetState: "in-review",
+        actionCount: 1,
+        sourceIndex: "/out/collections/NEW/writing/chart-review-batch-index.en-US.md",
+        match: expect.objectContaining({
+          priority: "high",
+          reviewState: "todo",
+          batchAction: "Add axis anchors",
+          doneCriteria: "Anchors verified"
+        }),
+        statusPatch: expect.objectContaining({
+          reviewState: "in-review",
+          reviewer: "",
+          due: "",
+          notes: expect.stringContaining("triagePriority=high")
+        })
+      })
+    ]));
     expect(payload.gapBoard).toEqual(expect.arrayContaining([
       expect.objectContaining({
         gap: "No deployment evidence",
         collectionCount: 2,
         collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        gapPriorityScore: expect.any(Number),
+        gapPrioritySignals: expect.arrayContaining([
+          expect.stringContaining("coverage: 2 collections"),
+          expect.stringContaining("candidate queries:")
+        ]),
         candidateQueries: expect.arrayContaining(["Safety / Risk Bayesian risk model No deployment evidence"])
       })
     ]));
@@ -809,29 +1076,164 @@ describe("batch papers index", () => {
         sharedSignals: expect.arrayContaining(["No deployment evidence."])
       })
     ]));
+    expect(payload.clusterMap).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        title: expect.stringContaining("Transportation / Urban Airspace"),
+        collectionCount: 2,
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        themes: expect.arrayContaining(["Safety / Risk", "Transportation / Urban Airspace"]),
+        clusterScore: expect.any(Number),
+        thresholdBand: expect.stringContaining("score"),
+        calibrationRecommendation: expect.any(String),
+        linkSignals: expect.arrayContaining([expect.stringContaining("same normalized theme")]),
+        reviewRisk: expect.any(String),
+        methodSignals: expect.arrayContaining(["Bayesian route planner", "PPO-based CTDE scheduler with safety constraints."]),
+        gapSignals: expect.arrayContaining(["No field deployment", "No deployment evidence."])
+      })
+    ]));
+    expect(payload.layoutBoard).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        cluster: expect.stringContaining("Transportation / Urban Airspace"),
+        lane: expect.stringMatching(/Core shared section|Boundary review before writing|Evidence gap follow-up|Supporting context/),
+        order: expect.any(Number),
+        layoutWeight: expect.any(Number),
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        evidence: expect.arrayContaining([
+          expect.stringContaining("Evidence Card Rank:"),
+          expect.stringContaining("Cluster Score:")
+        ]),
+        nextAction: expect.any(String)
+      })
+    ]));
+    expect(payload.clusterCalibrationBoard).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        cluster: expect.stringContaining("Transportation / Urban Airspace"),
+        recommendation: expect.stringContaining("review"),
+        thresholdBand: expect.stringContaining("score"),
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        evidence: expect.arrayContaining([
+          expect.stringContaining("Cluster Score:"),
+          expect.stringContaining("Threshold")
+        ])
+      })
+    ]));
     expect(payload.priorityBoard).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "cross_collection_cluster",
+        priority: expect.stringContaining("Write cross-collection section"),
+        reason: expect.stringContaining("Cluster spans 2 collections; score"),
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        evidence: expect.arrayContaining([
+          expect.stringContaining("Evidence Card Rank:"),
+          expect.stringContaining("Rank Signals:"),
+          expect.stringContaining("Cluster Score:"),
+          expect.stringContaining("Calibration Recommendation:"),
+          expect.stringContaining("Threshold Evidence:"),
+          expect.stringContaining("Link Evidence:")
+        ])
+      }),
       expect.objectContaining({
         kind: "recurring_gap",
         priority: "Recurring gap: No deployment evidence",
         reason: "Gap repeats across 2 collections",
-        collections: expect.arrayContaining(["Old Collection", "New Collection"])
+        collections: expect.arrayContaining(["Old Collection", "New Collection"]),
+        evidence: expect.arrayContaining([
+          expect.stringContaining("Gap Priority Score:"),
+          expect.stringContaining("Gap Priority Signals:")
+        ])
       })
     ]));
     const synthesis = writes.get(artifacts.crossCollectionSynthesisPath) || "";
     expect(synthesis).toContain("Cross-Collection Synthesis Map");
+    expect(synthesis).toContain("Cross-Collection Cluster Map");
+    expect(synthesis).toContain("Cross-Collection Synthesis Layout Board");
+    expect(synthesis).toContain("Layout Lane");
+    expect(synthesis).toContain("Layout Weight");
+    expect(synthesis).toContain("Evidence gap follow-up");
+    expect(synthesis).toContain("Cluster Threshold Calibration Board");
+    expect(synthesis).toContain("Cluster Evidence Cards");
+    expect(synthesis).toContain("Evidence Card Rank");
+    expect(synthesis).toContain("Rank Signals");
+    expect(synthesis).toContain("Cluster Score");
+    expect(synthesis).toContain("Calibration Recommendation");
+    expect(synthesis).toContain("Threshold Evidence");
+    expect(synthesis).toContain("Link Evidence");
+    expect(synthesis).toContain("Review Risk");
     expect(synthesis).toContain("Theme Merge Review Board");
     expect(synthesis).toContain("Cross-Collection Bridge Board");
     expect(synthesis).toContain("Cross-Collection Gap Board");
+    expect(synthesis).toContain("Gap Priority Score");
+    expect(synthesis).toContain("Gap Priority Signals");
+    expect(synthesis).toContain("coverage: 2 collections");
     expect(synthesis).toContain("Cross-Collection Priority Board");
+    expect(synthesis).toContain("Cross-Collection Chart Review Triage");
+    expect(synthesis).toContain("| high | todo | 3 | 2 | 2 | New Collection; Old Collection | new anchors; old anchors | Add axis anchors | Anchors verified | /out/collections/NEW/writing/chart-review-batch-index.en-US.md; /out/collections/OLD/writing/chart-review-batch-index.en-US.md |");
+    expect(synthesis).toContain("### Chart Review Drilldown");
+    expect(synthesis).toContain("<details>");
+    expect(synthesis).toContain("<summary>1. high / todo - 3 action(s) across 2 collection(s)</summary>");
+    expect(synthesis).toContain("| New Collection | 1 | 1 | New Chart Paper | new anchors | /out/collections/NEW/writing/visual-extraction-N.md | /out/collections/NEW/writing/chart-review-batch-index.en-US.md |");
+    expect(synthesis).toContain("#### Batch Status Writeback Targets");
+    expect(synthesis).toContain("| Collection | Current State | Suggested State | Actions | Status Patch | Match Filter | Chart Review Index |");
+    expect(synthesis).toContain("| New Collection | todo | in-review | 1 | Review State=in-review; reviewer=; due=; notes=triagePriority=high; new anchors; doneCriteria=Anchors verified | priority=high; Review State=todo; action=Add axis anchors; done=Anchors verified | /out/collections/NEW/writing/chart-review-batch-index.en-US.md |");
+    expect(synthesis).toContain("- [ ] Open each linked chart review index and inspect the source visual reports.");
     expect(synthesis).toContain("Cross-Collection Review Pack");
     expect(synthesis).toContain("Model Deepening Prompt");
     expect(synthesis).toContain("Review possible theme merge");
     expect(synthesis).toContain("How should Transportation / Urban Airspace connect evidence across 2 collections");
+    expect(synthesis).toContain("Turn Transportation / Urban Airspace");
     expect(synthesis).toContain("Recurring gap: No deployment evidence");
     expect(synthesis).toContain("Old Collection");
     expect(synthesis).toContain("New Collection");
     expect(synthesis).toContain("Urban Airspace");
     expect(synthesis).toContain("Prioritize candidate search; this gap recurs in 2 collections");
+  });
+
+  it("ranks cross-collection cluster evidence cards before isolated high-score clusters", () => {
+    const { helpers } = loadBootstrapHelpers();
+    const synthesis = helpers.renderCrossCollectionSynthesis({
+      collections: [],
+      stats: { collections: 0, totalPapers: 0, availableSummaries: 0, skippedNoPdf: 0, failed: 0 },
+      clusterMap: [
+        {
+          title: "Single collection benchmark",
+          collectionCount: 1,
+          paperCount: 30,
+          themeCount: 1,
+          collections: ["Benchmarks"],
+          themes: ["Benchmark"],
+          clusterScore: 95,
+          linkSignals: [],
+          methodSignals: ["benchmark protocol"],
+          gapSignals: [],
+          candidateQueries: [],
+          reviewRisk: "low: narrow scope, still verify source summaries"
+        },
+        {
+          title: "Cross-cutting safety",
+          collectionCount: 3,
+          paperCount: 6,
+          themeCount: 2,
+          collections: ["UAM", "Safety", "Routing"],
+          themes: ["Safety", "Routing"],
+          clusterScore: 60,
+          linkSignals: ["Safety / Routing: method-signal overlap", "Safety / Routing: gap-signal overlap"],
+          methodSignals: ["risk-aware routing", "safe scheduling"],
+          gapSignals: ["No field deployment"],
+          candidateQueries: ["risk-aware UAM routing"],
+          reviewRisk: "medium: verify shared evidence before merging review sections"
+        }
+      ]
+    }, "en-US");
+    const cardStart = synthesis.indexOf("## Cluster Evidence Cards");
+    const cardEnd = synthesis.indexOf("## Theme Merge Review Board");
+    const cardSection = synthesis.slice(cardStart, cardEnd);
+
+    expect(cardSection).toContain("Evidence Card Rank");
+    expect(cardSection).toContain("Rank Signals");
+    expect(cardSection).toContain("coverage: 3 collections, 6 papers");
+    expect(cardSection).toContain("link signals: 2");
+    expect(cardSection.indexOf("### Cross-cutting safety")).toBeGreaterThanOrEqual(0);
+    expect(cardSection.indexOf("### Cross-cutting safety")).toBeLessThan(cardSection.indexOf("### Single collection benchmark"));
   });
 
   it("localizes collection review and research question templates", async () => {
@@ -853,13 +1255,25 @@ describe("batch papers index", () => {
     expect(writes.get(english.synthesisConflictsPath)).toContain("Support Level");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Synthesis Roadmap");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Cross-theme Evidence Map");
+    expect(writes.get(english.synthesisRoadmapPath)).toContain("Final Report Calibration Matrix");
+    expect(writes.get(english.synthesisRoadmapPath)).toContain("Final Report Action Plan");
+    expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Cluster Map");
+    expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cluster Evidence Cards");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Theme Merge Review Board");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Bridge Board");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Priority Board");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Review Pack");
     expect(writes.get(english.reviewReportPath)).toContain("Formal Review Report");
+    expect(writes.get(english.reviewReportPath)).toContain("Final Report Calibration Matrix");
     expect(writes.get(english.reviewReportPath)).toContain("Evidence-backed Synthesis Claims");
     expect(writes.get(english.reviewReportPath)).toContain("Synthesis Conflicts and Evidence Gaps");
+    expect(writes.get(english.reviewReportPath)).toContain("Writing Readiness Gate");
+    expect(writes.get(english.reviewReportPath)).toContain("Formal report readiness score");
+    expect(writes.get(english.reviewReportPath)).toContain("Section Readiness Matrix");
+    expect(writes.get(english.reviewReportPath)).toContain("Section Readiness Score");
+    expect(writes.get(english.reviewReportPath)).toContain("Section Action Plan");
+    expect(writes.get(english.reviewReportPath)).toContain("Required Material");
+    expect(writes.get(english.reviewReportPath)).toContain("Final Report Action Plan");
     expect(writes.get(english.reviewReportPath)).toContain("Synthesis Writing Pack");
     expect(writes.get(english.reviewReportPath)).toContain("Risk Checklist");
     expect(writes.get(english.ideaListPath)).toContain("Reject condition");
@@ -879,6 +1293,9 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.synthesisConflictsPath)).toContain("支持レベル");
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("統合ロードマップ");
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("テーマ横断エビデンスマップ");
+    expect(writes.get(japanese.synthesisRoadmapPath)).toContain("最終報告アクション計画");
+    expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("Collection 横断クラスタマップ");
+    expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("クラスタ証拠カード");
     expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("テーマ統合確認ボード");
     expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("Collection 横断ブリッジボード");
     expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("Collection 横断優先度ボード");
@@ -886,6 +1303,10 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.reviewReportPath)).toContain("正式レビュー報告書");
     expect(writes.get(japanese.reviewReportPath)).toContain("証拠に基づく統合主張");
     expect(writes.get(japanese.reviewReportPath)).toContain("統合コンフリクトと証拠ギャップ");
+    expect(writes.get(japanese.reviewReportPath)).toContain("執筆準備度ゲート");
+    expect(writes.get(japanese.reviewReportPath)).toContain("正式報告書準備度スコア");
+    expect(writes.get(japanese.reviewReportPath)).toContain("章別アクション計画");
+    expect(writes.get(japanese.reviewReportPath)).toContain("必要資料");
     expect(writes.get(japanese.reviewReportPath)).toContain("統合執筆パック");
     expect(writes.get(japanese.reviewReportPath)).toContain("リスク確認リスト");
     expect(writes.get(japanese.ideaListPath)).toContain("棄却条件");
@@ -933,6 +1354,8 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.reviewDraftPath)).toContain("手動レビュー草稿");
     expect(writes.get(english.reviewReportPath)).toContain("Formal Review Report");
     expect(writes.get(japanese.reviewReportPath)).toContain("正式レビュー報告書");
+    expect(writes.get(japanese.reviewReportPath)).toContain("章別準備度マトリクス");
+    expect(writes.get(japanese.reviewReportPath)).toContain("章別準備度スコア");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Synthesis Roadmap");
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("統合ロードマップ");
     expect(writes.get(english.ideaListPath)).toContain("Idea List");

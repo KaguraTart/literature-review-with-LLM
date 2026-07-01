@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
+import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
 function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Record<string, any> = {}, prefValues: Record<string, any> = {}) {
@@ -152,6 +153,7 @@ function loadWorkbenchHelpers(files = new Map<string, string>(), ioOverrides: Re
     TextDecoder,
     AbortController,
     ReadableStream,
+    DecompressionStream,
     URL,
     btoa: (value: string) => Buffer.from(value, "binary").toString("base64"),
     console
@@ -5051,6 +5053,37 @@ describe("workbench writeback helpers", () => {
     expect(dom.elements.get("zms-status").textContent).toContain("outputDirSaved");
   });
 
+  it("saves the workbench automatic update setting and applies the add-on policy", async () => {
+    const prefValues: Record<string, any> = { autoUpdateEnabled: true };
+    const loaded = loadWorkbenchHelpers(new Map(), {}, prefValues);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    const applied: boolean[] = [];
+    (loaded as any).zmsApplyAddonAutoUpdatePreference = async (enabled: boolean) => {
+      applied.push(enabled);
+      return { ok: true, enabled };
+    };
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench as any;
+    workbench.t = (key: string) => ({
+      autoUpdateOn: "Automatic update sync enabled",
+      autoUpdateOff: "Automatic update sync disabled",
+      autoUpdateSavedButNotApplied: "Setting saved, but not applied",
+      autoUpdateUnavailable: "Auto update unavailable"
+    }[key] || key);
+
+    workbench.state.autoUpdateEnabled = true;
+    workbench.renderAutoUpdateSettings();
+    expect(dom.elements.get("zms-workbench-auto-update-input").checked).toBe(true);
+
+    dom.elements.get("zms-workbench-auto-update-input").checked = false;
+    await expect(workbench.saveAutoUpdatePreference()).resolves.toBe(true);
+
+    expect(prefValues.autoUpdateEnabled).toBe(false);
+    expect(workbench.state.autoUpdateEnabled).toBe(false);
+    expect(applied).toEqual([false]);
+    expect(dom.elements.get("zms-status").textContent).toBe("Automatic update sync disabled");
+  });
+
   it("does not persist a changed workbench output directory when creation fails", async () => {
     const attemptedDirectories: string[] = [];
     const prefValues: Record<string, any> = { outputDir: "/tmp/out" };
@@ -6677,6 +6710,12 @@ describe("workbench writeback helpers", () => {
                     averageTextCharsPerPage: 66,
                     minTextChars: 40,
                     ocrFallbackUsed: true,
+                    ocrPageSignals: [
+                      { page: 1, status: "ok", textChars: 120, ocrConfidence: "high", warnings: [] },
+                      { page: 2, status: "ok", textChars: 44, ocrConfidence: "medium", warnings: [] },
+                      { page: 3, status: "empty", textChars: 0, ocrConfidence: "none", warnings: ["ocr_page_empty"] },
+                      { page: 4, status: "error", textChars: 0, ocrConfidence: "error", warnings: ["ocr_page_error"] }
+                    ],
                     warnings: ["ocr_fallback_used", "empty_or_unread_pages"]
                   }
                 })
@@ -6722,7 +6761,8 @@ describe("workbench writeback helpers", () => {
           filePath: "/tmp/candidate.pdf",
           name: "candidate.pdf",
           ocrFallback: true,
-          maxOcrPages: 3,
+          ocrPageStrategy: "sparse",
+          maxOcrPages: 6,
           minTextChars: 40
         }
       }
@@ -6742,8 +6782,17 @@ describe("workbench writeback helpers", () => {
       expectedPageCount: 4,
       emptyPageCount: 2,
       ocrFallbackUsed: true,
+      ocrConfidenceCounts: expect.objectContaining({ high: 1, medium: 1, none: 1, error: 1, total: 4 }),
+      ocrConfidenceSummary: "high 1, medium 1, low 0, none 1, error 1",
+      ocrConfidenceRisk: "high",
       warnings: ["ocr_fallback_used", "empty_or_unread_pages"]
     });
+    expect(enriched[0].review.pdfExtractionQuality.ocrPageSignals).toEqual([
+      expect.objectContaining({ page: 1, ocrConfidence: "high", textChars: 120 }),
+      expect.objectContaining({ page: 2, ocrConfidence: "medium", textChars: 44 }),
+      expect.objectContaining({ page: 3, ocrConfidence: "none", warnings: ["ocr_page_empty"] }),
+      expect.objectContaining({ page: 4, ocrConfidence: "error", warnings: ["ocr_page_error"] })
+    ]);
     const report = loaded.renderCandidateReviewMarkdown(enriched, {
       outputLanguage: "zh-CN",
       item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
@@ -6754,7 +6803,411 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("状态: warning");
     expect(report).toContain("可读页: 2/4");
     expect(report).toContain("OCR fallback: 是");
+    expect(report).toContain("OCR 置信度: high 1, medium 1, low 0, none 1, error 1");
+    expect(report).toContain("OCR 风险: high");
     expect(report).toContain("ocr_fallback_used, empty_or_unread_pages");
+  });
+
+  it("passes explicit full-document OCR options to local bridge PDF extraction", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    (loaded as any).fetch = async (url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ url, body });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  engine: "pdftotext+tesseract",
+                  pageCount: 12,
+                  pages: [
+                    { page: 1, pageLabel: "1", text: "The proposed method uses graph attention on scanned page one." },
+                    { page: 12, pageLabel: "12", text: "Limitations include missing weather robustness checks on scanned page twelve." }
+                  ],
+                  quality: {
+                    status: "warning",
+                    engine: "pdftotext+tesseract",
+                    pageCount: 12,
+                    expectedPageCount: 24,
+                    pagesWithText: 12,
+                    emptyPageCount: 0,
+                    totalTextChars: 960,
+                    averageTextCharsPerPage: 80,
+                    minTextChars: 40,
+                    ocrFallbackUsed: true,
+                    ocrFullDocumentUsed: true,
+                    ocrPageStrategy: "all",
+                    ocrMaxPages: 24,
+                    ocrRequestedPageCount: 30,
+                    ocrTruncatedPageCount: 6,
+                    ocrPageSignals: [
+                      { page: 1, status: "ok", textChars: 80, ocrConfidence: "medium", warnings: [] },
+                      { page: 12, status: "ok", textChars: 82, ocrConfidence: "medium", warnings: [] }
+                    ],
+                    warnings: ["ocr_fallback_used", "ocr_full_document_used", "ocr_page_limit_reached"]
+                  }
+                })
+              }
+            ]
+          }
+        })
+      };
+    };
+    loaded.__zoteroItems.set(82, {
+      id: 82,
+      key: "ITEM82",
+      getAttachments: () => [83]
+    });
+    loaded.__zoteroItems.set(83, {
+      id: 83,
+      key: "PDF83",
+      attachmentContentType: "application/pdf",
+      getFilePathAsync: async () => "/tmp/full-scan.pdf",
+      getField: (field: string) => field === "title" ? "full-scan.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/full-ocr",
+        title: "Full OCR Candidate",
+        decision: "include",
+        zoteroItemID: 82,
+        zoteroItemKey: "ITEM82",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" },
+        review: {
+          pdfFullDocumentOcr: true,
+          pdfMaxOcrPages: 24
+        }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].body.params.arguments).toMatchObject({
+      filePath: "/tmp/full-scan.pdf",
+      name: "full-scan.pdf",
+      ocrFallback: true,
+      ocrPageStrategy: "all",
+      fullDocumentOcr: true,
+      maxOcrPages: 24,
+      minTextChars: 40
+    });
+    expect(enriched[0].review.pdfExtractionQuality).toMatchObject({
+      status: "warning",
+      engine: "pdftotext+tesseract",
+      pagesWithText: 12,
+      expectedPageCount: 24,
+      ocrFallbackUsed: true,
+      ocrFullDocumentUsed: true,
+      ocrPageStrategy: "all",
+      ocrMaxPages: 24,
+      ocrRequestedPageCount: 30,
+      ocrTruncatedPageCount: 6,
+      warnings: ["ocr_fallback_used", "ocr_full_document_used", "ocr_page_limit_reached"]
+    });
+    const report = loaded.renderCandidateReviewMarkdown(enriched, {
+      outputLanguage: "en-US",
+      item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+    expect(report).toContain("OCR scope: all");
+    expect(report).toContain("OCR page cap/requested: 24/30");
+    expect(report).toContain("full-document OCR: yes");
+    expect(report).toContain("ocr_fallback_used, ocr_full_document_used, ocr_page_limit_reached");
+    expect(report).toContain("The OCR page cap was reached");
+  });
+
+  it("records PDF byte access diagnostics and falls back to indexed text evidence", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const fetchCalls: any[] = [];
+    (loaded as any).fetch = async (_url: string, _init: any) => {
+      fetchCalls.push({ url: _url, init: _init });
+      throw new Error("bridge should not be called without PDF bytes");
+    };
+    loaded.__zoteroItems.set(64, {
+      id: 64,
+      key: "ITEM64",
+      getAttachments: () => [65]
+    });
+    loaded.__zoteroItems.set(65, {
+      id: 65,
+      key: "PDF65",
+      attachmentContentType: "application/pdf",
+      attachmentText: [
+        "The proposed method uses graph attention from Zotero indexed text.",
+        "Experiments evaluate benchmark scenarios with delay and throughput metrics."
+      ].join(" "),
+      getFilePathAsync: async () => "",
+      getField: (field: string) => field === "title" ? "no-bytes.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/no-bytes",
+        title: "No Bytes Candidate",
+        decision: "include",
+        zoteroItemID: 64,
+        zoteroItemKey: "ITEM64",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(fetchCalls).toHaveLength(0);
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      sourceType: "indexed-text",
+      locator: expect.stringContaining("indexed-text:"),
+      quote: expect.stringContaining("proposed method uses graph attention")
+    });
+    expect(enriched[0].review.pdfExtractionQuality).toMatchObject({
+      status: "fail",
+      engine: "local-bridge",
+      pagesWithText: 0,
+      expectedPageCount: 0,
+      warnings: ["pdf_bytes_unavailable", "indexed_text_fallback_used"]
+    });
+
+    const labels = loaded.candidateReviewLabels("en-US");
+    const evidenceRows = loaded.candidateReviewEvidenceRows(enriched, labels);
+    expect(evidenceRows[0]).toMatchObject({
+      gap: "PDF page-text extraction quality needs review",
+      check: expect.stringContaining("indexed-text fallback")
+    });
+
+    const report = loaded.renderCandidateReviewMarkdown(enriched, {
+      outputLanguage: "en-US",
+      item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+    expect(report).toContain("PDF extraction quality");
+    expect(report).toContain("status: fail");
+    expect(report).toContain("warnings: pdf_bytes_unavailable, indexed_text_fallback_used");
+    expect(report).toContain("next action: Attach a locally readable PDF file");
+    expect(report).toContain("PDF page-text extraction quality needs review");
+  });
+
+  it("uses raw PDF byte text when the local bridge is unavailable", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const pdfBytes = new Uint8Array(Buffer.from([
+      "%PDF-1.7",
+      "1 0 obj",
+      "<< /Type /Page >>",
+      "stream",
+      "BT",
+      "(The proposed method uses graph attention from raw PDF bytes.) Tj",
+      "(Experiments evaluate benchmark scenarios with delay and throughput metrics.) Tj",
+      "ET",
+      "endstream",
+      "endobj",
+      "%%EOF"
+    ].join("\n")));
+    loaded.__zoteroItems.set(68, {
+      id: 68,
+      key: "ITEM68",
+      getAttachments: () => [69]
+    });
+    loaded.__zoteroItems.set(69, {
+      id: 69,
+      key: "PDF69",
+      attachmentContentType: "application/pdf",
+      attachmentText: "Unpaged indexed text should not be preferred when raw byte text is available.",
+      getBytes: async () => pdfBytes,
+      getFilePathAsync: async () => "",
+      getField: (field: string) => field === "title" ? "raw-bytes.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/raw-bytes",
+        title: "Raw Byte Candidate",
+        decision: "include",
+        zoteroItemID: 68,
+        zoteroItemKey: "ITEM68",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      sourceType: "pdf-page-text",
+      page: 1,
+      pageLabel: "1",
+      locator: expect.stringContaining("pdf-page-text:"),
+      quote: expect.stringContaining("proposed method uses graph attention from raw PDF bytes")
+    });
+    expect(enriched[0].review.fullTextEvidence[0].locator).not.toContain("indexed-text:");
+    expect(enriched[0].review.pdfExtractionQuality).toMatchObject({
+      status: "warning",
+      engine: "pdf-raw-bytes",
+      pagesWithText: 1,
+      expectedPageCount: 1,
+      warnings: [
+        "local_bridge_fetch_unavailable",
+        "raw_pdf_byte_text_fallback",
+        "raw_pdf_page_boundary_uncertain"
+      ]
+    });
+
+    const report = loaded.renderCandidateReviewMarkdown(enriched, {
+      outputLanguage: "en-US",
+      item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+    expect(report).toContain("engine: pdf-raw-bytes");
+    expect(report).toContain("raw_pdf_byte_text_fallback");
+    expect(report).toContain("Review raw-byte page text against the PDF");
+  });
+
+  it("extracts raw PDF evidence from FlateDecode streams when the local bridge is unavailable", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const compressed = deflateSync(Buffer.from([
+      "BT",
+      "(Compressed object-stream text reports route conflict resolution.) Tj",
+      "(Evaluation includes safety delay and throughput metrics from compressed PDF bytes.) Tj",
+      "ET"
+    ].join("\n"), "binary"));
+    const prefix = Buffer.from([
+      "%PDF-1.7",
+      "5 0 obj",
+      `<< /Length ${compressed.length} /Filter /FlateDecode >>`,
+      "stream\n"
+    ].join("\n"), "binary");
+    const suffix = Buffer.from("\nendstream\nendobj\n%%EOF", "binary");
+    const pdfBytes = new Uint8Array(Buffer.concat([prefix, compressed, suffix]));
+    loaded.__zoteroItems.set(70, {
+      id: 70,
+      key: "ITEM70",
+      getAttachments: () => [71]
+    });
+    loaded.__zoteroItems.set(71, {
+      id: 71,
+      key: "PDF71",
+      attachmentContentType: "application/pdf",
+      attachmentText: "Unpaged indexed text should not hide compressed raw byte stream evidence.",
+      getBytes: async () => pdfBytes,
+      getFilePathAsync: async () => "",
+      getField: (field: string) => field === "title" ? "compressed-raw-bytes.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/compressed-raw-bytes",
+        title: "Compressed Raw Byte Candidate",
+        decision: "include",
+        zoteroItemID: 70,
+        zoteroItemKey: "ITEM70",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      sourceType: "pdf-page-text",
+      page: 1,
+      pageLabel: "1",
+      locator: expect.stringContaining("pdf-page-text:"),
+      quote: expect.stringContaining("Evaluation includes safety delay and throughput metrics from compressed PDF bytes")
+    });
+    expect(enriched[0].review.fullTextEvidence[0].locator).not.toContain("indexed-text:");
+    expect(enriched[0].review.pdfExtractionQuality).toMatchObject({
+      status: "warning",
+      engine: "pdf-raw-bytes",
+      pagesWithText: 1,
+      expectedPageCount: 1,
+      warnings: [
+        "local_bridge_fetch_unavailable",
+        "raw_pdf_byte_text_fallback",
+        "raw_pdf_flate_stream_fallback",
+        "raw_pdf_page_boundary_uncertain"
+      ]
+    });
+
+    const report = loaded.renderCandidateReviewMarkdown(enriched, {
+      outputLanguage: "en-US",
+      item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+    expect(report).toContain("engine: pdf-raw-bytes");
+    expect(report).toContain("raw_pdf_flate_stream_fallback");
+    expect(report).toContain("Evaluation includes safety delay and throughput metrics from compressed PDF bytes");
+  });
+
+  it("keeps indexed text evidence visible when local bridge PDF extraction fails", async () => {
+    const loaded = loadWorkbenchHelpers();
+    const fetchCalls: Array<{ url: string; body: any }> = [];
+    (loaded as any).fetch = async (url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      fetchCalls.push({ url, body });
+      return {
+        ok: false,
+        status: 500,
+        text: async () => JSON.stringify({ error: { message: "pdftotext failed" } })
+      };
+    };
+    loaded.__zoteroItems.set(66, {
+      id: 66,
+      key: "ITEM66",
+      getAttachments: () => [67]
+    });
+    loaded.__zoteroItems.set(67, {
+      id: 67,
+      key: "PDF67",
+      attachmentContentType: "application/pdf",
+      attachmentText: [
+        "The proposed method uses graph attention even when bridge extraction fails.",
+        "Limitations include missing weather robustness checks."
+      ].join(" "),
+      getFilePathAsync: async () => "/tmp/broken.pdf",
+      getField: (field: string) => field === "title" ? "broken.pdf" : ""
+    });
+
+    const enriched = await loaded.enrichCandidatesWithFullTextEvidence([
+      {
+        candidateId: "doi:10.1000/bridge-failure",
+        title: "Bridge Failure Candidate",
+        decision: "include",
+        zoteroItemID: 66,
+        zoteroItemKey: "ITEM66",
+        pdfAttachmentStatus: "attached_pdf",
+        quality: { dedupeStatus: "new" }
+      }
+    ], { libraryID: 1 }, "2026-06-20T00:00:00.000Z");
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].body.params.arguments).toMatchObject({
+      filePath: "/tmp/broken.pdf",
+      name: "broken.pdf"
+    });
+    expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
+      sourceType: "indexed-text",
+      locator: expect.stringContaining("indexed-text:"),
+      quote: expect.stringContaining("bridge extraction fails")
+    });
+    expect(enriched[0].review.pdfExtractionQuality).toMatchObject({
+      status: "warning",
+      engine: "local-bridge",
+      warnings: ["local_bridge_request_failed", "pdf_page_text_unavailable", "indexed_text_fallback_used"],
+      lastError: expect.stringContaining("pdftotext failed")
+    });
+
+    const report = loaded.renderCandidateReviewMarkdown(enriched, {
+      outputLanguage: "zh-CN",
+      item: { key: "ITEM", getField: (field: string) => field === "title" ? "Current Paper" : "" },
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+    expect(report).toContain("PDF 抽取质量");
+    expect(report).toContain("状态: warning");
+    expect(report).toContain("告警: local_bridge_request_failed, pdf_page_text_unavailable, indexed_text_fallback_used");
+    expect(report).toContain("下一步: 检查本地 bridge 日志、Poppler/Tesseract 安装和 PDF 文件权限。");
+    expect(report).toContain("PDF 页文本抽取质量需要复核");
+    expect(report).toContain("indexed-text:");
   });
 
   it("uses base64 PDF bridge extraction when no local attachment path is available", async () => {
@@ -6819,7 +7272,8 @@ describe("workbench writeback helpers", () => {
       pdfBase64,
       name: "memory.pdf",
       ocrFallback: true,
-      maxOcrPages: 3
+      ocrPageStrategy: "sparse",
+      maxOcrPages: 6
     });
     expect(fetchCalls[0].body.params.arguments).not.toHaveProperty("filePath");
     expect(enriched[0].review.fullTextEvidence[0]).toMatchObject({
@@ -7782,16 +8236,16 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("Visual OCR Text");
     expect(report).toContain("## Reconstructed Tables / Data");
     expect(report).toContain("| Delay | 12 ms | [image] |");
-    expect(report).toContain("chartDataDraftCount: 3");
+    expect(report).toContain("chartDataDraftCount: 2");
     expect(report).toContain('chartQualityStatus: "reviewable-with-cautions"');
     expect(report).toContain("chartQualityIssueCount: 1");
     expect(report).toContain("## Chart Data Drafts");
     expect(report).toContain("| 1 | reconstructed-table | Item | Value |");
-    expect(report).toContain("| 2 | reconstructed-table | Axis X | Axis Y | Series | 1 | needs-review | [image] |");
-    expect(report).toContain("| 3 | local-ocr | OCR line | recognized numeric value | image | 1 | needs-review | [image], [metadata] |");
+    expect(report).toContain("| 2 | local-ocr | OCR line | recognized numeric value | image | 1 | needs-review | [image], [metadata] |");
     expect(report).toContain("pixelDataDraftCount: 1");
     expect(report).toContain("calibrationAnchorCount: 4");
     expect(report).toContain("chartReviewActionCount: 1");
+    expect(report).toContain("chartReviewBatchCount: 1");
     expect(report).toContain("## Pixel / Coordinate Data Drafts");
     expect(report).toContain("| 1 | pixel-coordinate-table | figure.png | 1 | needs-review | [image] |");
     expect(report).toContain("| baseline | p1 | 120 | 340 | 0.1 | 12 ms | low | [image] | [image] |");
@@ -7801,11 +8255,14 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("- Quality status: reviewable-with-cautions");
     expect(report).toContain("| axis-calibration | pass | calibration anchors present: X 2, Y 2 |");
     expect(report).toContain("| calibration-quality | pass | spans: X 340 px, Y 240 px; numeric anchors: 4/4; monotonic axes: X, Y |");
-    expect(report).toContain("| confidence | warning | high 0, medium 0, low 3, needs-review 1 |");
+    expect(report).toContain("| confidence | warning | high 0, medium 0, low 2, needs-review 1 |");
     expect(report).toContain("Treat extracted chart values as review drafts until a human confirms the point readings, units, and axes.");
+    expect(report).toContain("## Chart Batch Review Board");
+    expect(report).toContain("| Priority | Review state | Count | Blocking issue | Batch action | Done criteria |");
+    expect(report).toContain("| medium | todo | 1 | confirm-low-confidence-readings - confidence (warning) - high 0, medium 0, low 2, needs-review 1 | Manually confirm low-confidence readings, units, and legends; treat them as draft values until then. | Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable. |");
     expect(report).toContain("## Chart Review Action Queue");
     expect(report).toContain("| Priority | Review state | Action | Related check | Next step | Done criteria | Reviewer | Due | Notes | Detail |");
-    expect(report).toContain("| medium | todo | confirm-low-confidence-readings | confidence (warning) | Manually confirm low-confidence readings, units, and legends; treat them as draft values until then. | Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable. |  |  |  | high 0, medium 0, low 3, needs-review 1 |");
+    expect(report).toContain("| medium | todo | confirm-low-confidence-readings | confidence (warning) | Manually confirm low-confidence readings, units, and legends; treat them as draft values until then. | Low-confidence readings, units, legends, and axis mappings are confirmed or marked unusable. |  |  |  | high 0, medium 0, low 2, needs-review 1 |");
     expect(report).toContain("## Machine-Readable Data");
     expect(report).toContain("| 1 | 1 | Value | 12 ms | not labeled |");
     expect(report).toContain("| chart:1 | 1 | yNumber | 12 | [image] |");
@@ -7863,7 +8320,7 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("## 像素/坐标数据草稿");
     expect(files.get(reportPath)).toContain("| 1 | pixel-coordinate-table | chart.png | 1 | needs-review | [image] |");
     expect(files.get(reportPath)).toContain("calibrationAnchorCount: 4");
-    expect(files.get(reportPath)).toContain("chartReviewActionCount: 1");
+    expect(files.get(reportPath)).toContain("chartReviewActionCount: 2");
     expect(files.get(reportPath)).toContain("## 坐标轴校准锚点");
     expect(files.get(reportPath)).toContain("| 1 | axis-calibration-table | X | 80 | 0 | s | medium | [image] |");
     expect(files.get(reportPath)).toContain("## 图表数据质量审阅");
@@ -7873,7 +8330,8 @@ describe("workbench writeback helpers", () => {
     expect(files.get(reportPath)).toContain("在人工确认点位读数、单位和坐标轴前，不要把抽取值当作最终实验数据。");
     expect(files.get(reportPath)).toContain("## 图表人工复核任务");
     expect(files.get(reportPath)).toContain("| 优先级 | 复核状态 | 任务 | 关联检查 | 下一步 | 完成条件 | 复核人 | 期限 | 备注 | 细节 |");
-    expect(files.get(reportPath)).toContain("| medium | todo | confirm-low-confidence-readings | confidence (warning) | 人工确认低置信读数、单位和图例；确认前只作为草稿使用。 | 低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。 |  |  |  | high 0, medium 0, low 2, needs-review 1 |");
+    expect(files.get(reportPath)).toContain("| medium | todo | confirm-low-confidence-readings | confidence (warning) | 人工确认低置信读数、单位和图例；确认前只作为草稿使用。 | 低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。 |  |  |  | high 0, medium 0, low 1, needs-review 1 |");
+    expect(files.get(reportPath)).toContain("| medium | todo | request-denser-point-table | point-count (warning) | 放大原图或重新提问，要求输出更密集但仍可复核的点表。 | 已补充更密集且仍可复核的点表，或记录无法可靠抽取的原因。 |  |  |  | only 2 point(s) parsed |");
     expect(files.get(reportPath)).toContain("## 机器可读数据");
     expect(files.get(reportPath)).toContain("| 1 | 1 | 指标 | delay | 未标注 |");
     const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.json";
@@ -7919,8 +8377,8 @@ describe("workbench writeback helpers", () => {
     ]);
     expect(parsed.chartQualityReview).toMatchObject({
       status: "reviewable-with-cautions",
-      issueCount: 1,
-      recommendations: [{ id: "confidence" }]
+      issueCount: 2,
+      recommendations: [{ id: "confidence" }, { id: "point-count" }]
     });
     expect(parsed.chartReviewActions).toMatchObject([
       {
@@ -7931,6 +8389,31 @@ describe("workbench writeback helpers", () => {
         checkId: "confidence",
         status: "warning",
         doneCriteria: "低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。"
+      },
+      {
+        queueId: "review-2",
+        actionId: "request-denser-point-table",
+        priority: "medium",
+        reviewState: "todo",
+        checkId: "point-count",
+        status: "warning",
+        doneCriteria: "已补充更密集且仍可复核的点表，或记录无法可靠抽取的原因。"
+      }
+    ]);
+    expect(parsed.chartBatchReviewBoard).toMatchObject([
+      {
+        priority: "medium",
+        reviewState: "todo",
+        count: 1,
+        blockingIssue: "confirm-low-confidence-readings - confidence (warning) - high 0, medium 0, low 1, needs-review 1",
+        doneCriteria: "低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。"
+      },
+      {
+        priority: "medium",
+        reviewState: "todo",
+        count: 1,
+        blockingIssue: "request-denser-point-table - point-count (warning) - only 2 point(s) parsed",
+        doneCriteria: "已补充更密集且仍可复核的点表，或记录无法可靠抽取的原因。"
       }
     ]);
     expect(files.get(csvPath)).toContain("tableIndex,rowIndex,column,value,evidenceLabels,sourceAssistantMessageId,imageNames");
@@ -7943,6 +8426,7 @@ describe("workbench writeback helpers", () => {
     expect(files.get(csvPath)).toContain("calibration:1,1,value,0,[image],assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("review-action:review-1,1,reviewState,todo,,assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("review-action:review-1,1,doneCriteria,低置信读数、单位、图例和轴映射已逐项确认或标记为不可用。,,assistant-visual,chart.png");
+    expect(files.get(csvPath)).toContain("review-batch:1,1,batchAction,人工确认低置信读数、单位和图例；确认前只作为草稿使用。,,assistant-visual,chart.png");
     expect(dom.elements.get("zms-status").textContent).toContain(`visualReportDone: ${reportPath}`);
   });
 
@@ -8002,16 +8486,20 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("| medium | done | confirm-low-confidence-readings | confidence (warning)");
     expect(report).toContain("| Kagura | 2026-07-01 | axes and units checked |");
     const parsed = JSON.parse(files.get(jsonPath) || "{}");
-    expect(parsed.chartReviewActions).toMatchObject([
-      {
-        queueId: "review-1",
-        actionId: "confirm-low-confidence-readings",
-        reviewState: "done",
-        reviewer: "Kagura",
-        due: "2026-07-01",
-        notes: "axes and units checked"
-      }
-    ]);
+    expect(parsed.chartReviewActions).toHaveLength(2);
+    expect(parsed.chartReviewActions[0]).toMatchObject({
+      queueId: "review-1",
+      actionId: "confirm-low-confidence-readings",
+      reviewState: "done",
+      reviewer: "Kagura",
+      due: "2026-07-01",
+      notes: "axes and units checked"
+    });
+    expect(parsed.chartReviewActions[1]).toMatchObject({
+      queueId: "review-2",
+      actionId: "request-denser-point-table",
+      reviewState: "todo"
+    });
     const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-IMG.csv";
     expect(files.get(csvPath)).toContain("review-action:review-1,1,reviewState,done,,assistant-visual,chart.png");
     expect(files.get(csvPath)).toContain("review-action:review-1,1,reviewer,Kagura,,assistant-visual,chart.png");
@@ -8229,6 +8717,8 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("| 1 | dense-point-table | Axis X | Axis Y | Series | 3 | needs-review | [image] |");
     expect(report).toContain("| baseline | 0.1 | 12 | ms | low | [image] · visible point | [image] |");
     expect(report).toContain("| point-count | pass | points parsed: 3 |");
+    expect(report).toContain("| dense-confidence | warning | dense points: 3; high/medium confidence: 0; low/needs-review: 3 |");
+    expect(report).toContain("| medium | todo | improve-dense-point-confidence | dense-confidence (warning)");
     const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-DENSE.json";
     const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-DENSE.csv";
     const parsed = JSON.parse(files.get(jsonPath) || "{}");
@@ -8246,6 +8736,216 @@ describe("workbench writeback helpers", () => {
     });
     expect(files.get(csvPath)).toContain("chart:1,1,source,dense-point-table,[image],assistant-dense,curve.png");
     expect(files.get(csvPath)).toContain("chart:1,3,yNumber,10,[image],assistant-dense,curve.png");
+  });
+
+  it("flags incomplete multi-panel chart layout coverage in visual extraction exports", () => {
+    const loaded = loadWorkbenchHelpers();
+    const item = {
+      key: "PANEL",
+      getCollections: () => []
+    };
+    const report = loaded.renderVisualExtractionReportMarkdown({
+      item,
+      context: {
+        metadata: { title: "Multi-panel Chart Paper" }
+      },
+      messages: [
+        {
+          id: "user-panel",
+          role: "user",
+          content: "Extract multi-panel dense chart values",
+          images: [{ name: "multi-panel.png", mimeType: "image/png", size: 101, width: 900, height: 300 }]
+        },
+        {
+          id: "assistant-panel",
+          role: "assistant",
+          profileName: "MiniMax",
+          content: [
+            "## Visual OCR Text",
+            "- Multi-panel figure with Panel A, Panel B, and Panel C. Panel C is unreadable [image].",
+            "",
+            "## Dense Point Data Draft",
+            "| Panel | Series | Point | Axis X | Axis Y | Unit | Confidence | Source | Notes |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| A | baseline | p1 | 0.1 | 12 | ms | high | [image] | visible point |",
+            "| A | baseline | p2 | 0.2 | 14 | ms | low | [image] | visible point |",
+            "| B | proposed | p1 | 0.1 | 10 | ms | low | [image] | visible point |",
+            "",
+            "## Pixel / Coordinate Data Draft",
+            "| Panel | Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| A | baseline | p1 | 120 | 340 | 0.1 | 12 ms | high | [image] |",
+            "| B | proposed | p1 | 220 | 240 | 0.1 | 10 ms | low | [image] |",
+            "",
+            "## Axis Calibration Anchors",
+            "| Panel | Axis | Pixel | Value | Unit | Scale | Segment | Source | Confidence |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| A | X | 50 | 0 | s | linear |  | [image] | medium |",
+            "| A | X | 450 | 1 | s | linear |  | [image] | medium |",
+            "| A | Y | 400 | 0 | ms | linear |  | [image] | medium |",
+            "| A | Y | 100 | 30 | ms | linear |  | [image] | medium |",
+            "| B | X | 60 | 0 | s | linear |  | [image] | medium |",
+            "| B | X | 460 | 1 | s | linear |  | [image] | medium |",
+            "| B | Y | 410 | 0 | ms | linear |  | [image] | medium |",
+            "| B | Y | 110 | 30 | ms | linear |  | [image] | medium |"
+          ].join("\n")
+        }
+      ]
+    }, {
+      item,
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      reportPath: "/tmp/out/collections/PANEL/writing/visual-extraction-PANEL.md",
+      jsonPath: "/tmp/out/collections/PANEL/writing/visual-extraction-PANEL.json",
+      csvPath: "/tmp/out/collections/PANEL/writing/visual-extraction-PANEL.csv"
+    });
+
+    expect(report).toContain('chartLayoutStatus: "needs-panel-review"');
+    expect(report).toContain("chartPanelCount: 3");
+    expect(report).toContain("chartPanelSplitCandidateCount: 3");
+    expect(report).toContain('chartPanelSplitValidationStatus: "needs-panel-evidence"');
+    expect(report).toContain("chartPanelSplitValidationScore: 88");
+    expect(report).toContain("## Chart Layout Diagnostics");
+    expect(report).toContain("| Panel A | covered | 2 | 1 | 4 | 1, 2, 3 | [image] |");
+    expect(report).toContain("| Panel C | needs-review | 0 | 0 | 0 |  | not labeled |");
+    expect(report).toContain("### Automatic Panel Split Candidates");
+    expect(report).toContain("| Image | Split layout | Panel | X | Y | Width | Height | Unit | Confidence | Split validation | Split validation score | Detail |");
+    expect(report).toContain("| multi-panel.png | 1x3 | Panel A | 0 | 0 | 300 | 300 | px | low | needs-panel-evidence | 88 | even 1x3 split from parsed panel labels; verify against figure gutters; needs evidence for Panel C |");
+    expect(report).toContain("| multi-panel.png | 1x3 | Panel B | 300 | 0 | 300 | 300 | px | low | needs-panel-evidence | 88 | even 1x3 split from parsed panel labels; verify against figure gutters; needs evidence for Panel C |");
+    expect(report).toContain("| multi-panel.png | 1x3 | Panel C | 600 | 0 | 300 | 300 | px | low | needs-panel-evidence | 88 | even 1x3 split from parsed panel labels; verify against figure gutters; needs evidence for Panel C |");
+    expect(report).toContain("| layout-coverage | warning | panel coverage incomplete: Panel C |");
+    expect(report).toContain("| panel-split-validation | warning | panel split validation score 88/100; needs evidence for Panel C |");
+    expect(report).toContain("| dense-confidence | warning | dense points: 3; high/medium confidence: 1; low/needs-review: 2 |");
+    expect(report).toContain("| medium | todo | verify-chart-layout-coverage | layout-coverage (warning)");
+    expect(report).toContain("| medium | todo | validate-panel-split-candidates | panel-split-validation (warning)");
+    expect(report).toContain("| medium | todo | improve-dense-point-confidence | dense-confidence (warning)");
+
+    const data = (loaded as any).visualExtractionReportData({
+      item,
+      messages: [
+        { id: "user-panel", role: "user", images: [{ name: "multi-panel.png", mimeType: "image/png", size: 101, width: 900, height: 300 }] },
+        {
+          id: "assistant-panel",
+          role: "assistant",
+          content: [
+            "## Visual OCR Text",
+            "- Multi-panel figure with Panel A, Panel B, and Panel C. Panel C is unreadable [image].",
+            "",
+            "## Dense Point Data Draft",
+            "| Panel | Series | Point | Axis X | Axis Y | Unit | Confidence | Source | Notes |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| A | baseline | p1 | 0.1 | 12 | ms | high | [image] | visible point |",
+            "| A | baseline | p2 | 0.2 | 14 | ms | low | [image] | visible point |",
+            "| B | proposed | p1 | 0.1 | 10 | ms | low | [image] | visible point |"
+          ].join("\n")
+        }
+      ]
+    }, { item, outputLanguage: "en-US" });
+    expect(data.chartLayoutDiagnostics).toMatchObject({
+      status: "needs-panel-review",
+      panelCount: 3,
+      panelSplitCandidateCount: 3,
+      panelSplitValidationStatus: "needs-panel-evidence",
+      panelSplitValidationScore: 88,
+      panelSplitValidationDetail: "needs evidence for Panel C",
+      multiPanelDetected: true
+    });
+    expect(data.chartLayoutDiagnostics.panels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Panel C", status: "needs-review", chartPointCount: 0 })
+    ]));
+    expect(data.chartLayoutDiagnostics.panelSplitCandidates[0].boxes).toEqual([
+      expect.objectContaining({ panel: "Panel A", x: 0, y: 0, width: 300, height: 300, unit: "px" }),
+      expect.objectContaining({ panel: "Panel B", x: 300, y: 0, width: 300, height: 300, unit: "px" }),
+      expect.objectContaining({ panel: "Panel C", x: 600, y: 0, width: 300, height: 300, unit: "px" })
+    ]);
+    expect(data.chartLayoutDiagnostics.panelSplitCandidates[0]).toMatchObject({
+      validationStatus: "needs-panel-evidence",
+      validationScore: 88,
+      validationDetail: "needs evidence for Panel C"
+    });
+    expect((loaded as any).renderVisualExtractionReportCsv(data)).toContain("layout-panel:Panel C,3,status,needs-review");
+    expect((loaded as any).renderVisualExtractionReportCsv(data)).toContain("layout-split:multi-panel.png:Panel C,3,x,600,[image],assistant-panel,multi-panel.png");
+    expect((loaded as any).renderVisualExtractionReportCsv(data)).toContain("layout-split:multi-panel.png:Panel C,3,validationStatus,needs-panel-evidence");
+    expect((loaded as any).renderVisualExtractionReportCsv(data)).toContain("layout-split:multi-panel.png:Panel C,3,validationScore,88");
+  });
+
+  it("uses explicit gutter hints for multi-panel split candidates", () => {
+    const loaded = loadWorkbenchHelpers();
+    const item = {
+      key: "GUTTER",
+      getCollections: () => []
+    };
+    const messages = [
+      {
+        id: "user-gutter",
+        role: "user",
+        images: [{ name: "gutter-chart.png", mimeType: "image/png", size: 101, width: 1000, height: 620 }]
+      },
+      {
+        id: "assistant-gutter",
+        role: "assistant",
+        content: [
+          "## Visual OCR Text",
+          "- Four panels: Panel A, Panel B, Panel C, Panel D. The layout is a 2x2 grid with column gutter 40 px and row gutter 20 px.",
+          "",
+          "## Dense Point Data Draft",
+          "| Panel | Series | Point | Axis X | Axis Y | Unit | Confidence | Source | Notes |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| A | baseline | p1 | 0.1 | 12 | ms | high | [image] | visible point |",
+          "| B | baseline | p1 | 0.1 | 13 | ms | high | [image] | visible point |",
+          "| C | proposed | p1 | 0.1 | 10 | ms | high | [image] | visible point |",
+          "| D | proposed | p1 | 0.1 | 11 | ms | high | [image] | visible point |"
+        ].join("\n")
+      }
+    ];
+    const data = (loaded as any).visualExtractionReportData({
+      item,
+      messages
+    }, { item, outputLanguage: "en-US" });
+
+    expect(data.chartLayoutDiagnostics).toMatchObject({
+      status: "layout-reviewable",
+      panelCount: 4,
+      panelSplitCandidateCount: 4,
+      panelSplitValidationStatus: "validated",
+      panelSplitValidationScore: 100,
+      multiPanelDetected: true
+    });
+    expect(data.chartLayoutDiagnostics.panelSplitCandidates[0]).toMatchObject({
+      layout: "2x2",
+      columnGutter: 40,
+      rowGutter: 20,
+      geometryStatus: "gutter-aware",
+      geometryScore: 98,
+      geometryDetail: expect.stringContaining("gutter column 40px, row 20px")
+    });
+    expect(data.chartLayoutDiagnostics.panelSplitCandidates[0].boxes).toEqual([
+      expect.objectContaining({ panel: "Panel A", x: 0, y: 0, width: 480, height: 300, unit: "px" }),
+      expect.objectContaining({ panel: "Panel B", x: 520, y: 0, width: 480, height: 300, unit: "px" }),
+      expect.objectContaining({ panel: "Panel C", x: 0, y: 320, width: 480, height: 300, unit: "px" }),
+      expect.objectContaining({ panel: "Panel D", x: 520, y: 320, width: 480, height: 300, unit: "px" })
+    ]);
+
+    const report = loaded.renderVisualExtractionReportMarkdown({
+      item,
+      messages
+    }, {
+      item,
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      reportPath: "/tmp/out/collections/GUTTER/writing/visual-extraction-GUTTER.md",
+      jsonPath: "/tmp/out/collections/GUTTER/writing/visual-extraction-GUTTER.json",
+      csvPath: "/tmp/out/collections/GUTTER/writing/visual-extraction-GUTTER.csv"
+    });
+    expect(report).toContain("| gutter-chart.png | 2x2 | Panel B | 520 | 0 | 480 | 300 | px | low | validated | 100 |");
+    expect(report).toContain("gutter-aware; coverage 92.9%; area balance 100%; gutter column 40px, row 20px");
+
+    const csv = (loaded as any).renderVisualExtractionReportCsv(data);
+    expect(csv).toContain("layout-split:gutter-chart.png:Panel B,2,x,520,[image],assistant-gutter,gutter-chart.png");
+    expect(csv).toContain("layout-split:gutter-chart.png:Panel D,4,y,320,[image],assistant-gutter,gutter-chart.png");
+    expect(csv).toContain("layout-split:gutter-chart.png:Panel A,1,geometryStatus,gutter-aware,[image],assistant-gutter,gutter-chart.png");
+    expect(csv).toContain("layout-split:gutter-chart.png:Panel A,1,columnGutter,40,[image],assistant-gutter,gutter-chart.png");
+    expect(csv).toContain("layout-split:gutter-chart.png:Panel A,1,rowGutter,20,[image],assistant-gutter,gutter-chart.png");
   });
 
   it("infers missing axis values from calibration anchors in pixel drafts", async () => {
@@ -8322,6 +9022,337 @@ describe("workbench writeback helpers", () => {
     expect(files.get(csvPath)).toContain("pixel:1,1,calibrationBasis,\"linear X calibration: 50px=0 s, 450px=10 s; linear Y calibration: 400px=0 ms, 100px=30 ms\",[image],assistant-calibration,chart.png");
   });
 
+  it("infers log and segmented axis values from calibration anchors in pixel drafts", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "LOGSEG",
+      getCollections: () => [10]
+    };
+    workbench.state.contextSourceHash = "sourcehash";
+    workbench.state.context = {
+      metadata: { title: "Log Segmented Chart Paper" }
+    };
+    workbench.state.messages = [
+      {
+        id: "user-log-segment",
+        role: "user",
+        content: "Extract chart points from a log and broken-axis figure",
+        images: [{ name: "log-segment.png", mimeType: "image/png", size: 88 }]
+      },
+      {
+        id: "assistant-log-segment",
+        role: "assistant",
+        profileName: "MiniMax",
+        content: [
+          "## Pixel / Coordinate Data Draft",
+          "| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| baseline | p1 | 250 | 175 |  |  | low | [image] |",
+          "",
+          "## Axis Calibration Anchors",
+          "| Axis | Pixel | Value | Unit | Scale | Segment | Source | Confidence |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| X | 50 | 1 | Hz | log |  | [image] | medium |",
+          "| X | 450 | 1000 | Hz | log |  | [image] | medium |",
+          "| Y | 400 | 0 | ms | linear | lower | [image] | medium |",
+          "| Y | 250 | 10 | ms | linear | lower | [image] | medium |",
+          "| Y | 250 | 10 | ms | linear | upper | [image] | medium |",
+          "| Y | 100 | 40 | ms | linear | upper | [image] | medium |"
+        ].join("\n")
+      }
+    ];
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportVisualExtractionReport();
+
+    const reportPath = "/tmp/out/collections/COL/writing/visual-extraction-LOGSEG.md";
+    const report = files.get(reportPath) || "";
+    expect(report).toContain("chartAxisSegmentCalibrationMapCount: 2");
+    expect(report).toContain("31.622777 Hz");
+    expect(report).toContain("25 ms");
+    expect(report).toContain("log X calibration: 50px=1 Hz, 450px=1000 Hz");
+    expect(report).toContain("segmented Y calibration: upper 250px=10 ms, 100px=40 ms; lower 400px=0 ms, 250px=10 ms");
+    expect(report).toContain("### Broken-Axis Calibration Map");
+    expect(report).toContain("| Axis | Segment | Pixel Start | Pixel End | Value Start | Value End | Unit | Scale | Direction | Pixel gap to next segment | Value gap to next segment | Review status | Detail |");
+    expect(report).toContain("Calibration confidence | Calibration risk | Gap status | Gap risk");
+    expect(report).toContain("| Y | lower | 400 | 250 | 0 | 10 | ms | linear | pixel-desc/value-asc |  | 0 | covered | 2 numeric anchor(s), 150 px span, 0 ms -> 10 ms |");
+    expect(report).toContain("| Y | upper | 250 | 100 | 10 | 40 | ms | linear | pixel-desc/value-asc | 0 |  | covered | 2 numeric anchor(s), 150 px span, 10 ms -> 40 ms |");
+    expect(report).toContain("| 1 | axis-calibration-table | X | 50 | 1 | Hz | medium | [image] | log |");
+    expect(report).toContain("| 3 | axis-calibration-table | Y | 400 | 0 | ms | medium | [image] | linear | lower |");
+    expect(report).toContain("| calibration-quality | pass | spans: X 400 px, Y lower 150 px, Y upper 150 px, Y 300 px; numeric anchors: 6/6; monotonic axes: X, Y; log axes: X; segmented axes: Y 2 (lower 2, upper 2) |");
+
+    const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-LOGSEG.json";
+    const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-LOGSEG.csv";
+    const parsed = JSON.parse(files.get(jsonPath) || "{}");
+    expect(parsed.pixelDataDrafts[0].points[0]).toMatchObject({
+      series: "baseline",
+      point: "p1",
+      pixelX: 250,
+      pixelY: 175,
+      axisX: "31.622777 Hz",
+      axisY: "25 ms",
+      axisXCalibrated: true,
+      axisYCalibrated: true,
+      calibrationBasis: "log X calibration: 50px=1 Hz, 450px=1000 Hz; segmented Y calibration: upper 250px=10 ms, 100px=40 ms; lower 400px=0 ms, 250px=10 ms"
+    });
+    expect(parsed.calibrationAnchors[0]).toMatchObject({ axis: "X", scale: "log" });
+    expect(parsed.calibrationAnchors[2]).toMatchObject({ axis: "Y", scale: "linear", segment: "lower" });
+    expect(parsed.chartLayoutDiagnostics).toMatchObject({
+      axisSegmentCalibrationMapCount: 2,
+      axisSegments: expect.arrayContaining([
+        expect.objectContaining({ axis: "Y", segment: "lower", pixelStart: 400, pixelEnd: 250, valueStart: 0, valueEnd: 10, direction: "pixel-desc/value-asc", calibrationConfidence: "medium", calibrationRisk: "low", valueGapToNextSegment: 0, gapStatusToNextSegment: "value-contiguous-to-next", gapRiskToNextSegment: "low" }),
+        expect.objectContaining({ axis: "Y", segment: "upper", pixelStart: 250, pixelEnd: 100, valueStart: 10, valueEnd: 40, direction: "pixel-desc/value-asc", calibrationConfidence: "medium", calibrationRisk: "low", pixelGapToNextSegment: 0, gapStatusToNextSegment: "pixel-contiguous-to-next", gapRiskToNextSegment: "low" })
+      ])
+    });
+    expect(files.get(csvPath)).toContain("pixel:1,1,axisX,31.622777 Hz,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("pixel:1,1,axisY,25 ms,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("calibration:1,1,scale,log,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("calibration:3,3,segment,lower,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:lower,1,calibrationConfidence,medium,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:lower,1,valueGapToNextSegment,0,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:lower,1,gapStatusToNextSegment,value-contiguous-to-next,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:upper,2,pixelGapToNextSegment,0,[image],assistant-log-segment,log-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:upper,2,gapRiskToNextSegment,low,[image],assistant-log-segment,log-segment.png");
+  });
+
+  it("infers broken-axis values from calibration range rows", async () => {
+    const files = new Map<string, string>();
+    const loaded = loadWorkbenchHelpers(files);
+    const dom = fakeDocument();
+    (loaded as any).document = dom;
+    loaded.__zoteroCollections.set(10, { key: "COL" });
+    const workbench = loaded.ZoteroMarkdownSummaryWorkbench;
+    workbench.state.outputDir = "/tmp/out";
+    workbench.state.outputLanguage = "en-US";
+    workbench.state.item = {
+      key: "RANGESEG",
+      getCollections: () => [10]
+    };
+    workbench.state.contextSourceHash = "sourcehash";
+    workbench.state.context = {
+      metadata: { title: "Range Broken Axis Paper" }
+    };
+    workbench.state.messages = [
+      {
+        id: "user-range-segment",
+        role: "user",
+        content: "Extract points from a broken-axis figure with readable segment ranges",
+        images: [{ name: "range-segment.png", mimeType: "image/png", size: 88 }]
+      },
+      {
+        id: "assistant-range-segment",
+        role: "assistant",
+        profileName: "MiniMax",
+        content: [
+          "## Pixel / Coordinate Data Draft",
+          "| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| baseline | p1 | 250 | 150 |  |  | low | [image] |",
+          "",
+          "## Axis Calibration Anchors",
+          "| Axis | Pixel | Value | Unit | Scale | Source | Confidence |",
+          "| --- | --- | --- | --- | --- | --- | --- |",
+          "| X | 50 | 0 | s | linear | [image] | medium |",
+          "| X | 450 | 10 | s | linear | [image] | medium |",
+          "",
+          "## Broken Axis Calibration Ranges",
+          "| Axis | Segment | Pixel Start | Pixel End | Value Start | Value End | Unit | Scale | Source | Confidence | Notes |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| Y | lower | 400 | 260 | 0 | 10 | ms | linear | [image] | medium | lower visible range |",
+          "| Y | upper | 220 | 80 | 50 | 100 | ms | linear | [image] | medium | upper visible range |"
+        ].join("\n")
+      }
+    ];
+    workbench.t = (key: string) => key;
+
+    await (workbench as any).exportVisualExtractionReport();
+
+    const reportPath = "/tmp/out/collections/COL/writing/visual-extraction-RANGESEG.md";
+    const report = files.get(reportPath) || "";
+    expect(report).toContain("chartAxisSegmentCalibrationMapCount: 2");
+    expect(report).toContain("5 s");
+    expect(report).toContain("75 ms");
+    expect(report).toContain("segmented Y calibration: upper 220px=50 ms, 80px=100 ms; lower 400px=0 ms, 260px=10 ms");
+    expect(report).toContain("### Broken-Axis Calibration Map");
+    expect(report).toContain("Calibration confidence | Calibration risk | Gap status | Gap risk");
+    expect(report).toContain("| Y | lower | 400 | 260 | 0 | 10 | ms | linear | pixel-desc/value-asc |  | 40 | covered | 2 numeric anchor(s), 140 px span, 0 ms -> 10 ms |");
+    expect(report).toContain("| Y | upper | 220 | 80 | 50 | 100 | ms | linear | pixel-desc/value-asc | 40 |  | covered | 2 numeric anchor(s), 140 px span, 50 ms -> 100 ms |");
+    expect(report).toContain("| 3 | axis-calibration-range-table | Y | 400 | 0 | ms | medium | [image] | linear | lower |");
+    expect(report).toContain("| 5 | axis-calibration-range-table | Y | 220 | 50 | ms | medium | [image] | linear | upper |");
+    expect(report).toContain("| calibration-quality | pass | spans: X 400 px, Y lower 140 px, Y upper 140 px, Y 320 px; numeric anchors: 6/6; monotonic axes: X, Y; segmented axes: Y 2 (lower 2, upper 2) |");
+
+    const jsonPath = "/tmp/out/collections/COL/writing/visual-extraction-RANGESEG.json";
+    const csvPath = "/tmp/out/collections/COL/writing/visual-extraction-RANGESEG.csv";
+    const parsed = JSON.parse(files.get(jsonPath) || "{}");
+    expect(parsed.pixelDataDrafts[0].points[0]).toMatchObject({
+      series: "baseline",
+      point: "p1",
+      pixelX: 250,
+      pixelY: 150,
+      axisX: "5 s",
+      axisY: "75 ms",
+      axisXCalibrated: true,
+      axisYCalibrated: true,
+      calibrationBasis: "linear X calibration: 50px=0 s, 450px=10 s; segmented Y calibration: upper 220px=50 ms, 80px=100 ms; lower 400px=0 ms, 260px=10 ms"
+    });
+    expect(parsed.calibrationAnchors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "axis-calibration-range-table", axis: "Y", segment: "lower", pixel: 400, value: "0", rangeEndpoint: "start" }),
+      expect.objectContaining({ source: "axis-calibration-range-table", axis: "Y", segment: "lower", pixel: 260, value: "10", rangeEndpoint: "end" }),
+      expect.objectContaining({ source: "axis-calibration-range-table", axis: "Y", segment: "upper", pixel: 220, value: "50", rangeEndpoint: "start" }),
+      expect.objectContaining({ source: "axis-calibration-range-table", axis: "Y", segment: "upper", pixel: 80, value: "100", rangeEndpoint: "end" })
+    ]));
+    expect(parsed.chartLayoutDiagnostics).toMatchObject({
+      axisSegmentCalibrationMapCount: 2,
+      axisSegments: expect.arrayContaining([
+        expect.objectContaining({ axis: "Y", segment: "lower", pixelStart: 400, pixelEnd: 260, valueStart: 0, valueEnd: 10, direction: "pixel-desc/value-asc", calibrationConfidence: "medium", calibrationRisk: "low", valueGapToNextSegment: 40, gapStatusToNextSegment: "value-gap-to-next", gapRiskToNextSegment: "medium" }),
+        expect.objectContaining({ axis: "Y", segment: "upper", pixelStart: 220, pixelEnd: 80, valueStart: 50, valueEnd: 100, direction: "pixel-desc/value-asc", calibrationConfidence: "medium", calibrationRisk: "low", pixelGapToNextSegment: 40, gapStatusToNextSegment: "pixel-gap-to-next", gapRiskToNextSegment: "medium" })
+      ])
+    });
+    expect(files.get(csvPath)).toContain("pixel:1,1,axisY,75 ms,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("calibration:3,3,source,axis-calibration-range-table,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("calibration:3,3,rangeEndpoint,start,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("calibration:6,6,value,100,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:lower,1,calibrationRisk,low,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:lower,1,valueGapToNextSegment,40,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:lower,1,gapStatusToNextSegment,value-gap-to-next,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:upper,2,pixelGapToNextSegment,40,[image],assistant-range-segment,range-segment.png");
+    expect(files.get(csvPath)).toContain("layout-segment:Y:upper,2,gapRiskToNextSegment,medium,[image],assistant-range-segment,range-segment.png");
+  });
+
+  it("flags under-calibrated broken-axis segments in visual extraction reports", () => {
+    const loaded = loadWorkbenchHelpers();
+    const item = {
+      key: "BROKENSEG",
+      getCollections: () => []
+    };
+    const report = loaded.renderVisualExtractionReportMarkdown({
+      item,
+      messages: [
+        {
+          id: "user-broken-segment",
+          role: "user",
+          content: "Extract chart points from the broken-axis figure",
+          images: [{ name: "broken-segment.png", mimeType: "image/png", size: 88 }]
+        },
+        {
+          id: "assistant-broken-segment",
+          role: "assistant",
+          profileName: "MiniMax",
+          content: [
+            "## Pixel / Coordinate Data Draft",
+            "| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| baseline | p1 | 250 | 175 |  |  | low | [image] |",
+            "",
+            "## Axis Calibration Anchors",
+            "| Axis | Pixel | Value | Unit | Scale | Segment | Source | Confidence |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| X | 50 | 0 | s | linear |  | [image] | medium |",
+            "| X | 450 | 10 | s | linear |  | [image] | medium |",
+            "| Y | 400 | 0 | ms | linear | lower | [image] | medium |",
+            "| Y | 250 | 10 | ms | linear | lower | [image] | medium |",
+            "| Y | 120 | 40 | ms | linear | upper | [image] | medium |"
+          ].join("\n")
+        }
+      ]
+    }, {
+      item,
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z"
+    });
+
+    expect(report).toContain('chartQualityStatus: "needs-review"');
+    expect(report).toContain("| axis-calibration | pass | calibration anchors present: X 2, Y 3 |");
+    expect(report).toContain("| calibration-quality | fail |");
+    expect(report).toContain("segmented axes: Y 2 (lower 2, upper 1)");
+    expect(report).toContain("under-calibrated segment on Y upper: 1/2 numeric anchors");
+    expect(report).toContain("Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, segment coverage, and units");
+    expect(report).toContain("| high | todo | verify-calibration-quality | calibration-quality (fail) | Recheck anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units against the original chart before quantitative use.");
+    expect(report).toContain("Anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units have been manually checked with a reuse decision.");
+  });
+
+  it("detects visual axis-break cues and queues segment calibration review", () => {
+    const loaded = loadWorkbenchHelpers();
+    const item = {
+      key: "AXISBREAK",
+      getCollections: () => []
+    };
+    const payload = {
+      item,
+      messages: [
+        {
+          id: "user-axis-break",
+          role: "user",
+          content: "Extract points from the figure with a visible axis break",
+          images: [{ name: "broken-axis.png", mimeType: "image/png", size: 88 }]
+        },
+        {
+          id: "assistant-axis-break",
+          role: "assistant",
+          profileName: "MiniMax",
+          content: [
+            "## Visual OCR Text",
+            "- The Y-axis has a zigzag marker and a visible axis gap between 10 ms and 50 ms [image].",
+            "",
+            "## Pixel / Coordinate Data Draft",
+            "| Series | Point | Pixel X | Pixel Y | Axis X | Axis Y | Confidence | Source |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| baseline | p1 | 120 | 350 | 2 s | 5 ms | medium | [image] |",
+            "| baseline | p2 | 250 | 180 | 5 s | 75 ms | medium | [image] |",
+            "| baseline | p3 | 420 | 90 | 9 s | 95 ms | medium | [image] |",
+            "",
+            "## Axis Calibration Anchors",
+            "| Axis | Pixel | Value | Unit | Source | Confidence |",
+            "| --- | --- | --- | --- | --- | --- |",
+            "| X | 50 | 0 | s | [image] | medium |",
+            "| X | 450 | 10 | s | [image] | medium |",
+            "| Y | 400 | 0 | ms | [image] | medium |",
+            "| Y | 80 | 100 | ms | [image] | medium |"
+          ].join("\n")
+        }
+      ]
+    };
+    const data = (loaded as any).visualExtractionReportData(payload, {
+      item,
+      outputLanguage: "en-US",
+      generatedAt: "2026-06-20T00:00:00.000Z",
+      reportPath: "/tmp/out/visual-extraction-AXISBREAK.md",
+      jsonPath: "/tmp/out/visual-extraction-AXISBREAK.json",
+      csvPath: "/tmp/out/visual-extraction-AXISBREAK.csv"
+    });
+    const report = (loaded as any).renderVisualExtractionReportMarkdownFromData(data);
+    const csv = (loaded as any).renderVisualExtractionReportCsv(data);
+
+    expect(data.chartLayoutDiagnostics).toMatchObject({
+      discontinuousAxisDetected: true,
+      axisBreakCueCount: 2,
+      axisBreakCues: expect.arrayContaining([
+        expect.objectContaining({ axis: "Y", cue: "zigzag break mark", source: "answer-text" }),
+        expect.objectContaining({ axis: "Y", cue: "visible axis gap", source: "answer-text" })
+      ])
+    });
+    expect(data.chartQualityReview.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "layout-coverage", status: "warning" }),
+      expect.objectContaining({ id: "axis-break-cues", status: "warning" })
+    ]));
+    expect(data.chartReviewActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ actionId: "verify-axis-break-cues", checkId: "axis-break-cues", status: "warning" })
+    ]));
+    expect(report).toContain("chartAxisBreakCueCount: 2");
+    expect(report).toContain("### Axis Break Visual Cues");
+    expect(report).toContain("| axis-break-cues | warning | axis break visual cue(s): 2; covered segment calibration: 0; no segment anchors parsed |");
+    expect(report).toContain("| medium | todo | verify-axis-break-cues | axis-break-cues (warning)");
+    expect(csv).toContain("layout-axis-break:1,1,cue,zigzag break mark,[image],assistant-axis-break,broken-axis.png");
+    expect(csv).toContain("layout-axis-break:2,2,cue,visible axis gap,[image],assistant-axis-break,broken-axis.png");
+  });
+
   it("flags low-quality axis calibration anchors in visual extraction reports", () => {
     const loaded = loadWorkbenchHelpers();
     const item = {
@@ -8371,10 +9402,10 @@ describe("workbench writeback helpers", () => {
     expect(report).toContain("| calibration-quality | fail |");
     expect(report).toContain("small pixel span on X: 12 px");
     expect(report).toContain("non-monotonic anchors on Y");
-    expect(report).toContain("Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, and units");
+    expect(report).toContain("Recheck calibration-anchor pixel span, monotonicity, duplicate ticks, segment coverage, and units");
     expect(report).toContain("chartReviewActionCount: 4");
-    expect(report).toContain("| high | todo | verify-calibration-quality | calibration-quality (fail) | Recheck anchor span, monotonicity, duplicate values, and units against the original chart before quantitative use.");
-    expect(report).toContain("Anchor span, monotonicity, duplicate values, and units have been manually checked with a reuse decision.");
+    expect(report).toContain("| high | todo | verify-calibration-quality | calibration-quality (fail) | Recheck anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units against the original chart before quantitative use.");
+    expect(report).toContain("Anchor span, monotonicity, duplicate values, broken-axis segment coverage, and units have been manually checked with a reuse decision.");
   });
 
   it("renders a formal review draft with evidence-backed writing sections", () => {
@@ -8538,12 +9569,35 @@ describe("workbench writeback helpers", () => {
       contextSourceHash: "sourcehash"
     });
 
-    expect(note).toContain("templateVersion: proposal-note-v1");
+    expect(note).toContain("templateVersion: proposal-note-v3");
     expect(note).toContain('promptPackId: "transportation"');
     expect(note).toContain("# 开题与课题申报笔记");
     expect(note).toContain("## 选题框架");
     expect(note).toContain("## 领域化写作格式");
     expect(note).toContain("交通与城市空域");
+    expect(note).toContain("### 写作结构");
+    expect(note).toContain("| 结构单元 | 写作目标 | 证据要求 |");
+    expect(note).toContain("场景边界与需求流");
+    expect(note).toContain("OD/需求流");
+    expect(note).toContain("### 学科写作示例");
+    expect(note).toContain("| 写作场景 | 可套用表达 | 证据锚点 | 修订检查 |");
+    expect(note).toContain("场景边界段");
+    expect(note).toContain("冲突/拥堵/调度");
+    expect(note).toContain("是否说明空间范围");
+    expect(note).toContain("### 写作风格模板");
+    expect(note).toContain("| 写作动作 | 表达重点 | 不建议写法 | 更稳妥写法 | 证据核查 |");
+    expect(note).toContain("界定场景边界");
+    expect(note).toContain("提升交通效率");
+    expect(note).toContain("在{道路/空域/网络}约束下");
+    expect(note).toContain("检查 OD/需求流、规则约束和安全阈值");
+    expect(note).toContain("### 分领域审稿核查清单");
+    expect(note).toContain("是否明确道路/空域/网络约束、需求流和安全阈值");
+    expect(note).toContain("开题/申报文本是否能落到研究问题、技术路线、实验计划和风险控制");
+    expect(note).toContain("### 段落级改写示例");
+    expect(note).toContain("| 段落用途 | 容易被质疑的写法 | 建议改写 | 需要补齐的证据 |");
+    expect(note).toContain("不是只提升效率");
+    expect(note).toContain("真实部署还需补充");
+    expect(note).toContain("### 写作清单");
     expect(note).toContain("明确道路/空域/网络约束");
     expect(note).toContain("### 技术路线与方法基础");
     expect(note).toContain("[chunk:proposal-method source=summary locator=summary:1 hash=methodhash]");
@@ -8587,6 +9641,27 @@ describe("workbench writeback helpers", () => {
     expect(files.get(notePath)).toContain("# Proposal Note");
     expect(files.get(notePath)).toContain('promptPackId: "biomedicine"');
     expect(files.get(notePath)).toContain("Biomedicine and life sciences");
+    expect(files.get(notePath)).toContain("### Writing Structure");
+    expect(files.get(notePath)).toContain("| Structure unit | Writing goal | Evidence requirement |");
+    expect(files.get(notePath)).toContain("Study design and object");
+    expect(files.get(notePath)).toContain("Endpoints and statistics");
+    expect(files.get(notePath)).toContain("### Discipline-Style Writing Examples");
+    expect(files.get(notePath)).toContain("| Writing scenario | Reusable expression | Evidence anchor | Revision check |");
+    expect(files.get(notePath)).toContain("Study-object paragraph");
+    expect(files.get(notePath)).toContain("endpoint");
+    expect(files.get(notePath)).toContain("### Writing Style Templates");
+    expect(files.get(notePath)).toContain("| Writing move | Focus | Weak wording | Stronger wording | Evidence check |");
+    expect(files.get(notePath)).toContain("Define study object");
+    expect(files.get(notePath)).toContain("Study a disease mechanism");
+    expect(files.get(notePath)).toContain("Eligibility criteria, comparator, and endpoint");
+    expect(files.get(notePath)).toContain("### Field-Specific Reviewer Checklist");
+    expect(files.get(notePath)).toContain("Are eligibility criteria, comparator, endpoint, and sample source explicit?");
+    expect(files.get(notePath)).toContain("Can the proposal text become a research question, technical route, validation plan, and risk control?");
+    expect(files.get(notePath)).toContain("### Paragraph-Level Revision Examples");
+    expect(files.get(notePath)).toContain("| Paragraph use | Questionable wording | Suggested revision | Evidence to add |");
+    expect(files.get(notePath)).toContain("Study scope paragraph");
+    expect(files.get(notePath)).toContain("Feasibility comes from");
+    expect(files.get(notePath)).toContain("### Writing Checklist");
     expect(files.get(notePath)).toContain("Define study design, sample or cohort");
     expect(files.get(notePath)).toContain("Proposal Source Paper");
     expect(files.get(notePath)).toContain("[chunk:proposal-method source=summary locator=summary:1 hash=methodhash]");
@@ -8642,12 +9717,55 @@ describe("workbench writeback helpers", () => {
       contextSourceHash: "sourcehash"
     });
 
-    expect(outline).toContain("templateVersion: journal-outline-v1");
+    expect(outline).toContain("templateVersion: journal-outline-v5");
     expect(outline).toContain('promptPackId: "ai-ml"');
     expect(outline).toContain("# 期刊/报告写作提纲");
     expect(outline).toContain("## 投稿/报告定位");
     expect(outline).toContain("## 领域化写作格式");
     expect(outline).toContain("AI/ML/系统");
+    expect(outline).toContain("### 写作结构");
+    expect(outline).toContain("| 结构单元 | 写作目标 | 证据要求 |");
+    expect(outline).toContain("引言：任务与评价协议");
+    expect(outline).toContain("主结果到消融链条");
+    expect(outline).toContain("### 投稿类型写作结构");
+    expect(outline).toContain("| 投稿类型 | 写法重点 | 证据要求 | 适配核查 |");
+    expect(outline).toContain("会议论文");
+    expect(outline).toContain("政策/管理简报");
+    expect(outline).toContain("### 投稿类型审稿标准");
+    expect(outline).toContain("| 投稿类型 | 审稿关注 | 应展示证据 | 常见退稿风险 | 修订动作 |");
+    expect(outline).toContain("审稿人会优先判断新颖性");
+    expect(outline).toContain("只有主结果，没有稳健性");
+    expect(outline).toContain("### 投稿录用信号示例");
+    expect(outline).toContain("| 投稿类型 | 录用信号 | 稿件证据 | 投稿前补强 |");
+    expect(outline).toContain("问题、方法、结果和局限形成单一主张闭环");
+    expect(outline).toContain("补齐最强 baseline");
+    expect(outline).toContain("### 学科写作示例");
+    expect(outline).toContain("| 写作场景 | 可套用表达 | 证据锚点 | 修订检查 |");
+    expect(outline).toContain("引言任务段");
+    expect(outline).toContain("消融结果进一步表明");
+    expect(outline).toContain("### 写作风格模板");
+    expect(outline).toContain("| 写作动作 | 表达重点 | 不建议写法 | 更稳妥写法 | 证据核查 |");
+    expect(outline).toContain("定位贡献层级");
+    expect(outline).toContain("效果更好");
+    expect(outline).toContain("主结果、消融和协议必须能相互印证");
+    expect(outline).toContain("### 分领域审稿核查清单");
+    expect(outline).toContain("是否明确 task、data、metric、baseline 四件套");
+    expect(outline).toContain("摘要、引言、方法、结果和讨论是否围绕同一个核心主张闭合");
+    expect(outline).toContain("### 段落级改写示例");
+    expect(outline).toContain("| 段落用途 | 容易被质疑的写法 | 建议改写 | 需要补齐的证据 |");
+    expect(outline).toContain("在{数据集}和{评价协议}下");
+    expect(outline).toContain("失败主要集中在");
+    expect(outline).toContain("### 长篇正文段落示例");
+    expect(outline).toContain("| 正文位置 | 示例段落 | 证据包 | 修订提示 |");
+    expect(outline).toContain("引言末段");
+    expect(outline).toContain("本文将问题限定为{任务}");
+    expect(outline).toContain("实验讨论段");
+    expect(outline).toContain("### 完整章节级正文草稿");
+    expect(outline).toContain("| 正文位置 | 章节草稿 | 证据包 | 修订提示 |");
+    expect(outline).toContain("引言章节草稿");
+    expect(outline).toContain("本章节先用{任务场景}");
+    expect(outline).toContain("实验与讨论章节草稿");
+    expect(outline).toContain("### 写作清单");
     expect(outline).toContain("模型类别、数据与评价协议");
     expect(outline).toContain("## 正文提纲");
     expect(outline).toContain("标题与摘要");
@@ -8708,6 +9826,49 @@ describe("workbench writeback helpers", () => {
     expect(files.get(outlinePath)).toContain("# Journal / Report Outline");
     expect(files.get(outlinePath)).toContain('promptPackId: "review-writing"');
     expect(files.get(outlinePath)).toContain("Literature-review writing");
+    expect(files.get(outlinePath)).toContain("### Writing Structure");
+    expect(files.get(outlinePath)).toContain("| Structure unit | Writing goal | Evidence requirement |");
+    expect(files.get(outlinePath)).toContain("Body: taxonomy frame");
+    expect(files.get(outlinePath)).toContain("Synthesis: consensus and disagreement");
+    expect(files.get(outlinePath)).toContain("### Venue-Specific Writing Patterns");
+    expect(files.get(outlinePath)).toContain("| Venue type | Writing pattern | Evidence requirement | Fit check |");
+    expect(files.get(outlinePath)).toContain("Review article");
+    expect(files.get(outlinePath)).toContain("Technical report");
+    expect(files.get(outlinePath)).toContain("### Venue-Specific Reviewer Criteria");
+    expect(files.get(outlinePath)).toContain("| Venue type | Reviewer expectation | Evidence to show | Common rejection risk | Revision action |");
+    expect(files.get(outlinePath)).toContain("Reviewers will judge whether the taxonomy creates synthesis");
+    expect(files.get(outlinePath)).toContain("Paper-by-paper listing");
+    expect(files.get(outlinePath)).toContain("### Venue-Specific Acceptance Examples");
+    expect(files.get(outlinePath)).toContain("| Venue type | Acceptance signal | Manuscript evidence | Pre-submission revision |");
+    expect(files.get(outlinePath)).toContain("A review article becomes acceptable when the taxonomy creates new synthesis");
+    expect(files.get(outlinePath)).toContain("Add a search-flow diagram");
+    expect(files.get(outlinePath)).toContain("### Discipline-Style Writing Examples");
+    expect(files.get(outlinePath)).toContain("| Writing scenario | Reusable expression | Evidence anchor | Revision check |");
+    expect(files.get(outlinePath)).toContain("Review introduction paragraph");
+    expect(files.get(outlinePath)).toContain("Taxonomy body paragraph");
+    expect(files.get(outlinePath)).toContain("### Writing Style Templates");
+    expect(files.get(outlinePath)).toContain("| Writing move | Focus | Weak wording | Stronger wording | Evidence check |");
+    expect(files.get(outlinePath)).toContain("State synthesis claim");
+    expect(files.get(outlinePath)).toContain("This review summarizes related studies");
+    expect(files.get(outlinePath)).toContain("representative papers and evidence labels");
+    expect(files.get(outlinePath)).toContain("### Field-Specific Reviewer Checklist");
+    expect(files.get(outlinePath)).toContain("Does each synthesis claim trace to representative papers, evidence strength, and counter-evidence?");
+    expect(files.get(outlinePath)).toContain("Do abstract, introduction, methods, results, and discussion close around one central claim?");
+    expect(files.get(outlinePath)).toContain("### Paragraph-Level Revision Examples");
+    expect(files.get(outlinePath)).toContain("| Paragraph use | Questionable wording | Suggested revision | Evidence to add |");
+    expect(files.get(outlinePath)).toContain("Taxonomy paragraph");
+    expect(files.get(outlinePath)).toContain("The remaining gap comes from");
+    expect(files.get(outlinePath)).toContain("### Longer Manuscript Paragraph Examples");
+    expect(files.get(outlinePath)).toContain("| Manuscript section | Draft paragraph | Evidence package | Revision cue |");
+    expect(files.get(outlinePath)).toContain("Review introduction paragraph");
+    expect(files.get(outlinePath)).toContain("does not list papers one by one");
+    expect(files.get(outlinePath)).toContain("Synthesis evaluation paragraph");
+    expect(files.get(outlinePath)).toContain("### Full-Section Manuscript Drafts");
+    expect(files.get(outlinePath)).toContain("| Manuscript section | Section draft | Evidence package | Revision cue |");
+    expect(files.get(outlinePath)).toContain("Review body section draft");
+    expect(files.get(outlinePath)).toContain("This section starts by declaring {taxonomy dimension}");
+    expect(files.get(outlinePath)).toContain("Review conclusion section draft");
+    expect(files.get(outlinePath)).toContain("### Writing Checklist");
     expect(files.get(outlinePath)).toContain("Organize related work by taxonomy dimensions");
     expect(files.get(outlinePath)).toContain("Comparison Evidence Paper");
     expect(files.get(outlinePath)).toContain("[paper2:compare-results source=summary locator=summary:1 hash=comparehash]");

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">OpenAI-compatible provider setup card</title>
+  <desc id="desc">Reference configuration cards for MiniMax, DeepSeek, and Gemini OpenAI-compatible provider profiles.</desc>
+  <rect width="1200" height="680" rx="28" fill="#f6f8fb"/>
+  <rect x="36" y="36" width="1128" height="608" rx="22" fill="#ffffff" stroke="#d5dce8"/>
+  <text x="72" y="96" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="34" font-weight="700" fill="#172033">OpenAI-compatible profiles</text>
+  <text x="72" y="138" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#5e6a7d">Use these when the provider exposes a chat-completions style endpoint.</text>
+
+  <g transform="translate(72 188)">
+    <rect width="320" height="386" rx="18" fill="#fbfcff" stroke="#cfd8e6"/>
+    <text x="26" y="48" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="26" font-weight="700" fill="#0f766e">MiniMax</text>
+    <text x="26" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Provider</text>
+    <text x="26" y="119" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">MiniMax</text>
+    <text x="26" y="164" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Base URL</text>
+    <text x="26" y="191" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#172033">https://api.minimaxi.com/v1</text>
+    <text x="26" y="236" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Model</text>
+    <text x="26" y="263" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">MiniMax-M3</text>
+    <text x="26" y="314" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">Paste MINIMAX_API_KEY, then</text>
+    <text x="26" y="342" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">click Save and Test.</text>
+  </g>
+
+  <g transform="translate(440 188)">
+    <rect width="320" height="386" rx="18" fill="#fbfcff" stroke="#cfd8e6"/>
+    <text x="26" y="48" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="26" font-weight="700" fill="#2563eb">DeepSeek</text>
+    <text x="26" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Provider</text>
+    <text x="26" y="119" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">DeepSeek</text>
+    <text x="26" y="164" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Base URL</text>
+    <text x="26" y="191" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#172033">https://api.deepseek.com</text>
+    <text x="26" y="236" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Model</text>
+    <text x="26" y="263" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">deepseek-v4-flash</text>
+    <text x="26" y="314" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">Use the model dropdown before</text>
+    <text x="26" y="342" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">typing a custom model name.</text>
+  </g>
+
+  <g transform="translate(808 188)">
+    <rect width="320" height="386" rx="18" fill="#fbfcff" stroke="#cfd8e6"/>
+    <text x="26" y="48" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="26" font-weight="700" fill="#7c3aed">Gemini</text>
+    <text x="26" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Provider</text>
+    <text x="26" y="119" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">Gemini OpenAI Compatible</text>
+    <text x="26" y="164" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Base URL</text>
+    <text x="26" y="191" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="17" fill="#172033">generativelanguage.googleapis.com</text>
+    <text x="26" y="218" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="17" fill="#172033">/v1beta/openai</text>
+    <text x="26" y="263" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#324154">Model</text>
+    <text x="26" y="290" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="20" fill="#172033">Choose from dropdown</text>
+    <text x="26" y="342" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" fill="#5e6a7d">Image support depends on model.</text>
+  </g>
+</svg>
