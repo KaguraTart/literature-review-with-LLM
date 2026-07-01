@@ -465,6 +465,8 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("最终报告校准矩阵");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("写作阈值");
     expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("正文放置");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("最终报告行动计划");
+    expect(writes.get(artifacts.synthesisRoadmapPath)).toContain("所需材料");
     expect(writes.get(artifacts.researchQuestionCardsPath)).toContain("研究问题卡");
     expect(writes.get(artifacts.researchQuestionCardsPath)).toContain("最小下一步动作");
     expect(writes.get(artifacts.reviewDraftPath)).toContain("手动综述草稿");
@@ -474,7 +476,10 @@ describe("batch papers index", () => {
     expect(writes.get(artifacts.reviewReportPath)).toContain("章节就绪矩阵");
     expect(writes.get(artifacts.reviewReportPath)).toContain("章节就绪分");
     expect(writes.get(artifacts.reviewReportPath)).toContain("报告章节");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("章节行动计划");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("证据缺口");
     expect(writes.get(artifacts.reviewReportPath)).toContain("最终报告校准矩阵");
+    expect(writes.get(artifacts.reviewReportPath)).toContain("最终报告行动计划");
     expect(writes.get(artifacts.reviewReportPath)).toContain("引用策略");
     expect(writes.get(artifacts.reviewReportPath)).toContain("有证据支持的综合主张");
     expect(writes.get(artifacts.reviewReportPath)).toContain("综合冲突与证据缺口");
@@ -1251,6 +1256,7 @@ describe("batch papers index", () => {
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Synthesis Roadmap");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Cross-theme Evidence Map");
     expect(writes.get(english.synthesisRoadmapPath)).toContain("Final Report Calibration Matrix");
+    expect(writes.get(english.synthesisRoadmapPath)).toContain("Final Report Action Plan");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cross-Collection Cluster Map");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Cluster Evidence Cards");
     expect(writes.get(english.crossCollectionSynthesisPath)).toContain("Theme Merge Review Board");
@@ -1265,6 +1271,9 @@ describe("batch papers index", () => {
     expect(writes.get(english.reviewReportPath)).toContain("Formal report readiness score");
     expect(writes.get(english.reviewReportPath)).toContain("Section Readiness Matrix");
     expect(writes.get(english.reviewReportPath)).toContain("Section Readiness Score");
+    expect(writes.get(english.reviewReportPath)).toContain("Section Action Plan");
+    expect(writes.get(english.reviewReportPath)).toContain("Required Material");
+    expect(writes.get(english.reviewReportPath)).toContain("Final Report Action Plan");
     expect(writes.get(english.reviewReportPath)).toContain("Synthesis Writing Pack");
     expect(writes.get(english.reviewReportPath)).toContain("Risk Checklist");
     expect(writes.get(english.ideaListPath)).toContain("Reject condition");
@@ -1284,6 +1293,7 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.synthesisConflictsPath)).toContain("支持レベル");
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("統合ロードマップ");
     expect(writes.get(japanese.synthesisRoadmapPath)).toContain("テーマ横断エビデンスマップ");
+    expect(writes.get(japanese.synthesisRoadmapPath)).toContain("最終報告アクション計画");
     expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("Collection 横断クラスタマップ");
     expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("クラスタ証拠カード");
     expect(writes.get(japanese.crossCollectionSynthesisPath)).toContain("テーマ統合確認ボード");
@@ -1295,6 +1305,8 @@ describe("batch papers index", () => {
     expect(writes.get(japanese.reviewReportPath)).toContain("統合コンフリクトと証拠ギャップ");
     expect(writes.get(japanese.reviewReportPath)).toContain("執筆準備度ゲート");
     expect(writes.get(japanese.reviewReportPath)).toContain("正式報告書準備度スコア");
+    expect(writes.get(japanese.reviewReportPath)).toContain("章別アクション計画");
+    expect(writes.get(japanese.reviewReportPath)).toContain("必要資料");
     expect(writes.get(japanese.reviewReportPath)).toContain("統合執筆パック");
     expect(writes.get(japanese.reviewReportPath)).toContain("リスク確認リスト");
     expect(writes.get(japanese.ideaListPath)).toContain("棄却条件");

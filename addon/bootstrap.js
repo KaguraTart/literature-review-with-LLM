@@ -4445,6 +4445,7 @@ function renderSynthesisRoadmap(collectionContext, results, outputLanguage = "zh
   const entries = synthesisRoadmapEntries(results, summaryInsights, labels);
   const readinessEntries = synthesisRoadmapReadinessEntries(entries, labels);
   const finalReportCalibrationEntries = roadmapFinalReportCalibrationEntries(readinessEntries, labels);
+  const finalReportActionPlanEntries = roadmapFinalReportActionPlanEntries(finalReportCalibrationEntries, labels);
   const items = batchReportItems(results).filter((item) => item.status === "generated" || item.status === "skipped_existing");
   const routeRows = entries.map((entry) => [
     escapeMarkdownTable(entry.cluster),
@@ -4492,6 +4493,10 @@ function renderSynthesisRoadmap(collectionContext, results, outputLanguage = "zh
     `## ${labels.finalReportCalibrationMatrix}`,
     "",
     renderRoadmapFinalReportCalibrationRows(finalReportCalibrationEntries, labels),
+    "",
+    `## ${labels.finalReportActionPlan}`,
+    "",
+    renderRoadmapFinalReportActionPlanRows(finalReportActionPlanEntries, labels),
     "",
     `## ${labels.roadmapEvidenceIndex}`,
     "",
@@ -4726,6 +4731,44 @@ function renderRoadmapFinalReportCalibrationRows(entries = [], labels = collecti
   ].join("\n");
 }
 
+function roadmapFinalReportActionPlanEntries(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  return (entries || []).map((entry) => ({
+    cluster: entry.cluster,
+    finalReportPlacement: entry.finalReportPlacement,
+    evidenceGap: entry.roadmapBlockingIssue || labels.roadmapReadinessNoBlocking,
+    requiredMaterial: labels.finalReportActionPlanMaterial(
+      entry.finalReportPlacement,
+      entry.cluster,
+      entry.openGap || labels.gapMatrixPendingEvidence,
+      entry.nextValidation || labels.gapMatrixPendingValidation,
+      entry.candidateQuery
+    ),
+    citationStrategy: entry.finalReportCitationMode || labels.finalReportCalibrationCitationThin,
+    nextAction: entry.finalReportAction || labels.finalReportCalibrationAction(
+      entry.finalReportPlacement || labels.finalReportCalibrationPlacementDeferred,
+      entry.cluster || labels.clusterOther,
+      entry.roadmapBlockingIssue || labels.roadmapReadinessNoBlocking,
+      entry.candidateQuery
+    )
+  }));
+}
+
+function renderRoadmapFinalReportActionPlanRows(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const rows = (entries || []).map((entry) => [
+    escapeMarkdownTable(entry.cluster),
+    escapeMarkdownTable(entry.finalReportPlacement),
+    escapeMarkdownTable(entry.evidenceGap),
+    escapeMarkdownTable(entry.requiredMaterial),
+    escapeMarkdownTable(entry.citationStrategy),
+    escapeMarkdownTable(entry.nextAction)
+  ].join(" | ")).map((row) => `| ${row} |`).join("\n") || "|  |  |  |  |  |  |";
+  return [
+    `| ${labels.clusterColumn} | ${labels.finalReportCalibrationPlacementColumn} | ${labels.finalReportEvidenceGapColumn} | ${labels.finalReportRequiredMaterialColumn} | ${labels.finalReportCalibrationCitationColumn} | ${labels.finalReportCalibrationActionColumn} |`,
+    "| --- | --- | --- | --- | --- | --- |",
+    rows
+  ].join("\n");
+}
+
 function roadmapCandidateQuery(clusterLabel, methods = [], gaps = [], validations = []) {
   const terms = uniqueInsightLines([
     clusterLabel,
@@ -4867,6 +4910,8 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     gapSignals,
     stats
   }, labels);
+  const finalReportActionPlanEntries = roadmapFinalReportActionPlanEntries(finalReportCalibrationEntries, labels);
+  const sectionActionPlanEntries = formalReportSectionActionPlanEntries(sectionReadiness, labels);
   return [
     `# ${collectionContext.name || collectionContext.key} ${labels.formalReviewReport}`,
     "",
@@ -4889,9 +4934,17 @@ function renderFormalReviewReport(collectionContext, results, outputLanguage = "
     "",
     renderFormalReportSectionReadinessMatrix(sectionReadiness, labels),
     "",
+    `## ${labels.reportSectionActionPlan}`,
+    "",
+    renderFormalReportSectionActionPlanRows(sectionActionPlanEntries, labels),
+    "",
     `## ${labels.finalReportCalibrationMatrix}`,
     "",
     renderRoadmapFinalReportCalibrationRows(finalReportCalibrationEntries, labels),
+    "",
+    `## ${labels.finalReportActionPlan}`,
+    "",
+    renderRoadmapFinalReportActionPlanRows(finalReportActionPlanEntries, labels),
     "",
     `## ${labels.reportPaperInventory}`,
     "",
@@ -5135,6 +5188,36 @@ function formalReportSectionReadinessEntries(context = {}, labels = collectionTe
   ];
 }
 
+function formalReportSectionActionPlanEntries(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  return (entries || []).map((entry) => ({
+    section: entry.section,
+    level: entry.level,
+    evidenceGap: entry.blocker || labels.reportSectionNoBlocker,
+    requiredMaterial: labels.reportSectionActionPlanMaterial(
+      entry.section,
+      entry.level,
+      entry.evidence || labels.noSummary,
+      entry.blocker || ""
+    ),
+    nextAction: entry.action || labels.reportReadinessDefaultAction(entry.level || labels.reportSectionBlocked)
+  }));
+}
+
+function renderFormalReportSectionActionPlanRows(entries = [], labels = collectionTemplateLabels("zh-CN")) {
+  const rows = (entries || []).map((entry) => [
+    escapeMarkdownTable(entry.section),
+    escapeMarkdownTable(entry.level),
+    escapeMarkdownTable(entry.evidenceGap),
+    escapeMarkdownTable(entry.requiredMaterial),
+    escapeMarkdownTable(entry.nextAction)
+  ].join(" | ")).map((row) => `| ${row} |`);
+  return [
+    `| ${labels.reportSectionColumn} | ${labels.reportSectionReadinessLevelColumn} | ${labels.finalReportEvidenceGapColumn} | ${labels.finalReportRequiredMaterialColumn} | ${labels.reportSectionActionColumn} |`,
+    "| --- | --- | --- | --- | --- |",
+    rows.join("\n") || `| ${escapeMarkdownTable(labels.reportSectionColumn)} | ${escapeMarkdownTable(labels.reportSectionBlocked)} | ${escapeMarkdownTable(labels.reportReadinessGapBlocker)} | ${escapeMarkdownTable(labels.noSummary)} | ${escapeMarkdownTable(labels.reportReadinessDefaultAction(labels.reportSectionBlocked))} |`
+  ].join("\n");
+}
+
 function formalReportSectionEntry(section, score, evidence, blocker, action, labels = collectionTemplateLabels("zh-CN")) {
   const normalizedScore = formalReportClampScore(score);
   const normalizedBlocker = String(blocker || "").trim();
@@ -5356,6 +5439,10 @@ function collectionTemplateLabels(outputLanguage) {
       finalReportCalibrationCitationSingle: "single-paper citation only; keep tentative",
       finalReportCalibrationCitationThin: "citation evidence missing",
       finalReportCalibrationAction: (placement, cluster, blocker, query) => `${placement}: calibrate ${cluster}; ${blocker}; candidate search/check: ${query || "pending"}.`,
+      finalReportActionPlan: "Final Report Action Plan",
+      finalReportEvidenceGapColumn: "Evidence Gap",
+      finalReportRequiredMaterialColumn: "Required Material",
+      finalReportActionPlanMaterial: (placement, cluster, gap, validation, query) => `${placement}: gather material for ${cluster}; keep gap "${gap}" visible; validation/evidence need: ${validation}; search cue: ${query || "pending"}.`,
       crossCollectionSynthesis: "Cross-Collection Synthesis Map",
       crossCollectionSynthesisNote: "Aggregates the latest collection workspaces into one review-planning surface. Use it to compare themes across collections before writing a broader review.",
       crossCollectionInventory: "Collection Inventory",
@@ -5688,6 +5775,8 @@ function collectionTemplateLabels(outputLanguage) {
       reportSectionActionClaim: "Move only audited, traceable claims into prose.",
       reportSectionActionGap: "Keep unresolved gaps beside the relevant claims and sections.",
       reportSectionActionRoadmap: "Promote ready roadmap topics and defer evidence-thin sections.",
+      reportSectionActionPlan: "Section Action Plan",
+      reportSectionActionPlanMaterial: (section, level, evidence, blocker) => `${section} (${level}): add or verify source material from ${evidence}; blocker: ${blocker || "none from current summaries"}.`,
       reportSynthesisWritingPack: "Synthesis Writing Pack",
       reportRiskChecklist: "Risk Checklist",
       reportRiskChecklistItems: [
@@ -5756,6 +5845,10 @@ function collectionTemplateLabels(outputLanguage) {
       finalReportCalibrationCitationSingle: "単一論文引用のみ。暫定扱い",
       finalReportCalibrationCitationThin: "引用証拠が不足",
       finalReportCalibrationAction: (placement, cluster, blocker, query) => `${placement}: ${cluster} を校正する。${blocker}。候補検索・確認: ${query || "未設定"}。`,
+      finalReportActionPlan: "最終報告アクション計画",
+      finalReportEvidenceGapColumn: "証拠ギャップ",
+      finalReportRequiredMaterialColumn: "必要資料",
+      finalReportActionPlanMaterial: (placement, cluster, gap, validation, query) => `${placement}: ${cluster} の資料を追加する。ギャップ「${gap}」を明示し、検証・証拠ニーズ「${validation}」を確認する。検索手がかり: ${query || "未設定"}。`,
       crossCollectionSynthesis: "Collection 横断統合マップ",
       crossCollectionSynthesisNote: "最新の collection workspace を横断的なレビュー計画面に集約します。より広いレビューを書く前に、collection 間のテーマを比較するために使います。",
       crossCollectionInventory: "Collection 一覧",
@@ -6088,6 +6181,8 @@ function collectionTemplateLabels(outputLanguage) {
       reportSectionActionClaim: "監査済みで追跡可能な主張だけを本文へ移す。",
       reportSectionActionGap: "未解決ギャップを関連する主張と小節の横に残す。",
       reportSectionActionRoadmap: "準備済みロードマップ項目を昇格し、証拠が薄い小節は保留する。",
+      reportSectionActionPlan: "章別アクション計画",
+      reportSectionActionPlanMaterial: (section, level, evidence, blocker) => `${section} (${level}): ${evidence} から元資料を追加または確認する。阻害要因: ${blocker || "現在の要約からはなし"}。`,
       reportSynthesisWritingPack: "統合執筆パック",
       reportRiskChecklist: "リスク確認リスト",
       reportRiskChecklistItems: [
@@ -6155,6 +6250,10 @@ function collectionTemplateLabels(outputLanguage) {
     finalReportCalibrationCitationSingle: "仅可作为单篇证据引用，主张保持暂定",
     finalReportCalibrationCitationThin: "引用证据不足",
     finalReportCalibrationAction: (placement, cluster, blocker, query) => `${placement}：校准“${cluster}”；${blocker}；候选检索或检查：${query || "待补充"}。`,
+    finalReportActionPlan: "最终报告行动计划",
+    finalReportEvidenceGapColumn: "证据缺口",
+    finalReportRequiredMaterialColumn: "所需材料",
+    finalReportActionPlanMaterial: (placement, cluster, gap, validation, query) => `${placement}：补齐“${cluster}”的写作材料；保留缺口“${gap}”；验证/证据需求：${validation}；检索线索：${query || "待补充"}。`,
     crossCollectionSynthesis: "跨集合综合地图",
     crossCollectionSynthesisNote: "把最近生成的 collection workspace 汇总为一个跨集合综述规划入口，用于在更大范围综述写作前比较不同集合之间的主题、证据和缺口。",
     crossCollectionInventory: "集合清单",
@@ -6487,6 +6586,8 @@ function collectionTemplateLabels(outputLanguage) {
     reportSectionActionClaim: "只把已审计且可追溯的主张迁移到正文。",
     reportSectionActionGap: "把未解决缺口保留在相关主张和小节旁边。",
     reportSectionActionRoadmap: "提升已就绪路线图主题，暂缓证据薄弱小节。",
+    reportSectionActionPlan: "章节行动计划",
+    reportSectionActionPlanMaterial: (section, level, evidence, blocker) => `${section}（${level}）：从 ${evidence} 补充或核对来源材料；阻塞项：${blocker || "当前总结未发现"}。`,
     reportSynthesisWritingPack: "综合写作包",
     reportRiskChecklist: "风险核查清单",
     reportRiskChecklistItems: [
